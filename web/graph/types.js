@@ -48,7 +48,7 @@
  */
 
 /**
- * @typedef {GraphNodeCommit | GraphNodeBranch} GraphNode
+ * @typedef {GraphNodeCommit | GraphNodeBranch | GraphNodeTree} GraphNode
  */
 
 /**

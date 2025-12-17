@@ -2,7 +2,10 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/rybkr/gitvista/internal/gitcore"
 	"net/http"
+	"strings"
 )
 
 // handleRepository serves repository metadata via REST API.
@@ -25,25 +28,25 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 
 // handleTree serves tree object data via REST API.
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-    path := strings.TrimPrefix(r.URL.Path, "/api/tree/")
+	path := strings.TrimPrefix(r.URL.Path, "/api/tree/")
 	if path == "" || path == r.URL.Path {
 		http.Error(w, "Missing tree hash in path", http.StatusBadRequest)
 		return
 	}
-    path = strings.TrimPrefix(path, "/")
+	path = strings.TrimPrefix(path, "/")
 
-    treeHash, err := gitcore.NewHash(path)
+	treeHash, err := gitcore.NewHash(path)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid hash format: %v", err), http.StatusBadRequest)
 		return
 	}
 
-    s.cacheMu.RLock()
+	s.cacheMu.RLock()
 	repo := s.cached.repo
 	s.cacheMu.RUnlock()
 
@@ -52,13 +55,13 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    tree, err := repo.GetTree(treeHash)
+	tree, err := repo.GetTree(treeHash)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load tree: %v", err), http.StatusNotFound)
 		return
 	}
 
-    w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(tree); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
