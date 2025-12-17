@@ -15,6 +15,8 @@ import {
     LABEL_PADDING,
     LINK_THICKNESS,
     NODE_RADIUS,
+    TREE_NODE_SIZE,
+    TREE_NODE_HIGHLIGHT_SIZE,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 
@@ -119,7 +121,7 @@ export class GraphRenderer {
 
             const prevAlpha = this.ctx.globalAlpha;
             this.ctx.globalAlpha = prevAlpha * warmup;
-            this.renderLink(source, target, link.kind === "branch");
+            this.renderLink(source, target, link.kind);
             this.ctx.globalAlpha = prevAlpha;
         }
     }
@@ -144,15 +146,29 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode} target Target node.
      * @param {boolean} isBranch True when the arrow represents a branch link.
      */
-    renderLink(source, target, isBranch) {
+    renderLink(source, target, linkKind) {
         const dx = target.x - source.x;
         const dy = target.y - source.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance === 0) return;
+        if (distance === 0) {
+            return;
+        }
 
-        const color = isBranch ? this.palette.branchLink : this.palette.link;
-        const targetRadius =
-            target.type === "branch" ? BRANCH_NODE_RADIUS : NODE_RADIUS;
+        let color;
+        if (linkKind === "branch") {
+            color = this.palette.branchLink;
+        } else if (linkKind === "tree") {
+            color = this.palette.treeLink;
+        } else {
+            color = this.palette.link;
+        }
+
+        let targetRadius = NODE_RADIUS;
+        if (target.type === "branch") {
+            targetRadius = BRANCH_NODE_RADIUS;
+        } else if (target.type === "tree") {
+            targetRadius = TREE_NODE_SIZE / 2;
+        }
 
         this.renderArrow(source, target, dx, dy, distance, targetRadius, color);
     }
@@ -216,6 +232,11 @@ export class GraphRenderer {
                 this.renderBranchNode(node, highlightKey);
             }
         }
+        for (const node of nodes) {
+            if (node.type === "branch") {
+                this.renderBranchNode(node, highlightKey);
+            }
+        }
     }
 
     /**
@@ -228,13 +249,17 @@ export class GraphRenderer {
         const isHighlighted = highlightKey && node.hash === highlightKey;
 
         const currentRadius = node.radius ?? NODE_RADIUS;
-        const targetRadius = isHighlighted ? HIGHLIGHT_NODE_RADIUS : NODE_RADIUS;
+        const targetRadius = isHighlighted
+            ? HIGHLIGHT_NODE_RADIUS
+            : NODE_RADIUS;
         node.radius = currentRadius + (targetRadius - currentRadius) * 0.25;
 
         const spawnProgress =
             typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
-        const easedSpawn = spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
-        const nextSpawn = spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
+        const easedSpawn =
+            spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
+        const nextSpawn =
+            spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
         if (nextSpawn >= 1) {
             delete node.spawnPhase;
         } else {
@@ -354,8 +379,10 @@ export class GraphRenderer {
 
         const spawnProgress =
             typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
-        const easedSpawn = spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
-        const nextSpawn = spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
+        const easedSpawn =
+            spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
+        const nextSpawn =
+            spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
         if (nextSpawn >= 1) {
             delete node.spawnPhase;
         } else {
@@ -405,6 +432,107 @@ export class GraphRenderer {
     }
 
     /**
+     * Renders a tree node as a square with optional label.
+     *
+     * @param {import("../types.js").GraphNodeTree} node Tree node to paint.
+     * @param {string|null} highlightKey Current highlight identifier.
+     */
+    renderTreeNode(node, highlightKey) {
+        const isHighlighted = highlightKey && node.hash === highlightKey;
+
+        const spawnProgress =
+            typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
+        const easedSpawn =
+            spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
+        const nextSpawn =
+            spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
+        if (nextSpawn >= 1) {
+            delete node.spawnPhase;
+        } else {
+            node.spawnPhase = nextSpawn;
+        }
+        const spawnAlpha = Math.max(0, Math.min(1, easedSpawn));
+        const scale = 0.6 + 0.4 * spawnAlpha;
+
+        this.ctx.save();
+        const previousAlpha = this.ctx.globalAlpha;
+        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
+        this.ctx.translate(node.x, node.y);
+        this.ctx.scale(scale, scale);
+        this.ctx.translate(-node.x, -node.y);
+
+        const baseSize = TREE_NODE_SIZE;
+        const targetSize = isHighlighted ? TREE_NODE_HIGHLIGHT_SIZE : baseSize;
+        const currentSize = node.size ?? baseSize;
+        node.size = currentSize + (targetSize - currentSize) * 0.25;
+        const drawSize = node.size;
+
+        const halfSize = drawSize / 2;
+        const x = node.x - halfSize;
+        const y = node.y - halfSize;
+
+        if (isHighlighted) {
+            this.ctx.save();
+            this.ctx.fillStyle = this.palette.nodeHighlightGlow;
+            this.ctx.globalAlpha = 0.3;
+            this.ctx.fillRect(x - 4, y - 4, drawSize + 8, drawSize + 8);
+            this.ctx.restore();
+        }
+
+        this.ctx.fillStyle = isHighlighted
+            ? this.palette.nodeHighlight
+            : this.palette.treeNode;
+        this.ctx.fillRect(x, y, drawSize, drawSize);
+
+        this.ctx.lineWidth = isHighlighted ? 2 : 1.5;
+        this.ctx.strokeStyle = isHighlighted
+            ? this.palette.nodeHighlightRing
+            : this.palette.treeNodeBorder;
+        this.ctx.strokeRect(x, y, drawSize, drawSize);
+
+        this.ctx.globalAlpha = previousAlpha;
+        this.ctx.restore();
+
+        if (spawnAlpha > 0.5) {
+            this.renderTreeLabel(node, spawnAlpha);
+        }
+    }
+
+    /**
+     * Draws the text label alongside a tree node.
+     *
+     * @param {import("../types.js").GraphNodeTree} node Tree node to annotate.
+     * @param {number} spawnAlpha Alpha value for fade-in animation.
+     */
+    renderTreeLabel(node, spawnAlpha = 1) {
+        if (!node.hash) return;
+
+        const text = shortenHash(node.hash);
+        const halfSize = (node.size ?? TREE_NODE_SIZE) / 2;
+
+        this.ctx.save();
+        this.ctx.font = LABEL_FONT;
+        this.ctx.textBaseline = "middle";
+        this.ctx.textAlign = "left";
+
+        const offset = halfSize + LABEL_PADDING;
+        const labelX = node.x + offset;
+        const labelY = node.y;
+
+        this.ctx.lineWidth = 3;
+        this.ctx.lineJoin = "round";
+        this.ctx.strokeStyle = this.palette.labelHalo;
+        this.ctx.globalAlpha = 0.9 * spawnAlpha;
+        this.ctx.strokeText(text, labelX, labelY);
+
+        this.ctx.globalAlpha = spawnAlpha;
+        this.ctx.fillStyle = this.palette.treeLabelText;
+        this.ctx.fillText(text, labelX, labelY);
+
+        this.ctx.restore();
+    }
+
+    /**
      * Draws a rounded rectangle path for branch nodes.
      *
      * @param {number} x Starting X coordinate.
@@ -420,7 +548,12 @@ export class GraphRenderer {
         this.ctx.lineTo(x + width - r, y);
         this.ctx.quadraticCurveTo(x + width, y, x + width, y + r);
         this.ctx.lineTo(x + width, y + height - r);
-        this.ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        this.ctx.quadraticCurveTo(
+            x + width,
+            y + height,
+            x + width - r,
+            y + height,
+        );
         this.ctx.lineTo(x + r, y + height);
         this.ctx.quadraticCurveTo(x, y + height, x, y + height - r);
         this.ctx.lineTo(x, y + r);
@@ -428,4 +561,3 @@ export class GraphRenderer {
         this.ctx.closePath();
     }
 }
-

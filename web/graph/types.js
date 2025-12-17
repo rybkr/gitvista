@@ -62,6 +62,10 @@
  * @property {string} branchNodeBorder Branch node stroke color.
  * @property {string} branchLabelText Branch label text color.
  * @property {string} branchLink Branch link color.
+ * @property {string} treeNode Tree node fill color.
+ * @property {string} treeNodeBorder Tree node border color.
+ * @property {string} treeLabelText Tree label text color.
+ * @property {string} treeLink Tree link color.
  * @property {string} nodeHighlight Node highlight fill color.
  * @property {string} nodeHighlightGlow Glow color for highlighted nodes.
  * @property {string} nodeHighlightCore Inner highlight color for commits.

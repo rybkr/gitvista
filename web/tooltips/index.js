@@ -100,6 +100,9 @@ export class TooltipManager {
         if (node.type === "branch") {
             return node.branch === highlightKey;
         }
+        if (node.type === "tree") {
+            return node.hash === highlightKey;
+        }
 
         return false;
     }
@@ -123,4 +126,3 @@ export class TooltipManager {
 
 export { CommitTooltip } from "./commitTooltip.js";
 export { BranchTooltip } from "./branchTooltip.js";
-
