@@ -48,6 +48,7 @@ export function createGraphController(rootElement) {
 
     let viewportWidth = 0;
     let viewportHeight = 0;
+    let currentTreeCommitHash = null;
 
     const simulation = d3
         .forceSimulation(nodes)
@@ -92,6 +93,10 @@ export function createGraphController(rootElement) {
         tooltipManager.updatePosition(zoomTransform);
     };
     const hideTooltip = () => {
+        if (currentTreeCommitHash) {
+            removeTreeNodeForCommit(currentTreeCommitHash);
+            currentTreeCommitHash = null;
+        }
         tooltipManager.hideAll();
         render();
     };
@@ -199,11 +204,20 @@ export function createGraphController(rootElement) {
         if (tooltipManager.isVisible() && currentTarget === targetNode) {
             hideTooltip();
         } else {
+            if (
+                currentTreeCommitHash &&
+                currentTreeCommitHash !== targetNode.hash
+            ) {
+                removeTreeNodeForCommit(currentTreeCommitHash);
+            }
+
             showTooltip(targetNode);
 
             if (targetNode.type === "commit") {
-                loadTreeNodeForCommit(targetNode).catch(error => {
+                currentTreeCommitHash = targetNode.hash;
+                loadTreeNodeForCommit(targetNode).catch((error) => {
                     console.error("Error loading tree node:", error);
+                    currentTreeCommitHash = null; // Reset on error
                 });
             }
         }
@@ -417,8 +431,21 @@ export function createGraphController(rootElement) {
             pendingBranchAlignments.push({ branchNode, targetNode });
         }
 
-        nodes.splice(0, nodes.length, ...nextCommitNodes, ...nextBranchNodes);
-        links.splice(0, links.length, ...nextLinks);
+        const nextTreeNodes = [];
+        for (const [treeHash, treeNode] of existingTreeNodes.entries()) {
+            nextTreeNodes.push(treeNode);
+        }
+        nodes.splice(
+            0,
+            nodes.length,
+            ...nextCommitNodes,
+            ...nextBranchNodes,
+            ...nextTreeNodes,
+        );
+
+        const existingTreeLinks = links.filter((link) => link.kind === "tree");
+        const allLinks = [...nextLinks, ...existingTreeLinks];
+        links.splice(0, links.length, ...allLinks);
 
         if (dragState && !nodes.includes(dragState.node)) {
             releaseDrag();
@@ -427,6 +454,18 @@ export function createGraphController(rootElement) {
         const currentTarget = tooltipManager.getTargetData();
         if (currentTarget && !nodes.includes(currentTarget)) {
             hideTooltip();
+        }
+
+        if (currentTreeCommitHash) {
+            const commitStillExists = nodes.some(
+                (node) =>
+                    node.type === "commit" &&
+                    node.hash === currentTreeCommitHash,
+            );
+            if (!commitStillExists) {
+                removeTreeNodeForCommit(currentTreeCommitHash);
+                currentTreeCommitHash = null;
+            }
         }
 
         simulation.nodes(nodes);
@@ -588,6 +627,41 @@ export function createGraphController(rootElement) {
             console.error(`Failed to load tree ${treeHash}:`, error);
             return null;
         }
+    }
+
+    function removeTreeNodeForCommit(commitHash) {
+        if (!commitHash) {
+            return;
+        }
+
+        const commitNode = nodes.find(
+            (node) => node.type === "commit" && node.hash === commitHash,
+        );
+        if (!commitNode || !commitNode.commit || !commitNode.commit.tree) {
+            return;
+        }
+        const treeHash = commitNode.commit.tree;
+
+        const treeNodeIndex = nodes.findIndex(
+            (node) => node.type === "tree" && node.hash === treeHash,
+        );
+        if (treeNodeIndex !== -1) {
+            nodes.splice(treeNodeIndex, 1);
+        }
+
+        const treeLinkIndex = links.findIndex(
+            (link) =>
+                link.kind === "tree" &&
+                link.target &&
+                link.target.hash === treeHash,
+        );
+        if (treeLinkIndex !== -1) {
+            links.splice(treeLinkIndex, 1);
+        }
+
+        simulation.nodes(nodes);
+        simulation.force("link").links(links);
+        render();
     }
 
     function render() {

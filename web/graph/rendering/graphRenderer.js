@@ -233,8 +233,8 @@ export class GraphRenderer {
             }
         }
         for (const node of nodes) {
-            if (node.type === "branch") {
-                this.renderBranchNode(node, highlightKey);
+            if (node.type === "tree") {
+                this.renderTreeNode(node, highlightKey);
             }
         }
     }
