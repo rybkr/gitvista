@@ -54,6 +54,7 @@ func (s *Server) Start() error {
 	http.Handle("/", fs)
 
 	http.HandleFunc("/api/repository", s.handleRepository)
+    http.HandleFunc("/api/tree/", s.handleTree)
 	http.HandleFunc("/api/ws", s.handleWebSocket)
 
 	s.wg.Add(1)
