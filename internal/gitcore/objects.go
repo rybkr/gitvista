@@ -70,6 +70,10 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 			if tag, err := r.parseTagBody(content, id); err == nil {
 				return tag, nil
 			}
+        case strings.HasPrefix(header, "tree"):
+            if tree, err := r.parseTreeBody(content, id); err == nil {
+                return tree, nil
+            }
 		default:
 			err = fmt.Errorf("unrecognized object: %q", header)
 		}
@@ -199,6 +203,8 @@ func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (O
 		return r.parseCommitBody(objectData, id)
 	case TagObject:
 		return r.parseTagBody(objectData, id)
+    case TreeObject:
+        return r.parseTreeBody(objectData, id)
 	default:
 		return nil, fmt.Errorf("unknown object type: %d", objectType)
 	}
@@ -296,6 +302,78 @@ func (r *Repository) parseTagBody(body []byte, id Hash) (*Tag, error) {
 	tag.Message = strings.TrimSpace(tag.Message)
 
 	return tag, nil
+}
+
+// parseTreeBody parses the body of a tree object into a Tree struct.
+func (r *Repository) parseTreeBody(body []byte, id Hash) (*Tree, error) {
+	tree := &Tree{
+		ID:      id,
+		Entries: make([]TreeEntry, 0),
+	}
+	reader := bytes.NewReader(body)
+
+	for {
+		var modeBuilder strings.Builder
+		for {
+			b, err := reader.ReadByte()
+			if err == io.EOF {
+				return tree, nil
+			}
+			if err != nil {
+				return nil, fmt.Errorf("failed to read mode: %w", err)
+			}
+			if b == ' ' {
+				break
+			}
+			modeBuilder.WriteByte(b)
+		}
+		mode := modeBuilder.String()
+
+		var nameBuilder strings.Builder
+		for {
+			b, err := reader.ReadByte()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read name: %w", err)
+			}
+			if b == 0 {
+				break
+			}
+			nameBuilder.WriteByte(b)
+		}
+		name := nameBuilder.String()
+
+		var hashBytes [20]byte
+		if _, err := io.ReadFull(reader, hashBytes[:]); err != nil {
+			return nil, fmt.Errorf("failed to read hash: %w", err)
+		}
+
+		hash, err := NewHashFromBytes(hashBytes)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hash in tree entry: %w", err)
+		}
+
+		// Determine type based on mode:
+		//  - 100644/100755 = blob (file)
+		//  - 040000 = tree (directory)
+		//  - 120000/160000 = commit (submodule)
+		var entryType string
+		if strings.HasPrefix(mode, "100") {
+			entryType = "blob"
+		} else if mode == "040000" {
+			entryType = "tree"
+		} else if mode == "120000" || mode == "160000" {
+			entryType = "commit"
+		} else {
+			entryType = "unknown"
+		}
+
+		tree.Entries = append(tree.Entries, TreeEntry{
+			ID:   hash,
+			Name: name,
+			Mode: mode,
+			Type: entryType,
+		})
+	}
 }
 
 // readCompressedData reads and decompresses zlib-compressed data at the current file position.

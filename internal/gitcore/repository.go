@@ -90,6 +90,21 @@ func (r *Repository) Branches() map[string]Hash {
     return result
 }
 
+// GetTree loads and returns a tree object by its hash.
+func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
+    object, err := r.readObject(treeHash)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read tree object: %w", err)
+    }
+
+    tree, ok := object.(*Tree)
+    if !ok {
+        return nil, fmt.Errorf("object %s is not a tree", treeHash)
+    }
+
+    return tree, nil
+}
+
 // Diff returns the difference between this repository and another,
 // represented as a RepositoryDelta struct.
 // It treats r as the new repository and old as the old repository.

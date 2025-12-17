@@ -48,6 +48,7 @@ type ObjectType int
 const (
 	NoneObject   ObjectType = 0
 	CommitObject ObjectType = 1
+	TreeObject   ObjectType = 2
 	TagObject    ObjectType = 4
 )
 
@@ -58,6 +59,8 @@ func StrToObjectType(s string) ObjectType {
 		return CommitObject
 	case "tag":
 		return TagObject
+	case "tree":
+		return TreeObject
 	default:
 		return NoneObject
 	}
@@ -91,6 +94,24 @@ type Tag struct {
 // Type returns the object type for a Tag.
 func (t *Tag) Type() ObjectType {
 	return TagObject
+}
+
+// TreeEntry represents a single entry in a Git tree object.
+type TreeEntry struct {
+	ID   Hash   `json:"hash"`
+	Name string `json:"name"`
+	Mode string `json:"mode"`
+	Type string `json:"type"`
+}
+
+// Tree represents a Git tree object.
+type Tree struct {
+	ID      Hash        `json:"hash"`
+	Entries []TreeEntry `json:"entries"`
+}
+
+func (t *Tree) Type() ObjectType {
+    return TreeObject
 }
 
 // Signature represents a Git author or committer signature with name, email, and timestamp.
