@@ -1,33 +1,37 @@
 :root {
     color-scheme: light dark;
-    --bg-color: #f6f8fa;
+    --bg-color: #f8f8f6;
     --text-color: #1f2328;
     --surface-color: #ffffff;
     --border-color: #d0d7de;
-    --node-color: #0969da;
-    --link-color: #afb8c1;
+    --node-color: #3273dc;
+    --link-color: #c4c9cf;
     --label-text-color: #24292f;
-    --label-halo-color: rgba(246, 248, 250, 0.92);
-    --node-highlight-color: #1f6feb;
-    --node-highlight-glow: rgba(79, 140, 255, 0.45);
-    --node-highlight-core: #dbe9ff;
-    --node-highlight-ring: #1f6feb;
+    --label-halo-color: rgba(248, 248, 246, 0.92);
+    --node-highlight-color: #2563eb;
+    --node-highlight-glow: rgba(59, 130, 246, 0.40);
+    --node-highlight-core: #dbeafe;
+    --node-highlight-ring: #2563eb;
+    --merge-node-color: #0e7c6b;
+    --node-shadow-color: rgba(0, 0, 0, 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg-color: #010409;
-        --text-color: #f0f6fc;
-        --surface-color: #0d1117;
-        --border-color: #30363d;
-        --node-color: #2f81f7;
-        --link-color: #484f58;
-        --label-text-color: #f0f6fc;
-        --label-halo-color: rgba(1, 4, 9, 0.85);
-        --node-highlight-color: #539bf5;
-        --node-highlight-glow: rgba(83, 155, 245, 0.45);
-        --node-highlight-core: #1e2a3a;
-        --node-highlight-ring: #539bf5;
+        --bg-color: #110f16;
+        --text-color: #e8e6f0;
+        --surface-color: #141218;
+        --border-color: #2e2c38;
+        --node-color: #5b9cf5;
+        --link-color: #3d4350;
+        --label-text-color: #e8e6f0;
+        --label-halo-color: rgba(20, 18, 24, 0.88);
+        --node-highlight-color: #6dacf8;
+        --node-highlight-glow: rgba(91, 156, 245, 0.40);
+        --node-highlight-core: #1e2640;
+        --node-highlight-ring: #6dacf8;
+        --merge-node-color: #2dd4a8;
+        --node-shadow-color: rgba(0, 0, 0, 0.5);
     }
 }
 
@@ -80,7 +84,7 @@ canvas {
 
 @media (prefers-color-scheme: dark) {
     .graph-controls {
-        background: rgba(1, 4, 9, 0.6);
+        background: rgba(20, 18, 24, 0.6);
     }
 }
 
@@ -207,7 +211,7 @@ canvas {
     height: 8px;
     border-radius: 50%;
     background: var(--node-color);
-    box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.2);
+    box-shadow: 0 0 0 2px rgba(50, 115, 220, 0.2);
 }
 
 .branch-tooltip-target {

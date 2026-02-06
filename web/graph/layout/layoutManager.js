@@ -3,10 +3,7 @@
  * Manages force simulation configuration and timeline positioning.
  */
 
-import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
 import {
-	CHARGE_STRENGTH,
-	COLLISION_RADIUS,
 	LINK_DISTANCE,
 	TIMELINE_AUTO_CENTER_ALPHA,
 	TIMELINE_MARGIN,
@@ -40,7 +37,6 @@ export class LayoutManager {
 	updateViewport(width, height) {
 		this.viewportWidth = width;
 		this.viewportHeight = height;
-		this.simulation.force("center", d3.forceCenter(width / 2, height / 2));
 	}
 
 	/**
@@ -188,7 +184,7 @@ export class LayoutManager {
 	 */
 	boostSimulation(structureChanged) {
 		const currentAlpha = this.simulation.alpha();
-		const desiredAlpha = structureChanged ? 0.28 : 0.08;
+		const desiredAlpha = structureChanged ? 0.15 : 0.05;
 		const nextAlpha = Math.max(currentAlpha, desiredAlpha);
 		this.simulation.alpha(nextAlpha).restart();
 		this.simulation.alphaTarget(0);

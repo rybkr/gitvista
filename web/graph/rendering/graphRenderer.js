@@ -11,10 +11,14 @@ import {
     BRANCH_NODE_PADDING_Y,
     BRANCH_NODE_RADIUS,
     HIGHLIGHT_NODE_RADIUS,
+    HIGHLIGHT_MERGE_NODE_RADIUS,
     LABEL_FONT,
     LABEL_PADDING,
     LINK_THICKNESS,
+    MERGE_NODE_RADIUS,
     NODE_RADIUS,
+    NODE_SHADOW_BLUR,
+    NODE_SHADOW_OFFSET_Y,
     TREE_NODE_SIZE,
     TREE_NODE_HIGHLIGHT_SIZE,
 } from "../constants.js";
@@ -247,11 +251,14 @@ export class GraphRenderer {
      */
     renderCommitNode(node, highlightKey) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
+        const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
 
-        const currentRadius = node.radius ?? NODE_RADIUS;
-        const targetRadius = isHighlighted
-            ? HIGHLIGHT_NODE_RADIUS
-            : NODE_RADIUS;
+        const baseRadius = isMerge ? MERGE_NODE_RADIUS : NODE_RADIUS;
+        const highlightRadius = isMerge
+            ? HIGHLIGHT_MERGE_NODE_RADIUS
+            : HIGHLIGHT_NODE_RADIUS;
+        const currentRadius = node.radius ?? baseRadius;
+        const targetRadius = isHighlighted ? highlightRadius : baseRadius;
         node.radius = currentRadius + (targetRadius - currentRadius) * 0.25;
 
         const spawnProgress =
@@ -273,9 +280,17 @@ export class GraphRenderer {
         const previousAlpha = this.ctx.globalAlpha;
         this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
         if (isHighlighted) {
-            this.renderHighlightedCommit(node, drawRadius);
+            if (isMerge) {
+                this.renderHighlightedMerge(node, drawRadius);
+            } else {
+                this.renderHighlightedCommit(node, drawRadius);
+            }
         } else {
-            this.renderNormalCommit(node, drawRadius);
+            if (isMerge) {
+                this.renderNormalMerge(node, drawRadius);
+            } else {
+                this.renderNormalCommit(node, drawRadius);
+            }
         }
         this.ctx.globalAlpha = previousAlpha;
 
@@ -289,9 +304,11 @@ export class GraphRenderer {
      */
     renderNormalCommit(node, radius) {
         this.ctx.fillStyle = this.palette.node;
+        this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
         this.ctx.fill();
+        this.clearShadow();
     }
 
     /**
@@ -321,9 +338,11 @@ export class GraphRenderer {
         gradient.addColorStop(1, this.palette.nodeHighlightRing);
 
         this.ctx.fillStyle = gradient;
+        this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
         this.ctx.fill();
+        this.clearShadow();
 
         this.ctx.save();
         this.ctx.lineWidth = 1.25;
@@ -331,6 +350,61 @@ export class GraphRenderer {
         this.ctx.globalAlpha = 0.8;
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius + 1.8, 0, Math.PI * 2);
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a non-highlighted merge commit as a diamond.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Merge commit node.
+     * @param {number} radius Half-diagonal of the diamond.
+     */
+    renderNormalMerge(node, radius) {
+        this.ctx.fillStyle = this.palette.mergeNode;
+        this.applyShadow();
+        this.drawDiamond(node.x, node.y, radius);
+        this.ctx.fill();
+        this.clearShadow();
+    }
+
+    /**
+     * Renders a highlighted merge commit diamond with glow and stroke.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Merge commit node.
+     * @param {number} radius Half-diagonal of the diamond.
+     */
+    renderHighlightedMerge(node, radius) {
+        this.ctx.save();
+        this.ctx.fillStyle = this.palette.nodeHighlightGlow;
+        this.ctx.globalAlpha = 0.35;
+        this.drawDiamond(node.x, node.y, radius + 7);
+        this.ctx.fill();
+        this.ctx.restore();
+
+        const gradient = this.ctx.createRadialGradient(
+            node.x,
+            node.y,
+            radius * 0.2,
+            node.x,
+            node.y,
+            radius,
+        );
+        gradient.addColorStop(0, this.palette.nodeHighlightCore);
+        gradient.addColorStop(0.7, this.palette.nodeHighlight);
+        gradient.addColorStop(1, this.palette.nodeHighlightRing);
+
+        this.ctx.fillStyle = gradient;
+        this.applyShadow();
+        this.drawDiamond(node.x, node.y, radius);
+        this.ctx.fill();
+        this.clearShadow();
+
+        this.ctx.save();
+        this.ctx.lineWidth = 1.25;
+        this.ctx.strokeStyle = this.palette.nodeHighlight;
+        this.ctx.globalAlpha = 0.8;
+        this.drawDiamond(node.x, node.y, radius + 1.8);
         this.ctx.stroke();
         this.ctx.restore();
     }
@@ -417,7 +491,9 @@ export class GraphRenderer {
         this.ctx.fillStyle = isHighlighted
             ? this.palette.nodeHighlight
             : this.palette.branchNode;
+        this.applyShadow();
         this.ctx.fill();
+        this.clearShadow();
         const baseLineWidth = isHighlighted ? 2 : 1.5;
         this.ctx.lineWidth = baseLineWidth / scale;
         this.ctx.strokeStyle = isHighlighted
@@ -482,7 +558,9 @@ export class GraphRenderer {
         this.ctx.fillStyle = isHighlighted
             ? this.palette.nodeHighlight
             : this.palette.treeNode;
+        this.applyShadow();
         this.ctx.fillRect(x, y, drawSize, drawSize);
+        this.clearShadow();
 
         this.ctx.lineWidth = isHighlighted ? 2 : 1.5;
         this.ctx.strokeStyle = isHighlighted
@@ -558,6 +636,42 @@ export class GraphRenderer {
         this.ctx.quadraticCurveTo(x, y + height, x, y + height - r);
         this.ctx.lineTo(x, y + r);
         this.ctx.quadraticCurveTo(x, y, x + r, y);
+        this.ctx.closePath();
+    }
+
+    /**
+     * Applies a drop shadow to subsequent fill operations.
+     */
+    applyShadow() {
+        this.ctx.shadowBlur = NODE_SHADOW_BLUR;
+        this.ctx.shadowColor = this.palette.nodeShadow;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = NODE_SHADOW_OFFSET_Y;
+    }
+
+    /**
+     * Clears shadow state so it doesn't bleed into strokes or labels.
+     */
+    clearShadow() {
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowColor = "transparent";
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
+    }
+
+    /**
+     * Draws a diamond (rotated square) path centered on the given coordinates.
+     *
+     * @param {number} cx Center X.
+     * @param {number} cy Center Y.
+     * @param {number} radius Half-diagonal of the diamond.
+     */
+    drawDiamond(cx, cy, radius) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx, cy - radius);
+        this.ctx.lineTo(cx + radius, cy);
+        this.ctx.lineTo(cx, cy + radius);
+        this.ctx.lineTo(cx - radius, cy);
         this.ctx.closePath();
     }
 }

@@ -6,6 +6,7 @@
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
 import { TooltipManager } from "../tooltips/index.js";
 import {
+    ALPHA_DECAY,
     BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_OFFSET_Y,
     BRANCH_NODE_RADIUS,
@@ -14,9 +15,11 @@ import {
     CHARGE_STRENGTH,
     COLLISION_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
+    DRAG_ALPHA_TARGET,
     LINK_DISTANCE,
     LINK_STRENGTH,
     NODE_RADIUS,
+    VELOCITY_DECAY,
     ZOOM_MAX,
     ZOOM_MIN,
 } from "./constants.js";
@@ -52,8 +55,9 @@ export function createGraphController(rootElement) {
 
     const simulation = d3
         .forceSimulation(nodes)
+        .velocityDecay(VELOCITY_DECAY)
+        .alphaDecay(ALPHA_DECAY)
         .force("charge", d3.forceManyBody().strength(CHARGE_STRENGTH))
-        .force("center", d3.forceCenter(0, 0))
         .force("collision", d3.forceCollide().radius(COLLISION_RADIUS))
         .force(
             "link",
@@ -85,6 +89,21 @@ export function createGraphController(rootElement) {
         });
 
     canvas.style.cursor = "default";
+
+    const controls = document.createElement("div");
+    controls.className = "graph-controls";
+
+    const rebalanceBtn = document.createElement("button");
+    rebalanceBtn.textContent = "Rebalance";
+    rebalanceBtn.addEventListener("click", () => {
+        for (const node of nodes) {
+            node.fx = null;
+            node.fy = null;
+        }
+        simulation.alpha(0.8).restart();
+    });
+    controls.appendChild(rebalanceBtn);
+    rootElement.appendChild(controls);
 
     const tooltipManager = new TooltipManager(canvas);
     const renderer = new GraphRenderer(canvas, buildPalette(canvas));
@@ -269,7 +288,7 @@ export function createGraphController(rootElement) {
             }
 
             if (dragState.dragged) {
-                simulation.alphaTarget(0.4).restart();
+                simulation.alphaTarget(DRAG_ALPHA_TARGET).restart();
             }
             render();
             return;
@@ -693,6 +712,7 @@ export function createGraphController(rootElement) {
         canvas.removeEventListener("pointermove", pointerHandlers.move);
         canvas.removeEventListener("pointerup", pointerHandlers.up);
         canvas.removeEventListener("pointercancel", pointerHandlers.cancel);
+        controls.remove();
         tooltipManager.destroy();
     }
 

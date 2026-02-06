@@ -17,29 +17,26 @@ export function buildPalette(element) {
 
     return {
         background: read("--surface-color", "#ffffff"),
-        node: read("--node-color", "#0969da"),
-        link: read("--link-color", "#afb8c1"),
+        node: read("--node-color", "#3273dc"),
+        link: read("--link-color", "#c4c9cf"),
         labelText: read("--label-text-color", "#24292f"),
-        labelHalo: read("--label-halo-color", "rgba(246, 248, 250, 0.9)"),
+        labelHalo: read("--label-halo-color", "rgba(248, 248, 246, 0.92)"),
         branchNode: read("--branch-node-color", "#6f42c1"),
         branchNodeBorder: read("--branch-node-border-color", "#59339d"),
         branchLabelText: read("--branch-label-text-color", "#ffffff"),
         branchLink: read("--branch-link-color", "#6f42c1"),
-        nodeHighlight: read("--node-highlight-color", "#1f6feb"),
+        nodeHighlight: read("--node-highlight-color", "#2563eb"),
         nodeHighlightGlow: read(
             "--node-highlight-glow",
-            "rgba(79, 140, 255, 0.45)",
+            "rgba(59, 130, 246, 0.40)",
         ),
-        treeNode: read("--tree-node-color", "#fb8500"), // Orange
+        treeNode: read("--tree-node-color", "#fb8500"),
         treeNodeBorder: read("--tree-node-border-color", "#d97706"),
         treeLabelText: read("--tree-label-text-color", "#ffffff"),
         treeLink: read("--tree-link-color", "#fb8500"),
-        nodeHighlight: read("--node-highlight-color", "#1f6feb"),
-        nodeHighlightGlow: read(
-            "--node-highlight-glow",
-            "rgba(79, 140, 255, 0.45)",
-        ),
-        nodeHighlightCore: read("--node-highlight-core", "#dbe9ff"),
-        nodeHighlightRing: read("--node-highlight-ring", "#1f6feb"),
+        nodeHighlightCore: read("--node-highlight-core", "#dbeafe"),
+        nodeHighlightRing: read("--node-highlight-ring", "#2563eb"),
+        mergeNode: read("--merge-node-color", "#0e7c6b"),
+        nodeShadow: read("--node-shadow-color", "rgba(0, 0, 0, 0.18)"),
     };
 }
