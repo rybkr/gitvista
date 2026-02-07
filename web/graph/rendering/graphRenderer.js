@@ -527,8 +527,15 @@ export class GraphRenderer {
     renderTreeNode(node, highlightKey) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
 
-        const spawnProgress =
+        let spawnProgress =
             typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
+
+        // Negative spawnPhase = delayed cascade; increment toward 0 and skip rendering
+        if (spawnProgress < 0) {
+            node.spawnPhase = Math.min(0, spawnProgress + 0.06);
+            return;
+        }
+
         const easedSpawn =
             spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
         const nextSpawn =
@@ -579,8 +586,16 @@ export class GraphRenderer {
             : this.palette.treeNodeBorder;
         this.ctx.strokeRect(x, y, drawSize, drawSize);
 
+        // Indicator inside the square: "+" collapsed, file count for "dirs", "−" for "all"
         if (node.tree && node.tree.entries && node.tree.entries.length > 0) {
-            const indicator = node.expanded ? "\u2212" : "+";
+            let indicator;
+            if (node.expanded === "dirs" && node.pendingBlobs?.length > 0) {
+                indicator = String(node.pendingBlobs.length);
+            } else if (node.expanded === "all") {
+                indicator = "\u2212";
+            } else {
+                indicator = "+";
+            }
             this.ctx.font = "bold 9px sans-serif";
             this.ctx.textBaseline = "middle";
             this.ctx.textAlign = "center";
@@ -590,6 +605,15 @@ export class GraphRenderer {
 
         this.ctx.globalAlpha = previousAlpha;
         this.ctx.restore();
+
+        // File count badge when expanded === "dirs" with pending blobs
+        if (
+            node.expanded === "dirs" &&
+            node.pendingBlobs?.length > 0 &&
+            spawnAlpha > 0.3
+        ) {
+            this.renderFileCountBadge(node, node.pendingBlobs.length, spawnAlpha);
+        }
 
         if (spawnAlpha > 0.5) {
             this.renderTreeLabel(node, spawnAlpha);
@@ -631,6 +655,46 @@ export class GraphRenderer {
     }
 
     /**
+     * Renders a file count badge below-right of a tree node.
+     *
+     * @param {import("../types.js").GraphNodeTree} node Tree node to annotate.
+     * @param {number} count Number of pending blob files.
+     * @param {number} spawnAlpha Alpha value for fade-in animation.
+     */
+    renderFileCountBadge(node, count, spawnAlpha = 1) {
+        const text = String(count);
+        const halfSize = (node.size ?? TREE_NODE_SIZE) / 2;
+
+        this.ctx.save();
+        this.ctx.font = "bold 8px sans-serif";
+        this.ctx.textBaseline = "middle";
+        this.ctx.textAlign = "center";
+
+        const metrics = this.ctx.measureText(text);
+        const badgeWidth = Math.max(metrics.width + 6, 14);
+        const badgeHeight = 12;
+        const badgeX = node.x + halfSize + 2;
+        const badgeY = node.y + halfSize + 2;
+
+        this.ctx.globalAlpha = spawnAlpha * 0.9;
+        this.ctx.fillStyle = this.palette.blobNode;
+        this.drawRoundedRect(
+            badgeX - badgeWidth / 2,
+            badgeY - badgeHeight / 2,
+            badgeWidth,
+            badgeHeight,
+            badgeHeight / 2,
+        );
+        this.ctx.fill();
+
+        this.ctx.globalAlpha = spawnAlpha;
+        this.ctx.fillStyle = "#fff";
+        this.ctx.fillText(text, badgeX, badgeY);
+
+        this.ctx.restore();
+    }
+
+    /**
      * Renders a blob node as a small circle with spawn animation.
      *
      * @param {import("../types.js").GraphNodeBlob} node Blob node to paint.
@@ -639,8 +703,15 @@ export class GraphRenderer {
     renderBlobNode(node, highlightKey) {
         const isHighlighted = highlightKey && node.id === highlightKey;
 
-        const spawnProgress =
+        let spawnProgress =
             typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
+
+        // Negative spawnPhase = delayed cascade; increment toward 0 and skip rendering
+        if (spawnProgress < 0) {
+            node.spawnPhase = Math.min(0, spawnProgress + 0.06);
+            return;
+        }
+
         const easedSpawn =
             spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
         const nextSpawn =

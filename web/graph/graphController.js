@@ -24,6 +24,10 @@ import {
     VELOCITY_DECAY,
     ZOOM_MAX,
     ZOOM_MIN,
+    TREE_EXPAND_RADIUS,
+    TREE_EXPAND_ARC_SMALL,
+    TREE_EXPAND_ARC_LARGE,
+    TREE_CHILD_THRESHOLD,
 } from "./constants.js";
 import { GraphRenderer } from "./rendering/graphRenderer.js";
 import { LayoutManager } from "./layout/layoutManager.js";
@@ -689,7 +693,6 @@ export function createGraphController(rootElement) {
     }
 
     function createEntryTreeNode(entry, parentNode) {
-        const jitter = (range) => (Math.random() - 0.5) * range;
         const id = `${parentNode.id ?? parentNode.hash}:${entry.hash}`;
         return {
             type: "tree",
@@ -697,8 +700,8 @@ export function createGraphController(rootElement) {
             id,
             entryName: entry.name,
             parentTreeHash: parentNode.hash,
-            x: (parentNode.x ?? 0) + TREE_NODE_OFFSET_X + jitter(20),
-            y: (parentNode.y ?? 0) + jitter(20),
+            x: parentNode.x ?? 0,
+            y: parentNode.y ?? 0,
             vx: 0,
             vy: 0,
             spawnPhase: 0,
@@ -706,7 +709,6 @@ export function createGraphController(rootElement) {
     }
 
     function createBlobNode(entry, parentNode) {
-        const jitter = (range) => (Math.random() - 0.5) * range;
         const id = `${parentNode.id ?? parentNode.hash}:${entry.hash}`;
         return {
             type: "blob",
@@ -715,24 +717,128 @@ export function createGraphController(rootElement) {
             entryName: entry.name,
             parentTreeHash: parentNode.hash,
             mode: entry.mode,
-            x: (parentNode.x ?? 0) + jitter(20),
-            y: (parentNode.y ?? 0) + jitter(20),
+            x: parentNode.x ?? 0,
+            y: parentNode.y ?? 0,
             vx: 0,
             vy: 0,
             spawnPhase: 0,
         };
     }
 
+    function positionChildrenRadially(parentNode, children) {
+        const n = children.length;
+        if (n === 0) return;
+
+        // Compute direction away from the parent's own parent (commit or parent tree).
+        let dirX = 1;
+        let dirY = 0;
+        const parentLink = links.find((link) => {
+            const target =
+                typeof link.target === "object" ? link.target : null;
+            return target === parentNode;
+        });
+        if (parentLink) {
+            const source =
+                typeof parentLink.source === "object"
+                    ? parentLink.source
+                    : null;
+            if (source) {
+                const dx = parentNode.x - source.x;
+                const dy = parentNode.y - source.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 0.1) {
+                    dirX = dx / dist;
+                    dirY = dy / dist;
+                }
+            }
+        }
+
+        const baseAngle = Math.atan2(dirY, dirX);
+        const arc =
+            n <= TREE_CHILD_THRESHOLD
+                ? TREE_EXPAND_ARC_SMALL
+                : TREE_EXPAND_ARC_LARGE;
+        const startAngle = baseAngle - arc / 2;
+
+        for (let i = 0; i < n; i++) {
+            const angle =
+                n === 1 ? baseAngle : startAngle + (arc / (n - 1)) * i;
+            children[i].x =
+                (parentNode.x ?? 0) + Math.cos(angle) * TREE_EXPAND_RADIUS;
+            children[i].y =
+                (parentNode.y ?? 0) + Math.sin(angle) * TREE_EXPAND_RADIUS;
+        }
+    }
+
+    function pinParentDuringExpand(treeNode) {
+        treeNode.fx = treeNode.x;
+        treeNode.fy = treeNode.y;
+        const expandedState = treeNode.expanded;
+        setTimeout(() => {
+            // Only release if still expanded (user hasn't collapsed)
+            if (treeNode.expanded === expandedState) {
+                treeNode.fx = null;
+                treeNode.fy = null;
+            }
+        }, 600);
+    }
+
     async function expandTreeNode(treeNode) {
-        if (treeNode.expanded) {
+        // Third click: expanded === "all" → collapse
+        if (treeNode.expanded === "all") {
             collapseTreeNode(treeNode);
             simulation.nodes(nodes);
             simulation.force("link").links(links);
-            layoutManager.boostSimulation(true);
+            layoutManager.boostForTreeExpand();
             render();
             return;
         }
 
+        // Second click: expanded === "dirs" → show blobs
+        if (treeNode.expanded === "dirs") {
+            const pendingBlobs = treeNode.pendingBlobs || [];
+            if (pendingBlobs.length === 0) {
+                // No blobs to show, collapse
+                collapseTreeNode(treeNode);
+                simulation.nodes(nodes);
+                simulation.force("link").links(links);
+                layoutManager.boostForTreeExpand();
+                render();
+                return;
+            }
+
+            const blobChildren = [];
+            for (let i = 0; i < pendingBlobs.length; i++) {
+                const entry = pendingBlobs[i];
+                const childNode = createBlobNode(entry, treeNode);
+                childNode.spawnPhase = -0.08 * i;
+                treeNode.childIds.push(childNode.id);
+                blobChildren.push(childNode);
+            }
+
+            positionChildrenRadially(treeNode, blobChildren);
+            for (const childNode of blobChildren) {
+                nodes.push(childNode);
+                links.push({
+                    source: treeNode,
+                    target: childNode,
+                    kind: "blob",
+                    warmup: 0,
+                });
+            }
+
+            treeNode.expanded = "all";
+            treeNode.pendingBlobs = null;
+            pinParentDuringExpand(treeNode);
+            simulation.nodes(nodes);
+            simulation.force("link").links(links);
+            simulation.alpha(Math.max(simulation.alpha(), 0.08));
+            layoutManager.boostForTreeExpand();
+            render();
+            return;
+        }
+
+        // First click: collapsed → fetch tree, show dirs only
         if (!treeNode.tree) {
             try {
                 treeNode.tree = await fetchTree(treeNode.hash);
@@ -747,33 +853,58 @@ export function createGraphController(rootElement) {
             return;
         }
 
-        treeNode.expanded = true;
+        const dirEntries = entries.filter((e) => e.type === "tree");
+        const blobEntries = entries.filter((e) => e.type !== "tree");
+
         treeNode.childIds = [];
 
-        for (const entry of entries) {
+        // If there are no dirs, go straight to "all"
+        const showDirs = dirEntries.length > 0;
+        const entriesToShow = showDirs ? dirEntries : entries;
+        const blobsForLater = showDirs ? blobEntries : [];
+
+        const children = [];
+        for (let i = 0; i < entriesToShow.length; i++) {
+            const entry = entriesToShow[i];
             let childNode;
-            let linkKind;
             if (entry.type === "tree") {
                 childNode = createEntryTreeNode(entry, treeNode);
-                linkKind = "tree";
             } else {
                 childNode = createBlobNode(entry, treeNode);
-                linkKind = "blob";
             }
-
+            childNode.spawnPhase = -0.08 * i;
             treeNode.childIds.push(childNode.id);
+            children.push({ node: childNode, entry });
+        }
+
+        positionChildrenRadially(
+            treeNode,
+            children.map((c) => c.node),
+        );
+
+        for (const { node: childNode, entry } of children) {
             nodes.push(childNode);
             links.push({
                 source: treeNode,
                 target: childNode,
-                kind: linkKind,
+                kind: entry.type === "tree" ? "tree" : "blob",
                 warmup: 0,
             });
         }
 
+        if (showDirs) {
+            treeNode.expanded = "dirs";
+            treeNode.pendingBlobs = blobsForLater;
+        } else {
+            treeNode.expanded = "all";
+            treeNode.pendingBlobs = null;
+        }
+
+        pinParentDuringExpand(treeNode);
         simulation.nodes(nodes);
         simulation.force("link").links(links);
-        layoutManager.boostSimulation(true);
+        simulation.alpha(Math.max(simulation.alpha(), 0.08));
+        layoutManager.boostForTreeExpand();
         render();
     }
 
@@ -810,6 +941,7 @@ export function createGraphController(rootElement) {
 
         treeNode.expanded = false;
         treeNode.childIds = [];
+        treeNode.pendingBlobs = null;
     }
 
     async function loadTreeNodeForCommit(commitNode) {

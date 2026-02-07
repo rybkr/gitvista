@@ -49,4 +49,8 @@ export const BLOB_NODE_RADIUS = 5;
 export const BLOB_NODE_HIGHLIGHT_RADIUS = 7;
 export const NODE_SHADOW_BLUR = 6;
 export const NODE_SHADOW_OFFSET_Y = 2;
+export const TREE_EXPAND_RADIUS = 40;
+export const TREE_EXPAND_ARC_SMALL = Math.PI;      // semicircle for <=8 children
+export const TREE_EXPAND_ARC_LARGE = Math.PI * 1.8; // near-full circle for >8
+export const TREE_CHILD_THRESHOLD = 8;
 

@@ -178,6 +178,16 @@ export class LayoutManager {
 	}
 
 	/**
+	 * Gently warms the simulation for tree expand/collapse operations.
+	 * Uses a much lower alpha than boostSimulation to avoid scattering the graph.
+	 */
+	boostForTreeExpand() {
+		const currentAlpha = this.simulation.alpha();
+		this.simulation.alpha(Math.max(currentAlpha, 0.04)).restart();
+		this.simulation.alphaTarget(0);
+	}
+
+	/**
 	 * Boosts simulation alpha when graph structure changes.
 	 *
 	 * @param {boolean} structureChanged True when nodes or links changed materially.
