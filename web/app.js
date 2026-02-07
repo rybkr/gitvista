@@ -1,6 +1,7 @@
 import { logger } from "./logger.js";
 import { createGraph } from "./graph.js";
 import { startBackend } from "./backend.js";
+import { createSidebar } from "./sidebar.js";
 
 document.addEventListener("DOMContentLoaded", () => {
     logger.info("Bootstrapping frontend");
@@ -10,6 +11,10 @@ document.addEventListener("DOMContentLoaded", () => {
         logger.error("Root element not found");
         return;
     }
+
+    const sidebar = createSidebar();
+    root.parentElement.insertBefore(sidebar.el, root);
+    root.appendChild(sidebar.expandBtn);
 
     const graph = createGraph(root);
 
