@@ -65,7 +65,8 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 	s.cacheMu.RUnlock()
 
 	message := UpdateMessage{
-		Delta: repo.Diff(&gitcore.Repository{}),
+		Delta:  repo.Diff(&gitcore.Repository{}),
+		Status: getWorkingTreeStatus(repo.WorkDir()),
 	}
 
 	conn.SetWriteDeadline(time.Now().Add(writeWait))

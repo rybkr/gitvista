@@ -1,6 +1,6 @@
-export async function startBackend({ onDelta, logger }) {
+export async function startBackend({ onDelta, onStatus, logger }) {
     await loadRepositoryMetadata(logger);
-    return openWebSocket({ onDelta, logger });
+    return openWebSocket({ onDelta, onStatus, logger });
 }
 
 async function loadRepositoryMetadata(logger) {
@@ -17,7 +17,7 @@ async function loadRepositoryMetadata(logger) {
     }
 }
 
-function openWebSocket({ onDelta, logger }) {
+function openWebSocket({ onDelta, onStatus, logger }) {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const url = `${protocol}://${window.location.host}/api/ws`;
     logger?.info("Opening WebSocket connection", url);
@@ -45,6 +45,9 @@ function openWebSocket({ onDelta, logger }) {
                 const payload = JSON.parse(event.data);
                 if (payload?.delta) {
                     onDelta?.(payload.delta);
+                }
+                if (payload?.status) {
+                    onStatus?.(payload.status);
                 }
             } catch (error) {
                 logger?.warn("Failed to parse WebSocket payload", error);

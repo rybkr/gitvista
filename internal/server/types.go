@@ -12,7 +12,8 @@ const (
 	logInfo    = "[>]"
 )
 
-// UpdateMessage is sents to clients via WebSocket.
+// UpdateMessage is sent to clients via WebSocket.
 type UpdateMessage struct {
-	Delta *gitcore.RepositoryDelta `json:"delta"`
+	Delta  *gitcore.RepositoryDelta `json:"delta"`
+	Status *WorkingTreeStatus       `json:"status,omitempty"`
 }

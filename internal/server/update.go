@@ -33,8 +33,10 @@ func (s *Server) updateRepository() {
 	s.cached.repo = newRepo
 	s.cacheMu.Unlock()
 
-	if !delta.IsEmpty() {
-		s.broadcastUpdate(UpdateMessage{Delta: delta})
+	status := getWorkingTreeStatus(newRepo.WorkDir())
+
+	if !delta.IsEmpty() || status != nil {
+		s.broadcastUpdate(UpdateMessage{Delta: delta, Status: status})
 	} else {
 		log.Println("No changes detected")
 	}

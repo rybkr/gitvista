@@ -390,3 +390,143 @@ canvas {
     font-size: 11px;
     color: rgba(99, 110, 123, 0.7);
 }
+
+/* ── Index View ── */
+
+.index-view {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.index-heading {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(99, 110, 123, 0.8);
+    padding: 0 4px 8px;
+}
+
+.index-section.is-empty {
+    display: none;
+}
+
+.index-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 4px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s ease;
+}
+
+.index-section-header:hover {
+    background: rgba(148, 163, 184, 0.12);
+}
+
+.index-chevron {
+    display: inline-flex;
+    transition: transform 0.15s ease;
+    transform: rotate(90deg);
+}
+
+.index-section.is-collapsed .index-chevron {
+    transform: rotate(0deg);
+}
+
+.index-section.is-collapsed .index-file-list {
+    display: none;
+}
+
+.index-section-title {
+    flex: 1;
+}
+
+.index-badge {
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 20px;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+}
+
+.index-badge--staged {
+    background: rgba(46, 160, 67, 0.15);
+    color: #2ea043;
+}
+
+.index-badge--modified {
+    background: rgba(210, 153, 34, 0.15);
+    color: #d29922;
+}
+
+.index-badge--untracked {
+    background: rgba(148, 163, 184, 0.15);
+    color: rgba(99, 110, 123, 0.9);
+}
+
+@media (prefers-color-scheme: dark) {
+    .index-badge--staged {
+        background: rgba(63, 185, 80, 0.15);
+        color: #3fb950;
+    }
+
+    .index-badge--modified {
+        background: rgba(210, 153, 34, 0.15);
+        color: #d29922;
+    }
+
+    .index-badge--untracked {
+        background: rgba(148, 163, 184, 0.12);
+        color: rgba(148, 163, 184, 0.7);
+    }
+}
+
+.index-file-list {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 4px;
+}
+
+.index-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 4px 3px 26px;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: background-color 0.1s ease;
+}
+
+.index-file:hover {
+    background: rgba(148, 163, 184, 0.1);
+}
+
+.index-file-code {
+    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-weight: 600;
+    font-size: 11px;
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    color: rgba(99, 110, 123, 0.8);
+}
+
+.index-file-path {
+    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}

@@ -70,6 +70,11 @@ func (r *Repository) GitDir() string {
 	return r.gitDir
 }
 
+// WorkDir returns the path to the repository's working directory.
+func (r *Repository) WorkDir() string {
+	return r.workDir
+}
+
 // Commits returns a map of all commit IDs to Commit structs.
 func (r *Repository) Commits() map[Hash]*Commit {
 	result := make(map[Hash]*Commit)
