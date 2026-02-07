@@ -6,6 +6,8 @@
 import {
     ARROW_LENGTH,
     ARROW_WIDTH,
+    BLOB_NODE_HIGHLIGHT_RADIUS,
+    BLOB_NODE_RADIUS,
     BRANCH_NODE_CORNER_RADIUS,
     BRANCH_NODE_PADDING_X,
     BRANCH_NODE_PADDING_Y,
@@ -163,6 +165,8 @@ export class GraphRenderer {
             color = this.palette.branchLink;
         } else if (linkKind === "tree") {
             color = this.palette.treeLink;
+        } else if (linkKind === "blob") {
+            color = this.palette.blobNodeBorder;
         } else {
             color = this.palette.link;
         }
@@ -172,6 +176,8 @@ export class GraphRenderer {
             targetRadius = BRANCH_NODE_RADIUS;
         } else if (target.type === "tree") {
             targetRadius = TREE_NODE_SIZE / 2;
+        } else if (target.type === "blob") {
+            targetRadius = BLOB_NODE_RADIUS;
         }
 
         this.renderArrow(source, target, dx, dy, distance, targetRadius, color);
@@ -239,6 +245,11 @@ export class GraphRenderer {
         for (const node of nodes) {
             if (node.type === "tree") {
                 this.renderTreeNode(node, highlightKey);
+            }
+        }
+        for (const node of nodes) {
+            if (node.type === "blob") {
+                this.renderBlobNode(node, highlightKey);
             }
         }
     }
@@ -568,6 +579,15 @@ export class GraphRenderer {
             : this.palette.treeNodeBorder;
         this.ctx.strokeRect(x, y, drawSize, drawSize);
 
+        if (node.tree && node.tree.entries && node.tree.entries.length > 0) {
+            const indicator = node.expanded ? "\u2212" : "+";
+            this.ctx.font = "bold 9px sans-serif";
+            this.ctx.textBaseline = "middle";
+            this.ctx.textAlign = "center";
+            this.ctx.fillStyle = this.palette.treeLabelText;
+            this.ctx.fillText(indicator, node.x, node.y + 0.5);
+        }
+
         this.ctx.globalAlpha = previousAlpha;
         this.ctx.restore();
 
@@ -585,7 +605,7 @@ export class GraphRenderer {
     renderTreeLabel(node, spawnAlpha = 1) {
         if (!node.hash) return;
 
-        const text = shortenHash(node.hash);
+        const text = node.entryName || shortenHash(node.hash);
         const halfSize = (node.size ?? TREE_NODE_SIZE) / 2;
 
         this.ctx.save();
@@ -605,6 +625,110 @@ export class GraphRenderer {
 
         this.ctx.globalAlpha = spawnAlpha;
         this.ctx.fillStyle = this.palette.treeLabelText;
+        this.ctx.fillText(text, labelX, labelY);
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a blob node as a small circle with spawn animation.
+     *
+     * @param {import("../types.js").GraphNodeBlob} node Blob node to paint.
+     * @param {string|null} highlightKey Current highlight identifier.
+     */
+    renderBlobNode(node, highlightKey) {
+        const isHighlighted = highlightKey && node.id === highlightKey;
+
+        const spawnProgress =
+            typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
+        const easedSpawn =
+            spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
+        const nextSpawn =
+            spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
+        if (nextSpawn >= 1) {
+            delete node.spawnPhase;
+        } else {
+            node.spawnPhase = nextSpawn;
+        }
+        const spawnAlpha = Math.max(0, Math.min(1, easedSpawn));
+        const scale = 0.6 + 0.4 * spawnAlpha;
+
+        const baseRadius = BLOB_NODE_RADIUS;
+        const targetRadius = isHighlighted
+            ? BLOB_NODE_HIGHLIGHT_RADIUS
+            : baseRadius;
+        const currentRadius = node.radius ?? baseRadius;
+        node.radius = currentRadius + (targetRadius - currentRadius) * 0.25;
+        const drawRadius = node.radius * scale;
+
+        this.ctx.save();
+        const previousAlpha = this.ctx.globalAlpha;
+        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
+
+        if (isHighlighted) {
+            this.ctx.save();
+            this.ctx.fillStyle = this.palette.nodeHighlightGlow;
+            this.ctx.globalAlpha = 0.3;
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, drawRadius + 4, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+        }
+
+        this.ctx.fillStyle = isHighlighted
+            ? this.palette.nodeHighlight
+            : this.palette.blobNode;
+        this.applyShadow();
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, drawRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.clearShadow();
+
+        this.ctx.lineWidth = isHighlighted ? 2 : 1.5;
+        this.ctx.strokeStyle = isHighlighted
+            ? this.palette.nodeHighlightRing
+            : this.palette.blobNodeBorder;
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, drawRadius, 0, Math.PI * 2);
+        this.ctx.stroke();
+
+        this.ctx.globalAlpha = previousAlpha;
+        this.ctx.restore();
+
+        if (spawnAlpha > 0.5) {
+            this.renderBlobLabel(node, spawnAlpha);
+        }
+    }
+
+    /**
+     * Draws the text label alongside a blob node.
+     *
+     * @param {import("../types.js").GraphNodeBlob} node Blob node to annotate.
+     * @param {number} spawnAlpha Alpha value for fade-in animation.
+     */
+    renderBlobLabel(node, spawnAlpha = 1) {
+        if (!node.entryName) return;
+
+        const text = node.entryName;
+        const radius = node.radius ?? BLOB_NODE_RADIUS;
+
+        this.ctx.save();
+        this.ctx.font = LABEL_FONT;
+        this.ctx.textBaseline = "middle";
+        this.ctx.textAlign = "left";
+
+        const offset = radius + LABEL_PADDING;
+        const labelX = node.x + offset;
+        const labelY = node.y;
+
+        this.ctx.lineWidth = 3;
+        this.ctx.lineJoin = "round";
+        this.ctx.strokeStyle = this.palette.labelHalo;
+        this.ctx.globalAlpha = 0.9 * spawnAlpha;
+        this.ctx.strokeText(text, labelX, labelY);
+
+        this.ctx.globalAlpha = spawnAlpha;
+        this.ctx.fillStyle = this.palette.blobLabelText;
         this.ctx.fillText(text, labelX, labelY);
 
         this.ctx.restore();

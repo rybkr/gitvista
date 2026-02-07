@@ -45,6 +45,8 @@ export const TOOLTIP_OFFSET_Y = -24;
 export const HIGHLIGHT_NODE_RADIUS = NODE_RADIUS + 2.5;
 export const MERGE_NODE_RADIUS = 7;
 export const HIGHLIGHT_MERGE_NODE_RADIUS = 9.5;
+export const BLOB_NODE_RADIUS = 5;
+export const BLOB_NODE_HIGHLIGHT_RADIUS = 7;
 export const NODE_SHADOW_BLUR = 6;
 export const NODE_SHADOW_OFFSET_Y = 2;
 

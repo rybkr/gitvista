@@ -14,6 +14,9 @@
     --node-highlight-ring: #2563eb;
     --merge-node-color: #0e7c6b;
     --node-shadow-color: rgba(0, 0, 0, 0.18);
+    --blob-node-color: #8ecae6;
+    --blob-node-border-color: #6ba3be;
+    --blob-label-text-color: #24292f;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -32,6 +35,9 @@
         --node-highlight-ring: #6dacf8;
         --merge-node-color: #2dd4a8;
         --node-shadow-color: rgba(0, 0, 0, 0.5);
+        --blob-node-color: #67b2d1;
+        --blob-node-border-color: #4a8ea8;
+        --blob-label-text-color: #e8e6f0;
     }
 }
 
@@ -228,4 +234,61 @@ canvas {
     content: "→";
     font-size: 12px;
     color: var(--node-color);
+}
+
+.blob-tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+    padding: 10px 14px;
+    min-width: 160px;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 15;
+    opacity: 0;
+    transition: opacity 0.14s ease;
+    backdrop-filter: blur(10px);
+}
+
+.blob-tooltip:not([hidden]) {
+    opacity: 1;
+}
+
+.blob-tooltip-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(148, 163, 184, 0.16);
+}
+
+.blob-tooltip-name::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--blob-node-color, #8ecae6);
+    box-shadow: 0 0 0 2px rgba(142, 202, 230, 0.2);
+}
+
+.blob-tooltip-hash {
+    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: rgba(99, 110, 123, 0.95);
+}
+
+.blob-tooltip-mode {
+    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    color: rgba(99, 110, 123, 0.7);
 }

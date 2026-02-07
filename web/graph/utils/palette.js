@@ -38,5 +38,8 @@ export function buildPalette(element) {
         nodeHighlightRing: read("--node-highlight-ring", "#2563eb"),
         mergeNode: read("--merge-node-color", "#0e7c6b"),
         nodeShadow: read("--node-shadow-color", "rgba(0, 0, 0, 0.18)"),
+        blobNode: read("--blob-node-color", "#8ecae6"),
+        blobNodeBorder: read("--blob-node-border-color", "#6ba3be"),
+        blobLabelText: read("--blob-label-text-color", "#24292f"),
     };
 }

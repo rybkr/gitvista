@@ -5,6 +5,7 @@
 
 import { CommitTooltip } from "./commitTooltip.js";
 import { BranchTooltip } from "./branchTooltip.js";
+import { BlobTooltip } from "./blobTooltip.js";
 
 /**
  * Central coordinator that dispatches tooltip rendering based on node type.
@@ -18,6 +19,7 @@ export class TooltipManager {
         this.tooltips = {
             commit: new CommitTooltip(canvas),
             branch: new BranchTooltip(canvas),
+            blob: new BlobTooltip(canvas),
         };
         this.activeTooltip = null;
     }
@@ -103,6 +105,9 @@ export class TooltipManager {
         if (node.type === "tree") {
             return node.hash === highlightKey;
         }
+        if (node.type === "blob") {
+            return node.id === highlightKey;
+        }
 
         return false;
     }
@@ -126,3 +131,4 @@ export class TooltipManager {
 
 export { CommitTooltip } from "./commitTooltip.js";
 export { BranchTooltip } from "./branchTooltip.js";
+export { BlobTooltip } from "./blobTooltip.js";

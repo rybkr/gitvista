@@ -7,11 +7,13 @@ import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
 import { TooltipManager } from "../tooltips/index.js";
 import {
     ALPHA_DECAY,
+    BLOB_NODE_RADIUS,
     BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_OFFSET_Y,
     BRANCH_NODE_RADIUS,
     TREE_NODE_OFFSET_X,
     TREE_NODE_OFFSET_Y,
+    TREE_NODE_SIZE,
     CHARGE_STRENGTH,
     COLLISION_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
@@ -63,7 +65,7 @@ export function createGraphController(rootElement) {
             "link",
             d3
                 .forceLink(links)
-                .id((d) => d.hash)
+                .id((d) => d.id ?? d.hash)
                 .distance(LINK_DISTANCE)
                 .strength(LINK_STRENGTH),
         )
@@ -147,6 +149,8 @@ export function createGraphController(rootElement) {
 
     const PICK_RADIUS_COMMIT = NODE_RADIUS + 4;
     const PICK_RADIUS_BRANCH = BRANCH_NODE_RADIUS + 6;
+    const PICK_RADIUS_TREE = TREE_NODE_SIZE / 2 + 4;
+    const PICK_RADIUS_BLOB = BLOB_NODE_RADIUS + 4;
 
     const findNodeAt = (x, y, type) => {
         let bestNode = null;
@@ -159,10 +163,16 @@ export function createGraphController(rootElement) {
             const dx = x - node.x;
             const dy = y - node.y;
             const distSq = dx * dx + dy * dy;
-            const radius =
-                node.type === "branch"
-                    ? PICK_RADIUS_BRANCH
-                    : PICK_RADIUS_COMMIT;
+            let radius;
+            if (node.type === "branch") {
+                radius = PICK_RADIUS_BRANCH;
+            } else if (node.type === "tree") {
+                radius = PICK_RADIUS_TREE;
+            } else if (node.type === "blob") {
+                radius = PICK_RADIUS_BLOB;
+            } else {
+                radius = PICK_RADIUS_COMMIT;
+            }
             if (distSq <= radius * radius && distSq < bestDist) {
                 bestDist = distSq;
                 bestNode = node;
@@ -210,7 +220,11 @@ export function createGraphController(rootElement) {
         }
 
         const { x, y } = toGraphCoordinates(event);
-        const targetNode = findNodeAt(x, y, "commit") ?? findNodeAt(x, y);
+        const targetNode =
+            findNodeAt(x, y, "commit") ??
+            findNodeAt(x, y, "tree") ??
+            findNodeAt(x, y, "blob") ??
+            findNodeAt(x, y);
 
         if (!targetNode) {
             hideTooltip();
@@ -218,6 +232,62 @@ export function createGraphController(rootElement) {
         }
 
         layoutManager.disableAutoCenter();
+
+        if (targetNode.type === "tree") {
+            expandTreeNode(targetNode);
+            event.stopImmediatePropagation();
+            event.preventDefault();
+
+            isDraggingNode = true;
+            dragState = {
+                node: targetNode,
+                pointerId: event.pointerId,
+                startX: x,
+                startY: y,
+                dragged: false,
+            };
+            targetNode.fx = x;
+            targetNode.fy = y;
+            targetNode.vx = 0;
+            targetNode.vy = 0;
+            try {
+                canvas.setPointerCapture(event.pointerId);
+            } catch {
+                // ignore
+            }
+            return;
+        }
+
+        if (targetNode.type === "blob") {
+            const currentTarget = tooltipManager.getTargetData();
+            if (tooltipManager.isVisible() && currentTarget === targetNode) {
+                tooltipManager.hideAll();
+                render();
+            } else {
+                showTooltip(targetNode);
+            }
+            event.stopImmediatePropagation();
+            event.preventDefault();
+
+            isDraggingNode = true;
+            dragState = {
+                node: targetNode,
+                pointerId: event.pointerId,
+                startX: x,
+                startY: y,
+                dragged: false,
+            };
+            targetNode.fx = x;
+            targetNode.fy = y;
+            targetNode.vx = 0;
+            targetNode.vy = 0;
+            try {
+                canvas.setPointerCapture(event.pointerId);
+            } catch {
+                // ignore
+            }
+            return;
+        }
 
         const currentTarget = tooltipManager.getTargetData();
         if (tooltipManager.isVisible() && currentTarget === targetNode) {
@@ -236,7 +306,7 @@ export function createGraphController(rootElement) {
                 currentTreeCommitHash = targetNode.hash;
                 loadTreeNodeForCommit(targetNode).catch((error) => {
                     console.error("Error loading tree node:", error);
-                    currentTreeCommitHash = null; // Reset on error
+                    currentTreeCommitHash = null;
                 });
             }
         }
@@ -363,14 +433,17 @@ export function createGraphController(rootElement) {
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
         const existingTreeNodes = new Map();
+        const existingBlobNodes = new Map();
 
         for (const node of nodes) {
             if (node.type === "branch" && node.branch) {
                 existingBranchNodes.set(node.branch, node);
             } else if (node.type === "commit" && node.hash) {
                 existingCommitNodes.set(node.hash, node);
-            } else if (node.type === "tree" && node.hash) {
-                existingTreeNodes.set(node.hash, node);
+            } else if (node.type === "tree" && (node.id || node.hash)) {
+                existingTreeNodes.set(node.id ?? node.hash, node);
+            } else if (node.type === "blob" && node.id) {
+                existingBlobNodes.set(node.id, node);
             }
         }
 
@@ -451,8 +524,12 @@ export function createGraphController(rootElement) {
         }
 
         const nextTreeNodes = [];
-        for (const [treeHash, treeNode] of existingTreeNodes.entries()) {
+        for (const [, treeNode] of existingTreeNodes.entries()) {
             nextTreeNodes.push(treeNode);
+        }
+        const nextBlobNodes = [];
+        for (const [, blobNode] of existingBlobNodes.entries()) {
+            nextBlobNodes.push(blobNode);
         }
         nodes.splice(
             0,
@@ -460,10 +537,12 @@ export function createGraphController(rootElement) {
             ...nextCommitNodes,
             ...nextBranchNodes,
             ...nextTreeNodes,
+            ...nextBlobNodes,
         );
 
         const existingTreeLinks = links.filter((link) => link.kind === "tree");
-        const allLinks = [...nextLinks, ...existingTreeLinks];
+        const existingBlobLinks = links.filter((link) => link.kind === "blob");
+        const allLinks = [...nextLinks, ...existingTreeLinks, ...existingBlobLinks];
         links.splice(0, links.length, ...allLinks);
 
         if (dragState && !nodes.includes(dragState.node)) {
@@ -609,6 +688,130 @@ export function createGraphController(rootElement) {
         };
     }
 
+    function createEntryTreeNode(entry, parentNode) {
+        const jitter = (range) => (Math.random() - 0.5) * range;
+        const id = `${parentNode.id ?? parentNode.hash}:${entry.hash}`;
+        return {
+            type: "tree",
+            hash: entry.hash,
+            id,
+            entryName: entry.name,
+            parentTreeHash: parentNode.hash,
+            x: (parentNode.x ?? 0) + TREE_NODE_OFFSET_X + jitter(20),
+            y: (parentNode.y ?? 0) + jitter(20),
+            vx: 0,
+            vy: 0,
+            spawnPhase: 0,
+        };
+    }
+
+    function createBlobNode(entry, parentNode) {
+        const jitter = (range) => (Math.random() - 0.5) * range;
+        const id = `${parentNode.id ?? parentNode.hash}:${entry.hash}`;
+        return {
+            type: "blob",
+            hash: entry.hash,
+            id,
+            entryName: entry.name,
+            parentTreeHash: parentNode.hash,
+            mode: entry.mode,
+            x: (parentNode.x ?? 0) + jitter(20),
+            y: (parentNode.y ?? 0) + jitter(20),
+            vx: 0,
+            vy: 0,
+            spawnPhase: 0,
+        };
+    }
+
+    async function expandTreeNode(treeNode) {
+        if (treeNode.expanded) {
+            collapseTreeNode(treeNode);
+            simulation.nodes(nodes);
+            simulation.force("link").links(links);
+            layoutManager.boostSimulation(true);
+            render();
+            return;
+        }
+
+        if (!treeNode.tree) {
+            try {
+                treeNode.tree = await fetchTree(treeNode.hash);
+            } catch (error) {
+                console.error(`Failed to fetch tree ${treeNode.hash}:`, error);
+                return;
+            }
+        }
+
+        const entries = treeNode.tree?.entries;
+        if (!entries || entries.length === 0) {
+            return;
+        }
+
+        treeNode.expanded = true;
+        treeNode.childIds = [];
+
+        for (const entry of entries) {
+            let childNode;
+            let linkKind;
+            if (entry.type === "tree") {
+                childNode = createEntryTreeNode(entry, treeNode);
+                linkKind = "tree";
+            } else {
+                childNode = createBlobNode(entry, treeNode);
+                linkKind = "blob";
+            }
+
+            treeNode.childIds.push(childNode.id);
+            nodes.push(childNode);
+            links.push({
+                source: treeNode,
+                target: childNode,
+                kind: linkKind,
+                warmup: 0,
+            });
+        }
+
+        simulation.nodes(nodes);
+        simulation.force("link").links(links);
+        layoutManager.boostSimulation(true);
+        render();
+    }
+
+    function collapseTreeNode(treeNode) {
+        if (!treeNode.expanded || !treeNode.childIds) {
+            return;
+        }
+
+        const childIds = new Set(treeNode.childIds);
+
+        for (const childId of childIds) {
+            const childNode = nodes.find((n) => n.id === childId);
+            if (childNode && childNode.type === "tree" && childNode.expanded) {
+                collapseTreeNode(childNode);
+            }
+        }
+
+        for (let i = links.length - 1; i >= 0; i--) {
+            const link = links[i];
+            const targetId =
+                typeof link.target === "object"
+                    ? link.target.id ?? link.target.hash
+                    : link.target;
+            if (childIds.has(targetId)) {
+                links.splice(i, 1);
+            }
+        }
+
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            if (childIds.has(nodes[i].id)) {
+                nodes.splice(i, 1);
+            }
+        }
+
+        treeNode.expanded = false;
+        treeNode.childIds = [];
+    }
+
     async function loadTreeNodeForCommit(commitNode) {
         if (!commitNode || !commitNode.commit || !commitNode.commit.tree) {
             return null;
@@ -661,8 +864,15 @@ export function createGraphController(rootElement) {
         }
         const treeHash = commitNode.commit.tree;
 
+        const rootTree = nodes.find(
+            (node) => node.type === "tree" && node.hash === treeHash && node.commitHash === commitHash,
+        );
+        if (rootTree) {
+            collapseTreeNode(rootTree);
+        }
+
         const treeNodeIndex = nodes.findIndex(
-            (node) => node.type === "tree" && node.hash === treeHash,
+            (node) => node.type === "tree" && node.hash === treeHash && node.commitHash === commitHash,
         );
         if (treeNodeIndex !== -1) {
             nodes.splice(treeNodeIndex, 1);

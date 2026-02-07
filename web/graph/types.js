@@ -48,7 +48,31 @@
  */
 
 /**
- * @typedef {GraphNodeCommit | GraphNodeBranch | GraphNodeTree} GraphNode
+ * @typedef {GraphNodeBase & {
+ *   type: "tree",
+ *   hash: string,
+ *   commitHash?: string,
+ *   tree?: object,
+ *   entryName?: string,
+ *   expanded?: boolean,
+ *   childIds?: string[],
+ *   id?: string
+ * }} GraphNodeTree
+ */
+
+/**
+ * @typedef {GraphNodeBase & {
+ *   type: "blob",
+ *   hash: string,
+ *   entryName: string,
+ *   parentTreeHash: string,
+ *   mode?: string,
+ *   id: string
+ * }} GraphNodeBlob
+ */
+
+/**
+ * @typedef {GraphNodeCommit | GraphNodeBranch | GraphNodeTree | GraphNodeBlob} GraphNode
  */
 
 /**
@@ -72,6 +96,9 @@
  * @property {string} nodeHighlightRing Ring color for highlighted nodes.
  * @property {string} mergeNode Merge commit node fill color.
  * @property {string} nodeShadow Shadow color for all node types.
+ * @property {string} blobNode Blob node fill color.
+ * @property {string} blobNodeBorder Blob node border color.
+ * @property {string} blobLabelText Blob label text color.
  */
 
 /**
