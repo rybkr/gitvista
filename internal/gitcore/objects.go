@@ -63,15 +63,15 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 	if err == nil {
 		switch {
 		case strings.HasPrefix(header, "commit"):
-			if commit, err := r.parseCommitBody(content, id); err == nil {
+			if commit, err := parseCommitBody(content, id); err == nil {
 				return commit, nil
 			}
 		case strings.HasPrefix(header, "tag"):
-			if tag, err := r.parseTagBody(content, id); err == nil {
+			if tag, err := parseTagBody(content, id); err == nil {
 				return tag, nil
 			}
 		case strings.HasPrefix(header, "tree"):
-			if tree, err := r.parseTreeBody(content, id); err == nil {
+			if tree, err := parseTreeBody(content, id); err == nil {
 				return tree, nil
 			}
 		default:
@@ -107,7 +107,7 @@ func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 			if _, err := file.Seek(offset, 0); err != nil {
 				continue
 			}
-			return r.readPackObject(file)
+			return readPackObject(file, r.readObjectData)
 		}
 	}
 
@@ -122,7 +122,7 @@ func (r *Repository) readLooseObjectData(objectPath string) ([]byte, byte, error
 	}
 	defer file.Close()
 
-	content, err := r.readCompressedData(file)
+	content, err := readCompressedData(file)
 	if err != nil {
 		return nil, 0, fmt.Errorf("invalid compressed data: %w", err)
 	}
@@ -167,7 +167,7 @@ func (r *Repository) readLooseObject(id Hash) (header string, content []byte, er
 	}
 	defer file.Close()
 
-	content, err = r.readCompressedData(file)
+	content, err = readCompressedData(file)
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid compressed data: %w", err)
 	}
@@ -193,25 +193,25 @@ func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (O
 		return nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
 	}
 
-	objectData, objectType, err := r.readPackObject(file)
+	objectData, objectType, err := readPackObject(file, r.readObjectData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pack object: %w", err)
 	}
 
 	switch ObjectType(objectType) {
 	case CommitObject:
-		return r.parseCommitBody(objectData, id)
+		return parseCommitBody(objectData, id)
 	case TagObject:
-		return r.parseTagBody(objectData, id)
+		return parseTagBody(objectData, id)
 	case TreeObject:
-		return r.parseTreeBody(objectData, id)
+		return parseTreeBody(objectData, id)
 	default:
 		return nil, fmt.Errorf("unknown object type: %d", objectType)
 	}
 }
 
 // parseCommitBody parses the body of a commit object into a Commit struct.
-func (r *Repository) parseCommitBody(body []byte, id Hash) (*Commit, error) {
+func parseCommitBody(body []byte, id Hash) (*Commit, error) {
 	commit := &Commit{ID: id}
 	scanner := bufio.NewScanner(bytes.NewReader(body))
 	inMessage := false
@@ -259,7 +259,7 @@ func (r *Repository) parseCommitBody(body []byte, id Hash) (*Commit, error) {
 }
 
 // parseTagBody parses the body of a tag object into a Tag struct.
-func (r *Repository) parseTagBody(body []byte, id Hash) (*Tag, error) {
+func parseTagBody(body []byte, id Hash) (*Tag, error) {
 	tag := &Tag{ID: id}
 	scanner := bufio.NewScanner(bytes.NewReader(body))
 	inMessage := false
@@ -305,7 +305,7 @@ func (r *Repository) parseTagBody(body []byte, id Hash) (*Tag, error) {
 }
 
 // parseTreeBody parses the body of a tree object into a Tree struct.
-func (r *Repository) parseTreeBody(body []byte, id Hash) (*Tree, error) {
+func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 	tree := &Tree{
 		ID:      id,
 		Entries: make([]TreeEntry, 0),
@@ -376,9 +376,9 @@ func (r *Repository) parseTreeBody(body []byte, id Hash) (*Tree, error) {
 	}
 }
 
-// readCompressedData reads and decompresses zlib-compressed data at the current file position.
-func (r *Repository) readCompressedData(file *os.File) ([]byte, error) {
-	zr, err := zlib.NewReader(file)
+// readCompressedData reads and decompresses zlib-compressed data from the given reader.
+func readCompressedData(r io.Reader) ([]byte, error) {
+	zr, err := zlib.NewReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create zlib reader: %w", err)
 	}

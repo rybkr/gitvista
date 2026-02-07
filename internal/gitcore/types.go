@@ -150,6 +150,9 @@ func NewSignature(signLine string) (Signature, error) {
 	}, nil
 }
 
+// ObjectResolver resolves a Git object by its hash, returning raw data and type byte.
+type ObjectResolver func(id Hash) (data []byte, objectType byte, err error)
+
 // PackIndex represents a Git pack index file that maps object hashes to their locations within pack files.
 type PackIndex struct {
 	path       string
@@ -170,6 +173,24 @@ func (p *PackIndex) FindObject(id Hash) (int64, bool) {
 // PackFile returns the path to the pack file associated with this index.
 func (p *PackIndex) PackFile() string {
 	return p.packPath
+}
+
+// Version returns the pack index version.
+func (p *PackIndex) Version() uint32 { return p.version }
+
+// NumObjects returns the total number of objects in the pack index.
+func (p *PackIndex) NumObjects() uint32 { return p.numObjects }
+
+// Fanout returns the fanout table.
+func (p *PackIndex) Fanout() [256]uint32 { return p.fanout }
+
+// Offsets returns a copy of the object offset map.
+func (p *PackIndex) Offsets() map[Hash]int64 {
+	cp := make(map[Hash]int64, len(p.offsets))
+	for k, v := range p.offsets {
+		cp[k] = v
+	}
+	return cp
 }
 
 // RepositoryDelta represents the difference between two repositories in a digestable format.

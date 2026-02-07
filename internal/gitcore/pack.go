@@ -65,30 +65,38 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 		return nil, fmt.Errorf("failed to read index header: %w", err)
 	}
 
+	packPath := strings.Replace(idxPath, ".idx", ".pack", 1)
+
 	// Version 2 pack-*.idx files begin with a magic number \377toc, which is an
 	// unreasonable first four bytes for version 1 files.
+	var idx *PackIndex
 	if header[0] == 0xFF && header[1] == 0x74 && header[2] == 0x4F && header[3] == 0x63 {
-		return r.loadPackIndexV2(file, idxPath)
+		idx, err = loadPackIndexV2(file, packPath)
+	} else {
+		// Need to reset to beginning of file for version 1.
+		if _, err := file.Seek(0, 0); err != nil {
+			return nil, fmt.Errorf("failed to seek to beginning: %w", err)
+		}
+		idx, err = loadPackIndexV1(file, packPath)
 	}
-	// Need to reset to beginning of file for version 1.
-	if _, err := file.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek to beginning: %w", err)
+	if err != nil {
+		return nil, err
 	}
-	return r.loadPackIndexV1(file, idxPath)
+	idx.path = idxPath
+	return idx, nil
 }
 
-// loadPackIndexV1 loads a version 1 pack index file.
+// loadPackIndexV1 loads a version 1 pack index from the given reader.
 // See: https://git-scm.com/docs/pack-format#_original_version_1_pack_idx_files_have_the_following_format
-func (r *Repository) loadPackIndexV1(file *os.File, idxPath string) (*PackIndex, error) {
+func loadPackIndexV1(r io.ReadSeeker, packPath string) (*PackIndex, error) {
 	idx := &PackIndex{
-		path:     idxPath,
-		packPath: strings.Replace(idxPath, ".idx", ".pack", 1),
+		packPath: packPath,
 		version:  1,
 		offsets:  make(map[Hash]int64),
 	}
 
 	for i := 0; i < 256; i++ {
-		if err := binary.Read(file, binary.BigEndian, &idx.fanout[i]); err != nil {
+		if err := binary.Read(r, binary.BigEndian, &idx.fanout[i]); err != nil {
 			return nil, fmt.Errorf("failed to read fanout[%d]: %w", i, err)
 		}
 	}
@@ -96,12 +104,12 @@ func (r *Repository) loadPackIndexV1(file *os.File, idxPath string) (*PackIndex,
 
 	for i := uint32(0); i < idx.numObjects; i++ {
 		var offset uint32
-		if err := binary.Read(file, binary.BigEndian, &offset); err != nil {
+		if err := binary.Read(r, binary.BigEndian, &offset); err != nil {
 			return nil, fmt.Errorf("failed to read offset %d: %w", i, err)
 		}
 
 		var name [20]byte
-		if _, err := io.ReadFull(file, name[:]); err != nil {
+		if _, err := io.ReadFull(r, name[:]); err != nil {
 			return nil, fmt.Errorf("failed to read object name %d: %w", i, err)
 		}
 
@@ -115,18 +123,18 @@ func (r *Repository) loadPackIndexV1(file *os.File, idxPath string) (*PackIndex,
 	return idx, nil
 }
 
-// loadPackIndexV2 loads a version 2 pack index file.
+// loadPackIndexV2 loads a version 2 pack index from the given reader.
+// The reader should be positioned after the 4-byte magic number (\377tOc).
 // See: https://git-scm.com/docs/pack-format#_version_2_pack_idx_files_support_packs_larger_than_4_gib_and
-func (r *Repository) loadPackIndexV2(file *os.File, idxPath string) (*PackIndex, error) {
+func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 	idx := &PackIndex{
-		path:     idxPath,
-		packPath: strings.Replace(idxPath, ".idx", ".pack", 1),
+		packPath: packPath,
 		version:  2,
 		offsets:  make(map[Hash]int64),
 	}
 
 	var version uint32
-	if err := binary.Read(file, binary.BigEndian, &version); err != nil {
+	if err := binary.Read(rs, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("failed to read version: %w", err)
 	}
 	if version != 2 {
@@ -134,7 +142,7 @@ func (r *Repository) loadPackIndexV2(file *os.File, idxPath string) (*PackIndex,
 	}
 
 	for i := 0; i < 256; i++ {
-		if err := binary.Read(file, binary.BigEndian, &idx.fanout[i]); err != nil {
+		if err := binary.Read(rs, binary.BigEndian, &idx.fanout[i]); err != nil {
 			return nil, fmt.Errorf("failed to read fanout[%d]: %w", i, err)
 		}
 	}
@@ -142,18 +150,18 @@ func (r *Repository) loadPackIndexV2(file *os.File, idxPath string) (*PackIndex,
 
 	objectNames := make([][20]byte, idx.numObjects)
 	for i := uint32(0); i < idx.numObjects; i++ {
-		if _, err := io.ReadFull(file, objectNames[i][:]); err != nil {
+		if _, err := io.ReadFull(rs, objectNames[i][:]); err != nil {
 			return nil, fmt.Errorf("failed to read object name %d: %w", i, err)
 		}
 	}
 
-	if _, err := file.Seek(int64(idx.numObjects*4), io.SeekCurrent); err != nil {
+	if _, err := rs.Seek(int64(idx.numObjects*4), io.SeekCurrent); err != nil {
 		return nil, fmt.Errorf("failed to skip CRCs: %w", err)
 	}
 
 	offsets := make([]uint32, idx.numObjects)
 	for i := uint32(0); i < idx.numObjects; i++ {
-		if err := binary.Read(file, binary.BigEndian, &offsets[i]); err != nil {
+		if err := binary.Read(rs, binary.BigEndian, &offsets[i]); err != nil {
 			return nil, fmt.Errorf("failed to read offset %d: %w", i, err)
 		}
 	}
@@ -164,7 +172,7 @@ func (r *Repository) loadPackIndexV2(file *os.File, idxPath string) (*PackIndex,
 			if len(largeOffsets) == 0 {
 				for {
 					var largeOffset uint64
-					err := binary.Read(file, binary.BigEndian, &largeOffset)
+					err := binary.Read(rs, binary.BigEndian, &largeOffset)
 					if err == io.EOF {
 						break
 					}
@@ -201,13 +209,13 @@ func (r *Repository) loadPackIndexV2(file *os.File, idxPath string) (*PackIndex,
 // readPackObject reads an object from a pack file at the current position.
 // Returns the decompressed object data and its type.
 // See: https://git-scm.com/docs/pack-format#_pack_pack_files_have_the_following_format
-func (r *Repository) readPackObject(file *os.File) (data []byte, objectType byte, err error) {
-	objStart, err := file.Seek(0, io.SeekCurrent)
+func readPackObject(rs io.ReadSeeker, resolve ObjectResolver) (data []byte, objectType byte, err error) {
+	objStart, err := rs.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	objType, size, err := r.readPackObjectHeader(file)
+	objType, size, err := readPackObjectHeader(rs)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -215,12 +223,12 @@ func (r *Repository) readPackObject(file *os.File) (data []byte, objectType byte
 	// See: https://git-scm.com/docs/pack-format#_object_types
 	switch objType {
 	case 1, 2, 3, 4:
-		data, err := r.readCompressedObject(file, size)
+		data, err := readCompressedObject(rs, size)
 		return data, objType, err
 	case 6:
-		return r.readOffsetDelta(file, size, objStart)
+		return readOffsetDelta(rs, size, objStart, resolve)
 	case 7:
-		return r.readRefDelta(file, size)
+		return readRefDelta(rs, size, resolve)
 	default:
 		return nil, 0, fmt.Errorf("unsupported object type: %d", objType)
 	}
@@ -229,9 +237,9 @@ func (r *Repository) readPackObject(file *os.File) (data []byte, objectType byte
 // readPackObjectHeader reads the variable-length header from a pack object.
 // Returns object type and the size of the uncompressed data.
 // See: https://git-scm.com/docs/pack-format#_pack_pack_files_have_the_following_format
-func (r *Repository) readPackObjectHeader(file *os.File) (objectType byte, size int64, err error) {
+func readPackObjectHeader(r io.Reader) (objectType byte, size int64, err error) {
 	var b [1]byte
-	if _, err := file.Read(b[:]); err != nil {
+	if _, err := r.Read(b[:]); err != nil {
 		return 0, 0, err
 	}
 
@@ -240,7 +248,7 @@ func (r *Repository) readPackObjectHeader(file *os.File) (objectType byte, size 
 	shift := 4
 
 	for b[0]&0x80 != 0 {
-		if _, err := file.Read(b[:]); err != nil {
+		if _, err := r.Read(b[:]); err != nil {
 			return 0, 0, err
 		}
 		size |= int64(b[0]&0x7F) << shift
@@ -251,8 +259,8 @@ func (r *Repository) readPackObjectHeader(file *os.File) (objectType byte, size 
 }
 
 // readCompressedObject reads and decompresses zlib-compressed object data and ensures its size matches the expected size.
-func (r *Repository) readCompressedObject(file *os.File, expectedSize int64) ([]byte, error) {
-	content, err := r.readCompressedData(file)
+func readCompressedObject(r io.Reader, expectedSize int64) ([]byte, error) {
+	content, err := readCompressedData(r)
 	if err != nil {
 		return nil, fmt.Errorf("invalid compressed data: %w", err)
 	}
@@ -266,47 +274,47 @@ func (r *Repository) readCompressedObject(file *os.File, expectedSize int64) ([]
 // readOffsetDelta reads an offset delta object.
 // Returns the resulting data after applying the delta and the type of data referred to.
 // See: https://git-scm.com/docs/pack-format#_deltified_representation
-func (r *Repository) readOffsetDelta(file *os.File, size, objStart int64) ([]byte, byte, error) {
+func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResolver) ([]byte, byte, error) {
 	var b [1]byte
 
-	if _, err := file.Read(b[:]); err != nil {
+	if _, err := rs.Read(b[:]); err != nil {
 		return nil, 0, err
 	}
 	offset := int64(b[0] & 0x7F)
 	for b[0]&0x80 != 0 {
-		if _, err := file.Read(b[:]); err != nil {
+		if _, err := rs.Read(b[:]); err != nil {
 			return nil, 0, err
 		}
 		offset = ((offset + 1) << 7) | int64(b[0]&0x7F)
 	}
 
-	beforeDelta, err := file.Seek(0, io.SeekCurrent)
+	beforeDelta, err := rs.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
 	}
-	deltaData, err := r.readCompressedObject(file, size)
+	deltaData, err := readCompressedObject(rs, size)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read offset delta data at %d: %w", beforeDelta, err)
 	}
 
-	afterDelta, err := file.Seek(0, io.SeekCurrent)
+	afterDelta, err := rs.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	basePos := objStart - offset
-	if _, err := file.Seek(basePos, 0); err != nil {
+	if _, err := rs.Seek(basePos, 0); err != nil {
 		return nil, 0, fmt.Errorf("failed to seek to base object at %d: %w", basePos, err)
 	}
-	baseData, baseType, err := r.readPackObject(file)
+	baseData, baseType, err := readPackObject(rs, resolve)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read base object at %d (type %d): %w", basePos, baseType, err)
 	}
-	if _, err := file.Seek(afterDelta, 0); err != nil {
+	if _, err := rs.Seek(afterDelta, 0); err != nil {
 		return nil, 0, err
 	}
 
-	result, err := r.applyDelta(baseData, deltaData)
+	result, err := applyDelta(baseData, deltaData)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to apply offset delta: %w", err)
 	}
@@ -317,9 +325,9 @@ func (r *Repository) readOffsetDelta(file *os.File, size, objStart int64) ([]byt
 // readRefDelta reads a reference delta object.
 // Returns the resulting data after applying the delta and the type of data referred to.
 // See: https://git-scm.com/docs/pack-format#_deltified_representation
-func (r *Repository) readRefDelta(file *os.File, size int64) ([]byte, byte, error) {
+func readRefDelta(rs io.ReadSeeker, size int64, resolve ObjectResolver) ([]byte, byte, error) {
 	var baseHash [20]byte
-	if _, err := io.ReadFull(file, baseHash[:]); err != nil {
+	if _, err := io.ReadFull(rs, baseHash[:]); err != nil {
 		return nil, 0, fmt.Errorf("failed to read base hash: %w", err)
 	}
 	baseHashStr, err := NewHashFromBytes(baseHash)
@@ -327,21 +335,21 @@ func (r *Repository) readRefDelta(file *os.File, size int64) ([]byte, byte, erro
 		return nil, 0, fmt.Errorf("invalid hash: %w", err)
 	}
 
-	beforeDelta, err := file.Seek(0, io.SeekCurrent)
+	beforeDelta, err := rs.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
 	}
-	deltaData, err := r.readCompressedObject(file, size)
+	deltaData, err := readCompressedObject(rs, size)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read ref delta data at %d: %w", beforeDelta, err)
 	}
 
-	baseData, baseType, err := r.readObjectData(baseHashStr)
+	baseData, baseType, err := resolve(baseHashStr)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read base object %s: %w", baseHashStr.Short(), err)
 	}
 
-	result, err := r.applyDelta(baseData, deltaData)
+	result, err := applyDelta(baseData, deltaData)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to apply ref delta: %w", err)
 	}
@@ -352,10 +360,10 @@ func (r *Repository) readRefDelta(file *os.File, size int64) ([]byte, byte, erro
 // applyDelta applies a delta to a base object.
 // Returns the resulting data after applying the delta instructions.
 // See: https://git-scm.com/docs/pack-format#_deltified_representation
-func (r *Repository) applyDelta(base []byte, delta []byte) ([]byte, error) {
+func applyDelta(base []byte, delta []byte) ([]byte, error) {
 	src := bytes.NewReader(delta)
 
-	srcSize, err := r.readVarInt(src)
+	srcSize, err := readVarInt(src)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +371,7 @@ func (r *Repository) applyDelta(base []byte, delta []byte) ([]byte, error) {
 		return nil, fmt.Errorf("base size mismatch: expected %d, got %d", srcSize, len(base))
 	}
 
-	targetSize, err := r.readVarInt(src)
+	targetSize, err := readVarInt(src)
 	if err != nil {
 		return nil, err
 	}
@@ -439,9 +447,9 @@ func (r *Repository) applyDelta(base []byte, delta []byte) ([]byte, error) {
 	return result, nil
 }
 
-// readVariableLengthInt reads a variable-length integer according to the size encoding spec.
+// readVarInt reads a variable-length integer according to the size encoding spec.
 // See: https://git-scm.com/docs/pack-format#_size_encoding
-func (r *Repository) readVarInt(src *bytes.Reader) (int64, error) {
+func readVarInt(src *bytes.Reader) (int64, error) {
 	var result int64 = 0
 	var shift uint = 0
 
