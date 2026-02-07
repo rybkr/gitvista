@@ -70,10 +70,10 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 			if tag, err := r.parseTagBody(content, id); err == nil {
 				return tag, nil
 			}
-        case strings.HasPrefix(header, "tree"):
-            if tree, err := r.parseTreeBody(content, id); err == nil {
-                return tree, nil
-            }
+		case strings.HasPrefix(header, "tree"):
+			if tree, err := r.parseTreeBody(content, id); err == nil {
+				return tree, nil
+			}
 		default:
 			err = fmt.Errorf("unrecognized object: %q", header)
 		}
@@ -203,8 +203,8 @@ func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (O
 		return r.parseCommitBody(objectData, id)
 	case TagObject:
 		return r.parseTagBody(objectData, id)
-    case TreeObject:
-        return r.parseTreeBody(objectData, id)
+	case TreeObject:
+		return r.parseTreeBody(objectData, id)
 	default:
 		return nil, fmt.Errorf("unknown object type: %d", objectType)
 	}

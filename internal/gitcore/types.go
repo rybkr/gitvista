@@ -13,6 +13,7 @@ var (
 )
 
 // Hash represents a Git object hash.
+// See: https://git-scm.com/docs/git-hash-object
 type Hash string
 
 // NewHash creates a Hash from a hexadecimal string, validating its format.
@@ -111,7 +112,7 @@ type Tree struct {
 }
 
 func (t *Tree) Type() ObjectType {
-    return TreeObject
+	return TreeObject
 }
 
 // Signature represents a Git author or committer signature with name, email, and timestamp.

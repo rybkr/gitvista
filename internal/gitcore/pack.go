@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// loadPackIndices scans the objects/pack directory and loads all pack index files.
+// loadPackIndices scans the .git/objects/pack directory and loads all pack index files.
 // This should be done before we begin loading objects, as some objects may be stored here.
 func (r *Repository) loadPackIndices() error {
 	r.mu.Lock()
@@ -19,8 +19,7 @@ func (r *Repository) loadPackIndices() error {
 
 	packDir := filepath.Join(r.gitDir, "objects", "pack")
 	if _, err := os.Stat(packDir); os.IsNotExist(err) {
-		// No packs, this is ok.
-		return nil
+		return nil // No packfiles, this is ok
 	} else if err != nil {
 		return err
 	}
@@ -418,9 +417,9 @@ func (r *Repository) applyDelta(base []byte, delta []byte) ([]byte, error) {
 		} else if cmd[0] != 0 {
 			// See: https://git-scm.com/docs/pack-format#_instruction_to_add_new_data
 			size := int(cmd[0] & 0x7F)
-            if size == 0 {
-                return nil, fmt.Errorf("copy of size zero is illegal")
-            }
+			if size == 0 {
+				return nil, fmt.Errorf("copy of size zero is illegal")
+			}
 			data := make([]byte, size)
 			if _, err := io.ReadFull(src, data); err != nil {
 				return nil, err

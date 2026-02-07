@@ -86,28 +86,28 @@ func (r *Repository) Commits() map[Hash]*Commit {
 
 // Branches returns a map of all branch names to Commit hashes.
 func (r *Repository) Branches() map[string]Hash {
-    result := make(map[string]Hash)
-    for ref, hash := range r.refs {
-        if strings.HasPrefix(ref, "refs/heads/") {
-            result[strings.TrimPrefix(ref, "refs/heads/")] = hash
-        }
-    }
-    return result
+	result := make(map[string]Hash)
+	for ref, hash := range r.refs {
+		if strings.HasPrefix(ref, "refs/heads/") {
+			result[strings.TrimPrefix(ref, "refs/heads/")] = hash
+		}
+	}
+	return result
 }
 
 // GetTree loads and returns a tree object by its hash.
 func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
-    object, err := r.readObject(treeHash)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read tree object: %w", err)
-    }
+	object, err := r.readObject(treeHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read tree object: %w", err)
+	}
 
-    tree, ok := object.(*Tree)
-    if !ok {
-        return nil, fmt.Errorf("object %s is not a tree", treeHash)
-    }
+	tree, ok := object.(*Tree)
+	if !ok {
+		return nil, fmt.Errorf("object %s is not a tree", treeHash)
+	}
 
-    return tree, nil
+	return tree, nil
 }
 
 // Diff returns the difference between this repository and another,
@@ -128,19 +128,19 @@ func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 		}
 	}
 
-    newBranches, oldBranches := r.Branches(), old.Branches()
-    for branch, hash := range newBranches {
-        if oldHash, found := oldBranches[branch]; !found {
-            delta.AddedBranches[branch] = hash
-        } else if hash != oldHash {
-            delta.AmendedBranches[branch] = hash
-        }
-    }
-    for branch, hash := range oldBranches {
-        if _, found := newBranches[branch]; !found {
-            delta.DeletedBranches[branch] = hash
-        }
-    }
+	newBranches, oldBranches := r.Branches(), old.Branches()
+	for branch, hash := range newBranches {
+		if oldHash, found := oldBranches[branch]; !found {
+			delta.AddedBranches[branch] = hash
+		} else if hash != oldHash {
+			delta.AmendedBranches[branch] = hash
+		}
+	}
+	for branch, hash := range oldBranches {
+		if _, found := newBranches[branch]; !found {
+			delta.DeletedBranches[branch] = hash
+		}
+	}
 
 	return delta
 }

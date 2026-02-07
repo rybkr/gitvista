@@ -16,6 +16,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-    serv := server.NewServer(repo, "8080")
-    serv.Start()
+	serv := server.NewServer(repo, "8080")
+	serv.Start()
 }

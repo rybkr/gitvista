@@ -4,9 +4,9 @@ import (
 	"context"
 	"github.com/gorilla/websocket"
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"log"
+	"net/http"
 	"sync"
-    "log"
-    "net/http"
 )
 
 // Server manages the GitVista web server and WebSocket connections.
@@ -15,7 +15,7 @@ type Server struct {
 	port string
 
 	cacheMu sync.RWMutex
-	cached struct {
+	cached  struct {
 		repo *gitcore.Repository
 	}
 
@@ -54,7 +54,7 @@ func (s *Server) Start() error {
 	http.Handle("/", fs)
 
 	http.HandleFunc("/api/repository", s.handleRepository)
-    http.HandleFunc("/api/tree/", s.handleTree)
+	http.HandleFunc("/api/tree/", s.handleTree)
 	http.HandleFunc("/api/ws", s.handleWebSocket)
 
 	s.wg.Add(1)
@@ -78,6 +78,6 @@ func (s *Server) Shutdown() {
 	}
 	s.clients = make(map[*websocket.Conn]bool)
 	s.clientsMu.Unlock()
-    
-    log.Printf("%s Server shutdown complete", logSuccess)
+
+	log.Printf("%s Server shutdown complete", logSuccess)
 }
