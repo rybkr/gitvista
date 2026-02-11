@@ -7,6 +7,7 @@ import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
 import { TooltipManager } from "../tooltips/index.js";
 import {
     ALPHA_DECAY,
+    INITIAL_ALPHA_DECAY,
     BLOB_NODE_RADIUS,
     BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_OFFSET_Y,
@@ -14,6 +15,7 @@ import {
     TREE_NODE_OFFSET_X,
     TREE_NODE_OFFSET_Y,
     TREE_NODE_SIZE,
+    CHARGE_DISTANCE_MAX,
     CHARGE_STRENGTH,
     COLLISION_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
@@ -21,6 +23,7 @@ import {
     LINK_DISTANCE,
     LINK_STRENGTH,
     NODE_RADIUS,
+    TIMELINE_Y_STRENGTH,
     VELOCITY_DECAY,
     ZOOM_MAX,
     ZOOM_MIN,
@@ -58,12 +61,19 @@ export function createGraphController(rootElement) {
     let viewportWidth = 0;
     let viewportHeight = 0;
     let currentTreeCommitHash = null;
+    let quadtree = null;
 
     const simulation = d3
         .forceSimulation(nodes)
         .velocityDecay(VELOCITY_DECAY)
         .alphaDecay(ALPHA_DECAY)
-        .force("charge", d3.forceManyBody().strength(CHARGE_STRENGTH))
+        .force(
+            "charge",
+            d3
+                .forceManyBody()
+                .strength(CHARGE_STRENGTH)
+                .distanceMax(CHARGE_DISTANCE_MAX),
+        )
         .force("collision", d3.forceCollide().radius(COLLISION_RADIUS))
         .force(
             "link",
@@ -73,7 +83,16 @@ export function createGraphController(rootElement) {
                 .distance(LINK_DISTANCE)
                 .strength(LINK_STRENGTH),
         )
-        .on("tick", tick);
+        .force(
+            "timelineY",
+            d3.forceY().y((d) => d._timelineY ?? d.y).strength((d) =>
+                typeof d._timelineY === "number" ? TIMELINE_Y_STRENGTH : 0,
+            ),
+        )
+        .on("tick", tick)
+        .on("end", () => {
+            simulation.alphaDecay(ALPHA_DECAY);
+        });
 
     const layoutManager = new LayoutManager(
         simulation,
@@ -106,12 +125,23 @@ export function createGraphController(rootElement) {
             node.fx = null;
             node.fy = null;
         }
+        layoutManager.assignTimelineTargets(nodes);
         simulation.alpha(0.8).restart();
     });
     controls.appendChild(rebalanceBtn);
     rootElement.appendChild(controls);
 
     const tooltipManager = new TooltipManager(canvas);
+    tooltipManager.tooltips.commit.onTreeRequest = (node) => {
+        if (currentTreeCommitHash && currentTreeCommitHash !== node.hash) {
+            removeTreeNodeForCommit(currentTreeCommitHash);
+        }
+        currentTreeCommitHash = node.hash;
+        loadTreeNodeForCommit(node).catch((error) => {
+            console.error("Error loading tree node:", error);
+            currentTreeCommitHash = null;
+        });
+    };
     const renderer = new GraphRenderer(canvas, buildPalette(canvas));
 
     const updateTooltipPosition = () => {
@@ -156,32 +186,62 @@ export function createGraphController(rootElement) {
     const PICK_RADIUS_TREE = TREE_NODE_SIZE / 2 + 4;
     const PICK_RADIUS_BLOB = BLOB_NODE_RADIUS + 4;
 
+    const getPickRadius = (nodeType) => {
+        switch (nodeType) {
+            case "branch":
+                return PICK_RADIUS_BRANCH;
+            case "tree":
+                return PICK_RADIUS_TREE;
+            case "blob":
+                return PICK_RADIUS_BLOB;
+            default:
+                return PICK_RADIUS_COMMIT;
+        }
+    };
+
+    const MAX_PICK_RADIUS = Math.max(
+        PICK_RADIUS_COMMIT,
+        PICK_RADIUS_BRANCH,
+        PICK_RADIUS_TREE,
+        PICK_RADIUS_BLOB,
+    );
+
     const findNodeAt = (x, y, type) => {
+        if (!quadtree) return null;
+
         let bestNode = null;
         let bestDist = Infinity;
+        const searchRadius = type ? getPickRadius(type) : MAX_PICK_RADIUS;
 
-        for (const node of nodes) {
-            if (type && node.type !== type) {
-                continue;
+        quadtree.visit((quad, x1, y1, x2, y2) => {
+            // Prune branches that are too far away
+            const closestX = Math.max(x1, Math.min(x, x2));
+            const closestY = Math.max(y1, Math.min(y, y2));
+            const dx = x - closestX;
+            const dy = y - closestY;
+            if (dx * dx + dy * dy > searchRadius * searchRadius) {
+                return true; // skip this quad
             }
-            const dx = x - node.x;
-            const dy = y - node.y;
-            const distSq = dx * dx + dy * dy;
-            let radius;
-            if (node.type === "branch") {
-                radius = PICK_RADIUS_BRANCH;
-            } else if (node.type === "tree") {
-                radius = PICK_RADIUS_TREE;
-            } else if (node.type === "blob") {
-                radius = PICK_RADIUS_BLOB;
-            } else {
-                radius = PICK_RADIUS_COMMIT;
+
+            if (!quad.length) {
+                // Leaf node — check data points
+                let q = quad;
+                do {
+                    const node = q.data;
+                    if (type && node.type !== type) continue;
+                    const ndx = x - node.x;
+                    const ndy = y - node.y;
+                    const distSq = ndx * ndx + ndy * ndy;
+                    const radius = getPickRadius(node.type);
+                    if (distSq <= radius * radius && distSq < bestDist) {
+                        bestDist = distSq;
+                        bestNode = node;
+                    }
+                } while ((q = q.next));
             }
-            if (distSq <= radius * radius && distSq < bestDist) {
-                bestDist = distSq;
-                bestNode = node;
-            }
-        }
+
+            return false;
+        });
 
         return bestNode;
     };
@@ -302,17 +362,10 @@ export function createGraphController(rootElement) {
                 currentTreeCommitHash !== targetNode.hash
             ) {
                 removeTreeNodeForCommit(currentTreeCommitHash);
+                currentTreeCommitHash = null;
             }
 
             showTooltip(targetNode);
-
-            if (targetNode.type === "commit") {
-                currentTreeCommitHash = targetNode.hash;
-                loadTreeNodeForCommit(targetNode).catch((error) => {
-                    console.error("Error loading tree node:", error);
-                    currentTreeCommitHash = null;
-                });
-            }
         }
 
         event.stopImmediatePropagation();
@@ -580,12 +633,20 @@ export function createGraphController(rootElement) {
             linkStructureChanged;
         const hasCommits = nextCommitNodes.length > 0;
 
+        // Recompute timeline Y targets whenever commits change so the
+        // forceY keeps pulling every node toward the right position —
+        // including nodes that arrive in later WebSocket chunks.
+        if (commitStructureChanged && hasCommits) {
+            layoutManager.assignTimelineTargets(nodes);
+        }
+
         if (!initialLayoutComplete && hasCommits) {
             layoutManager.applyTimelineLayout(nodes);
             snapBranchesToTargets(pendingBranchAlignments);
             layoutManager.requestAutoCenter();
             centerOnLatestCommit();
             initialLayoutComplete = true;
+            simulation.alphaDecay(INITIAL_ALPHA_DECAY);
             layoutManager.restartSimulation(1.0);
         } else {
             snapBranchesToTargets(pendingBranchAlignments);
@@ -1037,6 +1098,7 @@ export function createGraphController(rootElement) {
     }
 
     function tick() {
+        quadtree = d3.quadtree().x(d => d.x).y(d => d.y).addAll(nodes);
         if (layoutManager.shouldAutoCenter()) {
             centerOnLatestCommit();
             layoutManager.checkAutoCenterStop(simulation.alpha());

@@ -106,8 +106,28 @@ export class LayoutManager {
 		ordered.forEach((node, index) => {
 			node.x = centerX;
 			node.y = span === 0 ? start : start + step * index;
+			node._timelineY = node.y;
 			node.vx = 0;
 			node.vy = 0;
+		});
+	}
+
+	/**
+	 * Computes and assigns `_timelineY` targets for all commit nodes.
+	 * Does not move nodes — only sets the target for the forceY pull.
+	 *
+	 * @param {import("../types.js").GraphNode[]} nodes Collection of nodes in the simulation.
+	 */
+	assignTimelineTargets(nodes) {
+		const commitNodes = nodes.filter((n) => n.type === "commit");
+		if (commitNodes.length === 0) return;
+
+		const ordered = this.sortCommitsByTime(commitNodes);
+		const spacing = this.calculateTimelineSpacing(commitNodes);
+		const { start, step, span } = spacing;
+
+		ordered.forEach((node, index) => {
+			node._timelineY = span === 0 ? start : start + step * index;
 		});
 	}
 

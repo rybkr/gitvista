@@ -14,7 +14,7 @@ func (s *Server) updateRepository() {
 	oldRepo := s.cached.repo
 	s.cacheMu.RUnlock()
 
-	newRepo, err := gitcore.NewRepository(s.repo.GitDir())
+	newRepo, err := gitcore.NewRepository(s.repo.GitDir(), gitcore.WithDepth(s.repo.MaxDepth()))
 	if err != nil {
 		log.Printf("ERROR: Failed to reload repository: %v", err)
 		return

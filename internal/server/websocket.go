@@ -58,24 +58,48 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go s.clientWritePump(conn, done)
 }
 
-// sendInitialState sends full repository state as a delta to a new client.
+// initialStateChunkSize controls how many commits are sent per WebSocket message
+// during the initial state sync.
+const initialStateChunkSize = 200
+
+// sendInitialState sends full repository state as chunked deltas to a new client.
+// Commits are sent in batches of initialStateChunkSize to avoid a single large message.
 func (s *Server) sendInitialState(conn *websocket.Conn) {
 	s.cacheMu.RLock()
 	repo := s.cached.repo
 	s.cacheMu.RUnlock()
 
-	message := UpdateMessage{
-		Delta:  repo.Diff(&gitcore.Repository{}),
-		Status: getWorkingTreeStatus(repo.WorkDir()),
+	fullDelta := repo.Diff(&gitcore.Repository{})
+	status := getWorkingTreeStatus(repo.WorkDir())
+	allCommits := fullDelta.AddedCommits
+
+	for i := 0; i < len(allCommits) || i == 0; i += initialStateChunkSize {
+		end := i + initialStateChunkSize
+		if end > len(allCommits) {
+			end = len(allCommits)
+		}
+
+		chunk := gitcore.NewRepositoryDelta()
+		chunk.AddedCommits = allCommits[i:end]
+
+		// First chunk carries branches and status
+		if i == 0 {
+			chunk.AddedBranches = fullDelta.AddedBranches
+		}
+
+		msg := UpdateMessage{Delta: chunk}
+		if i == 0 {
+			msg.Status = status
+		}
+
+		conn.SetWriteDeadline(time.Now().Add(writeWait))
+		if err := conn.WriteJSON(msg); err != nil {
+			log.Printf("%s Failed to send initial state chunk to %s: %v", logError, conn.RemoteAddr(), err)
+			return
+		}
 	}
 
-	conn.SetWriteDeadline(time.Now().Add(writeWait))
-	if err := conn.WriteJSON(message); err != nil {
-		log.Printf("%s Failed to send initial state to %s: %v", logError, conn.RemoteAddr(), err)
-		return
-	}
-
-	log.Printf("%s Initial state sent to %s", logInfo, conn.RemoteAddr())
+	log.Printf("%s Initial state sent to %s (%d commits in chunks)", logInfo, conn.RemoteAddr(), len(allCommits))
 }
 
 // clientReadPump reads from WebSocket to detect disconnect.

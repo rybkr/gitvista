@@ -35,11 +35,28 @@ export class CommitTooltip extends Tooltip {
 
         this.messageEl = createTooltipElement("pre", "commit-tooltip-message");
 
-        tooltip.append(this.headerEl, this.messageEl);
+        this.actionsEl = createTooltipElement("div", "commit-tooltip-actions");
+        this.treeBtn = createTooltipElement("button", "commit-tooltip-tree-btn");
+        this.treeBtn.textContent = "Tree";
+        this.treeBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (this.targetData && this.onTreeRequest) {
+                this.onTreeRequest(this.targetData);
+            }
+        });
+        this.actionsEl.appendChild(this.treeBtn);
+
+        tooltip.append(this.headerEl, this.messageEl, this.actionsEl);
         // document.body.appendChild(...) -> inserts the tooltip into the live DOM tree.
         document.body.appendChild(tooltip);
         return tooltip;
     }
+
+    /**
+     * Callback invoked when the user clicks the Tree button.
+     * @type {((node: import("../graph/types.js").GraphNodeCommit) => void) | null}
+     */
+    onTreeRequest = null;
 
     /**
      * @returns {string} CSS class scoped to commit tooltips.

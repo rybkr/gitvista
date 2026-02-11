@@ -18,7 +18,7 @@ import (
 func (r *Repository) loadObjects() error {
 	visited := make(map[Hash]bool)
 	for _, ref := range r.refs {
-		r.traverseObjects(ref, visited)
+		r.traverseObjects(ref, visited, 0)
 	}
 
 	return nil
@@ -26,8 +26,12 @@ func (r *Repository) loadObjects() error {
 
 // traverseObjects recursively loads all objects beginning from the provided reference,
 // using the visited map to avoid processing the same object multiple times.
-func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
+// depth tracks the current commit traversal depth for enforcing maxDepth limits.
+func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool, depth int) {
 	if visited[ref] {
+		return
+	}
+	if r.maxDepth > 0 && depth >= r.maxDepth {
 		return
 	}
 	visited[ref] = true
@@ -44,12 +48,12 @@ func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
 		commit := object.(*Commit)
 		r.commits = append(r.commits, commit)
 		for _, parent := range commit.Parents {
-			r.traverseObjects(parent, visited)
+			r.traverseObjects(parent, visited, depth+1)
 		}
 	case TagObject:
 		tag := object.(*Tag)
 		r.tags = append(r.tags, tag)
-		r.traverseObjects(tag.Object, visited)
+		r.traverseObjects(tag.Object, visited, depth)
 	default:
 		// Unrecognized type, log the error but continue on.
 		log.Printf("unsupported object type: %d", object.Type())

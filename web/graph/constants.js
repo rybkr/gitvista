@@ -7,9 +7,11 @@ export const NODE_RADIUS = 6;
 export const LINK_DISTANCE = 50;
 export const LINK_STRENGTH = 0.4;
 export const CHARGE_STRENGTH = -110;
+export const CHARGE_DISTANCE_MAX = 300;
 export const COLLISION_RADIUS = 14;
 export const VELOCITY_DECAY = 0.55;
 export const ALPHA_DECAY = 0.035;
+export const INITIAL_ALPHA_DECAY = 0.015;
 export const DRAG_ALPHA_TARGET = 0.12;
 export const LINK_THICKNESS = NODE_RADIUS * 0.32;
 export const ARROW_LENGTH = NODE_RADIUS * 2;
@@ -22,6 +24,7 @@ export const TIMELINE_PADDING = 160;
 export const TIMELINE_FALLBACK_GAP = 320;
 export const TIMELINE_MARGIN = 40;
 export const TIMELINE_AUTO_CENTER_ALPHA = 0.12;
+export const TIMELINE_Y_STRENGTH = 0.12;
 export const LABEL_FONT =
     "12px ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace";
 export const LABEL_PADDING = 9;
@@ -53,4 +56,5 @@ export const TREE_EXPAND_RADIUS = 40;
 export const TREE_EXPAND_ARC_SMALL = Math.PI;      // semicircle for <=8 children
 export const TREE_EXPAND_ARC_LARGE = Math.PI * 1.8; // near-full circle for >8
 export const TREE_CHILD_THRESHOLD = 8;
+export const VIEWPORT_CULL_MARGIN = 100;
 

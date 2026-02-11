@@ -9,9 +9,10 @@ import (
 
 func main() {
 	repoPath := flag.String("repo", ".", "Path to git repository")
+	depth := flag.Int("depth", 1000, "Maximum commit traversal depth (0 = unlimited)")
 	flag.Parse()
 
-	repo, err := gitcore.NewRepository(*repoPath)
+	repo, err := gitcore.NewRepository(*repoPath, gitcore.WithDepth(*depth))
 	if err != nil {
 		log.Fatal(err)
 	}

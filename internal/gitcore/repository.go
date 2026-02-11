@@ -8,10 +8,20 @@ import (
 	"sync"
 )
 
+// RepositoryOption configures optional Repository behavior.
+type RepositoryOption func(*Repository)
+
+// WithDepth sets the maximum commit traversal depth. 0 means unlimited.
+func WithDepth(depth int) RepositoryOption {
+	return func(r *Repository) { r.maxDepth = depth }
+}
+
 // Repository represents a Git repository with its metadata and object storage.
 type Repository struct {
 	gitDir  string
 	workDir string
+
+	maxDepth int
 
 	packIndices []*PackIndex
 	refs        map[string]Hash
@@ -30,7 +40,7 @@ type Repository struct {
 //   - The working directory (will find .git within)
 //   - The .git directory itself
 //   - A parent directory containing a .git directory
-func NewRepository(path string) (*Repository, error) {
+func NewRepository(path string, opts ...RepositoryOption) (*Repository, error) {
 	gitDir, workDir, err := findGitDirectory(path)
 	if err != nil {
 		return nil, err
@@ -45,6 +55,10 @@ func NewRepository(path string) (*Repository, error) {
 		workDir: workDir,
 		refs:    make(map[string]Hash),
 		commits: make([]*Commit, 0),
+	}
+
+	for _, opt := range opts {
+		opt(repo)
 	}
 
 	if err := repo.loadPackIndices(); err != nil {
@@ -73,6 +87,11 @@ func (r *Repository) GitDir() string {
 // WorkDir returns the path to the repository's working directory.
 func (r *Repository) WorkDir() string {
 	return r.workDir
+}
+
+// MaxDepth returns the maximum commit traversal depth. 0 means unlimited.
+func (r *Repository) MaxDepth() int {
+	return r.maxDepth
 }
 
 // Commits returns a map of all commit IDs to Commit structs.

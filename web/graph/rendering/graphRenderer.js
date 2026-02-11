@@ -23,6 +23,7 @@ import {
     NODE_SHADOW_OFFSET_Y,
     TREE_NODE_SIZE,
     TREE_NODE_HIGHLIGHT_SIZE,
+    VIEWPORT_CULL_MARGIN,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 
@@ -53,10 +54,52 @@ export class GraphRenderer {
         this.clear(viewportWidth, viewportHeight);
         this.setupTransform(zoomTransform);
 
-        this.renderLinks(links, nodes);
-        this.renderNodes(nodes, highlightKey);
+        const bounds = this.computeVisibleBounds(
+            zoomTransform,
+            viewportWidth,
+            viewportHeight,
+            VIEWPORT_CULL_MARGIN,
+        );
+
+        this.renderLinks(links, nodes, bounds);
+        this.renderNodes(nodes, highlightKey, bounds);
 
         this.ctx.restore();
+    }
+
+    /**
+     * Computes the visible graph-space rectangle from the current zoom transform.
+     *
+     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     * @param {number} viewportWidth Viewport width in CSS pixels.
+     * @param {number} viewportHeight Viewport height in CSS pixels.
+     * @param {number} margin Extra padding in graph-space units.
+     * @returns {{ minX: number, maxX: number, minY: number, maxY: number }}
+     */
+    computeVisibleBounds(zoomTransform, viewportWidth, viewportHeight, margin) {
+        const { x: tx, y: ty, k } = zoomTransform;
+        return {
+            minX: (0 - tx) / k - margin,
+            maxX: (viewportWidth - tx) / k + margin,
+            minY: (0 - ty) / k - margin,
+            maxY: (viewportHeight - ty) / k + margin,
+        };
+    }
+
+    /**
+     * Checks whether a node falls within the visible bounds.
+     *
+     * @param {{ x: number, y: number }} node Node to test.
+     * @param {{ minX: number, maxX: number, minY: number, maxY: number }} bounds Visible rectangle.
+     * @returns {boolean}
+     */
+    isNodeVisible(node, bounds) {
+        return (
+            node.x >= bounds.minX &&
+            node.x <= bounds.maxX &&
+            node.y >= bounds.minY &&
+            node.y <= bounds.maxY
+        );
     }
 
     /**
@@ -107,7 +150,7 @@ export class GraphRenderer {
      * @param {Array<{source: string | import("../types.js").GraphNode, target: string | import("../types.js").GraphNode, kind?: string}>} links Link definitions from the force simulation.
      * @param {import("../types.js").GraphNode[]} nodes Node collection used to resolve string references.
      */
-    renderLinks(links, nodes) {
+    renderLinks(links, nodes, bounds) {
         this.ctx.lineWidth = LINK_THICKNESS;
 
         for (const link of links) {
@@ -123,6 +166,24 @@ export class GraphRenderer {
             link.warmup = nextWarmup;
             if (warmup <= 0) {
                 continue;
+            }
+
+            // Skip drawing if the link's bounding box is entirely outside the viewport.
+            // A simple "both endpoints off-screen" check is wrong — it would cull
+            // links that cross *through* the viewport (e.g. one node above, one below).
+            if (bounds) {
+                const linkMinX = Math.min(source.x, target.x);
+                const linkMaxX = Math.max(source.x, target.x);
+                const linkMinY = Math.min(source.y, target.y);
+                const linkMaxY = Math.max(source.y, target.y);
+                if (
+                    linkMaxX < bounds.minX ||
+                    linkMinX > bounds.maxX ||
+                    linkMaxY < bounds.minY ||
+                    linkMinY > bounds.maxY
+                ) {
+                    continue;
+                }
             }
 
             const prevAlpha = this.ctx.globalAlpha;
@@ -231,24 +292,24 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey) {
+    renderNodes(nodes, highlightKey, bounds) {
         for (const node of nodes) {
-            if (node.type === "commit") {
+            if (node.type === "commit" && (!bounds || this.isNodeVisible(node, bounds))) {
                 this.renderCommitNode(node, highlightKey);
             }
         }
         for (const node of nodes) {
-            if (node.type === "branch") {
+            if (node.type === "branch" && (!bounds || this.isNodeVisible(node, bounds))) {
                 this.renderBranchNode(node, highlightKey);
             }
         }
         for (const node of nodes) {
-            if (node.type === "tree") {
+            if (node.type === "tree" && (!bounds || this.isNodeVisible(node, bounds))) {
                 this.renderTreeNode(node, highlightKey);
             }
         }
         for (const node of nodes) {
-            if (node.type === "blob") {
+            if (node.type === "blob" && (!bounds || this.isNodeVisible(node, bounds))) {
                 this.renderBlobNode(node, highlightKey);
             }
         }

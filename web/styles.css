@@ -265,6 +265,28 @@ canvas {
     color: rgba(99, 110, 123, 0.95);
 }
 
+.commit-tooltip-actions {
+    display: flex;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.commit-tooltip-tree-btn {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.commit-tooltip-tree-btn:hover {
+    background: rgba(148, 163, 184, 0.2);
+}
+
 .commit-tooltip-message {
     margin: 0;
     white-space: pre-wrap;
