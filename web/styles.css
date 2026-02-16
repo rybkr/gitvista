@@ -236,6 +236,25 @@ body {
     padding: 4px 0;
 }
 
+.file-explorer-tree:focus {
+    outline: none;
+}
+
+.file-explorer-tree:focus .explorer-entry.is-focused {
+    outline: 2px solid var(--node-color);
+    outline-offset: -2px;
+}
+
+.explorer-entry.is-focused {
+    background: rgba(208, 215, 222, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+    .explorer-entry.is-focused {
+        background: rgba(48, 54, 61, 0.4);
+    }
+}
+
 .explorer-entry {
     display: flex;
     align-items: center;

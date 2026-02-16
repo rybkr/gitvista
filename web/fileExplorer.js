@@ -1,12 +1,14 @@
 /**
  * File explorer component — a tree-based file browser with expand/collapse,
- * lazy blame annotations, and file content viewing.
+ * lazy blame annotations, file content viewing, keyboard navigation, and ARIA.
  *
  * Architecture:
  * - Flat list rendering: builds visibleEntries array from expanded directories
  * - Lazy fetching: tree data cached on expand, blame data fetched async
  * - Stale response handling: generation counter discards outdated responses
  * - File viewing: switches to file content viewer when file is clicked
+ * - Keyboard navigation: W3C APG TreeView pattern (arrow keys, Enter, Home/End)
+ * - ARIA: role="tree", role="treeitem", aria-expanded, aria-activedescendant
  */
 
 import { createFileContentViewer } from "./fileContentViewer.js";
@@ -46,6 +48,11 @@ function formatRelativeTime(dateStr) {
     return `${diffYr}y ago`;
 }
 
+/** Convert a file path to a valid DOM id for ARIA references. */
+function pathToId(path) {
+    return `explorer-item-${path.replace(/[^a-zA-Z0-9]/g, "-") || "root"}`;
+}
+
 export function createFileExplorer() {
     const el = document.createElement("div");
     el.className = "file-explorer";
@@ -68,6 +75,7 @@ export function createFileExplorer() {
         blameCache: new Map(),      // "commitHash:path" -> { filename: BlameEntry }
         selectedFile: null,         // { path, blobHash } or null
         generation: 0,              // Incremented on openCommit to discard stale responses
+        focusedIndex: 0,            // Index into the visibleEntries array for keyboard nav
     };
 
     /**
@@ -96,7 +104,7 @@ export function createFileExplorer() {
 
     /**
      * Build a flat array of visible entries based on expanded directories.
-     * Each entry: { path, name, depth, isDir, treeHash, blobHash, mode, blame }.
+     * Each entry includes ARIA sibling info (setSize, posInSet) for accessibility.
      */
     function buildVisibleEntries() {
         const visible = [];
@@ -108,10 +116,7 @@ export function createFileExplorer() {
         // Recursively walk from root
         function walk(treeHash, parentPath, depth) {
             const tree = state.treeCache.get(treeHash);
-            if (!tree) {
-                // Tree not loaded yet (should not happen for root, but can for lazy-loaded dirs)
-                return;
-            }
+            if (!tree) return;
 
             // Sort entries: directories first (alphabetically), then files (alphabetically)
             const entries = [...tree.entries].sort((a, b) => {
@@ -122,11 +127,13 @@ export function createFileExplorer() {
                 return a.name.localeCompare(b.name);
             });
 
-            for (const entry of entries) {
+            const setSize = entries.length;
+
+            for (let pos = 0; pos < entries.length; pos++) {
+                const entry = entries[pos];
                 const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
                 const isDir = entry.type === "tree";
 
-                // Build entry object
                 const visibleEntry = {
                     path: entryPath,
                     name: entry.name,
@@ -135,7 +142,9 @@ export function createFileExplorer() {
                     treeHash: isDir ? entry.hash : null,
                     blobHash: !isDir ? entry.hash : null,
                     mode: entry.mode,
-                    blame: null, // Will be populated lazily
+                    blame: null,
+                    setSize,
+                    posInSet: pos + 1,
                 };
 
                 // Check if we have blame data for this entry
@@ -159,14 +168,10 @@ export function createFileExplorer() {
     }
 
     /**
-     * Render the file explorer UI.
+     * Render the file explorer UI with full ARIA tree semantics.
      */
     function render() {
         el.innerHTML = "";
-
-        // Header: show commit info or placeholder
-        const header = document.createElement("div");
-        header.className = "file-explorer-header";
 
         if (!state.commitHash) {
             const placeholder = document.createElement("div");
@@ -176,6 +181,9 @@ export function createFileExplorer() {
             return;
         }
 
+        // Header
+        const header = document.createElement("div");
+        header.className = "file-explorer-header";
         const commitInfo = document.createElement("div");
         commitInfo.className = "file-explorer-commit";
         const shortHash = state.commitHash.substring(0, 7);
@@ -184,18 +192,51 @@ export function createFileExplorer() {
         header.appendChild(commitInfo);
         el.appendChild(header);
 
-        // Tree list
+        // Tree container with ARIA tree role
         const treeContainer = document.createElement("div");
         treeContainer.className = "file-explorer-tree";
+        treeContainer.setAttribute("role", "tree");
+        treeContainer.setAttribute("aria-label", "File explorer");
+        treeContainer.setAttribute("tabindex", "0");
 
         const visibleEntries = buildVisibleEntries();
 
-        for (const entry of visibleEntries) {
+        // Clamp focusedIndex to valid range
+        if (state.focusedIndex >= visibleEntries.length) {
+            state.focusedIndex = Math.max(0, visibleEntries.length - 1);
+        }
+
+        // Set aria-activedescendant to the focused entry
+        if (visibleEntries[state.focusedIndex]) {
+            treeContainer.setAttribute("aria-activedescendant",
+                pathToId(visibleEntries[state.focusedIndex].path));
+        }
+
+        for (let i = 0; i < visibleEntries.length; i++) {
+            const entry = visibleEntries[i];
             const row = document.createElement("div");
             row.className = "explorer-entry";
-
-            // Apply indentation
+            row.id = pathToId(entry.path);
+            row.setAttribute("data-path", entry.path);
             row.style.paddingLeft = `${8 + entry.depth * 16}px`;
+
+            // ARIA treeitem attributes
+            row.setAttribute("role", "treeitem");
+            row.setAttribute("aria-level", String(entry.depth + 1));
+            row.setAttribute("aria-setsize", String(entry.setSize));
+            row.setAttribute("aria-posinset", String(entry.posInSet));
+            if (entry.isDir) {
+                row.setAttribute("aria-expanded",
+                    state.expandedDirs.has(entry.path) ? "true" : "false");
+            }
+
+            // Focus and selection state
+            if (i === state.focusedIndex) {
+                row.classList.add("is-focused");
+            }
+            if (state.selectedFile && state.selectedFile.path === entry.path) {
+                row.classList.add("is-selected");
+            }
 
             // Chevron (only for directories)
             if (entry.isDir) {
@@ -207,7 +248,6 @@ export function createFileExplorer() {
                 }
                 row.appendChild(chevron);
             } else {
-                // Spacer for files (no chevron)
                 const spacer = document.createElement("span");
                 spacer.className = "explorer-chevron-spacer";
                 row.appendChild(spacer);
@@ -225,7 +265,7 @@ export function createFileExplorer() {
             name.textContent = entry.name;
             row.appendChild(name);
 
-            // Blame annotations (age and hash)
+            // Blame annotations
             const blameContainer = document.createElement("span");
             blameContainer.className = "explorer-blame";
 
@@ -241,13 +281,9 @@ export function createFileExplorer() {
 
             row.appendChild(blameContainer);
 
-            // Selection state
-            if (state.selectedFile && state.selectedFile.path === entry.path) {
-                row.classList.add("is-selected");
-            }
-
-            // Click handler
+            // Click handler — also updates focus
             row.addEventListener("click", () => {
+                state.focusedIndex = i;
                 if (entry.isDir) {
                     handleDirClick(entry);
                 } else {
@@ -258,8 +294,143 @@ export function createFileExplorer() {
             treeContainer.appendChild(row);
         }
 
+        // Keyboard navigation (W3C APG TreeView pattern)
+        treeContainer.addEventListener("keydown", (e) => handleKeyDown(e, visibleEntries));
+
         el.appendChild(treeContainer);
         el.appendChild(contentViewer.el);
+
+        // Scroll focused item into view after full re-render
+        const focusedRow = treeContainer.querySelector(".is-focused");
+        if (focusedRow) {
+            focusedRow.scrollIntoView({ block: "nearest" });
+        }
+    }
+
+    /**
+     * Keyboard handler following W3C APG TreeView spec.
+     * https://www.w3.org/WAI/ARIA/apg/patterns/treeview/
+     */
+    function handleKeyDown(e, entries) {
+        if (entries.length === 0) return;
+
+        const current = entries[state.focusedIndex];
+        if (!current) return;
+
+        switch (e.key) {
+            case "ArrowDown":
+                e.preventDefault();
+                if (state.focusedIndex < entries.length - 1) {
+                    state.focusedIndex++;
+                    renderFocusUpdate(entries);
+                }
+                break;
+
+            case "ArrowUp":
+                e.preventDefault();
+                if (state.focusedIndex > 0) {
+                    state.focusedIndex--;
+                    renderFocusUpdate(entries);
+                }
+                break;
+
+            case "ArrowRight":
+                e.preventDefault();
+                if (current.isDir && !state.expandedDirs.has(current.path)) {
+                    handleDirClick(current);
+                } else if (current.isDir && state.expandedDirs.has(current.path)) {
+                    // Move focus to first child
+                    if (state.focusedIndex < entries.length - 1) {
+                        state.focusedIndex++;
+                        renderFocusUpdate(entries);
+                    }
+                }
+                break;
+
+            case "ArrowLeft":
+                e.preventDefault();
+                if (current.isDir && state.expandedDirs.has(current.path)) {
+                    handleDirClick(current);
+                } else {
+                    // Move focus to parent directory
+                    const parentPath = current.path.includes("/")
+                        ? current.path.substring(0, current.path.lastIndexOf("/"))
+                        : "";
+                    const parentIndex = entries.findIndex(e => e.path === parentPath);
+                    if (parentIndex >= 0) {
+                        state.focusedIndex = parentIndex;
+                        renderFocusUpdate(entries);
+                    }
+                }
+                break;
+
+            case "Enter":
+            case " ":
+                e.preventDefault();
+                if (current.isDir) {
+                    handleDirClick(current);
+                } else {
+                    handleFileClick(current);
+                }
+                break;
+
+            case "Home":
+                e.preventDefault();
+                state.focusedIndex = 0;
+                renderFocusUpdate(entries);
+                break;
+
+            case "End":
+                e.preventDefault();
+                state.focusedIndex = entries.length - 1;
+                renderFocusUpdate(entries);
+                break;
+
+            case "*":
+                e.preventDefault();
+                expandSiblings(current, entries);
+                break;
+        }
+    }
+
+    /**
+     * Lightweight focus update without full re-render.
+     * Moves the .is-focused class and updates aria-activedescendant.
+     */
+    function renderFocusUpdate(entries) {
+        const prevFocused = el.querySelector(".explorer-entry.is-focused");
+        if (prevFocused) prevFocused.classList.remove("is-focused");
+
+        const rows = el.querySelectorAll(".explorer-entry");
+        const row = rows[state.focusedIndex];
+        if (row) {
+            row.classList.add("is-focused");
+            row.scrollIntoView({ block: "nearest" });
+        }
+
+        const treeContainer = el.querySelector(".file-explorer-tree");
+        if (treeContainer && entries[state.focusedIndex]) {
+            treeContainer.setAttribute("aria-activedescendant",
+                pathToId(entries[state.focusedIndex].path));
+        }
+    }
+
+    /**
+     * Expand all sibling directories at the same level (* key).
+     */
+    function expandSiblings(current, entries) {
+        const parentPath = current.path.includes("/")
+            ? current.path.substring(0, current.path.lastIndexOf("/"))
+            : "";
+        const siblings = entries.filter(e =>
+            e.depth === current.depth &&
+            e.isDir &&
+            !state.expandedDirs.has(e.path) &&
+            (e.path.includes("/")
+                ? e.path.substring(0, e.path.lastIndexOf("/")) === parentPath
+                : parentPath === "")
+        );
+        Promise.all(siblings.map(s => handleDirClick(s)));
     }
 
     /**
@@ -270,29 +441,34 @@ export function createFileExplorer() {
         const isExpanded = state.expandedDirs.has(entry.path);
 
         if (isExpanded) {
-            // Collapse
             state.expandedDirs.delete(entry.path);
             render();
+            // Preserve focus on the collapsed directory
+            const entries = buildVisibleEntries();
+            const idx = entries.findIndex(e => e.path === entry.path);
+            if (idx >= 0) state.focusedIndex = idx;
         } else {
-            // Expand
             state.expandedDirs.add(entry.path);
 
-            // Fetch tree data if not cached
             if (!state.treeCache.has(entry.treeHash)) {
                 try {
                     const gen = state.generation;
                     const tree = await fetchTree(entry.treeHash);
-                    if (state.generation !== gen) return; // Discard stale response
+                    if (state.generation !== gen) return;
                     state.treeCache.set(entry.treeHash, tree);
                 } catch (err) {
                     console.error("Failed to fetch tree:", err);
-                    state.expandedDirs.delete(entry.path); // Revert expansion
+                    state.expandedDirs.delete(entry.path);
                     return;
                 }
             }
 
-            // Re-render to show children
             render();
+
+            // Preserve focus on the expanded directory
+            const entries = buildVisibleEntries();
+            const idx = entries.findIndex(e => e.path === entry.path);
+            if (idx >= 0) state.focusedIndex = idx;
 
             // Lazily fetch blame data in background
             const blameKey = `${state.commitHash}:${entry.path}`;
@@ -300,9 +476,9 @@ export function createFileExplorer() {
                 try {
                     const gen = state.generation;
                     const blameData = await fetchBlame(state.commitHash, entry.path);
-                    if (state.generation !== gen) return; // Discard stale response
+                    if (state.generation !== gen) return;
                     state.blameCache.set(blameKey, blameData);
-                    render(); // Re-render to show blame annotations
+                    render();
                 } catch (err) {
                     console.error("Failed to fetch blame:", err);
                 }
@@ -315,7 +491,6 @@ export function createFileExplorer() {
      */
     function handleFileClick(entry) {
         state.selectedFile = { path: entry.path, blobHash: entry.blobHash };
-        // Hide tree and header, show content viewer
         for (const child of el.children) {
             if (child !== contentViewer.el) {
                 child.style.display = "none";
@@ -329,10 +504,7 @@ export function createFileExplorer() {
      * @param {Object} commit - Commit object with { hash, tree, message, ... }
      */
     async function openCommit(commit) {
-        // Increment generation to discard stale responses
         state.generation++;
-
-        // Reset state
         state.commitHash = commit.hash;
         state.commitMessage = commit.message;
         state.rootTreeHash = commit.tree;
@@ -340,15 +512,14 @@ export function createFileExplorer() {
         state.treeCache.clear();
         state.blameCache.clear();
         state.selectedFile = null;
+        state.focusedIndex = 0;
 
-        // Auto-expand root
         state.expandedDirs.add("");
 
-        // Fetch root tree
         try {
             const gen = state.generation;
             const rootTree = await fetchTree(commit.tree);
-            if (state.generation !== gen) return; // Discard stale response
+            if (state.generation !== gen) return;
             state.treeCache.set(commit.tree, rootTree);
         } catch (err) {
             console.error("Failed to fetch root tree:", err);
@@ -356,17 +527,15 @@ export function createFileExplorer() {
             return;
         }
 
-        // Render tree
         render();
 
-        // Lazily fetch root blame data
         const blameKey = `${state.commitHash}:`;
         try {
             const gen = state.generation;
             const blameData = await fetchBlame(state.commitHash, "");
-            if (state.generation !== gen) return; // Discard stale response
+            if (state.generation !== gen) return;
             state.blameCache.set(blameKey, blameData);
-            render(); // Re-render to show blame annotations
+            render();
         } catch (err) {
             console.error("Failed to fetch root blame:", err);
         }
