@@ -126,6 +126,48 @@ func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 	return objectData, nil
 }
 
+// resolveTreeAtPath navigates from a root tree hash to a tree at the given directory path.
+// dirPath is slash-separated (e.g., "internal/gitcore"). Empty string returns the root tree.
+// Returns nil and an error if the path does not exist or is not a tree.
+func (r *Repository) resolveTreeAtPath(rootTreeHash Hash, dirPath string) (*Tree, error) {
+	// Empty path means the root tree itself
+	if dirPath == "" || dirPath == "/" {
+		return r.GetTree(rootTreeHash)
+	}
+
+	// Split path by '/' and walk through each component
+	components := strings.Split(strings.Trim(dirPath, "/"), "/")
+	currentTreeHash := rootTreeHash
+
+	for _, component := range components {
+		tree, err := r.GetTree(currentTreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tree %s: %w", currentTreeHash, err)
+		}
+
+		// Find the entry matching this path component
+		found := false
+		for _, entry := range tree.Entries {
+			if entry.Name == component {
+				// Must be a tree (directory)
+				if entry.Mode != "040000" && entry.Type != "tree" {
+					return nil, fmt.Errorf("path component %q is not a directory", component)
+				}
+				currentTreeHash = entry.ID
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return nil, fmt.Errorf("path component %q not found", component)
+		}
+	}
+
+	// Return the final tree
+	return r.GetTree(currentTreeHash)
+}
+
 // Diff returns the difference between this repository and another,
 // represented as a RepositoryDelta struct.
 // It treats r as the new repository and old as the old repository.

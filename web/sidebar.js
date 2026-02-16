@@ -1,4 +1,4 @@
-const DEFAULT_WIDTH = 280;
+const DEFAULT_WIDTH = 320;
 const MIN_WIDTH = 180;
 const COLLAPSED_WIDTH = 0;
 const STORAGE_KEY = "gitvista-sidebar";

@@ -24,6 +24,9 @@ type Server struct {
 
 	broadcast chan UpdateMessage
 
+	// blameCache stores blame results keyed by "commitHash:dirPath"
+	blameCache sync.Map
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -54,6 +57,7 @@ func (s *Server) Start() error {
 	http.Handle("/", fs)
 
 	http.HandleFunc("/api/repository", s.handleRepository)
+	http.HandleFunc("/api/tree/blame/", s.handleTreeBlame)
 	http.HandleFunc("/api/tree/", s.handleTree)
 	http.HandleFunc("/api/blob/", s.handleBlob)
 	http.HandleFunc("/api/ws", s.handleWebSocket)

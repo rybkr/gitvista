@@ -3,8 +3,8 @@ import { createGraph } from "./graph.js";
 import { startBackend } from "./backend.js";
 import { createSidebar } from "./sidebar.js";
 import { createIndexView } from "./indexView.js";
-import { createFileSidebar } from "./fileSidebar.js";
-import { createFileBrowser } from "./fileBrowser.js";
+import { createSidebarTabs } from "./sidebarTabs.js";
+import { createFileExplorer } from "./fileExplorer.js";
 
 document.addEventListener("DOMContentLoaded", () => {
     logger.info("Bootstrapping frontend");
@@ -15,24 +15,28 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
-    // Left sidebar (working tree status)
+    // Left sidebar with tabs
     const sidebar = createSidebar();
     root.parentElement.insertBefore(sidebar.el, root);
     root.appendChild(sidebar.expandBtn);
 
     const indexView = createIndexView();
-    sidebar.content.appendChild(indexView.el);
+    const fileExplorer = createFileExplorer();
 
-    // Right sidebar (file browser)
-    const fileSidebar = createFileSidebar();
-    const fileBrowser = createFileBrowser();
-    fileSidebar.contentEl.appendChild(fileBrowser.el);
-    root.parentElement.appendChild(fileSidebar.el);
+    const tabs = createSidebarTabs([
+        { name: "working-tree", label: "Working Tree", content: indexView.el },
+        { name: "file-explorer", label: "File Explorer", content: fileExplorer.el },
+    ]);
+    sidebar.content.appendChild(tabs.el);
 
     const graph = createGraph(root, {
         onCommitTreeClick: (commit) => {
-            fileBrowser.openCommit(commit);
-            fileSidebar.expand();
+            tabs.showTab("file-explorer");
+            fileExplorer.openCommit(commit);
+            // Ensure sidebar is visible
+            if (sidebar.el.classList.contains("is-collapsed")) {
+                sidebar.expandBtn.click();
+            }
         },
     });
 
