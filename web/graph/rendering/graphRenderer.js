@@ -6,8 +6,6 @@
 import {
     ARROW_LENGTH,
     ARROW_WIDTH,
-    BLOB_NODE_HIGHLIGHT_RADIUS,
-    BLOB_NODE_RADIUS,
     BRANCH_NODE_CORNER_RADIUS,
     BRANCH_NODE_PADDING_X,
     BRANCH_NODE_PADDING_Y,
@@ -21,8 +19,8 @@ import {
     NODE_RADIUS,
     NODE_SHADOW_BLUR,
     NODE_SHADOW_OFFSET_Y,
-    TREE_NODE_SIZE,
-    TREE_NODE_HIGHLIGHT_SIZE,
+    TREE_ICON_SIZE,
+    TREE_ICON_OFFSET,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 
@@ -160,25 +158,13 @@ export class GraphRenderer {
             return;
         }
 
-        let color;
-        if (linkKind === "branch") {
-            color = this.palette.branchLink;
-        } else if (linkKind === "tree") {
-            color = this.palette.treeLink;
-        } else if (linkKind === "blob") {
-            color = this.palette.blobNodeBorder;
-        } else {
-            color = this.palette.link;
-        }
+        const color = linkKind === "branch"
+            ? this.palette.branchLink
+            : this.palette.link;
 
-        let targetRadius = NODE_RADIUS;
-        if (target.type === "branch") {
-            targetRadius = BRANCH_NODE_RADIUS;
-        } else if (target.type === "tree") {
-            targetRadius = TREE_NODE_SIZE / 2;
-        } else if (target.type === "blob") {
-            targetRadius = BLOB_NODE_RADIUS;
-        }
+        const targetRadius = target.type === "branch"
+            ? BRANCH_NODE_RADIUS
+            : NODE_RADIUS;
 
         this.renderArrow(source, target, dx, dy, distance, targetRadius, color);
     }
@@ -242,16 +228,6 @@ export class GraphRenderer {
                 this.renderBranchNode(node, highlightKey);
             }
         }
-        for (const node of nodes) {
-            if (node.type === "tree") {
-                this.renderTreeNode(node, highlightKey);
-            }
-        }
-        for (const node of nodes) {
-            if (node.type === "blob") {
-                this.renderBlobNode(node, highlightKey);
-            }
-        }
     }
 
     /**
@@ -306,6 +282,7 @@ export class GraphRenderer {
         this.ctx.globalAlpha = previousAlpha;
 
         this.renderCommitLabel(node, spawnAlpha);
+        this.renderTreeIcon(node);
     }
 
     /**
@@ -453,6 +430,34 @@ export class GraphRenderer {
     }
 
     /**
+     * Renders a small folder icon at the top-right of a commit node.
+     * This icon indicates the commit has a tree that can be browsed.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Commit node to annotate with icon.
+     */
+    renderTreeIcon(node) {
+        if (!node.commit?.tree) return;
+
+        const iconSize = TREE_ICON_SIZE;
+        const offsetX = node.radius + TREE_ICON_OFFSET;
+        const offsetY = -(node.radius + TREE_ICON_OFFSET);
+        const ix = node.x + offsetX;
+        const iy = node.y + offsetY;
+
+        // Small folder shape
+        this.ctx.fillStyle = this.palette.treeNode;
+        this.ctx.beginPath();
+        this.ctx.moveTo(ix, iy);
+        this.ctx.lineTo(ix + iconSize * 0.4, iy);
+        this.ctx.lineTo(ix + iconSize * 0.5, iy - iconSize * 0.2);
+        this.ctx.lineTo(ix + iconSize, iy - iconSize * 0.2);
+        this.ctx.lineTo(ix + iconSize, iy + iconSize * 0.6);
+        this.ctx.lineTo(ix, iy + iconSize * 0.6);
+        this.ctx.closePath();
+        this.ctx.fill();
+    }
+
+    /**
      * Renders a branch node pill with text.
      *
      * @param {import("../types.js").GraphNodeBranch} node Branch node to paint.
@@ -518,292 +523,6 @@ export class GraphRenderer {
         this.ctx.restore();
     }
 
-    /**
-     * Renders a tree node as a square with optional label.
-     *
-     * @param {import("../types.js").GraphNodeTree} node Tree node to paint.
-     * @param {string|null} highlightKey Current highlight identifier.
-     */
-    renderTreeNode(node, highlightKey) {
-        const isHighlighted = highlightKey && node.hash === highlightKey;
-
-        let spawnProgress =
-            typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
-
-        // Negative spawnPhase = delayed cascade; increment toward 0 and skip rendering
-        if (spawnProgress < 0) {
-            node.spawnPhase = Math.min(0, spawnProgress + 0.06);
-            return;
-        }
-
-        const easedSpawn =
-            spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
-        const nextSpawn =
-            spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
-        if (nextSpawn >= 1) {
-            delete node.spawnPhase;
-        } else {
-            node.spawnPhase = nextSpawn;
-        }
-        const spawnAlpha = Math.max(0, Math.min(1, easedSpawn));
-        const scale = 0.6 + 0.4 * spawnAlpha;
-
-        this.ctx.save();
-        const previousAlpha = this.ctx.globalAlpha;
-        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
-        this.ctx.translate(node.x, node.y);
-        this.ctx.scale(scale, scale);
-        this.ctx.translate(-node.x, -node.y);
-
-        const baseSize = TREE_NODE_SIZE;
-        const targetSize = isHighlighted ? TREE_NODE_HIGHLIGHT_SIZE : baseSize;
-        const currentSize = node.size ?? baseSize;
-        node.size = currentSize + (targetSize - currentSize) * 0.25;
-        const drawSize = node.size;
-
-        const halfSize = drawSize / 2;
-        const x = node.x - halfSize;
-        const y = node.y - halfSize;
-
-        if (isHighlighted) {
-            this.ctx.save();
-            this.ctx.fillStyle = this.palette.nodeHighlightGlow;
-            this.ctx.globalAlpha = 0.3;
-            this.ctx.fillRect(x - 4, y - 4, drawSize + 8, drawSize + 8);
-            this.ctx.restore();
-        }
-
-        this.ctx.fillStyle = isHighlighted
-            ? this.palette.nodeHighlight
-            : this.palette.treeNode;
-        this.applyShadow();
-        this.ctx.fillRect(x, y, drawSize, drawSize);
-        this.clearShadow();
-
-        this.ctx.lineWidth = isHighlighted ? 2 : 1.5;
-        this.ctx.strokeStyle = isHighlighted
-            ? this.palette.nodeHighlightRing
-            : this.palette.treeNodeBorder;
-        this.ctx.strokeRect(x, y, drawSize, drawSize);
-
-        // Indicator inside the square: "+" collapsed, file count for "dirs", "−" for "all"
-        if (node.tree && node.tree.entries && node.tree.entries.length > 0) {
-            let indicator;
-            if (node.expanded === "dirs" && node.pendingBlobs?.length > 0) {
-                indicator = String(node.pendingBlobs.length);
-            } else if (node.expanded === "all") {
-                indicator = "\u2212";
-            } else {
-                indicator = "+";
-            }
-            this.ctx.font = "bold 9px sans-serif";
-            this.ctx.textBaseline = "middle";
-            this.ctx.textAlign = "center";
-            this.ctx.fillStyle = this.palette.treeLabelText;
-            this.ctx.fillText(indicator, node.x, node.y + 0.5);
-        }
-
-        this.ctx.globalAlpha = previousAlpha;
-        this.ctx.restore();
-
-        // File count badge when expanded === "dirs" with pending blobs
-        if (
-            node.expanded === "dirs" &&
-            node.pendingBlobs?.length > 0 &&
-            spawnAlpha > 0.3
-        ) {
-            this.renderFileCountBadge(node, node.pendingBlobs.length, spawnAlpha);
-        }
-
-        if (spawnAlpha > 0.5) {
-            this.renderTreeLabel(node, spawnAlpha);
-        }
-    }
-
-    /**
-     * Draws the text label alongside a tree node.
-     *
-     * @param {import("../types.js").GraphNodeTree} node Tree node to annotate.
-     * @param {number} spawnAlpha Alpha value for fade-in animation.
-     */
-    renderTreeLabel(node, spawnAlpha = 1) {
-        if (!node.hash) return;
-
-        const text = node.entryName || shortenHash(node.hash);
-        const halfSize = (node.size ?? TREE_NODE_SIZE) / 2;
-
-        this.ctx.save();
-        this.ctx.font = LABEL_FONT;
-        this.ctx.textBaseline = "middle";
-        this.ctx.textAlign = "left";
-
-        const offset = halfSize + LABEL_PADDING;
-        const labelX = node.x + offset;
-        const labelY = node.y;
-
-        this.ctx.lineWidth = 3;
-        this.ctx.lineJoin = "round";
-        this.ctx.strokeStyle = this.palette.labelHalo;
-        this.ctx.globalAlpha = 0.9 * spawnAlpha;
-        this.ctx.strokeText(text, labelX, labelY);
-
-        this.ctx.globalAlpha = spawnAlpha;
-        this.ctx.fillStyle = this.palette.treeLabelText;
-        this.ctx.fillText(text, labelX, labelY);
-
-        this.ctx.restore();
-    }
-
-    /**
-     * Renders a file count badge below-right of a tree node.
-     *
-     * @param {import("../types.js").GraphNodeTree} node Tree node to annotate.
-     * @param {number} count Number of pending blob files.
-     * @param {number} spawnAlpha Alpha value for fade-in animation.
-     */
-    renderFileCountBadge(node, count, spawnAlpha = 1) {
-        const text = String(count);
-        const halfSize = (node.size ?? TREE_NODE_SIZE) / 2;
-
-        this.ctx.save();
-        this.ctx.font = "bold 8px sans-serif";
-        this.ctx.textBaseline = "middle";
-        this.ctx.textAlign = "center";
-
-        const metrics = this.ctx.measureText(text);
-        const badgeWidth = Math.max(metrics.width + 6, 14);
-        const badgeHeight = 12;
-        const badgeX = node.x + halfSize + 2;
-        const badgeY = node.y + halfSize + 2;
-
-        this.ctx.globalAlpha = spawnAlpha * 0.9;
-        this.ctx.fillStyle = this.palette.blobNode;
-        this.drawRoundedRect(
-            badgeX - badgeWidth / 2,
-            badgeY - badgeHeight / 2,
-            badgeWidth,
-            badgeHeight,
-            badgeHeight / 2,
-        );
-        this.ctx.fill();
-
-        this.ctx.globalAlpha = spawnAlpha;
-        this.ctx.fillStyle = "#fff";
-        this.ctx.fillText(text, badgeX, badgeY);
-
-        this.ctx.restore();
-    }
-
-    /**
-     * Renders a blob node as a small circle with spawn animation.
-     *
-     * @param {import("../types.js").GraphNodeBlob} node Blob node to paint.
-     * @param {string|null} highlightKey Current highlight identifier.
-     */
-    renderBlobNode(node, highlightKey) {
-        const isHighlighted = highlightKey && node.id === highlightKey;
-
-        let spawnProgress =
-            typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
-
-        // Negative spawnPhase = delayed cascade; increment toward 0 and skip rendering
-        if (spawnProgress < 0) {
-            node.spawnPhase = Math.min(0, spawnProgress + 0.06);
-            return;
-        }
-
-        const easedSpawn =
-            spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
-        const nextSpawn =
-            spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
-        if (nextSpawn >= 1) {
-            delete node.spawnPhase;
-        } else {
-            node.spawnPhase = nextSpawn;
-        }
-        const spawnAlpha = Math.max(0, Math.min(1, easedSpawn));
-        const scale = 0.6 + 0.4 * spawnAlpha;
-
-        const baseRadius = BLOB_NODE_RADIUS;
-        const targetRadius = isHighlighted
-            ? BLOB_NODE_HIGHLIGHT_RADIUS
-            : baseRadius;
-        const currentRadius = node.radius ?? baseRadius;
-        node.radius = currentRadius + (targetRadius - currentRadius) * 0.25;
-        const drawRadius = node.radius * scale;
-
-        this.ctx.save();
-        const previousAlpha = this.ctx.globalAlpha;
-        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
-
-        if (isHighlighted) {
-            this.ctx.save();
-            this.ctx.fillStyle = this.palette.nodeHighlightGlow;
-            this.ctx.globalAlpha = 0.3;
-            this.ctx.beginPath();
-            this.ctx.arc(node.x, node.y, drawRadius + 4, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
-        }
-
-        this.ctx.fillStyle = isHighlighted
-            ? this.palette.nodeHighlight
-            : this.palette.blobNode;
-        this.applyShadow();
-        this.ctx.beginPath();
-        this.ctx.arc(node.x, node.y, drawRadius, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.clearShadow();
-
-        this.ctx.lineWidth = isHighlighted ? 2 : 1.5;
-        this.ctx.strokeStyle = isHighlighted
-            ? this.palette.nodeHighlightRing
-            : this.palette.blobNodeBorder;
-        this.ctx.beginPath();
-        this.ctx.arc(node.x, node.y, drawRadius, 0, Math.PI * 2);
-        this.ctx.stroke();
-
-        this.ctx.globalAlpha = previousAlpha;
-        this.ctx.restore();
-
-        if (spawnAlpha > 0.5) {
-            this.renderBlobLabel(node, spawnAlpha);
-        }
-    }
-
-    /**
-     * Draws the text label alongside a blob node.
-     *
-     * @param {import("../types.js").GraphNodeBlob} node Blob node to annotate.
-     * @param {number} spawnAlpha Alpha value for fade-in animation.
-     */
-    renderBlobLabel(node, spawnAlpha = 1) {
-        if (!node.entryName) return;
-
-        const text = node.entryName;
-        const radius = node.radius ?? BLOB_NODE_RADIUS;
-
-        this.ctx.save();
-        this.ctx.font = LABEL_FONT;
-        this.ctx.textBaseline = "middle";
-        this.ctx.textAlign = "left";
-
-        const offset = radius + LABEL_PADDING;
-        const labelX = node.x + offset;
-        const labelY = node.y;
-
-        this.ctx.lineWidth = 3;
-        this.ctx.lineJoin = "round";
-        this.ctx.strokeStyle = this.palette.labelHalo;
-        this.ctx.globalAlpha = 0.9 * spawnAlpha;
-        this.ctx.strokeText(text, labelX, labelY);
-
-        this.ctx.globalAlpha = spawnAlpha;
-        this.ctx.fillStyle = this.palette.blobLabelText;
-        this.ctx.fillText(text, labelX, labelY);
-
-        this.ctx.restore();
-    }
 
     /**
      * Draws a rounded rectangle path for branch nodes.

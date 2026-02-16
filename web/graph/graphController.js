@@ -7,13 +7,9 @@ import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
 import { TooltipManager } from "../tooltips/index.js";
 import {
     ALPHA_DECAY,
-    BLOB_NODE_RADIUS,
     BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_OFFSET_Y,
     BRANCH_NODE_RADIUS,
-    TREE_NODE_OFFSET_X,
-    TREE_NODE_OFFSET_Y,
-    TREE_NODE_SIZE,
     CHARGE_STRENGTH,
     COLLISION_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
@@ -24,10 +20,8 @@ import {
     VELOCITY_DECAY,
     ZOOM_MAX,
     ZOOM_MIN,
-    TREE_EXPAND_RADIUS,
-    TREE_EXPAND_ARC_SMALL,
-    TREE_EXPAND_ARC_LARGE,
-    TREE_CHILD_THRESHOLD,
+    TREE_ICON_SIZE,
+    TREE_ICON_OFFSET,
 } from "./constants.js";
 import { GraphRenderer } from "./rendering/graphRenderer.js";
 import { LayoutManager } from "./layout/layoutManager.js";
@@ -38,9 +32,10 @@ import { createGraphState, setZoomTransform } from "./state/graphState.js";
  * Creates and initializes the graph controller instance.
  *
  * @param {HTMLElement} rootElement DOM node that hosts the canvas.
+ * @param {{onCommitTreeClick?: (commit: import("./types.js").GraphCommit) => void}} [options] Optional callbacks.
  * @returns {{ applyDelta(delta: unknown): void, destroy(): void }} Public graph API.
  */
-export function createGraphController(rootElement) {
+export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
     canvas.factor = window.devicePixelRatio || 1;
@@ -57,7 +52,6 @@ export function createGraphController(rootElement) {
 
     let viewportWidth = 0;
     let viewportHeight = 0;
-    let currentTreeCommitHash = null;
 
     const simulation = d3
         .forceSimulation(nodes)
@@ -118,10 +112,6 @@ export function createGraphController(rootElement) {
         tooltipManager.updatePosition(zoomTransform);
     };
     const hideTooltip = () => {
-        if (currentTreeCommitHash) {
-            removeTreeNodeForCommit(currentTreeCommitHash);
-            currentTreeCommitHash = null;
-        }
         tooltipManager.hideAll();
         render();
     };
@@ -129,20 +119,6 @@ export function createGraphController(rootElement) {
         tooltipManager.show(node, zoomTransform);
         render();
     };
-    async function fetchTree(treeHash) {
-        try {
-            const response = await fetch(`/api/tree/${treeHash}`);
-            if (!response.ok) {
-                throw new Error(
-                    `Failed to fetch tree: ${response.status} ${response.statusText}`,
-                );
-            }
-            return await response.json();
-        } catch (error) {
-            console.error("Error fetching tree:", error);
-            throw error;
-        }
-    }
 
     const toGraphCoordinates = (event) => {
         const rect = canvas.getBoundingClientRect();
@@ -153,8 +129,6 @@ export function createGraphController(rootElement) {
 
     const PICK_RADIUS_COMMIT = NODE_RADIUS + 4;
     const PICK_RADIUS_BRANCH = BRANCH_NODE_RADIUS + 6;
-    const PICK_RADIUS_TREE = TREE_NODE_SIZE / 2 + 4;
-    const PICK_RADIUS_BLOB = BLOB_NODE_RADIUS + 4;
 
     const findNodeAt = (x, y, type) => {
         let bestNode = null;
@@ -170,10 +144,6 @@ export function createGraphController(rootElement) {
             let radius;
             if (node.type === "branch") {
                 radius = PICK_RADIUS_BRANCH;
-            } else if (node.type === "tree") {
-                radius = PICK_RADIUS_TREE;
-            } else if (node.type === "blob") {
-                radius = PICK_RADIUS_BLOB;
             } else {
                 radius = PICK_RADIUS_COMMIT;
             }
@@ -184,6 +154,40 @@ export function createGraphController(rootElement) {
         }
 
         return bestNode;
+    };
+
+    /**
+     * Hit-tests whether the given graph coordinates land within a commit node's tree icon.
+     * Returns the commit node if the icon is clicked, null otherwise.
+     *
+     * @param {number} x Graph X coordinate.
+     * @param {number} y Graph Y coordinate.
+     * @returns {import("./types.js").GraphNodeCommit | null} Commit node if tree icon clicked.
+     */
+    const findTreeIconAt = (x, y) => {
+        for (const node of nodes) {
+            if (node.type !== "commit" || !node.commit?.tree) {
+                continue;
+            }
+
+            const iconSize = TREE_ICON_SIZE;
+            const offsetX = node.radius + TREE_ICON_OFFSET;
+            const offsetY = -(node.radius + TREE_ICON_OFFSET);
+            const iconX = node.x + offsetX;
+            const iconY = node.y + offsetY;
+
+            // Check if click is within the folder icon bounds (with some padding for easier clicking)
+            const padding = 2;
+            if (
+                x >= iconX - padding &&
+                x <= iconX + iconSize + padding &&
+                y >= iconY - iconSize * 0.2 - padding &&
+                y <= iconY + iconSize * 0.6 + padding
+            ) {
+                return node;
+            }
+        }
+        return null;
     };
 
     const centerOnLatestCommit = () => {
@@ -224,11 +228,17 @@ export function createGraphController(rootElement) {
         }
 
         const { x, y } = toGraphCoordinates(event);
-        const targetNode =
-            findNodeAt(x, y, "commit") ??
-            findNodeAt(x, y, "tree") ??
-            findNodeAt(x, y, "blob") ??
-            findNodeAt(x, y);
+
+        // Check tree icon click first (higher priority than node click)
+        const treeIconNode = findTreeIconAt(x, y);
+        if (treeIconNode && options.onCommitTreeClick) {
+            options.onCommitTreeClick(treeIconNode.commit);
+            event.stopImmediatePropagation();
+            event.preventDefault();
+            return;
+        }
+
+        const targetNode = findNodeAt(x, y);
 
         if (!targetNode) {
             hideTooltip();
@@ -237,82 +247,11 @@ export function createGraphController(rootElement) {
 
         layoutManager.disableAutoCenter();
 
-        if (targetNode.type === "tree") {
-            expandTreeNode(targetNode);
-            event.stopImmediatePropagation();
-            event.preventDefault();
-
-            isDraggingNode = true;
-            dragState = {
-                node: targetNode,
-                pointerId: event.pointerId,
-                startX: x,
-                startY: y,
-                dragged: false,
-            };
-            targetNode.fx = x;
-            targetNode.fy = y;
-            targetNode.vx = 0;
-            targetNode.vy = 0;
-            try {
-                canvas.setPointerCapture(event.pointerId);
-            } catch {
-                // ignore
-            }
-            return;
-        }
-
-        if (targetNode.type === "blob") {
-            const currentTarget = tooltipManager.getTargetData();
-            if (tooltipManager.isVisible() && currentTarget === targetNode) {
-                tooltipManager.hideAll();
-                render();
-            } else {
-                showTooltip(targetNode);
-            }
-            event.stopImmediatePropagation();
-            event.preventDefault();
-
-            isDraggingNode = true;
-            dragState = {
-                node: targetNode,
-                pointerId: event.pointerId,
-                startX: x,
-                startY: y,
-                dragged: false,
-            };
-            targetNode.fx = x;
-            targetNode.fy = y;
-            targetNode.vx = 0;
-            targetNode.vy = 0;
-            try {
-                canvas.setPointerCapture(event.pointerId);
-            } catch {
-                // ignore
-            }
-            return;
-        }
-
         const currentTarget = tooltipManager.getTargetData();
         if (tooltipManager.isVisible() && currentTarget === targetNode) {
             hideTooltip();
         } else {
-            if (
-                currentTreeCommitHash &&
-                currentTreeCommitHash !== targetNode.hash
-            ) {
-                removeTreeNodeForCommit(currentTreeCommitHash);
-            }
-
             showTooltip(targetNode);
-
-            if (targetNode.type === "commit") {
-                currentTreeCommitHash = targetNode.hash;
-                loadTreeNodeForCommit(targetNode).catch((error) => {
-                    console.error("Error loading tree node:", error);
-                    currentTreeCommitHash = null;
-                });
-            }
         }
 
         event.stopImmediatePropagation();
@@ -436,18 +375,12 @@ export function createGraphController(rootElement) {
     function updateGraph() {
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
-        const existingTreeNodes = new Map();
-        const existingBlobNodes = new Map();
 
         for (const node of nodes) {
             if (node.type === "branch" && node.branch) {
                 existingBranchNodes.set(node.branch, node);
             } else if (node.type === "commit" && node.hash) {
                 existingCommitNodes.set(node.hash, node);
-            } else if (node.type === "tree" && (node.id || node.hash)) {
-                existingTreeNodes.set(node.id ?? node.hash, node);
-            } else if (node.type === "blob" && node.id) {
-                existingBlobNodes.set(node.id, node);
             }
         }
 
@@ -527,27 +460,8 @@ export function createGraphController(rootElement) {
             pendingBranchAlignments.push({ branchNode, targetNode });
         }
 
-        const nextTreeNodes = [];
-        for (const [, treeNode] of existingTreeNodes.entries()) {
-            nextTreeNodes.push(treeNode);
-        }
-        const nextBlobNodes = [];
-        for (const [, blobNode] of existingBlobNodes.entries()) {
-            nextBlobNodes.push(blobNode);
-        }
-        nodes.splice(
-            0,
-            nodes.length,
-            ...nextCommitNodes,
-            ...nextBranchNodes,
-            ...nextTreeNodes,
-            ...nextBlobNodes,
-        );
-
-        const existingTreeLinks = links.filter((link) => link.kind === "tree");
-        const existingBlobLinks = links.filter((link) => link.kind === "blob");
-        const allLinks = [...nextLinks, ...existingTreeLinks, ...existingBlobLinks];
-        links.splice(0, links.length, ...allLinks);
+        nodes.splice(0, nodes.length, ...nextCommitNodes, ...nextBranchNodes);
+        links.splice(0, links.length, ...nextLinks);
 
         if (dragState && !nodes.includes(dragState.node)) {
             releaseDrag();
@@ -556,18 +470,6 @@ export function createGraphController(rootElement) {
         const currentTarget = tooltipManager.getTargetData();
         if (currentTarget && !nodes.includes(currentTarget)) {
             hideTooltip();
-        }
-
-        if (currentTreeCommitHash) {
-            const commitStillExists = nodes.some(
-                (node) =>
-                    node.type === "commit" &&
-                    node.hash === currentTreeCommitHash,
-            );
-            if (!commitStillExists) {
-                removeTreeNodeForCommit(currentTreeCommitHash);
-                currentTreeCommitHash = null;
-            }
         }
 
         simulation.nodes(nodes);
@@ -677,352 +579,6 @@ export function createGraphController(rootElement) {
             vx: 0,
             vy: 0,
         };
-    }
-
-    function createTreeNode(treeHash, commitNode) {
-        const jitter = (range) => (Math.random() - 0.5) * range;
-        return {
-            type: "tree",
-            hash: treeHash,
-            commitHash: commitNode.hash,
-            x: (commitNode.x ?? 0) + TREE_NODE_OFFSET_X + jitter(4),
-            y: (commitNode.y ?? 0) + jitter(BRANCH_NODE_OFFSET_Y),
-            vx: 0,
-            vy: 0,
-        };
-    }
-
-    function createEntryTreeNode(entry, parentNode) {
-        const id = `${parentNode.id ?? parentNode.hash}:${entry.hash}`;
-        return {
-            type: "tree",
-            hash: entry.hash,
-            id,
-            entryName: entry.name,
-            parentTreeHash: parentNode.hash,
-            x: parentNode.x ?? 0,
-            y: parentNode.y ?? 0,
-            vx: 0,
-            vy: 0,
-            spawnPhase: 0,
-        };
-    }
-
-    function createBlobNode(entry, parentNode) {
-        const id = `${parentNode.id ?? parentNode.hash}:${entry.hash}`;
-        return {
-            type: "blob",
-            hash: entry.hash,
-            id,
-            entryName: entry.name,
-            parentTreeHash: parentNode.hash,
-            mode: entry.mode,
-            x: parentNode.x ?? 0,
-            y: parentNode.y ?? 0,
-            vx: 0,
-            vy: 0,
-            spawnPhase: 0,
-        };
-    }
-
-    function positionChildrenRadially(parentNode, children) {
-        const n = children.length;
-        if (n === 0) return;
-
-        // Compute direction away from the parent's own parent (commit or parent tree).
-        let dirX = 1;
-        let dirY = 0;
-        const parentLink = links.find((link) => {
-            const target =
-                typeof link.target === "object" ? link.target : null;
-            return target === parentNode;
-        });
-        if (parentLink) {
-            const source =
-                typeof parentLink.source === "object"
-                    ? parentLink.source
-                    : null;
-            if (source) {
-                const dx = parentNode.x - source.x;
-                const dy = parentNode.y - source.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 0.1) {
-                    dirX = dx / dist;
-                    dirY = dy / dist;
-                }
-            }
-        }
-
-        const baseAngle = Math.atan2(dirY, dirX);
-        const arc =
-            n <= TREE_CHILD_THRESHOLD
-                ? TREE_EXPAND_ARC_SMALL
-                : TREE_EXPAND_ARC_LARGE;
-        const startAngle = baseAngle - arc / 2;
-
-        for (let i = 0; i < n; i++) {
-            const angle =
-                n === 1 ? baseAngle : startAngle + (arc / (n - 1)) * i;
-            children[i].x =
-                (parentNode.x ?? 0) + Math.cos(angle) * TREE_EXPAND_RADIUS;
-            children[i].y =
-                (parentNode.y ?? 0) + Math.sin(angle) * TREE_EXPAND_RADIUS;
-        }
-    }
-
-    function pinParentDuringExpand(treeNode) {
-        treeNode.fx = treeNode.x;
-        treeNode.fy = treeNode.y;
-        const expandedState = treeNode.expanded;
-        setTimeout(() => {
-            // Only release if still expanded (user hasn't collapsed)
-            if (treeNode.expanded === expandedState) {
-                treeNode.fx = null;
-                treeNode.fy = null;
-            }
-        }, 600);
-    }
-
-    async function expandTreeNode(treeNode) {
-        // Third click: expanded === "all" → collapse
-        if (treeNode.expanded === "all") {
-            collapseTreeNode(treeNode);
-            simulation.nodes(nodes);
-            simulation.force("link").links(links);
-            layoutManager.boostForTreeExpand();
-            render();
-            return;
-        }
-
-        // Second click: expanded === "dirs" → show blobs
-        if (treeNode.expanded === "dirs") {
-            const pendingBlobs = treeNode.pendingBlobs || [];
-            if (pendingBlobs.length === 0) {
-                // No blobs to show, collapse
-                collapseTreeNode(treeNode);
-                simulation.nodes(nodes);
-                simulation.force("link").links(links);
-                layoutManager.boostForTreeExpand();
-                render();
-                return;
-            }
-
-            const blobChildren = [];
-            for (let i = 0; i < pendingBlobs.length; i++) {
-                const entry = pendingBlobs[i];
-                const childNode = createBlobNode(entry, treeNode);
-                childNode.spawnPhase = -0.08 * i;
-                treeNode.childIds.push(childNode.id);
-                blobChildren.push(childNode);
-            }
-
-            positionChildrenRadially(treeNode, blobChildren);
-            for (const childNode of blobChildren) {
-                nodes.push(childNode);
-                links.push({
-                    source: treeNode,
-                    target: childNode,
-                    kind: "blob",
-                    warmup: 0,
-                });
-            }
-
-            treeNode.expanded = "all";
-            treeNode.pendingBlobs = null;
-            pinParentDuringExpand(treeNode);
-            simulation.nodes(nodes);
-            simulation.force("link").links(links);
-            simulation.alpha(Math.max(simulation.alpha(), 0.08));
-            layoutManager.boostForTreeExpand();
-            render();
-            return;
-        }
-
-        // First click: collapsed → fetch tree, show dirs only
-        if (!treeNode.tree) {
-            try {
-                treeNode.tree = await fetchTree(treeNode.hash);
-            } catch (error) {
-                console.error(`Failed to fetch tree ${treeNode.hash}:`, error);
-                return;
-            }
-        }
-
-        const entries = treeNode.tree?.entries;
-        if (!entries || entries.length === 0) {
-            return;
-        }
-
-        const dirEntries = entries.filter((e) => e.type === "tree");
-        const blobEntries = entries.filter((e) => e.type !== "tree");
-
-        treeNode.childIds = [];
-
-        // If there are no dirs, go straight to "all"
-        const showDirs = dirEntries.length > 0;
-        const entriesToShow = showDirs ? dirEntries : entries;
-        const blobsForLater = showDirs ? blobEntries : [];
-
-        const children = [];
-        for (let i = 0; i < entriesToShow.length; i++) {
-            const entry = entriesToShow[i];
-            let childNode;
-            if (entry.type === "tree") {
-                childNode = createEntryTreeNode(entry, treeNode);
-            } else {
-                childNode = createBlobNode(entry, treeNode);
-            }
-            childNode.spawnPhase = -0.08 * i;
-            treeNode.childIds.push(childNode.id);
-            children.push({ node: childNode, entry });
-        }
-
-        positionChildrenRadially(
-            treeNode,
-            children.map((c) => c.node),
-        );
-
-        for (const { node: childNode, entry } of children) {
-            nodes.push(childNode);
-            links.push({
-                source: treeNode,
-                target: childNode,
-                kind: entry.type === "tree" ? "tree" : "blob",
-                warmup: 0,
-            });
-        }
-
-        if (showDirs) {
-            treeNode.expanded = "dirs";
-            treeNode.pendingBlobs = blobsForLater;
-        } else {
-            treeNode.expanded = "all";
-            treeNode.pendingBlobs = null;
-        }
-
-        pinParentDuringExpand(treeNode);
-        simulation.nodes(nodes);
-        simulation.force("link").links(links);
-        simulation.alpha(Math.max(simulation.alpha(), 0.08));
-        layoutManager.boostForTreeExpand();
-        render();
-    }
-
-    function collapseTreeNode(treeNode) {
-        if (!treeNode.expanded || !treeNode.childIds) {
-            return;
-        }
-
-        const childIds = new Set(treeNode.childIds);
-
-        for (const childId of childIds) {
-            const childNode = nodes.find((n) => n.id === childId);
-            if (childNode && childNode.type === "tree" && childNode.expanded) {
-                collapseTreeNode(childNode);
-            }
-        }
-
-        for (let i = links.length - 1; i >= 0; i--) {
-            const link = links[i];
-            const targetId =
-                typeof link.target === "object"
-                    ? link.target.id ?? link.target.hash
-                    : link.target;
-            if (childIds.has(targetId)) {
-                links.splice(i, 1);
-            }
-        }
-
-        for (let i = nodes.length - 1; i >= 0; i--) {
-            if (childIds.has(nodes[i].id)) {
-                nodes.splice(i, 1);
-            }
-        }
-
-        treeNode.expanded = false;
-        treeNode.childIds = [];
-        treeNode.pendingBlobs = null;
-    }
-
-    async function loadTreeNodeForCommit(commitNode) {
-        if (!commitNode || !commitNode.commit || !commitNode.commit.tree) {
-            return null;
-        }
-        const treeHash = commitNode.commit.tree;
-
-        const existingTree = nodes.find(
-            (node) => node.type === "tree" && node.hash === treeHash,
-        );
-        if (existingTree) {
-            return existingTree;
-        }
-
-        try {
-            const treeData = await fetchTree(treeHash);
-            const treeNode = createTreeNode(treeHash, commitNode);
-            treeNode.tree = treeData;
-            treeNode.spawnPhase = 0;
-            nodes.push(treeNode);
-
-            const treeLink = {
-                source: commitNode,
-                target: treeNode,
-                kind: "tree",
-            };
-            links.push(treeLink);
-
-            simulation.nodes(nodes);
-            simulation.force("link").links(links);
-
-            layoutManager.boostSimulation(true);
-            render();
-            return treeNode;
-        } catch (error) {
-            console.error(`Failed to load tree ${treeHash}:`, error);
-            return null;
-        }
-    }
-
-    function removeTreeNodeForCommit(commitHash) {
-        if (!commitHash) {
-            return;
-        }
-
-        const commitNode = nodes.find(
-            (node) => node.type === "commit" && node.hash === commitHash,
-        );
-        if (!commitNode || !commitNode.commit || !commitNode.commit.tree) {
-            return;
-        }
-        const treeHash = commitNode.commit.tree;
-
-        const rootTree = nodes.find(
-            (node) => node.type === "tree" && node.hash === treeHash && node.commitHash === commitHash,
-        );
-        if (rootTree) {
-            collapseTreeNode(rootTree);
-        }
-
-        const treeNodeIndex = nodes.findIndex(
-            (node) => node.type === "tree" && node.hash === treeHash && node.commitHash === commitHash,
-        );
-        if (treeNodeIndex !== -1) {
-            nodes.splice(treeNodeIndex, 1);
-        }
-
-        const treeLinkIndex = links.findIndex(
-            (link) =>
-                link.kind === "tree" &&
-                link.target &&
-                link.target.hash === treeHash,
-        );
-        if (treeLinkIndex !== -1) {
-            links.splice(treeLinkIndex, 1);
-        }
-
-        simulation.nodes(nodes);
-        simulation.force("link").links(links);
-        render();
     }
 
     function render() {

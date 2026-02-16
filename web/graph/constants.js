@@ -33,24 +33,15 @@ export const BRANCH_NODE_CORNER_RADIUS = 6;
 export const BRANCH_NODE_OFFSET_X = 28;
 export const BRANCH_NODE_OFFSET_Y = 6;
 export const BRANCH_NODE_RADIUS = 18;
-export const TREE_NODE_SIZE = 10;
-export const TREE_NODE_PADDING_X = 8;
-export const TREE_NODE_PADDING_Y = 6;
-export const TREE_NODE_CORNER_RADIUS = 3;
-export const TREE_NODE_HIGHLIGHT_SIZE = 13;
-export const TREE_NODE_OFFSET_X = 0;
-export const TREE_NODE_OFFSET_Y = 6;
 export const TOOLTIP_OFFSET_X = 18;
 export const TOOLTIP_OFFSET_Y = -24;
 export const HIGHLIGHT_NODE_RADIUS = NODE_RADIUS + 2.5;
 export const MERGE_NODE_RADIUS = 7;
 export const HIGHLIGHT_MERGE_NODE_RADIUS = 9.5;
-export const BLOB_NODE_RADIUS = 5;
-export const BLOB_NODE_HIGHLIGHT_RADIUS = 7;
 export const NODE_SHADOW_BLUR = 6;
 export const NODE_SHADOW_OFFSET_Y = 2;
-export const TREE_EXPAND_RADIUS = 40;
-export const TREE_EXPAND_ARC_SMALL = Math.PI;      // semicircle for <=8 children
-export const TREE_EXPAND_ARC_LARGE = Math.PI * 1.8; // near-full circle for >8
-export const TREE_CHILD_THRESHOLD = 8;
+
+// Tree icon constants (displayed on commit nodes instead of separate tree nodes)
+export const TREE_ICON_SIZE = 7;
+export const TREE_ICON_OFFSET = 2;
 

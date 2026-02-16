@@ -88,8 +88,8 @@ func (r *Repository) Commits() map[Hash]*Commit {
 func (r *Repository) Branches() map[string]Hash {
 	result := make(map[string]Hash)
 	for ref, hash := range r.refs {
-		if strings.HasPrefix(ref, "refs/heads/") {
-			result[strings.TrimPrefix(ref, "refs/heads/")] = hash
+		if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+			result[name] = hash
 		}
 	}
 	return result
@@ -108,6 +108,22 @@ func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	}
 
 	return tree, nil
+}
+
+// GetBlob loads and returns raw blob content by its hash.
+func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
+	// readObjectData handles both loose and packed objects, returning raw data and type byte.
+	objectData, objectType, err := r.readObjectData(blobHash)
+	if err != nil {
+		return nil, fmt.Errorf("blob not found: %s", blobHash)
+	}
+
+	// Type 3 = blob (see objects.go line 149)
+	if objectType != 3 {
+		return nil, fmt.Errorf("object %s is not a blob (type %d)", blobHash, objectType)
+	}
+
+	return objectData, nil
 }
 
 // Diff returns the difference between this repository and another,
