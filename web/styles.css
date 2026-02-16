@@ -1,43 +1,69 @@
 :root {
     color-scheme: light dark;
-    --bg-color: #f8f8f6;
+    /* GitHub Primer Light Theme */
+    --bg-color: #f6f8fa;
     --text-color: #1f2328;
+    --text-secondary: #656d76;
     --surface-color: #ffffff;
     --border-color: #d0d7de;
-    --node-color: #3273dc;
-    --link-color: #c4c9cf;
-    --label-text-color: #24292f;
-    --label-halo-color: rgba(248, 248, 246, 0.92);
-    --node-highlight-color: #2563eb;
-    --node-highlight-glow: rgba(59, 130, 246, 0.40);
-    --node-highlight-core: #dbeafe;
-    --node-highlight-ring: #2563eb;
-    --merge-node-color: #0e7c6b;
-    --node-shadow-color: rgba(0, 0, 0, 0.18);
-    --blob-node-color: #8ecae6;
-    --blob-node-border-color: #6ba3be;
-    --blob-label-text-color: #24292f;
+    --node-color: #0969da;
+    --link-color: #d0d7de;
+    --label-text-color: #1f2328;
+    --label-halo-color: rgba(255, 255, 255, 0.92);
+    --node-highlight-color: #0969da;
+    --node-highlight-glow: rgba(9, 105, 218, 0.35);
+    --node-highlight-core: #ddf4ff;
+    --node-highlight-ring: #0969da;
+    --merge-node-color: #1a7f37;
+    --node-shadow-color: rgba(27, 31, 36, 0.12);
+    --branch-node-color: #8250df;
+    --branch-node-border-color: #6639ba;
+    --branch-label-text-color: #ffffff;
+    --branch-link-color: #8250df;
+    --tree-node-color: #bf8700;
+    --tree-node-border-color: #9a6700;
+    --tree-label-text-color: #ffffff;
+    --tree-link-color: #bf8700;
+    --blob-node-color: #0969da;
+    --blob-node-border-color: #0550ae;
+    --blob-label-text-color: #ffffff;
+    --success-color: #1a7f37;
+    --warning-color: #9a6700;
+    --danger-color: #d1242f;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg-color: #110f16;
-        --text-color: #e8e6f0;
-        --surface-color: #141218;
-        --border-color: #2e2c38;
-        --node-color: #5b9cf5;
-        --link-color: #3d4350;
-        --label-text-color: #e8e6f0;
-        --label-halo-color: rgba(20, 18, 24, 0.88);
-        --node-highlight-color: #6dacf8;
-        --node-highlight-glow: rgba(91, 156, 245, 0.40);
-        --node-highlight-core: #1e2640;
-        --node-highlight-ring: #6dacf8;
-        --merge-node-color: #2dd4a8;
-        --node-shadow-color: rgba(0, 0, 0, 0.5);
-        --blob-node-color: #67b2d1;
-        --blob-node-border-color: #4a8ea8;
-        --blob-label-text-color: #e8e6f0;
+        /* GitHub Primer Dark Theme */
+        --bg-color: #0d1117;
+        --text-color: #e6edf3;
+        --text-secondary: #8b949e;
+        --surface-color: #161b22;
+        --border-color: #30363d;
+        --node-color: #58a6ff;
+        --link-color: #30363d;
+        --label-text-color: #e6edf3;
+        --label-halo-color: rgba(22, 27, 34, 0.92);
+        --node-highlight-color: #58a6ff;
+        --node-highlight-glow: rgba(88, 166, 255, 0.35);
+        --node-highlight-core: #1c2d41;
+        --node-highlight-ring: #58a6ff;
+        --merge-node-color: #3fb950;
+        --node-shadow-color: rgba(0, 0, 0, 0.4);
+        --branch-node-color: #bc8cff;
+        --branch-node-border-color: #a371f7;
+        --branch-label-text-color: #0d1117;
+        --branch-link-color: #bc8cff;
+        --tree-node-color: #d29922;
+        --tree-node-border-color: #bb8009;
+        --tree-label-text-color: #0d1117;
+        --tree-link-color: #d29922;
+        --blob-node-color: #58a6ff;
+        --blob-node-border-color: #1f6feb;
+        --blob-label-text-color: #0d1117;
+        --success-color: #3fb950;
+        --warning-color: #d29922;
+        --danger-color: #f85149;
     }
 }
 
@@ -48,7 +74,7 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
     background: var(--bg-color);
     color: var(--text-color);
     min-height: 100vh;
@@ -115,7 +141,13 @@ body {
 }
 
 .sidebar-toggle:hover {
-    background: rgba(148, 163, 184, 0.18);
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .sidebar-toggle:hover {
+        background: rgba(48, 54, 61, 0.8);
+    }
 }
 
 .sidebar-content {
@@ -318,7 +350,13 @@ body {
 }
 
 .sidebar-expand:hover {
-    background: rgba(148, 163, 184, 0.18);
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .sidebar-expand:hover {
+        background: rgba(48, 54, 61, 0.8);
+    }
 }
 
 canvas {
@@ -334,35 +372,53 @@ canvas {
     top: 16px;
     right: 16px;
     display: flex;
-    gap: 8px;
-    padding: 4px 6px;
-    border-radius: 999px;
-    background: rgba(15, 23, 42, 0.08);
-    backdrop-filter: blur(12px);
+    gap: 0;
+    padding: 0;
+    border-radius: 6px;
+    background: var(--surface-color);
     border: 1px solid var(--border-color);
+    box-shadow: 0 3px 6px rgba(140, 149, 159, 0.15);
     z-index: 10;
 }
 
 @media (prefers-color-scheme: dark) {
     .graph-controls {
-        background: rgba(20, 18, 24, 0.6);
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
     }
 }
 
 .graph-controls button {
-    border: 1px solid transparent;
-    border-radius: 999px;
-    padding: 6px 14px;
+    border: none;
+    border-right: 1px solid var(--border-color);
+    border-radius: 0;
+    padding: 6px 12px;
     font-size: 13px;
     font-weight: 500;
     background: transparent;
     color: var(--text-color);
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.1s ease;
+}
+
+.graph-controls button:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.graph-controls button:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    border-right: none;
 }
 
 .graph-controls button:hover {
-    background: rgba(148, 163, 184, 0.2);
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .graph-controls button:hover {
+        background: rgba(48, 54, 61, 0.8);
+    }
 }
 
 .graph-controls button.is-active {
@@ -370,9 +426,16 @@ canvas {
     color: #ffffff;
 }
 
+.graph-controls button.is-active:hover {
+    background: var(--node-color);
+    opacity: 0.9;
+}
+
 .graph-controls button:focus-visible {
     outline: 2px solid var(--node-color);
-    outline-offset: 2px;
+    outline-offset: -2px;
+    z-index: 1;
+    position: relative;
 }
 
 .commit-tooltip {
@@ -381,8 +444,8 @@ canvas {
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.22);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
     padding: 12px 14px;
     max-width: min(360px, 70vw);
     display: none;
@@ -391,6 +454,12 @@ canvas {
     z-index: 15;
     opacity: 0;
     transition: opacity 0.12s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-tooltip {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
 }
 
 .commit-tooltip:not([hidden]) {
@@ -407,25 +476,31 @@ canvas {
 }
 
 .commit-tooltip-hash {
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 12px;
     font-weight: 600;
-    background: rgba(148, 163, 184, 0.18);
+    background: rgba(208, 215, 222, 0.48);
     border-radius: 6px;
     padding: 4px 6px;
     width: max-content;
 }
 
+@media (prefers-color-scheme: dark) {
+    .commit-tooltip-hash {
+        background: rgba(48, 54, 61, 0.8);
+    }
+}
+
 .commit-tooltip-meta {
     white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    color: rgba(99, 110, 123, 0.95);
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    color: var(--text-secondary);
 }
 
 .commit-tooltip-message {
     margin: 0;
     white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-color);
@@ -437,8 +512,8 @@ canvas {
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
     padding: 10px 14px;
     min-width: 160px;
     display: none;
@@ -447,7 +522,12 @@ canvas {
     z-index: 15;
     opacity: 0;
     transition: opacity 0.14s ease;
-    backdrop-filter: blur(10px);
+}
+
+@media (prefers-color-scheme: dark) {
+    .branch-tooltip {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
 }
 
 .branch-tooltip:not([hidden]) {
@@ -462,8 +542,14 @@ canvas {
     font-weight: 600;
     letter-spacing: 0.01em;
     padding: 4px 8px;
-    border-radius: 8px;
-    background: rgba(148, 163, 184, 0.16);
+    border-radius: 6px;
+    background: rgba(208, 215, 222, 0.48);
+}
+
+@media (prefers-color-scheme: dark) {
+    .branch-tooltip-name {
+        background: rgba(48, 54, 61, 0.8);
+    }
 }
 
 .branch-tooltip-name::before {
@@ -471,15 +557,21 @@ canvas {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--node-color);
-    box-shadow: 0 0 0 2px rgba(50, 115, 220, 0.2);
+    background: var(--branch-node-color);
+    box-shadow: 0 0 0 2px rgba(130, 80, 223, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+    .branch-tooltip-name::before {
+        box-shadow: 0 0 0 2px rgba(188, 140, 255, 0.2);
+    }
 }
 
 .branch-tooltip-target {
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 12px;
     letter-spacing: 0.04em;
-    color: rgba(99, 110, 123, 0.95);
+    color: var(--text-secondary);
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -488,7 +580,7 @@ canvas {
 .branch-tooltip-target::before {
     content: "→";
     font-size: 12px;
-    color: var(--node-color);
+    color: var(--text-secondary);
 }
 
 .blob-tooltip {
@@ -497,8 +589,8 @@ canvas {
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
     padding: 10px 14px;
     min-width: 160px;
     display: none;
@@ -507,7 +599,12 @@ canvas {
     z-index: 15;
     opacity: 0;
     transition: opacity 0.14s ease;
-    backdrop-filter: blur(10px);
+}
+
+@media (prefers-color-scheme: dark) {
+    .blob-tooltip {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
 }
 
 .blob-tooltip:not([hidden]) {
@@ -522,8 +619,14 @@ canvas {
     font-weight: 600;
     letter-spacing: 0.01em;
     padding: 4px 8px;
-    border-radius: 8px;
-    background: rgba(148, 163, 184, 0.16);
+    border-radius: 6px;
+    background: rgba(208, 215, 222, 0.48);
+}
+
+@media (prefers-color-scheme: dark) {
+    .blob-tooltip-name {
+        background: rgba(48, 54, 61, 0.8);
+    }
 }
 
 .blob-tooltip-name::before {
@@ -531,21 +634,28 @@ canvas {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--blob-node-color, #8ecae6);
-    box-shadow: 0 0 0 2px rgba(142, 202, 230, 0.2);
+    background: var(--blob-node-color, #0969da);
+    box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+    .blob-tooltip-name::before {
+        background: var(--blob-node-color, #58a6ff);
+        box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+    }
 }
 
 .blob-tooltip-hash {
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 12px;
     letter-spacing: 0.04em;
-    color: rgba(99, 110, 123, 0.95);
+    color: var(--text-secondary);
 }
 
 .blob-tooltip-mode {
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 11px;
-    color: rgba(99, 110, 123, 0.7);
+    color: var(--text-secondary);
 }
 
 /* ── Index View ── */
@@ -563,7 +673,7 @@ canvas {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: rgba(99, 110, 123, 0.8);
+    color: var(--text-secondary);
     padding: 0 4px 8px;
 }
 
@@ -589,7 +699,13 @@ canvas {
 }
 
 .index-section-header:hover {
-    background: rgba(148, 163, 184, 0.12);
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .index-section-header:hover {
+        background: rgba(48, 54, 61, 0.6);
+    }
 }
 
 .index-chevron {
@@ -620,34 +736,34 @@ canvas {
 }
 
 .index-badge--staged {
-    background: rgba(46, 160, 67, 0.15);
-    color: #2ea043;
+    background: rgba(26, 127, 55, 0.15);
+    color: var(--success-color);
 }
 
 .index-badge--modified {
-    background: rgba(210, 153, 34, 0.15);
-    color: #d29922;
+    background: rgba(154, 103, 0, 0.15);
+    color: var(--warning-color);
 }
 
 .index-badge--untracked {
-    background: rgba(148, 163, 184, 0.15);
-    color: rgba(99, 110, 123, 0.9);
+    background: rgba(208, 215, 222, 0.32);
+    color: var(--text-secondary);
 }
 
 @media (prefers-color-scheme: dark) {
     .index-badge--staged {
         background: rgba(63, 185, 80, 0.15);
-        color: #3fb950;
+        color: var(--success-color);
     }
 
     .index-badge--modified {
         background: rgba(210, 153, 34, 0.15);
-        color: #d29922;
+        color: var(--warning-color);
     }
 
     .index-badge--untracked {
-        background: rgba(148, 163, 184, 0.12);
-        color: rgba(148, 163, 184, 0.7);
+        background: rgba(48, 54, 61, 0.6);
+        color: var(--text-secondary);
     }
 }
 
@@ -668,26 +784,228 @@ canvas {
 }
 
 .index-file:hover {
-    background: rgba(148, 163, 184, 0.1);
+    background: rgba(208, 215, 222, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+    .index-file:hover {
+        background: rgba(48, 54, 61, 0.5);
+    }
 }
 
 .index-file-code {
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-weight: 600;
     font-size: 11px;
     width: 14px;
     text-align: center;
     flex-shrink: 0;
-    color: rgba(99, 110, 123, 0.8);
+    color: var(--text-secondary);
 }
 
 .index-file-path {
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 12px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+}
+
+/* ── File Sidebar (Right) ── */
+
+.file-sidebar {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-color);
+    border-left: 1px solid var(--border-color);
+    overflow: hidden;
+    transition: width 0.2s ease, min-width 0.2s ease;
+}
+
+.file-sidebar.is-resizing {
+    transition: none;
+}
+
+.file-sidebar.is-collapsed {
+    border-left: none;
+}
+
+.file-sidebar.is-collapsed .file-sidebar-header,
+.file-sidebar.is-collapsed .file-sidebar-content,
+.file-sidebar.is-collapsed .file-sidebar-handle {
+    display: none;
+}
+
+.file-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.file-sidebar-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.file-sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.file-sidebar-close:hover {
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .file-sidebar-close:hover {
+        background: rgba(48, 54, 61, 0.8);
+    }
+}
+
+.file-sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.file-sidebar-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 20;
+}
+
+.file-sidebar-handle:hover,
+.file-sidebar.is-resizing .file-sidebar-handle {
+    background: var(--node-color);
+    opacity: 0.5;
+}
+
+/* ── File Browser ── */
+
+.file-browser {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Breadcrumbs */
+
+.file-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-color);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+
+.file-breadcrumb {
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-size: 12px;
+    padding: 3px 6px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.file-breadcrumb:hover {
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .file-breadcrumb:hover {
+        background: rgba(48, 54, 61, 0.6);
+    }
+}
+
+.file-breadcrumb-current {
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-size: 12px;
+    padding: 3px 6px;
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.file-breadcrumb-sep {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* Tree Listing */
+
+.file-tree {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.file-tree-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.file-tree-entry:hover {
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .file-tree-entry:hover {
+        background: rgba(48, 54, 61, 0.6);
+    }
+}
+
+.file-tree-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-color);
+    opacity: 0.7;
+}
+
+.file-tree-name {
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-size: 13px;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-tree-empty {
+    padding: 16px 12px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
 }
 
 /* File Content Viewer */
@@ -716,7 +1034,13 @@ canvas {
 }
 
 .file-content-back:hover {
-    background: rgba(148, 163, 184, 0.12);
+    background: rgba(208, 215, 222, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+    .file-content-back:hover {
+        background: rgba(48, 54, 61, 0.6);
+    }
 }
 
 .file-content-header {
@@ -730,7 +1054,7 @@ canvas {
 }
 
 .file-content-filename {
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-color);
@@ -738,7 +1062,7 @@ canvas {
 
 .file-content-meta {
     font-size: 11px;
-    color: rgba(99, 110, 123, 0.8);
+    color: var(--text-secondary);
 }
 
 .file-content-body {
@@ -746,7 +1070,7 @@ canvas {
     overflow-y: auto;
     overflow-x: auto;
     background: var(--surface-color);
-    font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 12px;
     line-height: 1.5;
 }
@@ -757,7 +1081,13 @@ canvas {
 }
 
 .file-content-line:hover {
-    background: rgba(148, 163, 184, 0.08);
+    background: rgba(208, 215, 222, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+    .file-content-line:hover {
+        background: rgba(48, 54, 61, 0.4);
+    }
 }
 
 .file-content-linenum {
@@ -765,7 +1095,7 @@ canvas {
     width: 50px;
     padding: 2px 12px 2px 12px;
     text-align: right;
-    color: rgba(99, 110, 123, 0.6);
+    color: var(--text-secondary);
     user-select: none;
     border-right: 1px solid var(--border-color);
 }
@@ -780,29 +1110,36 @@ canvas {
 .file-content-binary {
     padding: 24px 12px;
     text-align: center;
-    color: rgba(99, 110, 123, 0.8);
+    color: var(--text-secondary);
     font-size: 13px;
 }
 
 .file-content-truncated {
     padding: 12px;
-    background: rgba(210, 153, 34, 0.12);
-    border-top: 1px solid rgba(210, 153, 34, 0.3);
-    color: #d29922;
+    background: rgba(154, 103, 0, 0.12);
+    border-top: 1px solid rgba(154, 103, 0, 0.3);
+    color: var(--warning-color);
     font-size: 12px;
     text-align: center;
+}
+
+@media (prefers-color-scheme: dark) {
+    .file-content-truncated {
+        background: rgba(210, 153, 34, 0.12);
+        border-top: 1px solid rgba(210, 153, 34, 0.3);
+    }
 }
 
 .file-content-loading {
     padding: 24px 12px;
     text-align: center;
-    color: rgba(99, 110, 123, 0.7);
+    color: var(--text-secondary);
     font-size: 13px;
 }
 
 .file-content-error {
     padding: 24px 12px;
     text-align: center;
-    color: #ef4444;
+    color: var(--danger-color);
     font-size: 13px;
 }

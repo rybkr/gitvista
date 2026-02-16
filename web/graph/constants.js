@@ -23,7 +23,7 @@ export const TIMELINE_FALLBACK_GAP = 320;
 export const TIMELINE_MARGIN = 40;
 export const TIMELINE_AUTO_CENTER_ALPHA = 0.12;
 export const LABEL_FONT =
-    "12px ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace";
+    "12px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
 export const LABEL_PADDING = 9;
 export const ZOOM_MIN = 0.25;
 export const ZOOM_MAX = 4;
