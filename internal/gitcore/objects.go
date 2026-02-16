@@ -359,7 +359,7 @@ func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 		var entryType string
 		if strings.HasPrefix(mode, "100") {
 			entryType = "blob"
-		} else if mode == "040000" {
+		} else if mode == "040000" || mode == "40000" {
 			entryType = "tree"
 		} else if mode == "120000" || mode == "160000" {
 			entryType = "commit"
