@@ -550,7 +550,7 @@ export function createGraphController(rootElement, options = {}) {
             const baseY = targetNode.y ?? 0;
             const jitter = (range) => (Math.random() - 0.5) * range;
 
-            branchNode.x = baseX + BRANCH_NODE_OFFSET_X + jitter(2);
+            branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
             branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
             branchNode.vx = 0;
             branchNode.vy = 0;
@@ -564,7 +564,7 @@ export function createGraphController(rootElement, options = {}) {
                 type: "branch",
                 branch: branchName,
                 targetHash: targetNode.hash ?? null,
-                x: (targetNode.x ?? 0) + BRANCH_NODE_OFFSET_X + jitter(4),
+                x: (targetNode.x ?? 0) - BRANCH_NODE_OFFSET_X + jitter(4),
                 y: (targetNode.y ?? 0) + jitter(BRANCH_NODE_OFFSET_Y),
                 vx: 0,
                 vy: 0,
@@ -579,7 +579,7 @@ export function createGraphController(rootElement, options = {}) {
             type: "branch",
             branch: branchName,
             targetHash: null,
-            x: baseX + BRANCH_NODE_OFFSET_X + jitterFallback(6),
+            x: baseX - BRANCH_NODE_OFFSET_X + jitterFallback(6),
             y: baseY + jitterFallback(BRANCH_NODE_OFFSET_Y),
             vx: 0,
             vy: 0,
