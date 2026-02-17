@@ -21,15 +21,21 @@ document.addEventListener("DOMContentLoaded", () => {
     root.parentElement.insertBefore(sidebar.el, root);
     root.appendChild(sidebar.expandBtn);
 
-    // Info bar (above tabs)
     const infoBar = createInfoBar();
-    sidebar.content.appendChild(infoBar.el);
-
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
 
+    // Create wrapper for repository tab (info bar + working tree status)
+    const repoTabContent = document.createElement("div");
+    repoTabContent.style.display = "flex";
+    repoTabContent.style.flexDirection = "column";
+    repoTabContent.style.flex = "1";
+    repoTabContent.style.overflow = "hidden";
+    repoTabContent.appendChild(infoBar.el);
+    repoTabContent.appendChild(indexView.el);
+
     const tabs = createSidebarTabs([
-        { name: "working-tree", label: "Working Tree", content: indexView.el },
+        { name: "repository", label: "Repository", content: repoTabContent },
         { name: "file-explorer", label: "File Explorer", content: fileExplorer.el },
     ]);
     sidebar.content.appendChild(tabs.el);
