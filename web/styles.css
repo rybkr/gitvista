@@ -456,6 +456,15 @@ canvas {
     position: relative;
 }
 
+.graph-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.graph-controls button:disabled:hover {
+    background: var(--surface-color);
+}
+
 .commit-tooltip {
     position: fixed;
     pointer-events: none;

@@ -45,3 +45,18 @@ export const NODE_SHADOW_OFFSET_Y = 2;
 export const TREE_ICON_SIZE = 7;
 export const TREE_ICON_OFFSET = 2;
 
+// Lane layout constants for lane-based positioning strategy
+export const LANE_WIDTH = 80; // Pixels between lane centers
+export const LANE_MARGIN = 60; // Left margin for lane 0
+export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
+export const LANE_COLORS = [
+    "#0969da", // Blue
+    "#8250df", // Purple
+    "#1a7f37", // Green
+    "#bf8700", // Yellow/Orange
+    "#cf222e", // Red
+    "#0550ae", // Dark blue
+    "#6639ba", // Dark purple
+    "#116329"  // Dark green
+];
+
