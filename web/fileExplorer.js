@@ -12,6 +12,8 @@
  */
 
 import { createFileContentViewer } from "./fileContentViewer.js";
+import { createDiffView } from "./diffView.js";
+import { createDiffContentViewer } from "./diffContentViewer.js";
 import { getFileIcon } from "./fileIcons.js";
 
 // SVG icons
@@ -40,6 +42,15 @@ const SEARCH_SVG = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none">
 
 const CLEAR_SVG = `<svg width="10" height="10" viewBox="0 0 16 16" fill="none">
     <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
+const DIFF_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
+const TREE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M1.5 3C1.5 2.44772 1.94772 2 2.5 2H6.29289C6.42551 2 6.55268 2.05268 6.64645 2.14645L7.85355 3.35355C7.94732 3.44732 8.07449 3.5 8.20711 3.5H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3Z" fill="currentColor" opacity="0.2"/>
+    <path d="M2.5 2H6.29289C6.42551 2 6.55268 2.05268 6.64645 2.14645L7.85355 3.35355C7.94732 3.44732 8.07449 3.5 8.20711 3.5H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3C1.5 2.44772 1.94772 2 2.5 2Z" stroke="currentColor" stroke-width="1.2"/>
 </svg>`;
 
 const EMPTY_FOLDER_SVG = `<svg width="48" height="48" viewBox="0 0 16 16" fill="none">
@@ -85,6 +96,16 @@ export function createFileExplorer() {
         render();
     });
 
+    // Diff view components (for commit diff mode)
+    const diffContentViewer = createDiffContentViewer();
+    diffContentViewer.onBack(() => {
+        // Back from line-level diff to file list
+        diffContentViewer.clear();
+    });
+
+    const diffView = createDiffView(null, diffContentViewer);
+    diffView.el.style.display = "none"; // Initially hidden
+
     // State
     const state = {
         commitHash: null,          // Currently browsed commit hash
@@ -102,6 +123,7 @@ export function createFileExplorer() {
         loading: false,             // True while root tree is loading
         breadcrumbPath: "",         // Current breadcrumb navigation path
         statusIndex: new Map(),     // path -> { code, category } from working tree status
+        viewMode: "tree",           // "tree" or "diff" - controls which view is shown
     };
 
     /**
@@ -423,6 +445,44 @@ export function createFileExplorer() {
     }
 
     /**
+     * Render diff mode: show the diff view component.
+     */
+    function renderDiffMode() {
+        el.innerHTML = "";
+
+        // Header with toggle button to switch back to tree mode
+        const header = document.createElement("div");
+        header.className = "file-explorer-header";
+        const commitInfo = document.createElement("div");
+        commitInfo.className = "file-explorer-commit";
+        const shortHash = state.commitHash.substring(0, 7);
+        const firstLine = state.commitMessage ? state.commitMessage.split("\n")[0] : "";
+        commitInfo.textContent = `Commit: ${shortHash} - "${firstLine}"`;
+        header.appendChild(commitInfo);
+
+        // Toggle button to switch back to tree view
+        const toggleBtn = document.createElement("button");
+        toggleBtn.className = "file-explorer-toggle";
+        toggleBtn.innerHTML = TREE_SVG + " Show Tree";
+        toggleBtn.title = "Toggle between tree and diff view";
+        toggleBtn.setAttribute("aria-label", "Toggle between tree and diff view");
+        toggleBtn.addEventListener("click", () => {
+            state.viewMode = "tree";
+            diffView.close();
+            render();
+        });
+        header.appendChild(toggleBtn);
+
+        el.appendChild(header);
+
+        // Open diff view for the current commit
+        diffView.open(state.commitHash, state.commitMessage);
+
+        // Append diff view to the explorer
+        el.appendChild(diffView.el);
+    }
+
+    /**
      * Render the file explorer UI with full ARIA tree semantics.
      */
     function render() {
@@ -439,7 +499,13 @@ export function createFileExplorer() {
             return;
         }
 
-        // Header
+        // If in diff mode, show diff view instead of tree
+        if (state.viewMode === "diff") {
+            renderDiffMode();
+            return;
+        }
+
+        // Header with toggle button
         const header = document.createElement("div");
         header.className = "file-explorer-header";
         const commitInfo = document.createElement("div");
@@ -448,6 +514,19 @@ export function createFileExplorer() {
         const firstLine = state.commitMessage ? state.commitMessage.split("\n")[0] : "";
         commitInfo.textContent = `Commit: ${shortHash} - "${firstLine}"`;
         header.appendChild(commitInfo);
+
+        // Toggle button to switch between tree and diff views
+        const toggleBtn = document.createElement("button");
+        toggleBtn.className = "file-explorer-toggle";
+        toggleBtn.innerHTML = DIFF_SVG + " Show Diff";
+        toggleBtn.title = "Toggle between tree and diff view";
+        toggleBtn.setAttribute("aria-label", "Toggle between tree and diff view");
+        toggleBtn.addEventListener("click", () => {
+            state.viewMode = "diff";
+            render();
+        });
+        header.appendChild(toggleBtn);
+
         el.appendChild(header);
 
         // Toolbar
@@ -868,8 +947,14 @@ export function createFileExplorer() {
         state.filterText = "";
         state.breadcrumbPath = "";
         state.loading = true;
+        state.viewMode = "tree"; // Reset to tree view when opening a new commit
 
         state.expandedDirs.add("");
+
+        // Close diff view if it was open
+        if (diffView.isOpen()) {
+            diffView.close();
+        }
 
         render(); // Show loading skeleton
 

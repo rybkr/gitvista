@@ -222,3 +222,86 @@ func NewRepositoryDelta() *RepositoryDelta {
 func (d *RepositoryDelta) IsEmpty() bool {
 	return len(d.AddedCommits) == 0 && len(d.DeletedCommits) == 0
 }
+
+// DiffStatus represents the type of change made to a file.
+type DiffStatus int
+
+const (
+	// DiffStatusAdded indicates a file was added
+	DiffStatusAdded DiffStatus = iota
+	// DiffStatusModified indicates a file was modified
+	DiffStatusModified
+	// DiffStatusDeleted indicates a file was deleted
+	DiffStatusDeleted
+	// DiffStatusRenamed indicates a file was renamed
+	DiffStatusRenamed
+)
+
+// String returns the string representation of a DiffStatus.
+func (s DiffStatus) String() string {
+	switch s {
+	case DiffStatusAdded:
+		return "added"
+	case DiffStatusModified:
+		return "modified"
+	case DiffStatusDeleted:
+		return "deleted"
+	case DiffStatusRenamed:
+		return "renamed"
+	default:
+		return "unknown"
+	}
+}
+
+// DiffEntry represents a single file change in a commit.
+type DiffEntry struct {
+	Path      string     `json:"path"`
+	OldPath   string     `json:"oldPath,omitempty"` // Set for renamed files
+	Status    DiffStatus `json:"status"`
+	OldHash   Hash       `json:"oldHash,omitempty"`
+	NewHash   Hash       `json:"newHash,omitempty"`
+	IsBinary  bool       `json:"isBinary"`
+	OldMode   string     `json:"oldMode,omitempty"`
+	NewMode   string     `json:"newMode,omitempty"`
+}
+
+// CommitDiff represents the full set of changes in a commit.
+type CommitDiff struct {
+	CommitHash Hash        `json:"commitHash"`
+	Entries    []DiffEntry `json:"entries"`
+	Stats      DiffStats   `json:"stats"`
+}
+
+// DiffStats provides summary counts of changes.
+type DiffStats struct {
+	FilesChanged int `json:"filesChanged"`
+	Insertions   int `json:"insertions"`
+	Deletions    int `json:"deletions"`
+}
+
+// DiffLine represents a single line in a diff.
+type DiffLine struct {
+	Type    string `json:"type"`    // "context", "addition", "deletion"
+	Content string `json:"content"` // Line content without prefix
+	OldLine int    `json:"oldLine"` // Line number in old file (0 if addition)
+	NewLine int    `json:"newLine"` // Line number in new file (0 if deletion)
+}
+
+// DiffHunk represents a contiguous block of line changes.
+type DiffHunk struct {
+	OldStart int        `json:"oldStart"` // Starting line in old file
+	OldLines int        `json:"oldLines"` // Number of lines in old file
+	NewStart int        `json:"newStart"` // Starting line in new file
+	NewLines int        `json:"newLines"` // Number of lines in new file
+	Lines    []DiffLine `json:"lines"`    // All lines in this hunk
+}
+
+// FileDiff represents the full line-level diff for a single file.
+type FileDiff struct {
+	Path      string     `json:"path"`
+	OldHash   Hash       `json:"oldHash"`
+	NewHash   Hash       `json:"newHash"`
+	IsBinary  bool       `json:"isBinary"`
+	Truncated bool       `json:"truncated"` // True if file too large
+	Hunks     []DiffHunk `json:"hunks"`
+}

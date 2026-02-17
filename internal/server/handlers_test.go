@@ -301,3 +301,127 @@ func TestHandleTreeBlame_InvalidCommitHash(t *testing.T) {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 }
+
+func TestHandleCommitDiff_InvalidMethod(t *testing.T) {
+	server := &Server{}
+
+	req := httptest.NewRequest("POST", "/api/commit/diff/abc123", nil)
+	w := httptest.NewRecorder()
+
+	server.handleCommitDiff(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleCommitDiff_MissingHash(t *testing.T) {
+	server := &Server{}
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"empty path", "/api/commit/diff/"},
+		{"just prefix", "/api/commit/diff"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			w := httptest.NewRecorder()
+
+			server.handleCommitDiff(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
+func TestHandleCommitDiff_InvalidHash(t *testing.T) {
+	server := &Server{
+		cached: struct {
+			repo *gitcore.Repository
+		}{
+			repo: &gitcore.Repository{},
+		},
+	}
+
+	tests := []struct {
+		name string
+		hash string
+	}{
+		{"too short", "abc"},
+		{"invalid chars", "ghijklmnopqrstuvwxyz1234567890123456789"},
+		{"non-hex chars", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/commit/diff/"+tt.hash, nil)
+			w := httptest.NewRecorder()
+
+			server.handleCommitDiff(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status code = %d, want %d for hash %q", w.Code, http.StatusBadRequest, tt.hash)
+			}
+		})
+	}
+}
+
+func TestHandleCommitDiff_FileDiff_MissingPath(t *testing.T) {
+	server := &Server{
+		cached: struct {
+			repo *gitcore.Repository
+		}{
+			repo: &gitcore.Repository{},
+		},
+	}
+
+	// Valid hash format but missing path parameter
+	validHash := "0123456789abcdef0123456789abcdef01234567"
+	req := httptest.NewRequest("GET", "/api/commit/diff/"+validHash+"/file", nil)
+	w := httptest.NewRecorder()
+
+	server.handleCommitDiff(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleCommitDiff_FileDiff_InvalidPath(t *testing.T) {
+	server := &Server{
+		cached: struct {
+			repo *gitcore.Repository
+		}{
+			repo: &gitcore.Repository{},
+		},
+	}
+
+	validHash := "0123456789abcdef0123456789abcdef01234567"
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"directory traversal", "../../etc/passwd"},
+		{"absolute path", "/etc/passwd"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/commit/diff/"+validHash+"/file?path="+tt.path, nil)
+			w := httptest.NewRecorder()
+
+			server.handleCommitDiff(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status code = %d, want %d for path %q", w.Code, http.StatusBadRequest, tt.path)
+			}
+		})
+	}
+}

@@ -188,3 +188,249 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
+
+// handleCommitDiff serves commit diff information via REST API.
+// Routes:
+//   - GET /api/commit/diff/{commitHash} - Returns list of changed files (CommitDiff)
+//   - GET /api/commit/diff/{commitHash}/file?path={path} - Returns line-level diff for a specific file (FileDiff)
+//
+// The handler determines the type of request based on the URL path suffix.
+func (s *Server) handleCommitDiff(w http.ResponseWriter, r *http.Request) {
+	// Only GET method allowed
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse the URL path to extract commit hash and determine request type
+	path := strings.TrimPrefix(r.URL.Path, "/api/commit/diff/")
+	if path == "" || path == r.URL.Path {
+		http.Error(w, "Missing commit hash in path", http.StatusBadRequest)
+		return
+	}
+
+	// Check if this is a file-level diff request
+	isFileDiff := strings.Contains(path, "/file")
+
+	// Extract commit hash (everything before "/file" if present)
+	commitHashStr := path
+	if isFileDiff {
+		commitHashStr = strings.TrimSuffix(path, "/file")
+	}
+	commitHashStr = strings.TrimPrefix(commitHashStr, "/")
+
+	// Validate commit hash format
+	commitHash, err := gitcore.NewHash(commitHashStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid commit hash format: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get repository
+	s.cacheMu.RLock()
+	repo := s.cached.repo
+	s.cacheMu.RUnlock()
+
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Handle file-level diff request
+	if isFileDiff {
+		s.handleFileDiff(w, r, repo, commitHash)
+		return
+	}
+
+	// Handle commit-level diff request (list of changed files)
+	s.handleCommitDiffList(w, repo, commitHash)
+}
+
+// handleCommitDiffList handles GET /api/commit/diff/{commitHash}
+// Returns a list of all files changed in the commit.
+func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repository, commitHash gitcore.Hash) {
+	// Check cache first
+	cacheKey := string(commitHash)
+	if cached, ok := s.diffCache.Load(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(cached); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Get the commit
+	commits := repo.Commits()
+	commit, exists := commits[commitHash]
+	if !exists {
+		http.Error(w, fmt.Sprintf("Commit not found: %s", commitHash), http.StatusNotFound)
+		return
+	}
+
+	// Determine parent hash (empty for root commits)
+	var parentTreeHash gitcore.Hash
+	if len(commit.Parents) > 0 {
+		// Use first parent for merge commits
+		parentCommit, exists := commits[commit.Parents[0]]
+		if !exists {
+			http.Error(w, fmt.Sprintf("Parent commit not found: %s", commit.Parents[0]), http.StatusNotFound)
+			return
+		}
+		parentTreeHash = parentCommit.Tree
+	}
+
+	// Compute tree diff
+	entries, err := gitcore.TreeDiff(repo, parentTreeHash, commit.Tree, "")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to compute diff: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert DiffEntry slice to JSON-friendly format and compute stats
+	jsonEntries := make([]map[string]any, len(entries))
+	stats := map[string]int{
+		"added":    0,
+		"modified": 0,
+		"deleted":  0,
+	}
+
+	for i, entry := range entries {
+		jsonEntries[i] = map[string]any{
+			"path":    entry.Path,
+			"status":  entry.Status.String(),
+			"oldHash": string(entry.OldHash),
+			"newHash": string(entry.NewHash),
+			"binary":  entry.IsBinary,
+		}
+
+		// Update stats
+		switch entry.Status {
+		case gitcore.DiffStatusAdded:
+			stats["added"]++
+		case gitcore.DiffStatusModified:
+			stats["modified"]++
+		case gitcore.DiffStatusDeleted:
+			stats["deleted"]++
+		}
+	}
+
+	// Build response
+	response := map[string]any{
+		"commitHash": string(commitHash),
+		"parentHash": string(parentTreeHash),
+		"entries":    jsonEntries,
+		"stats": map[string]any{
+			"added":        stats["added"],
+			"modified":     stats["modified"],
+			"deleted":      stats["deleted"],
+			"filesChanged": len(entries),
+		},
+	}
+
+	// Cache the response (commit hashes are immutable)
+	s.diffCache.Store(cacheKey, response)
+
+	// Return response
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+// handleFileDiff handles GET /api/commit/diff/{commitHash}/file?path={path}
+// Returns line-level diff for a specific file in the commit.
+func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gitcore.Repository, commitHash gitcore.Hash) {
+	// Get file path from query parameter
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Validate and sanitize path
+	sanitized, err := sanitizePath(filePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid path: %v", err), http.StatusBadRequest)
+		return
+	}
+	filePath = sanitized
+
+	// Build cache key
+	cacheKey := string(commitHash) + ":" + filePath
+
+	// Check cache first
+	if cached, ok := s.diffCache.Load(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(cached); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Get the commit
+	commits := repo.Commits()
+	commit, exists := commits[commitHash]
+	if !exists {
+		http.Error(w, fmt.Sprintf("Commit not found: %s", commitHash), http.StatusNotFound)
+		return
+	}
+
+	// Determine parent tree hash
+	var parentTreeHash gitcore.Hash
+	if len(commit.Parents) > 0 {
+		parentCommit, exists := commits[commit.Parents[0]]
+		if !exists {
+			http.Error(w, fmt.Sprintf("Parent commit not found: %s", commit.Parents[0]), http.StatusNotFound)
+			return
+		}
+		parentTreeHash = parentCommit.Tree
+	}
+
+	// First, compute tree diff to find the file's blob hashes
+	entries, err := gitcore.TreeDiff(repo, parentTreeHash, commit.Tree, "")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to compute diff: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Find the specific file in the diff entries
+	var targetEntry *gitcore.DiffEntry
+	for i := range entries {
+		if entries[i].Path == filePath {
+			targetEntry = &entries[i]
+			break
+		}
+	}
+
+	if targetEntry == nil {
+		http.Error(w, fmt.Sprintf("File not found in commit diff: %s", filePath), http.StatusNotFound)
+		return
+	}
+
+	// Compute file-level diff
+	fileDiff, err := gitcore.ComputeFileDiff(repo, targetEntry.OldHash, targetEntry.NewHash, filePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to compute file diff: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to JSON-friendly format
+	response := map[string]any{
+		"path":      fileDiff.Path,
+		"status":    targetEntry.Status.String(),
+		"oldHash":   string(fileDiff.OldHash),
+		"newHash":   string(fileDiff.NewHash),
+		"isBinary":  fileDiff.IsBinary,
+		"truncated": fileDiff.Truncated,
+		"hunks":     fileDiff.Hunks,
+	}
+
+	// Cache the response
+	s.diffCache.Store(cacheKey, response)
+
+	// Return response
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
