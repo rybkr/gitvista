@@ -169,6 +169,14 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 	// Parse directory path from query parameter (default to empty string for root)
 	dirPath := r.URL.Query().Get("path")
 
+	// Validate and sanitize the path to prevent directory traversal
+	sanitized, err := sanitizePath(dirPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid path: %v", err), http.StatusBadRequest)
+		return
+	}
+	dirPath = sanitized
+
 	// Build cache key
 	cacheKey := string(commitHash) + ":" + dirPath
 
