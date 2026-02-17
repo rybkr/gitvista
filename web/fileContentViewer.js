@@ -6,14 +6,10 @@
  * Extracted from fileBrowser.js for reuse across different contexts.
  */
 
-// SVG icons reused from fileBrowser.js
+import { getFileIcon } from "./fileIcons.js";
+
 const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
-
-const FILE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M4 2C3.44772 2 3 2.44772 3 3V13C3 13.5523 3.44772 14 4 14H12C12.5523 14 13 13.5523 13 13V6L9 2H4Z" fill="currentColor" opacity="0.2"/>
-    <path d="M9 2V6H13M4 2H9L13 6V13C13 13.5523 12.5523 14 12 14H4C3.44772 14 3 13.5523 3 13V3C3 2.44772 3.44772 2 4 2Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
 export function createFileContentViewer() {
@@ -63,7 +59,11 @@ export function createFileContentViewer() {
 
             const fileNameEl = document.createElement("div");
             fileNameEl.className = "file-content-filename";
-            fileNameEl.textContent = fileName || "Untitled";
+            const fileIconEl = document.createElement("span");
+            fileIconEl.className = "explorer-icon";
+            fileIconEl.innerHTML = getFileIcon(fileName || "");
+            fileNameEl.appendChild(fileIconEl);
+            fileNameEl.appendChild(document.createTextNode(fileName || "Untitled"));
 
             const meta = document.createElement("div");
             meta.className = "file-content-meta";

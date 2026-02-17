@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
         },
         onStatus: (status) => {
             indexView.update(status);
+            fileExplorer.updateWorkingTreeStatus(status);
         },
     }).catch((error) => {
         logger.error("Backend bootstrap failed", error);

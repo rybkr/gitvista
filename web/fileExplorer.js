@@ -12,6 +12,7 @@
  */
 
 import { createFileContentViewer } from "./fileContentViewer.js";
+import { getFileIcon } from "./fileIcons.js";
 
 // SVG icons
 const FOLDER_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -19,13 +20,31 @@ const FOLDER_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M2.5 2H6.29289C6.42551 2 6.55268 2.05268 6.64645 2.14645L7.85355 3.35355C7.94732 3.44732 8.07449 3.5 8.20711 3.5H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3C1.5 2.44772 1.94772 2 2.5 2Z" stroke="currentColor" stroke-width="1.2"/>
 </svg>`;
 
-const FILE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M4 2C3.44772 2 3 2.44772 3 3V13C3 13.5523 3.44772 14 4 14H12C12.5523 14 13 13.5523 13 13V6L9 2H4Z" fill="currentColor" opacity="0.2"/>
-    <path d="M9 2V6H13M4 2H9L13 6V13C13 13.5523 12.5523 14 12 14H4C3.44772 14 3 13.5523 3 13V3C3 2.44772 3.44772 2 4 2Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
-
 const CHEVRON_SVG = `<svg width="10" height="10" viewBox="0 0 16 16" fill="none">
     <path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+const COLLAPSE_ALL_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M4 4h8M4 8h8M4 12h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
+const EXPAND_ALL_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M3 3v4h4M13 13V9H9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M13 3L8 8M3 13l5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
+const SEARCH_SVG = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+    <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
+const CLEAR_SVG = `<svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
+const EMPTY_FOLDER_SVG = `<svg width="48" height="48" viewBox="0 0 16 16" fill="none">
+    <path d="M1.5 3C1.5 2.44772 1.94772 2 2.5 2H6.29289C6.42551 2 6.55268 2.05268 6.64645 2.14645L7.85355 3.35355C7.94732 3.44732 8.07449 3.5 8.20711 3.5H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3Z" fill="currentColor" opacity="0.1"/>
+    <path d="M2.5 2H6.29289C6.42551 2 6.55268 2.05268 6.64645 2.14645L7.85355 3.35355C7.94732 3.44732 8.07449 3.5 8.20711 3.5H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3C1.5 2.44772 1.94772 2 2.5 2Z" stroke="currentColor" stroke-width="0.8"/>
 </svg>`;
 
 /**
@@ -61,6 +80,7 @@ export function createFileExplorer() {
     const contentViewer = createFileContentViewer();
     contentViewer.onBack(() => {
         state.selectedFile = null;
+        state.breadcrumbPath = "";
         contentViewer.close();
         render();
     });
@@ -76,6 +96,12 @@ export function createFileExplorer() {
         selectedFile: null,         // { path, blobHash } or null
         generation: 0,              // Incremented on openCommit to discard stale responses
         focusedIndex: 0,            // Index into the visibleEntries array for keyboard nav
+        filterText: "",             // Current filter text
+        filterDebounceTimer: null,  // Debounce timer for filter input
+        prevVisiblePaths: new Set(),// Tracks previous render's paths for animation
+        loading: false,             // True while root tree is loading
+        breadcrumbPath: "",         // Current breadcrumb navigation path
+        statusIndex: new Map(),     // path -> { code, category } from working tree status
     };
 
     /**
@@ -105,6 +131,7 @@ export function createFileExplorer() {
     /**
      * Build a flat array of visible entries based on expanded directories.
      * Each entry includes ARIA sibling info (setSize, posInSet) for accessibility.
+     * When filterText is set, only matching entries and their ancestors are returned.
      */
     function buildVisibleEntries() {
         const visible = [];
@@ -164,20 +191,251 @@ export function createFileExplorer() {
         }
 
         walk(state.rootTreeHash, "", 0);
+
+        // Apply filter
+        if (state.filterText) {
+            const needle = state.filterText.toLowerCase();
+            const matchedPaths = new Set();
+
+            for (const entry of visible) {
+                if (entry.name.toLowerCase().includes(needle)) {
+                    matchedPaths.add(entry.path);
+                    // Add all ancestor paths
+                    let p = entry.path;
+                    while (p.includes("/")) {
+                        p = p.substring(0, p.lastIndexOf("/"));
+                        matchedPaths.add(p);
+                    }
+                }
+            }
+
+            return visible.filter(e => matchedPaths.has(e.path));
+        }
+
         return visible;
+    }
+
+    /**
+     * Build the toolbar with collapse all, expand all, and filter input.
+     */
+    function renderToolbar() {
+        const toolbar = document.createElement("div");
+        toolbar.className = "file-explorer-toolbar";
+
+        const collapseBtn = document.createElement("button");
+        collapseBtn.title = "Collapse All";
+        collapseBtn.innerHTML = COLLAPSE_ALL_SVG;
+        collapseBtn.addEventListener("click", collapseAll);
+        toolbar.appendChild(collapseBtn);
+
+        const expandBtn = document.createElement("button");
+        expandBtn.title = "Expand All";
+        expandBtn.innerHTML = EXPAND_ALL_SVG;
+        expandBtn.addEventListener("click", expandAll);
+        toolbar.appendChild(expandBtn);
+
+        const filterWrap = document.createElement("div");
+        filterWrap.className = "file-explorer-filter";
+
+        const searchIcon = document.createElement("span");
+        searchIcon.className = "file-explorer-filter-icon";
+        searchIcon.innerHTML = SEARCH_SVG;
+        filterWrap.appendChild(searchIcon);
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "Filter files...";
+        input.value = state.filterText;
+        input.addEventListener("input", (e) => {
+            clearTimeout(state.filterDebounceTimer);
+            state.filterDebounceTimer = setTimeout(() => {
+                state.filterText = e.target.value;
+                state.focusedIndex = 0;
+                render();
+                // Re-focus input after render
+                const newInput = el.querySelector(".file-explorer-filter input");
+                if (newInput) {
+                    newInput.focus();
+                    newInput.selectionStart = newInput.selectionEnd = newInput.value.length;
+                }
+            }, 150);
+        });
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                state.filterText = "";
+                state.focusedIndex = 0;
+                render();
+                const tree = el.querySelector(".file-explorer-tree");
+                if (tree) tree.focus();
+            }
+        });
+        filterWrap.appendChild(input);
+
+        if (state.filterText) {
+            const clearBtn = document.createElement("button");
+            clearBtn.className = "file-explorer-filter-clear";
+            clearBtn.innerHTML = CLEAR_SVG;
+            clearBtn.addEventListener("click", () => {
+                state.filterText = "";
+                state.focusedIndex = 0;
+                render();
+            });
+            filterWrap.appendChild(clearBtn);
+        }
+
+        toolbar.appendChild(filterWrap);
+        return toolbar;
+    }
+
+    /**
+     * Build breadcrumb navigation bar for the current path.
+     */
+    function renderBreadcrumbs() {
+        if (!state.breadcrumbPath) return null;
+
+        const bar = document.createElement("div");
+        bar.className = "file-explorer-breadcrumbs";
+
+        const segments = state.breadcrumbPath.split("/");
+
+        // Root segment
+        const rootBtn = document.createElement("button");
+        rootBtn.className = "file-breadcrumb";
+        rootBtn.textContent = "/";
+        rootBtn.addEventListener("click", () => {
+            state.breadcrumbPath = "";
+            render();
+        });
+        bar.appendChild(rootBtn);
+
+        for (let i = 0; i < segments.length; i++) {
+            const sep = document.createElement("span");
+            sep.className = "file-breadcrumb-sep";
+            sep.textContent = "\u203A";
+            bar.appendChild(sep);
+
+            const segPath = segments.slice(0, i + 1).join("/");
+            const isLast = i === segments.length - 1;
+
+            if (isLast) {
+                const current = document.createElement("span");
+                current.className = "file-breadcrumb-current";
+                current.textContent = segments[i];
+                bar.appendChild(current);
+            } else {
+                const btn = document.createElement("button");
+                btn.className = "file-breadcrumb";
+                btn.textContent = segments[i];
+                btn.addEventListener("click", () => {
+                    state.breadcrumbPath = segPath;
+                    render();
+                    scrollToPath(segPath);
+                });
+                bar.appendChild(btn);
+            }
+        }
+
+        return bar;
+    }
+
+    /** Scroll to and focus a specific path in the tree. */
+    function scrollToPath(path) {
+        const row = el.querySelector(`[data-path="${CSS.escape(path)}"]`);
+        if (row) {
+            row.scrollIntoView({ block: "nearest" });
+            const entries = buildVisibleEntries();
+            const idx = entries.findIndex(e => e.path === path);
+            if (idx >= 0) {
+                state.focusedIndex = idx;
+                renderFocusUpdate(entries);
+            }
+        }
+    }
+
+    /** Render the styled empty state when no commit is selected. */
+    function renderEmptyState() {
+        const empty = document.createElement("div");
+        empty.className = "file-explorer-empty";
+
+        const icon = document.createElement("div");
+        icon.className = "file-explorer-empty-icon";
+        icon.innerHTML = EMPTY_FOLDER_SVG;
+        empty.appendChild(icon);
+
+        const title = document.createElement("div");
+        title.className = "file-explorer-empty-title";
+        title.textContent = "No commit selected";
+        empty.appendChild(title);
+
+        const hint = document.createElement("div");
+        hint.className = "file-explorer-empty-hint";
+        hint.textContent = "Click a commit\u2019s tree icon to browse files";
+        empty.appendChild(hint);
+
+        return empty;
+    }
+
+    /** Render skeleton loading rows. */
+    function renderSkeletonRows() {
+        const container = document.createElement("div");
+        container.className = "file-explorer-tree";
+
+        const widths = [60, 80, 45, 70, 55, 65];
+        for (let i = 0; i < 6; i++) {
+            const row = document.createElement("div");
+            row.className = "explorer-skeleton";
+            row.style.paddingLeft = `${8 + (i > 2 ? 16 : 0)}px`;
+
+            const iconSkel = document.createElement("div");
+            iconSkel.className = "explorer-skeleton-icon";
+            iconSkel.style.animationDelay = `${i * 0.1}s`;
+            row.appendChild(iconSkel);
+
+            const bar = document.createElement("div");
+            bar.className = "explorer-skeleton-bar";
+            bar.style.width = `${widths[i]}%`;
+            bar.style.animationDelay = `${i * 0.1}s`;
+            row.appendChild(bar);
+
+            container.appendChild(row);
+        }
+
+        return container;
+    }
+
+    /** Look up git status for a path. For directories, checks descendants. */
+    function getStatusForPath(entryPath, isDir) {
+        if (state.statusIndex.size === 0) return null;
+
+        if (!isDir) {
+            return state.statusIndex.get(entryPath) || null;
+        }
+
+        // For directories: check if any descendant has status
+        const prefix = entryPath + "/";
+        for (const [path] of state.statusIndex) {
+            if (path.startsWith(prefix)) {
+                return { isDirIndicator: true };
+            }
+        }
+        return null;
     }
 
     /**
      * Render the file explorer UI with full ARIA tree semantics.
      */
     function render() {
+        // Save previous visible paths for animation
+        const currentEntries = el.querySelectorAll(".explorer-entry[data-path]");
+        const prevPaths = new Set();
+        currentEntries.forEach(row => prevPaths.add(row.getAttribute("data-path")));
+        state.prevVisiblePaths = prevPaths;
+
         el.innerHTML = "";
 
         if (!state.commitHash) {
-            const placeholder = document.createElement("div");
-            placeholder.className = "file-explorer-placeholder";
-            placeholder.textContent = "Click a commit's tree icon to browse files.";
-            el.appendChild(placeholder);
+            el.appendChild(renderEmptyState());
             return;
         }
 
@@ -191,6 +449,22 @@ export function createFileExplorer() {
         commitInfo.textContent = `Commit: ${shortHash} - "${firstLine}"`;
         header.appendChild(commitInfo);
         el.appendChild(header);
+
+        // Toolbar
+        el.appendChild(renderToolbar());
+
+        // Breadcrumbs
+        const breadcrumbs = renderBreadcrumbs();
+        if (breadcrumbs) {
+            el.appendChild(breadcrumbs);
+        }
+
+        // Loading state — show skeleton rows
+        if (state.loading) {
+            el.appendChild(renderSkeletonRows());
+            el.appendChild(contentViewer.el);
+            return;
+        }
 
         // Tree container with ARIA tree role
         const treeContainer = document.createElement("div");
@@ -219,6 +493,11 @@ export function createFileExplorer() {
             row.id = pathToId(entry.path);
             row.setAttribute("data-path", entry.path);
             row.style.paddingLeft = `${8 + entry.depth * 16}px`;
+
+            // Animation: mark entries not in previous render as new
+            if (!state.prevVisiblePaths.has(entry.path)) {
+                row.classList.add("is-new");
+            }
 
             // ARIA treeitem attributes
             row.setAttribute("role", "treeitem");
@@ -253,10 +532,10 @@ export function createFileExplorer() {
                 row.appendChild(spacer);
             }
 
-            // Icon
+            // Icon — file type icons for files, folder icon for directories
             const icon = document.createElement("span");
             icon.className = "explorer-icon";
-            icon.innerHTML = entry.isDir ? FOLDER_SVG : FILE_SVG;
+            icon.innerHTML = entry.isDir ? FOLDER_SVG : getFileIcon(entry.name);
             row.appendChild(icon);
 
             // Name
@@ -265,19 +544,42 @@ export function createFileExplorer() {
             name.textContent = entry.name;
             row.appendChild(name);
 
+            // Git status badge
+            const statusInfo = getStatusForPath(entry.path, entry.isDir);
+            if (statusInfo) {
+                if (statusInfo.isDirIndicator) {
+                    const dot = document.createElement("span");
+                    dot.className = "explorer-dir-indicator";
+                    row.appendChild(dot);
+                } else {
+                    const badge = document.createElement("span");
+                    let badgeCategory = statusInfo.category;
+                    if (statusInfo.code === "D") badgeCategory = "deleted";
+                    badge.className = `explorer-status explorer-status--${badgeCategory}`;
+                    badge.textContent = statusInfo.code;
+                    row.appendChild(badge);
+                }
+            }
+
             // Blame annotations
             const blameContainer = document.createElement("span");
             blameContainer.className = "explorer-blame";
 
-            const age = document.createElement("span");
-            age.className = "explorer-blame-age";
-            age.textContent = entry.blame ? formatRelativeTime(entry.blame.when) : "...";
-            blameContainer.appendChild(age);
+            if (entry.blame) {
+                const age = document.createElement("span");
+                age.className = "explorer-blame-age";
+                age.textContent = formatRelativeTime(entry.blame.when);
+                blameContainer.appendChild(age);
 
-            const hash = document.createElement("span");
-            hash.className = "explorer-blame-hash";
-            hash.textContent = entry.blame ? entry.blame.commitHash.substring(0, 7) : "";
-            blameContainer.appendChild(hash);
+                const hash = document.createElement("span");
+                hash.className = "explorer-blame-hash";
+                hash.textContent = entry.blame.commitHash.substring(0, 7);
+                blameContainer.appendChild(hash);
+            } else {
+                const skeleton = document.createElement("span");
+                skeleton.className = "explorer-blame-skeleton";
+                blameContainer.appendChild(skeleton);
+            }
 
             row.appendChild(blameContainer);
 
@@ -390,6 +692,12 @@ export function createFileExplorer() {
                 e.preventDefault();
                 expandSiblings(current, entries);
                 break;
+
+            case "/":
+                e.preventDefault();
+                const filterInput = el.querySelector(".file-explorer-filter input");
+                if (filterInput) filterInput.focus();
+                break;
         }
     }
 
@@ -433,6 +741,36 @@ export function createFileExplorer() {
         Promise.all(siblings.map(s => handleDirClick(s)));
     }
 
+    /** Collapse all directories except root. */
+    function collapseAll() {
+        state.expandedDirs.clear();
+        state.expandedDirs.add("");
+        state.breadcrumbPath = "";
+        state.focusedIndex = 0;
+        render();
+    }
+
+    /** Expand all directories that have cached tree data. */
+    function expandAll() {
+        function walkAndExpand(treeHash, parentPath) {
+            const tree = state.treeCache.get(treeHash);
+            if (!tree) return;
+            for (const entry of tree.entries) {
+                if (entry.type === "tree") {
+                    const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+                    state.expandedDirs.add(entryPath);
+                    if (state.treeCache.has(entry.hash)) {
+                        walkAndExpand(entry.hash, entryPath);
+                    }
+                }
+            }
+        }
+        if (state.rootTreeHash) {
+            walkAndExpand(state.rootTreeHash, "");
+        }
+        render();
+    }
+
     /**
      * Handle directory click: toggle expand/collapse, fetch tree data if needed,
      * then lazily fetch blame data.
@@ -442,6 +780,14 @@ export function createFileExplorer() {
 
         if (isExpanded) {
             state.expandedDirs.delete(entry.path);
+            // Retract breadcrumb if it was inside this directory
+            if (state.breadcrumbPath === entry.path ||
+                state.breadcrumbPath.startsWith(entry.path + "/")) {
+                const parent = entry.path.includes("/")
+                    ? entry.path.substring(0, entry.path.lastIndexOf("/"))
+                    : "";
+                state.breadcrumbPath = parent;
+            }
             render();
             // Preserve focus on the collapsed directory
             const entries = buildVisibleEntries();
@@ -449,6 +795,7 @@ export function createFileExplorer() {
             if (idx >= 0) state.focusedIndex = idx;
         } else {
             state.expandedDirs.add(entry.path);
+            state.breadcrumbPath = entry.path;
 
             if (!state.treeCache.has(entry.treeHash)) {
                 try {
@@ -491,6 +838,11 @@ export function createFileExplorer() {
      */
     function handleFileClick(entry) {
         state.selectedFile = { path: entry.path, blobHash: entry.blobHash };
+        // Update breadcrumb to file's parent directory
+        const parentPath = entry.path.includes("/")
+            ? entry.path.substring(0, entry.path.lastIndexOf("/"))
+            : "";
+        state.breadcrumbPath = parentPath;
         for (const child of el.children) {
             if (child !== contentViewer.el) {
                 child.style.display = "none";
@@ -513,8 +865,13 @@ export function createFileExplorer() {
         state.blameCache.clear();
         state.selectedFile = null;
         state.focusedIndex = 0;
+        state.filterText = "";
+        state.breadcrumbPath = "";
+        state.loading = true;
 
         state.expandedDirs.add("");
+
+        render(); // Show loading skeleton
 
         try {
             const gen = state.generation;
@@ -523,10 +880,12 @@ export function createFileExplorer() {
             state.treeCache.set(commit.tree, rootTree);
         } catch (err) {
             console.error("Failed to fetch root tree:", err);
+            state.loading = false;
             render();
             return;
         }
 
+        state.loading = false;
         render();
 
         const blameKey = `${state.commitHash}:`;
@@ -541,6 +900,33 @@ export function createFileExplorer() {
         }
     }
 
+    /**
+     * Update working tree status from WebSocket data.
+     * Builds a statusIndex map for quick lookup during render.
+     */
+    function updateWorkingTreeStatus(status) {
+        state.statusIndex.clear();
+        if (!status) return;
+
+        const categorize = (files, category) => {
+            if (!files) return;
+            for (const file of files) {
+                state.statusIndex.set(file.path, {
+                    code: file.statusCode,
+                    category,
+                });
+            }
+        };
+
+        categorize(status.staged, "staged");
+        categorize(status.modified, "modified");
+        categorize(status.untracked, "untracked");
+
+        if (state.commitHash && !state.loading) {
+            render();
+        }
+    }
+
     function getEl() {
         return el;
     }
@@ -552,5 +938,6 @@ export function createFileExplorer() {
         el,
         openCommit,
         getEl,
+        updateWorkingTreeStatus,
     };
 }

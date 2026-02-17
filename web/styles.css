@@ -303,7 +303,6 @@ body {
     width: 16px;
     height: 16px;
     color: var(--text-color);
-    opacity: 0.6;
 }
 
 .explorer-name {
@@ -1073,6 +1072,9 @@ canvas {
 }
 
 .file-content-filename {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 13px;
     font-weight: 600;
@@ -1161,4 +1163,256 @@ canvas {
     text-align: center;
     color: var(--danger-color);
     font-size: 13px;
+}
+
+/* ── File Explorer Toolbar ── */
+
+.file-explorer-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.file-explorer-toolbar > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.file-explorer-toolbar > button:hover {
+    background: rgba(208, 215, 222, 0.32);
+    color: var(--text-color);
+}
+
+@media (prefers-color-scheme: dark) {
+    .file-explorer-toolbar > button:hover {
+        background: rgba(48, 54, 61, 0.6);
+    }
+}
+
+.file-explorer-filter {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    position: relative;
+    min-width: 0;
+}
+
+.file-explorer-filter-icon {
+    position: absolute;
+    left: 6px;
+    display: inline-flex;
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+
+.file-explorer-filter input {
+    width: 100%;
+    padding: 3px 24px 3px 24px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-size: 11px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.file-explorer-filter input:focus {
+    border-color: var(--node-color);
+}
+
+.file-explorer-filter input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.file-explorer-filter-clear {
+    position: absolute;
+    right: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+}
+
+.file-explorer-filter-clear:hover {
+    color: var(--text-color);
+}
+
+/* ── File Explorer Breadcrumbs ── */
+
+.file-explorer-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+/* ── File Explorer Animations ── */
+
+@keyframes explorer-entry-appear {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.explorer-entry.is-new {
+    animation: explorer-entry-appear 0.15s ease-out;
+}
+
+/* ── File Explorer Skeleton Loading ── */
+
+@keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+}
+
+.explorer-skeleton {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 8px;
+    margin: 0 4px;
+    height: 24px;
+}
+
+.explorer-skeleton-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background: var(--border-color);
+    flex-shrink: 0;
+    animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.explorer-skeleton-bar {
+    height: 10px;
+    border-radius: 3px;
+    background: var(--border-color);
+    animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.explorer-blame-skeleton {
+    display: inline-block;
+    width: 36px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--border-color);
+    animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+/* ── File Explorer Empty State ── */
+
+.file-explorer-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 48px 16px;
+    flex: 1;
+}
+
+.file-explorer-empty-icon {
+    color: var(--text-secondary);
+    opacity: 0.3;
+}
+
+.file-explorer-empty-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.file-explorer-empty-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+/* ── File Explorer Git Status Badges ── */
+
+.explorer-status {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    line-height: 16px;
+}
+
+.explorer-status--staged {
+    background: rgba(26, 127, 55, 0.15);
+    color: var(--success-color);
+}
+
+.explorer-status--modified {
+    background: rgba(154, 103, 0, 0.15);
+    color: var(--warning-color);
+}
+
+.explorer-status--untracked {
+    background: rgba(208, 215, 222, 0.32);
+    color: var(--text-secondary);
+}
+
+.explorer-status--deleted {
+    background: rgba(209, 36, 47, 0.15);
+    color: var(--danger-color);
+}
+
+@media (prefers-color-scheme: dark) {
+    .explorer-status--staged {
+        background: rgba(63, 185, 80, 0.15);
+    }
+
+    .explorer-status--modified {
+        background: rgba(210, 153, 34, 0.15);
+    }
+
+    .explorer-status--untracked {
+        background: rgba(48, 54, 61, 0.6);
+    }
+
+    .explorer-status--deleted {
+        background: rgba(248, 81, 73, 0.15);
+    }
+}
+
+.explorer-dir-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--warning-color);
 }
