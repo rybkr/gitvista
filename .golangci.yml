@@ -1,0 +1,89 @@
+linters:
+  enable:
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Vet examines Go source code and reports suspicious constructs
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Advanced Go linter
+    - unused        # Check for unused constants, variables, functions and types
+    - gofmt         # Check whether code was gofmt-ed
+    - goimports     # Check import statements are formatted
+    - misspell      # Find commonly misspelled English words
+    - revive        # Fast, configurable, extensible, flexible, and beautiful linter for Go
+    - gosec         # Security problems
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Find unused function parameters
+    - goconst       # Repeated strings that could be constants
+    - bodyclose     # Check HTTP response body is closed
+    - noctx         # Check http.Request without context
+
+  disable:
+    - structcheck   # Deprecated
+    - deadcode      # Deprecated
+    - varcheck      # Deprecated
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+
+  govet:
+    check-shadowing: true
+    enable-all: true
+
+  gofmt:
+    simplify: true
+
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: unexported-return
+        disabled: true
+
+  gosec:
+    excludes:
+      - G304 # File path provided as taint input (we validate paths)
+      - G204 # Subprocess with variable (we use git command intentionally)
+
+  staticcheck:
+    checks: ["all"]
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+        - goconst
+
+    # Ignore long lines in generated code
+    - path: .pb.go
+      linters:
+        - lll
+
+    # Allow dot imports in test files
+    - path: _test\.go
+      text: "should not use dot imports"
+
+run:
+  timeout: 5m
+  tests: true
+  skip-dirs:
+    - vendor
+    - web
+    - test/cover
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true
