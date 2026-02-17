@@ -1,6 +1,8 @@
 package server
 
 import (
+	"strings"
+
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"log"
 )
@@ -35,9 +37,63 @@ func (s *Server) updateRepository() {
 
 	status := getWorkingTreeStatus(newRepo.WorkDir())
 
-	if !delta.IsEmpty() || status != nil {
-		s.broadcastUpdate(UpdateMessage{Delta: delta, Status: status})
+	// Check if HEAD changed (detached state, branch switch, or commit)
+	var headInfo *HeadInfo
+	if oldRepo != nil {
+		oldHead := oldRepo.Head()
+		oldRef := oldRepo.HeadRef()
+		oldDetached := oldRepo.HeadDetached()
+
+		newHead := newRepo.Head()
+		newRef := newRepo.HeadRef()
+		newDetached := newRepo.HeadDetached()
+
+		if oldHead != newHead || oldRef != newRef || oldDetached != newDetached {
+			headInfo = buildHeadInfo(newRepo)
+		}
+	} else {
+		// First update: always send HEAD info
+		headInfo = buildHeadInfo(newRepo)
+	}
+
+	if !delta.IsEmpty() || status != nil || headInfo != nil {
+		s.broadcastUpdate(UpdateMessage{Delta: delta, Status: status, Head: headInfo})
 	} else {
 		log.Println("No changes detected")
+	}
+}
+
+// buildHeadInfo constructs a HeadInfo struct from the current repository state.
+func buildHeadInfo(repo *gitcore.Repository) *HeadInfo {
+	head := repo.Head()
+	headRef := repo.HeadRef()
+	isDetached := repo.HeadDetached()
+
+	// Extract branch name from ref
+	branchName := ""
+	if headRef != "" {
+		if name, ok := strings.CutPrefix(headRef, "refs/heads/"); ok {
+			branchName = name
+		}
+	}
+
+	// Get tag names and select recent tags (up to 5)
+	tagNames := repo.TagNames()
+	recentTags := tagNames
+	if len(tagNames) > 5 {
+		recentTags = tagNames[:5]
+	}
+
+	return &HeadInfo{
+		Hash:        string(head),
+		Ref:         headRef,
+		BranchName:  branchName,
+		IsDetached:  isDetached,
+		CommitCount: len(repo.Commits()),
+		BranchCount: len(repo.Branches()),
+		TagCount:    len(tagNames),
+		Description: repo.Description(),
+		Remotes:     repo.Remotes(),
+		RecentTags:  recentTags,
 	}
 }

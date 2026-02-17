@@ -2,6 +2,7 @@ import { logger } from "./logger.js";
 import { createGraph } from "./graph.js";
 import { startBackend } from "./backend.js";
 import { createSidebar } from "./sidebar.js";
+import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
 import { createSidebarTabs } from "./sidebarTabs.js";
 import { createFileExplorer } from "./fileExplorer.js";
@@ -19,6 +20,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const sidebar = createSidebar();
     root.parentElement.insertBefore(sidebar.el, root);
     root.appendChild(sidebar.expandBtn);
+
+    // Info bar (above tabs)
+    const infoBar = createInfoBar();
+    sidebar.content.appendChild(infoBar.el);
 
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
@@ -48,6 +53,12 @@ document.addEventListener("DOMContentLoaded", () => {
         onStatus: (status) => {
             indexView.update(status);
             fileExplorer.updateWorkingTreeStatus(status);
+        },
+        onHead: (headInfo) => {
+            infoBar.updateHead(headInfo);
+        },
+        onRepoMetadata: (metadata) => {
+            infoBar.update(metadata);
         },
     }).catch((error) => {
         logger.error("Backend bootstrap failed", error);

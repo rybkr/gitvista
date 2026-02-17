@@ -165,3 +165,231 @@ func TestRepositoryDelta_IsEmpty(t *testing.T) {
 		})
 	}
 }
+
+func TestRepository_Head(t *testing.T) {
+	repo := &Repository{
+		head: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+	}
+
+	got := repo.Head()
+	want := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+	if got != want {
+		t.Errorf("Head() = %s, want %s", got, want)
+	}
+}
+
+func TestRepository_HeadRef(t *testing.T) {
+	tests := []struct {
+		name    string
+		headRef string
+		want    string
+	}{
+		{
+			name:    "branch HEAD",
+			headRef: "refs/heads/main",
+			want:    "refs/heads/main",
+		},
+		{
+			name:    "detached HEAD",
+			headRef: "",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &Repository{
+				headRef: tt.headRef,
+			}
+
+			got := repo.HeadRef()
+			if got != tt.want {
+				t.Errorf("HeadRef() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRepository_HeadDetached(t *testing.T) {
+	tests := []struct {
+		name         string
+		headDetached bool
+		want         bool
+	}{
+		{
+			name:         "detached HEAD",
+			headDetached: true,
+			want:         true,
+		},
+		{
+			name:         "branch HEAD",
+			headDetached: false,
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &Repository{
+				headDetached: tt.headDetached,
+			}
+
+			got := repo.HeadDetached()
+			if got != tt.want {
+				t.Errorf("HeadDetached() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRepository_TagNames(t *testing.T) {
+	repo := &Repository{
+		refs: map[string]Hash{
+			"refs/heads/main":    Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			"refs/tags/v1.0.0":   Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			"refs/tags/v2.0.0":   Hash("cccccccccccccccccccccccccccccccccccccccc"),
+			"refs/heads/develop": Hash("dddddddddddddddddddddddddddddddddddddddd"),
+		},
+	}
+
+	got := repo.TagNames()
+
+	if len(got) != 2 {
+		t.Fatalf("TagNames() returned %d tags, want 2", len(got))
+	}
+
+	// Check that both tags are present (order may vary)
+	foundV1 := false
+	foundV2 := false
+	for _, tag := range got {
+		if tag == "v1.0.0" {
+			foundV1 = true
+		}
+		if tag == "v2.0.0" {
+			foundV2 = true
+		}
+	}
+
+	if !foundV1 {
+		t.Errorf("TagNames() missing v1.0.0")
+	}
+	if !foundV2 {
+		t.Errorf("TagNames() missing v2.0.0")
+	}
+}
+
+func TestParseRemotesFromConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+		want   map[string]string
+	}{
+		{
+			name: "single remote",
+			config: `[core]
+	repositoryformatversion = 0
+[remote "origin"]
+	url = https://github.com/user/repo.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main`,
+			want: map[string]string{
+				"origin": "https://github.com/user/repo.git",
+			},
+		},
+		{
+			name: "multiple remotes",
+			config: `[remote "origin"]
+	url = https://github.com/user/repo.git
+[remote "upstream"]
+	url = git@github.com:upstream/repo.git`,
+			want: map[string]string{
+				"origin":   "https://github.com/user/repo.git",
+				"upstream": "git@github.com:upstream/repo.git",
+			},
+		},
+		{ //nolint:gosec // G101: Test data, not actual credentials
+			name: "credentials stripped",
+			config: `[remote "origin"]
+	url = https://user:token@github.com/user/repo.git`,
+			want: map[string]string{
+				"origin": "https://github.com/user/repo.git",
+			},
+		},
+		{
+			name:   "no remotes",
+			config: `[core]
+	repositoryformatversion = 0`,
+			want: map[string]string{},
+		},
+		{
+			name: "SSH URL preserved",
+			config: `[remote "origin"]
+	url = git@github.com:user/repo.git`,
+			want: map[string]string{
+				"origin": "git@github.com:user/repo.git",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseRemotesFromConfig(tt.config)
+
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseRemotesFromConfig() returned %d remotes, want %d", len(got), len(tt.want))
+			}
+
+			for name, wantURL := range tt.want {
+				gotURL, ok := got[name]
+				if !ok {
+					t.Errorf("parseRemotesFromConfig() missing remote %q", name)
+					continue
+				}
+				if gotURL != wantURL {
+					t.Errorf("parseRemotesFromConfig() remote %q = %q, want %q", name, gotURL, wantURL)
+				}
+			}
+		})
+	}
+}
+
+func TestStripCredentials(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{ //nolint:gosec // G101: Test data, not actual credentials
+			name: "HTTPS with credentials",
+			url:  "https://user:token@github.com/user/repo.git",
+			want: "https://github.com/user/repo.git",
+		},
+		{
+			name: "HTTPS without credentials",
+			url:  "https://github.com/user/repo.git",
+			want: "https://github.com/user/repo.git",
+		},
+		{
+			name: "SSH URL",
+			url:  "git@github.com:user/repo.git",
+			want: "git@github.com:user/repo.git",
+		},
+		{ //nolint:gosec // G101: Test data, not actual credentials
+			name: "HTTP with credentials",
+			url:  "http://user:token@example.com/repo.git",
+			want: "http://user:token@example.com/repo.git", // Only strips HTTPS
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripCredentials(tt.url)
+			if got != tt.want {
+				t.Errorf("stripCredentials() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

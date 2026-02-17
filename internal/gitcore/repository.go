@@ -93,6 +93,75 @@ func (r *Repository) Branches() map[string]Hash {
 	return result
 }
 
+// Head returns the current HEAD commit hash.
+func (r *Repository) Head() Hash {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.head
+}
+
+// HeadRef returns the current HEAD ref (e.g., "refs/heads/main").
+// Empty string if HEAD is detached.
+func (r *Repository) HeadRef() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.headRef
+}
+
+// HeadDetached returns true if HEAD is detached (not pointing to a branch).
+func (r *Repository) HeadDetached() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.headDetached
+}
+
+// Description returns the repository description from .git/description.
+// Returns empty string if the file doesn't exist or contains the default placeholder.
+func (r *Repository) Description() string {
+	descPath := filepath.Join(r.gitDir, "description")
+	//nolint:gosec // G304: Description path is controlled by git repository structure
+	content, err := os.ReadFile(descPath)
+	if err != nil {
+		return ""
+	}
+
+	desc := strings.TrimSpace(string(content))
+
+	// Filter out Git's default placeholder text
+	if desc == "Unnamed repository; edit this file 'description' to name the repository." {
+		return ""
+	}
+
+	return desc
+}
+
+// Remotes returns a map of remote names to their URLs by parsing .git/config.
+// Credentials are stripped from HTTPS URLs before returning.
+func (r *Repository) Remotes() map[string]string {
+	configPath := filepath.Join(r.gitDir, "config")
+	//nolint:gosec // G304: Config path is controlled by git repository structure
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return make(map[string]string)
+	}
+
+	return parseRemotesFromConfig(string(content))
+}
+
+// TagNames returns a slice of all tag names.
+func (r *Repository) TagNames() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]string, 0)
+	for ref := range r.refs {
+		if name, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
 // GetTree loads and returns a tree object by its hash.
 func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	object, err := r.readObject(treeHash)
@@ -282,4 +351,52 @@ func validateGitDirectory(gitDir string) error {
 	}
 
 	return nil
+}
+
+// parseRemotesFromConfig parses [remote "name"] sections from .git/config.
+// Returns a map of remote names to their URLs with credentials stripped.
+func parseRemotesFromConfig(config string) map[string]string {
+	remotes := make(map[string]string)
+	var currentRemote string
+
+	for _, line := range strings.Split(config, "\n") {
+		line = strings.TrimSpace(line)
+
+		// Match [remote "origin"] section headers
+		if strings.HasPrefix(line, "[remote \"") && strings.HasSuffix(line, "\"]") {
+			start := strings.Index(line, "\"") + 1
+			end := strings.LastIndex(line, "\"")
+			if start > 0 && end > start {
+				currentRemote = line[start:end]
+			}
+			continue
+		}
+
+		// Reset current remote when entering a different section
+		if strings.HasPrefix(line, "[") && !strings.HasPrefix(line, "[remote") {
+			currentRemote = ""
+			continue
+		}
+
+		// Parse url = ... within remote section
+		if currentRemote != "" && strings.HasPrefix(line, "url = ") {
+			url := strings.TrimPrefix(line, "url = ")
+			remotes[currentRemote] = stripCredentials(url)
+			currentRemote = "" // Only capture first URL per remote
+		}
+	}
+
+	return remotes
+}
+
+// stripCredentials removes username:password from HTTPS URLs.
+func stripCredentials(url string) string {
+	// Match https://username:password@host/path
+	if strings.HasPrefix(url, "https://") && strings.Contains(url, "@") {
+		parts := strings.SplitN(url, "@", 2)
+		if len(parts) == 2 {
+			return "https://" + parts[1]
+		}
+	}
+	return url
 }

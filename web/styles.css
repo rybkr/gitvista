@@ -157,6 +157,116 @@ body {
     flex-direction: column;
 }
 
+/* ── Info Bar ── */
+
+.info-bar {
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.info-bar-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-color);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s ease;
+}
+
+.info-bar-header:hover {
+    background: rgba(208, 215, 222, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+    .info-bar-header:hover {
+        background: rgba(48, 54, 61, 0.5);
+    }
+}
+
+.info-bar-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease;
+    transform: rotate(90deg);
+    color: var(--text-secondary);
+}
+
+.info-bar.is-collapsed .info-bar-chevron {
+    transform: rotate(0deg);
+}
+
+.info-bar-title {
+    flex: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.info-bar-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 12px 8px;
+}
+
+.info-bar.is-collapsed .info-bar-content {
+    display: none;
+}
+
+.info-bar-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    font-size: 11px;
+    transition: background-color 0.1s ease;
+}
+
+.info-bar-row:hover {
+    background: rgba(208, 215, 222, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+    .info-bar-row:hover {
+        background: rgba(48, 54, 61, 0.4);
+    }
+}
+
+.info-bar-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.info-bar-value {
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.info-bar-value--detached {
+    color: var(--warning-color);
+    font-weight: 600;
+}
+
+.info-bar-value--remote-url {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
 /* ── Sidebar Tabs ── */
 
 .sidebar-tabs {

@@ -1,23 +1,24 @@
-export async function startBackend({ onDelta, onStatus, logger }) {
-    await loadRepositoryMetadata(logger);
-    return openWebSocket({ onDelta, onStatus, logger });
+export async function startBackend({ onDelta, onStatus, onHead, onRepoMetadata, logger }) {
+    await loadRepositoryMetadata(logger, onRepoMetadata);
+    return openWebSocket({ onDelta, onStatus, onHead, logger });
 }
 
-async function loadRepositoryMetadata(logger) {
+async function loadRepositoryMetadata(logger, onRepoMetadata) {
     logger?.info("Requesting repository metadata");
     try {
         const response = await fetch("/api/repository");
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
-        await response.json();
+        const metadata = await response.json();
         logger?.info("Repository metadata loaded");
+        onRepoMetadata?.(metadata);
     } catch (error) {
         logger?.error("Failed to load repository metadata", error);
     }
 }
 
-function openWebSocket({ onDelta, onStatus, logger }) {
+function openWebSocket({ onDelta, onStatus, onHead, logger }) {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const url = `${protocol}://${window.location.host}/api/ws`;
     logger?.info("Opening WebSocket connection", url);
@@ -48,6 +49,9 @@ function openWebSocket({ onDelta, onStatus, logger }) {
                 }
                 if (payload?.status) {
                     onStatus?.(payload.status);
+                }
+                if (payload?.head) {
+                    onHead?.(payload.head);
                 }
             } catch (error) {
                 logger?.warn("Failed to parse WebSocket payload", error);
