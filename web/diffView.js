@@ -50,6 +50,7 @@ export function createDiffView(backend, diffContentViewer) {
         stats: null,            // { added, modified, deleted, total }
         loading: false,         // True while fetching commit diff list
         selectedFile: null,     // Currently selected file path
+        showFileContent: false, // True when content viewer replaces the file list
         filterText: "",         // Filter input text (optional for v1, included for completeness)
         generation: 0,          // Stale response protection counter
         commitMessage: null,    // First line of commit message for header
@@ -84,11 +85,15 @@ export function createDiffView(backend, diffContentViewer) {
 
     /**
      * Render the diff view UI.
+     *
+     * When showFileContent is true, renders only the header and the content
+     * viewer (full-height). When false, renders the header, stats bar, and
+     * file list; the content viewer is kept in the DOM but hidden.
      */
     function render() {
         el.innerHTML = "";
 
-        // Header with commit info
+        // Header with commit info — always visible
         const header = document.createElement("div");
         header.className = "diff-view-header";
 
@@ -102,38 +107,36 @@ export function createDiffView(backend, diffContentViewer) {
 
         el.appendChild(header);
 
+        // When viewing a file's line-level diff, show only the content viewer.
+        if (state.showFileContent) {
+            if (diffContentViewer && diffContentViewer.el) {
+                el.appendChild(diffContentViewer.el);
+            }
+            return;
+        }
+
         // Stats bar (only shown when not loading and stats available)
         if (!state.loading && state.stats) {
             const statsBar = renderStatsBar();
             el.appendChild(statsBar);
         }
 
-        // Filter input (optional for v1, included for completeness)
-        // Uncomment if you want to enable filtering in v1
-        // const filterBar = renderFilterBar();
-        // el.appendChild(filterBar);
-
         // Loading state
         if (state.loading) {
-            const loadingEl = renderLoadingState();
-            el.appendChild(loadingEl);
+            el.appendChild(renderLoadingState());
         } else if (state.entries === null) {
-            // Error state (if entries is null or undefined after load failure)
-            const errorEl = renderErrorState();
-            el.appendChild(errorEl);
+            // Error state (entries set to null on fetch failure)
+            el.appendChild(renderErrorState());
         } else if (state.entries.length === 0) {
             // Empty state (no changed files)
-            const emptyEl = renderEmptyState();
-            el.appendChild(emptyEl);
+            el.appendChild(renderEmptyState());
         } else {
             // File list
-            const fileList = renderFileList();
-            el.appendChild(fileList);
+            el.appendChild(renderFileList());
         }
 
-        // Always keep the diff content viewer in the DOM so that it is not
-        // detached during loading/error/empty states. The viewer manages its
-        // own visibility via display:none/flex.
+        // Keep the content viewer in the DOM (hidden) so that it is not
+        // detached between renders. It is display:none when not in file content mode.
         if (diffContentViewer && diffContentViewer.el) {
             el.appendChild(diffContentViewer.el);
         }
@@ -245,39 +248,33 @@ export function createDiffView(backend, diffContentViewer) {
     }
 
     /**
-     * Handle file click: fetch FileDiff and pass to diffContentViewer.
+     * Handle file click: switch to content view and fetch the FileDiff.
      */
     async function handleFileClick(entry) {
-        // Update selected file state
-        const prevSelected = el.querySelector(".diff-file-item.is-selected");
-        if (prevSelected) {
-            prevSelected.classList.remove("is-selected");
-        }
-        const currentItem = el.querySelector(`[data-path="${CSS.escape(entry.path)}"]`);
-        if (currentItem) {
-            currentItem.classList.add("is-selected");
-        }
         state.selectedFile = entry.path;
+        state.showFileContent = true;
 
-        // Show loading indicator in diffContentViewer (if it has a loading method)
+        // Re-render to hide the file list and show the content viewer area.
+        render();
+
+        // Show loading indicator inside the content viewer.
         if (diffContentViewer && typeof diffContentViewer.showLoading === "function") {
             diffContentViewer.showLoading();
         }
 
+        const gen = state.generation;
         try {
-            const gen = state.generation;
             const fileDiff = await fetchFileDiff(state.commitHash, entry.path);
 
-            // Ignore stale response
+            // Ignore stale response (commit changed while fetch was in flight).
             if (state.generation !== gen) return;
 
-            // Pass to diffContentViewer
             if (diffContentViewer && typeof diffContentViewer.show === "function") {
                 diffContentViewer.show(fileDiff);
             }
         } catch (err) {
             console.error("Failed to fetch file diff:", err);
-            // Show error in diffContentViewer if it has an error method
+            if (state.generation !== gen) return;
             if (diffContentViewer && typeof diffContentViewer.showError === "function") {
                 diffContentViewer.showError(`Failed to load diff for ${entry.path}: ${err.message}`);
             }
@@ -367,16 +364,17 @@ export function createDiffView(backend, diffContentViewer) {
         state.stats = null;
         state.loading = true;
         state.selectedFile = null;
+        state.showFileContent = false;
         state.filterText = "";
 
         el.style.display = "flex";
         render();
 
+        const gen = state.generation;
         try {
-            const gen = state.generation;
             const diffData = await fetchCommitDiff(commitHash);
 
-            // Ignore stale response
+            // Ignore stale response (commit changed while fetch was in flight).
             if (state.generation !== gen) return;
 
             state.parentHash = diffData.parentHash;
@@ -386,11 +384,10 @@ export function createDiffView(backend, diffContentViewer) {
             render();
         } catch (err) {
             console.error("Failed to fetch commit diff:", err);
-            if (state.generation === state.generation) {
-                state.entries = null; // Signal error state
-                state.loading = false;
-                render();
-            }
+            if (state.generation !== gen) return;
+            state.entries = null; // Signal error state
+            state.loading = false;
+            render();
         }
     }
 
@@ -404,9 +401,9 @@ export function createDiffView(backend, diffContentViewer) {
         state.entries = [];
         state.stats = null;
         state.selectedFile = null;
+        state.showFileContent = false;
         state.filterText = "";
 
-        // Close diffContentViewer if it has a close method
         if (diffContentViewer && typeof diffContentViewer.close === "function") {
             diffContentViewer.close();
         }
@@ -427,6 +424,16 @@ export function createDiffView(backend, diffContentViewer) {
      */
     function getCommitHash() {
         return state.commitHash;
+    }
+
+    // Register internal back handler: return from file-level diff to file list.
+    if (diffContentViewer && typeof diffContentViewer.onBack === "function") {
+        diffContentViewer.onBack(() => {
+            state.selectedFile = null;
+            state.showFileContent = false;
+            diffContentViewer.clear();
+            render();
+        });
     }
 
     // Initial render (empty state)

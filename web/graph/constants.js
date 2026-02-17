@@ -4,12 +4,12 @@
  */
 
 export const NODE_RADIUS = 6;
-export const LINK_DISTANCE = 50;
-export const LINK_STRENGTH = 0.4;
-export const CHARGE_STRENGTH = -110;
+export const LINK_DISTANCE = 60;
+export const LINK_STRENGTH = 0.6;
+export const CHARGE_STRENGTH = -250;
 export const COLLISION_RADIUS = 14;
-export const VELOCITY_DECAY = 0.55;
-export const ALPHA_DECAY = 0.035;
+export const VELOCITY_DECAY = 0.40;
+export const ALPHA_DECAY = 0.045;
 export const DRAG_ALPHA_TARGET = 0.12;
 export const LINK_THICKNESS = NODE_RADIUS * 0.32;
 export const ARROW_LENGTH = NODE_RADIUS * 2;

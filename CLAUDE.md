@@ -48,11 +48,12 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `objects.go` - Reads loose and packed Git objects (commits, tags, trees), handles zlib decompression
 - `pack.go` - Pack file and index parsing (v2 format), delta object reconstruction
 - `blame.go` - Per-directory blame via BFS commit walk (max 1000 commits), cached by `commitHash:dirPath` in sync.Map
-- `types.go` - Core types: `Hash`, `Commit`, `Tag`, `Tree`, `TreeEntry`, `Signature`, `RepositoryDelta`
+- `diff.go` - Tree diffing (`TreeDiff`) and line-level file diffing (`ComputeFileDiff`); limits: 500 entries, 512KB blobs, 3 context lines
+- `types.go` - Core types: `Hash`, `Commit`, `Tag`, `Tree`, `TreeEntry`, `Signature`, `RepositoryDelta`, `DiffEntry`, `CommitDiff`, `FileDiff`, `DiffHunk`, `DiffLine`
 
 **`internal/server/`** - HTTP/WebSocket server:
 - `server.go` - Main server, client management; serves embedded static files from `assets.go`
-- `handlers.go` - REST endpoints (see API section below)
+- `handlers.go` - REST endpoints; holds `sync.Map` caches for blame and diff results (keyed by `commitHash[:dirPath]`)
 - `websocket.go` - WebSocket lifecycle: initial state sync, ping/pong keepalive (54s/60s timeout)
 - `watcher.go` - Filesystem watcher on `.git/` directory with debouncing; triggers repository reload and broadcasts deltas
 - `broadcast.go` - Non-blocking delta broadcast to WebSocket clients (256-item buffer, drops on overflow)
@@ -67,10 +68,12 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 
 ### API Endpoints
 
-- `GET /api/repository` - Repository metadata (name, gitDir)
+- `GET /api/repository` - Repository metadata (name, gitDir, currentBranch, headHash, counts, tags, remotes)
 - `GET /api/tree/{hash}` - Tree object entries
 - `GET /api/blob/{hash}` - Blob content (512KB cap, binary detection via first 8KB)
 - `GET /api/tree/blame/{commitHash}?path={dirPath}` - Per-file blame for a directory
+- `GET /api/commit/diff/{commitHash}` - List of files changed in a commit (`CommitDiff` with stats)
+- `GET /api/commit/diff/{commitHash}/file?path={path}` - Line-level unified diff for a specific file (`FileDiff` with hunks)
 - `GET /api/ws` - WebSocket upgrade for real-time deltas + working tree status
 
 ### Frontend (JavaScript)
@@ -78,16 +81,22 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 **`web/`** - Vanilla JS with ES modules, D3.js v7.9.0 loaded from CDN:
 - `app.js` - Entry point: bootstraps graph, sidebar, tabs, and backend connection
 - `backend.js` - REST fetch and WebSocket connection management
+- `logger.js` - Lightweight structured logger used throughout the frontend
+- `graph.js` - Thin wrapper that creates and exposes the graph controller
 - `graph/graphController.js` - D3 force simulation, zoom/pan, node dragging, delta application
 - `graph/rendering/graphRenderer.js` - Canvas-based rendering of commits, branches, links
 - `graph/state/graphState.js` - State factory for commits/branches/nodes/links Maps + zoom
 - `graph/layout/layoutManager.js` - Chronological commit positioning and viewport management
 - `graph/constants.js` - Centralized D3 force parameters and UI dimensions
 - `sidebar.js` - Collapsible, resizable sidebar with localStorage persistence
+- `sidebarTabs.js` - Tab switching for sidebar panels (Repository / File Explorer)
+- `infoBar.js` - Repository info header (branch, commit count, tags, remotes)
 - `fileExplorer.js` - Lazy-loading file browser with keyboard navigation (W3C APG TreeView pattern) and ARIA accessibility
 - `fileContentViewer.js` - File content display panel
+- `diffView.js` - Commit diff view: lists changed files for a commit
+- `diffContentViewer.js` - Line-level unified diff renderer with hunk display
 - `indexView.js` - Working tree status view (staged/modified/untracked sections)
-- `tooltips/` - Commit, branch, and blob tooltip overlays
+- `tooltips/` - Commit, branch, and blob tooltip overlays (extend `baseTooltip.js`)
 
 ### Data Flow
 

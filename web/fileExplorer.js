@@ -96,13 +96,9 @@ export function createFileExplorer() {
         render();
     });
 
-    // Diff view components (for commit diff mode)
+    // Diff view components (for commit diff mode).
+    // The back-button handler is registered internally by createDiffView.
     const diffContentViewer = createDiffContentViewer();
-    diffContentViewer.onBack(() => {
-        // Back from line-level diff to file list
-        diffContentViewer.clear();
-    });
-
     const diffView = createDiffView(null, diffContentViewer);
     diffView.el.style.display = "none"; // Initially hidden
 
