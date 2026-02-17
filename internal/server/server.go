@@ -32,6 +32,11 @@ type Server struct {
 	// blameCache stores blame results keyed by "commitHash:dirPath"
 	blameCache sync.Map
 
+	// diffCache stores commit diff results
+	// - Key format for commit diff list: "{commitHash}"
+	// - Key format for file diff: "{commitHash}:{filePath}"
+	diffCache sync.Map
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -72,6 +77,7 @@ func (s *Server) Start() error {
 	http.HandleFunc("/api/tree/blame/", s.rateLimiter.middleware(s.handleTreeBlame))
 	http.HandleFunc("/api/tree/", s.rateLimiter.middleware(s.handleTree))
 	http.HandleFunc("/api/blob/", s.rateLimiter.middleware(s.handleBlob))
+	http.HandleFunc("/api/commit/diff/", s.rateLimiter.middleware(s.handleCommitDiff))
 
 	// WebSocket has its own connection limits, no rate limit needed
 	http.HandleFunc("/api/ws", s.handleWebSocket)

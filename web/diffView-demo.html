@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiffView Demo</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+        }
+        #demo-container {
+            max-width: 800px;
+            height: 600px;
+            margin: 0 auto;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .demo-controls {
+            max-width: 800px;
+            margin: 0 auto 20px;
+            display: flex;
+            gap: 12px;
+        }
+        .demo-controls button {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--surface-color);
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .demo-controls button:hover {
+            background: var(--bg-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-controls">
+        <button id="btn-mock-commit">Load Mock Commit (Many Files)</button>
+        <button id="btn-empty">Load Empty Commit</button>
+        <button id="btn-error">Trigger Error</button>
+        <button id="btn-close">Close View</button>
+    </div>
+    <div id="demo-container"></div>
+
+    <script type="module">
+        import { createDiffView } from './diffView.js';
+
+        // Mock diffContentViewer
+        const mockDiffContentViewer = {
+            el: document.createElement('div'),
+            show(fileDiff) {
+                this.el.innerHTML = `
+                    <div style="padding: 20px; background: var(--bg-color); border-top: 1px solid var(--border-color);">
+                        <h4>Mock Diff Content Viewer</h4>
+                        <p>File: <code>${fileDiff.path}</code></p>
+                        <p>Status: <strong>${fileDiff.status}</strong></p>
+                        <p>Binary: ${fileDiff.binary ? 'Yes' : 'No'}</p>
+                        <p style="color: var(--text-secondary); font-size: 12px;">
+                            (This is a mock viewer. In production, this would show line-level diffs)
+                        </p>
+                    </div>
+                `;
+                this.el.style.display = 'block';
+            },
+            showLoading() {
+                this.el.innerHTML = '<div style="padding: 20px; text-align: center;">Loading diff...</div>';
+                this.el.style.display = 'block';
+            },
+            showError(message) {
+                this.el.innerHTML = `<div style="padding: 20px; color: var(--danger-color);">Error: ${message}</div>`;
+                this.el.style.display = 'block';
+            },
+            close() {
+                this.el.style.display = 'none';
+            }
+        };
+
+        // Mock backend (not used in this demo, but required by createDiffView signature)
+        const mockBackend = {};
+
+        // Create diffView
+        const diffView = createDiffView(mockBackend, mockDiffContentViewer);
+        document.getElementById('demo-container').appendChild(diffView.el);
+
+        // Mock fetch responses
+        const mockCommitDiff = {
+            commitHash: "abc123def456789abc123def456789abc123def4",
+            parentHash: "parent123def456789abc123def456789abc123de",
+            entries: [
+                { path: "internal/gitcore/diff.go", status: "added", newHash: "hash1", binary: false },
+                { path: "internal/server/handlers.go", status: "modified", oldHash: "hash2", newHash: "hash3", binary: false },
+                { path: "web/app.js", status: "modified", oldHash: "hash4", newHash: "hash5", binary: false },
+                { path: "web/diffView.js", status: "added", newHash: "hash6", binary: false },
+                { path: "web/styles.css", status: "modified", oldHash: "hash7", newHash: "hash8", binary: false },
+                { path: "old-file.txt", status: "deleted", oldHash: "hash9", binary: false },
+                { path: "README.md", status: "modified", oldHash: "hash10", newHash: "hash11", binary: false },
+                { path: "images/logo.png", status: "added", newHash: "hash12", binary: true },
+                { path: "cmd/vista/main.go", status: "modified", oldHash: "hash13", newHash: "hash14", binary: false },
+                { path: "test/integration/diff_test.go", status: "added", newHash: "hash15", binary: false },
+            ],
+            stats: { added: 4, modified: 5, deleted: 1, total: 10 }
+        };
+
+        const mockEmptyDiff = {
+            commitHash: "empty123def456789abc123def456789abc123def",
+            parentHash: "parent123def456789abc123def456789abc123de",
+            entries: [],
+            stats: { added: 0, modified: 0, deleted: 0, total: 0 }
+        };
+
+        const mockFileDiff = {
+            path: "web/diffView.js",
+            status: "added",
+            binary: false,
+            hunks: [
+                {
+                    oldStart: 0,
+                    oldLines: 0,
+                    newStart: 1,
+                    newLines: 10,
+                    lines: [
+                        { type: "add", content: "export function createDiffView() {" },
+                        { type: "add", content: "  const el = document.createElement('div');" },
+                        { type: "add", content: "  // ... implementation" },
+                        { type: "add", content: "}" },
+                    ]
+                }
+            ]
+        };
+
+        // Intercept fetch calls
+        const originalFetch = window.fetch;
+        window.fetch = async function(url, options) {
+            console.log('Mock fetch:', url);
+
+            // Simulate network delay
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            if (url.includes('/api/commit/diff/error')) {
+                return { ok: false, status: 500, statusText: 'Internal Server Error' };
+            }
+
+            if (url.includes('/api/commit/diff/empty')) {
+                return {
+                    ok: true,
+                    json: async () => mockEmptyDiff
+                };
+            }
+
+            if (url.includes('/file?path=')) {
+                const pathMatch = url.match(/path=([^&]+)/);
+                const path = pathMatch ? decodeURIComponent(pathMatch[1]) : 'unknown';
+                return {
+                    ok: true,
+                    json: async () => ({ ...mockFileDiff, path })
+                };
+            }
+
+            if (url.includes('/api/commit/diff/')) {
+                return {
+                    ok: true,
+                    json: async () => mockCommitDiff
+                };
+            }
+
+            // Fallback to original fetch
+            return originalFetch(url, options);
+        };
+
+        // Button handlers
+        document.getElementById('btn-mock-commit').addEventListener('click', () => {
+            diffView.open('abc123def456789abc123def456789abc123def4', 'Add diff view component');
+        });
+
+        document.getElementById('btn-empty').addEventListener('click', () => {
+            diffView.open('empty123def456789abc123def456789abc123def', 'Empty commit');
+        });
+
+        document.getElementById('btn-error').addEventListener('click', () => {
+            diffView.open('error123def456789abc123def456789abc123def', 'Error commit');
+        });
+
+        document.getElementById('btn-close').addEventListener('click', () => {
+            diffView.close();
+        });
+
+        // Auto-load on page load
+        setTimeout(() => {
+            diffView.open('abc123def456789abc123def456789abc123def4', 'Add diff view component');
+        }, 100);
+    </script>
+</body>
+</html>
