@@ -71,6 +71,7 @@ export class LaneStrategy {
 	 * @param {Object} viewport Current viewport state
 	 */
 	activate(nodes, links, commits, branches, viewport) {
+		this.nodes = nodes; // Store reference for cleanup in deactivate()
 		this.viewportHeight = viewport.height || 800;
 
 		// Compute lane assignments
@@ -94,12 +95,22 @@ export class LaneStrategy {
 	/**
 	 * Deactivate the lane layout strategy.
 	 * Cancels any pending animations and cleans up resources.
+	 * Removes lane-specific properties from nodes to ensure clean state.
 	 */
 	deactivate() {
 		this.stopTransition();
 		this.commitToLane.clear();
 		this.transitionStartPositions.clear();
 		this.transitionTargetPositions.clear();
+
+		// Clear lane-specific properties from shared node objects
+		if (this.nodes) {
+			for (const node of this.nodes) {
+				delete node.laneColor;
+				delete node.laneIndex;
+			}
+			this.nodes = null;
+		}
 	}
 
 	/**
@@ -149,22 +160,20 @@ export class LaneStrategy {
 
 	/**
 	 * Animation frame tick callback.
-	 * Updates transition animation progress.
+	 * Updates transition animation progress and interpolates node positions.
 	 *
 	 * @returns {boolean} True if render needed, false otherwise
 	 */
 	tick() {
-		if (!this.isTransitioning) {
+		if (!this.isTransitioning || !this.nodes) {
 			return false;
 		}
 
 		const elapsed = performance.now() - this.transitionStartTime;
 		const progress = Math.min(1, elapsed / LANE_TRANSITION_DURATION);
 
-		// Easing function: ease-in-out cubic
-		const eased = progress < 0.5
-			? 4 * progress * progress * progress
-			: 1 - Math.pow(-2 * progress + 2, 3) / 2;
+		// Interpolate node positions during transition
+		this.interpolatePositions(this.nodes, progress);
 
 		// Check if animation complete
 		if (progress >= 1) {
@@ -264,15 +273,21 @@ export class LaneStrategy {
 			this.assignBranchChain(mainBranchHash, 0, commits, assigned, true);
 		}
 
-		// Assign remaining branches to lowest available lanes
+		// Assign remaining branches to sequential lanes
+		// Each branch gets its own lane for consistent horizontal spacing
 		let currentLane = 1;
 		for (const [branchName, targetHash] of branches) {
-			if (assigned.has(targetHash)) continue;
+			// Check if this commit is already assigned
+			const existingLane = this.commitToLane.get(targetHash);
+			if (existingLane !== undefined) {
+				// Extend existing lane for shared commits
+				this.assignBranchChain(targetHash, existingLane, commits, assigned, true);
+				continue;
+			}
 
-			// Find lowest available lane for this branch
-			const lane = this.findLowestAvailableLane(targetHash, commits, assigned);
-			this.assignBranchChain(targetHash, lane, commits, assigned, true);
-			currentLane = Math.max(currentLane, lane + 1);
+			// Assign this branch to the next sequential lane
+			this.assignBranchChain(targetHash, currentLane, commits, assigned, true);
+			currentLane++;
 		}
 
 		// Assign orphan commits (not reachable from any branch)

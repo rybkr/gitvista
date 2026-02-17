@@ -67,6 +67,12 @@ export class ForceStrategy {
 		this.nodes = nodes;
 		this.links = links;
 
+		// Clear any lane-specific properties from a previous lane layout
+		for (const node of this.nodes) {
+			delete node.laneColor;
+			delete node.laneIndex;
+		}
+
 		// Update viewport dimensions from current state
 		if (viewport) {
 			this.viewportWidth = viewport.width || this.viewportWidth;

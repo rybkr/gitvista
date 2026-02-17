@@ -10,6 +10,8 @@ import {
     BRANCH_NODE_OFFSET_Y,
     BRANCH_NODE_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
+    LANE_MARGIN,
+    LANE_WIDTH,
     NODE_RADIUS,
     ZOOM_MAX,
     ZOOM_MIN,
@@ -582,6 +584,9 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function snapBranchesToTargets(pairs) {
+        // Track per-commit branch count for stacking in lane mode
+        const perCommitCount = new Map();
+
         for (const pair of pairs) {
             if (!pair) continue;
             const { branchNode, targetNode } = pair;
@@ -589,12 +594,29 @@ export function createGraphController(rootElement, options = {}) {
                 continue;
             }
 
-            const baseX = targetNode.x ?? 0;
-            const baseY = targetNode.y ?? 0;
-            const jitter = (range) => (Math.random() - 0.5) * range;
+            if (state.layoutMode === "lane") {
+                // In lane mode, position branches based on lane structure, not current commit position
+                const laneIndex = targetNode.laneIndex ?? 0;
+                const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
 
-            branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
-            branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
+                // Stack multiple branches on the same commit vertically
+                const key = targetNode.hash ?? laneIndex;
+                const index = perCommitCount.get(key) || 0;
+                perCommitCount.set(key, index + 1);
+
+                // Position branch above its commit (negative Y offset), stacked if multiple
+                const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
+                branchNode.x = laneX - BRANCH_NODE_OFFSET_X;
+                branchNode.y = (targetNode.y ?? 0) - BRANCH_NODE_OFFSET_Y * 4 - stackOffset;
+            } else {
+                // Force mode: small jitter is fine since simulation will settle
+                const baseX = targetNode.x ?? 0;
+                const baseY = targetNode.y ?? 0;
+                const jitter = (range) => (Math.random() - 0.5) * range;
+                branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
+                branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
+            }
+
             branchNode.vx = 0;
             branchNode.vy = 0;
         }
