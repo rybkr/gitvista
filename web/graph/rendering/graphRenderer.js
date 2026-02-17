@@ -282,7 +282,6 @@ export class GraphRenderer {
         this.ctx.globalAlpha = previousAlpha;
 
         this.renderCommitLabel(node, spawnAlpha);
-        this.renderTreeIcon(node);
     }
 
     /**

@@ -229,15 +229,6 @@ export function createGraphController(rootElement, options = {}) {
 
         const { x, y } = toGraphCoordinates(event);
 
-        // Check tree icon click first (higher priority than node click)
-        const treeIconNode = findTreeIconAt(x, y);
-        if (treeIconNode && options.onCommitTreeClick) {
-            options.onCommitTreeClick(treeIconNode.commit);
-            event.stopImmediatePropagation();
-            event.preventDefault();
-            return;
-        }
-
         const targetNode = findNodeAt(x, y);
 
         if (!targetNode) {
@@ -247,11 +238,17 @@ export function createGraphController(rootElement, options = {}) {
 
         layoutManager.disableAutoCenter();
 
+        // Show/hide tooltip for selection feedback
         const currentTarget = tooltipManager.getTargetData();
         if (tooltipManager.isVisible() && currentTarget === targetNode) {
             hideTooltip();
         } else {
             showTooltip(targetNode);
+        }
+
+        // If clicking on a commit node, also open the file explorer
+        if (targetNode.type === "commit" && targetNode.commit && options.onCommitTreeClick) {
+            options.onCommitTreeClick(targetNode.commit);
         }
 
         event.stopImmediatePropagation();
