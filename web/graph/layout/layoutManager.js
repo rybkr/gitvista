@@ -64,7 +64,7 @@ export class LayoutManager {
 			if (aTime === bTime) {
 				return a.hash.localeCompare(b.hash);
 			}
-			return aTime - bTime;
+			return bTime - aTime; // Reversed: newer commits first (top of graph)
 		});
 	}
 
