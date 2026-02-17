@@ -24,6 +24,10 @@
     --branch-node-border-color: #6639ba;
     --branch-label-text-color: #ffffff;
     --branch-link-color: #8250df;
+    --branch-highlight-color: #a78bfa;
+    --branch-highlight-glow: rgba(167, 139, 250, 0.5);
+    --branch-highlight-core: #f3f0ff;
+    --branch-highlight-ring: #a78bfa;
     --tree-node-color: #bf8700;
     --tree-node-border-color: #9a6700;
     --tree-label-text-color: #ffffff;
@@ -62,6 +66,10 @@
         --branch-node-border-color: #a371f7;
         --branch-label-text-color: #0d1117;
         --branch-link-color: #bc8cff;
+        --branch-highlight-color: #d8b4fe;
+        --branch-highlight-glow: rgba(216, 180, 254, 0.5);
+        --branch-highlight-core: #3d2b52;
+        --branch-highlight-ring: #d8b4fe;
         --tree-node-color: #d29922;
         --tree-node-border-color: #bb8009;
         --tree-label-text-color: #0d1117;

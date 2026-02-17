@@ -510,7 +510,7 @@ export class GraphRenderer {
         );
 
         this.ctx.fillStyle = isHighlighted
-            ? this.palette.nodeHighlight
+            ? this.palette.branchHighlight
             : this.palette.branchNode;
         this.applyShadow();
         this.ctx.fill();
@@ -518,7 +518,7 @@ export class GraphRenderer {
         const baseLineWidth = isHighlighted ? 2 : 1.5;
         this.ctx.lineWidth = baseLineWidth / scale;
         this.ctx.strokeStyle = isHighlighted
-            ? this.palette.nodeHighlightRing
+            ? this.palette.branchHighlightRing
             : this.palette.branchNodeBorder;
         this.ctx.stroke();
 

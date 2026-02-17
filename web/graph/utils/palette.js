@@ -25,6 +25,13 @@ export function buildPalette(element) {
         branchNodeBorder: read("--branch-node-border-color", "#6639ba"),
         branchLabelText: read("--branch-label-text-color", "#ffffff"),
         branchLink: read("--branch-link-color", "#8250df"),
+        branchHighlight: read("--branch-highlight-color", "#a78bfa"),
+        branchHighlightGlow: read(
+            "--branch-highlight-glow",
+            "rgba(167, 139, 250, 0.5)",
+        ),
+        branchHighlightCore: read("--branch-highlight-core", "#f3f0ff"),
+        branchHighlightRing: read("--branch-highlight-ring", "#a78bfa"),
         nodeHighlight: read("--node-highlight-color", "#0969da"),
         nodeHighlightGlow: read(
             "--node-highlight-glow",
