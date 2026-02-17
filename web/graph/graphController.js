@@ -336,11 +336,19 @@ export function createGraphController(rootElement, options = {}) {
         canvas.style.height = `${cssHeight}px`;
 
         layoutManager.updateViewport(cssWidth, cssHeight);
-        layoutManager.restartSimulation(1.0);
         render();
     };
 
     window.addEventListener("resize", resize);
+
+    // Watch for container size changes (e.g. sidebar drag resize)
+    let resizeObserver = null;
+    const parent = canvas.parentElement;
+    if (parent && typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(resize);
+        resizeObserver.observe(parent);
+    }
+
     resize();
 
     const themeWatcher = window.matchMedia?.("(prefers-color-scheme: dark)");
@@ -602,6 +610,7 @@ export function createGraphController(rootElement, options = {}) {
 
     function destroy() {
         window.removeEventListener("resize", resize);
+        resizeObserver?.disconnect();
         d3.select(canvas).on(".zoom", null);
         simulation.stop();
         removeThemeWatcher?.();
