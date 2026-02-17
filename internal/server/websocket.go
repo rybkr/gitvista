@@ -68,6 +68,7 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 	message := UpdateMessage{
 		Delta:  repo.Diff(&gitcore.Repository{}),
 		Status: getWorkingTreeStatus(repo.WorkDir()),
+		Head:   buildHeadInfo(repo),
 	}
 
 	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {

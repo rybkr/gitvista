@@ -2,6 +2,7 @@ import { logger } from "./logger.js";
 import { createGraph } from "./graph.js";
 import { startBackend } from "./backend.js";
 import { createSidebar } from "./sidebar.js";
+import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
 import { createSidebarTabs } from "./sidebarTabs.js";
 import { createFileExplorer } from "./fileExplorer.js";
@@ -20,11 +21,21 @@ document.addEventListener("DOMContentLoaded", () => {
     root.parentElement.insertBefore(sidebar.el, root);
     root.appendChild(sidebar.expandBtn);
 
+    const infoBar = createInfoBar();
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
 
+    // Create wrapper for repository tab (info bar + working tree status)
+    const repoTabContent = document.createElement("div");
+    repoTabContent.style.display = "flex";
+    repoTabContent.style.flexDirection = "column";
+    repoTabContent.style.flex = "1";
+    repoTabContent.style.overflow = "hidden";
+    repoTabContent.appendChild(infoBar.el);
+    repoTabContent.appendChild(indexView.el);
+
     const tabs = createSidebarTabs([
-        { name: "working-tree", label: "Working Tree", content: indexView.el },
+        { name: "repository", label: "Repository", content: repoTabContent },
         { name: "file-explorer", label: "File Explorer", content: fileExplorer.el },
     ]);
     sidebar.content.appendChild(tabs.el);
@@ -46,6 +57,12 @@ document.addEventListener("DOMContentLoaded", () => {
         onStatus: (status) => {
             indexView.update(status);
             fileExplorer.updateWorkingTreeStatus(status);
+        },
+        onHead: (headInfo) => {
+            infoBar.updateHead(headInfo);
+        },
+        onRepoMetadata: (metadata) => {
+            infoBar.update(metadata);
         },
     }).catch((error) => {
         logger.error("Backend bootstrap failed", error);

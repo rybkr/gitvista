@@ -50,9 +50,31 @@ func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
 	repo := s.cached.repo
 	s.cacheMu.RUnlock()
 
+	// Build current branch name from HEAD ref
+	currentBranch := ""
+	headRef := repo.HeadRef()
+	if headRef != "" {
+		if name, ok := strings.CutPrefix(headRef, "refs/heads/"); ok {
+			currentBranch = name
+		}
+	}
+
+	// Get branches and tags for counts
+	branches := repo.Branches()
+	tagNames := repo.TagNames()
+
 	response := map[string]any{
-		"name":   repo.Name(),
-		"gitDir": repo.GitDir(),
+		"name":          repo.Name(),
+		"gitDir":        repo.GitDir(),
+		"currentBranch": currentBranch,
+		"headDetached":  repo.HeadDetached(),
+		"headHash":      repo.Head(),
+		"commitCount":   len(repo.Commits()),
+		"branchCount":   len(branches),
+		"tagCount":      len(tagNames),
+		"tags":          tagNames,
+		"description":   repo.Description(),
+		"remotes":       repo.Remotes(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
