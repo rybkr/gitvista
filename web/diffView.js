@@ -174,7 +174,7 @@ export function createDiffView(backend, diffContentViewer) {
 
         const totalSpan = document.createElement("span");
         totalSpan.className = "diff-stat-total";
-        totalSpan.textContent = `${state.stats.total} file${state.stats.total === 1 ? "" : "s"} changed`;
+        totalSpan.textContent = `${state.stats.filesChanged} file${state.stats.filesChanged === 1 ? "" : "s"} changed`;
         bar.appendChild(totalSpan);
 
         return bar;
@@ -386,7 +386,7 @@ export function createDiffView(backend, diffContentViewer) {
 
             state.parentHash = diffData.parentHash;
             state.entries = diffData.entries || [];
-            state.stats = diffData.stats || { added: 0, modified: 0, deleted: 0, total: 0 };
+            state.stats = diffData.stats || { added: 0, modified: 0, deleted: 0, filesChanged: 0 };
             state.loading = false;
             render();
         } catch (err) {

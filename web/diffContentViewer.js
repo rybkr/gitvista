@@ -40,7 +40,7 @@ export function createDiffContentViewer() {
     function renderHunkHeader(hunk) {
         const header = document.createElement("div");
         header.className = "diff-hunk-header";
-        header.textContent = `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`;
+        header.textContent = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
         return header;
     }
 
@@ -52,9 +52,9 @@ export function createDiffContentViewer() {
 
         // Determine line type class
         let lineClass = "diff-line";
-        if (line.type === "add") {
+        if (line.type === "addition") {
             lineClass += " diff-line-add";
-        } else if (line.type === "delete") {
+        } else if (line.type === "deletion") {
             lineClass += " diff-line-delete";
         } else {
             lineClass += " diff-line-context";
@@ -64,13 +64,13 @@ export function createDiffContentViewer() {
         // Old line number (left gutter)
         const oldNum = document.createElement("span");
         oldNum.className = "line-num-old";
-        oldNum.textContent = line.oldNum !== undefined ? String(line.oldNum) : "";
+        oldNum.textContent = line.oldLine ? String(line.oldLine) : "";
         lineEl.appendChild(oldNum);
 
         // New line number (right gutter)
         const newNum = document.createElement("span");
         newNum.className = "line-num-new";
-        newNum.textContent = line.newNum !== undefined ? String(line.newNum) : "";
+        newNum.textContent = line.newLine ? String(line.newLine) : "";
         lineEl.appendChild(newNum);
 
         // Line content
@@ -106,7 +106,7 @@ export function createDiffContentViewer() {
      * @param {Object} fileDiff - The file diff object from the API
      * @param {string} fileDiff.path - File path
      * @param {string} fileDiff.status - File status (added/modified/deleted)
-     * @param {boolean} fileDiff.binary - Whether file is binary
+     * @param {boolean} fileDiff.isBinary - Whether file is binary
      * @param {Array} fileDiff.hunks - Array of diff hunks
      * @param {boolean} fileDiff.truncated - Whether diff was truncated
      */
@@ -139,7 +139,7 @@ export function createDiffContentViewer() {
         body.className = "diff-content-body";
 
         // Handle special cases
-        if (fileDiff.binary) {
+        if (fileDiff.isBinary) {
             // Binary file notice
             const binaryMsg = document.createElement("div");
             binaryMsg.className = "diff-binary-notice";
@@ -160,7 +160,7 @@ export function createDiffContentViewer() {
         }
 
         // Render hunks
-        if (!fileDiff.binary && fileDiff.hunks && fileDiff.hunks.length > 0) {
+        if (!fileDiff.isBinary && fileDiff.hunks && fileDiff.hunks.length > 0) {
             const hunksContainer = document.createElement("div");
             hunksContainer.className = "diff-hunks";
 
@@ -180,6 +180,50 @@ export function createDiffContentViewer() {
         }
 
         el.appendChild(body);
+    }
+
+    /**
+     * Show a loading indicator while a file diff is being fetched.
+     */
+    function showLoading() {
+        el.style.display = "flex";
+        el.innerHTML = "";
+
+        const loading = document.createElement("div");
+        loading.className = "diff-content-loading";
+
+        const spinner = document.createElement("div");
+        spinner.className = "diff-loading-spinner";
+        loading.appendChild(spinner);
+
+        const text = document.createElement("div");
+        text.className = "diff-loading-text";
+        text.textContent = "Loading file diff...";
+        loading.appendChild(text);
+
+        el.appendChild(loading);
+    }
+
+    /**
+     * Show an error message when a file diff fails to load.
+     * @param {string} message - The error message to display
+     */
+    function showError(message) {
+        el.style.display = "flex";
+        el.innerHTML = "";
+
+        const errorEl = document.createElement("div");
+        errorEl.className = "diff-content-error";
+        errorEl.textContent = message;
+        el.appendChild(errorEl);
+    }
+
+    /**
+     * Close the viewer and hide it (alias for clear).
+     */
+    function close() {
+        el.style.display = "none";
+        el.innerHTML = "";
     }
 
     /**
@@ -208,6 +252,9 @@ export function createDiffContentViewer() {
     return {
         el,
         show,
+        showLoading,
+        showError,
+        close,
         clear,
         onBack,
         onFileSelect,
