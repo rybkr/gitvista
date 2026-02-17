@@ -31,11 +31,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const graph = createGraph(root, {
         onCommitTreeClick: (commit) => {
-            tabs.showTab("file-explorer");
-            fileExplorer.openCommit(commit);
-            // Ensure sidebar is visible
-            if (sidebar.el.classList.contains("is-collapsed")) {
-                sidebar.expandBtn.click();
+            // Only update file explorer if it's already the active tab
+            if (tabs.getActiveTab() === "file-explorer") {
+                fileExplorer.openCommit(commit);
             }
         },
     });

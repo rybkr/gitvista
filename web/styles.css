@@ -15,6 +15,10 @@
     --node-highlight-core: #ddf4ff;
     --node-highlight-ring: #0969da;
     --merge-node-color: #1a7f37;
+    --merge-highlight-color: #1a7f37;
+    --merge-highlight-glow: rgba(26, 127, 55, 0.35);
+    --merge-highlight-core: #ddf8e4;
+    --merge-highlight-ring: #1a7f37;
     --node-shadow-color: rgba(27, 31, 36, 0.12);
     --branch-node-color: #8250df;
     --branch-node-border-color: #6639ba;
@@ -49,6 +53,10 @@
         --node-highlight-core: #1c2d41;
         --node-highlight-ring: #58a6ff;
         --merge-node-color: #3fb950;
+        --merge-highlight-color: #3fb950;
+        --merge-highlight-glow: rgba(63, 185, 80, 0.35);
+        --merge-highlight-core: #1c3d26;
+        --merge-highlight-ring: #3fb950;
         --node-shadow-color: rgba(0, 0, 0, 0.4);
         --branch-node-color: #bc8cff;
         --branch-node-border-color: #a371f7;

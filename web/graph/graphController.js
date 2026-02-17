@@ -324,11 +324,25 @@ export function createGraphController(rootElement, options = {}) {
             (parent?.clientHeight ?? window.innerHeight) || window.innerHeight;
         const dpr = window.devicePixelRatio || 1;
 
+        // Guard against invalid dimensions that would put canvas in error state
+        if (cssWidth <= 0 || cssHeight <= 0 || !isFinite(cssWidth) || !isFinite(cssHeight)) {
+            return;
+        }
+
+        const physicalWidth = Math.round(cssWidth * dpr);
+        const physicalHeight = Math.round(cssHeight * dpr);
+
+        // Prevent exceeding browser canvas size limits (typically 32767px)
+        const MAX_CANVAS_DIMENSION = 32767;
+        if (physicalWidth > MAX_CANVAS_DIMENSION || physicalHeight > MAX_CANVAS_DIMENSION) {
+            return;
+        }
+
         viewportWidth = cssWidth;
         viewportHeight = cssHeight;
 
-        canvas.width = Math.round(cssWidth * dpr);
-        canvas.height = Math.round(cssHeight * dpr);
+        canvas.width = physicalWidth;
+        canvas.height = physicalHeight;
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 

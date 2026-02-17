@@ -37,6 +37,13 @@ export function buildPalette(element) {
         nodeHighlightCore: read("--node-highlight-core", "#ddf4ff"),
         nodeHighlightRing: read("--node-highlight-ring", "#0969da"),
         mergeNode: read("--merge-node-color", "#1a7f37"),
+        mergeHighlight: read("--merge-highlight-color", "#1a7f37"),
+        mergeHighlightGlow: read(
+            "--merge-highlight-glow",
+            "rgba(26, 127, 55, 0.35)",
+        ),
+        mergeHighlightCore: read("--merge-highlight-core", "#ddf8e4"),
+        mergeHighlightRing: read("--merge-highlight-ring", "#1a7f37"),
         nodeShadow: read("--node-shadow-color", "rgba(27, 31, 36, 0.12)"),
         blobNode: read("--blob-node-color", "#0969da"),
         blobNodeBorder: read("--blob-node-border-color", "#0550ae"),

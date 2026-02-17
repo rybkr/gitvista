@@ -99,6 +99,10 @@
  * @property {string} nodeHighlightCore Inner highlight color for commits.
  * @property {string} nodeHighlightRing Ring color for highlighted nodes.
  * @property {string} mergeNode Merge commit node fill color.
+ * @property {string} mergeHighlight Merge commit highlight fill color.
+ * @property {string} mergeHighlightGlow Glow color for highlighted merge commits.
+ * @property {string} mergeHighlightCore Inner highlight color for merge commits.
+ * @property {string} mergeHighlightRing Ring color for highlighted merge commits.
  * @property {string} nodeShadow Shadow color for all node types.
  * @property {string} blobNode Blob node fill color.
  * @property {string} blobNodeBorder Blob node border color.

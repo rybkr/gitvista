@@ -65,10 +65,16 @@ export class GraphRenderer {
      */
     clear(width, height) {
         const dpr = window.devicePixelRatio || 1;
-        this.ctx.save();
-        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        this.ctx.fillStyle = this.palette.background;
-        this.ctx.fillRect(0, 0, width, height);
+        try {
+            this.ctx.save();
+            this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            this.ctx.fillStyle = this.palette.background;
+            this.ctx.fillRect(0, 0, width, height);
+        } catch (e) {
+            // Canvas is in error state - silently skip this frame
+            // The error will be resolved when resize() sets valid dimensions
+            return;
+        }
     }
 
     /**
@@ -363,7 +369,7 @@ export class GraphRenderer {
      */
     renderHighlightedMerge(node, radius) {
         this.ctx.save();
-        this.ctx.fillStyle = this.palette.nodeHighlightGlow;
+        this.ctx.fillStyle = this.palette.mergeHighlightGlow;
         this.ctx.globalAlpha = 0.35;
         this.drawDiamond(node.x, node.y, radius + 7);
         this.ctx.fill();
@@ -377,9 +383,9 @@ export class GraphRenderer {
             node.y,
             radius,
         );
-        gradient.addColorStop(0, this.palette.nodeHighlightCore);
-        gradient.addColorStop(0.7, this.palette.nodeHighlight);
-        gradient.addColorStop(1, this.palette.nodeHighlightRing);
+        gradient.addColorStop(0, this.palette.mergeHighlightCore);
+        gradient.addColorStop(0.7, this.palette.mergeHighlight);
+        gradient.addColorStop(1, this.palette.mergeHighlightRing);
 
         this.ctx.fillStyle = gradient;
         this.applyShadow();
@@ -389,7 +395,7 @@ export class GraphRenderer {
 
         this.ctx.save();
         this.ctx.lineWidth = 1.25;
-        this.ctx.strokeStyle = this.palette.nodeHighlight;
+        this.ctx.strokeStyle = this.palette.mergeHighlight;
         this.ctx.globalAlpha = 0.8;
         this.drawDiamond(node.x, node.y, radius + 1.8);
         this.ctx.stroke();
