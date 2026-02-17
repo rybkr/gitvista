@@ -229,15 +229,6 @@ export function createGraphController(rootElement, options = {}) {
 
         const { x, y } = toGraphCoordinates(event);
 
-        // Check tree icon click first (higher priority than node click)
-        const treeIconNode = findTreeIconAt(x, y);
-        if (treeIconNode && options.onCommitTreeClick) {
-            options.onCommitTreeClick(treeIconNode.commit);
-            event.stopImmediatePropagation();
-            event.preventDefault();
-            return;
-        }
-
         const targetNode = findNodeAt(x, y);
 
         if (!targetNode) {
@@ -247,11 +238,17 @@ export function createGraphController(rootElement, options = {}) {
 
         layoutManager.disableAutoCenter();
 
+        // Show/hide tooltip for selection feedback
         const currentTarget = tooltipManager.getTargetData();
         if (tooltipManager.isVisible() && currentTarget === targetNode) {
             hideTooltip();
         } else {
             showTooltip(targetNode);
+        }
+
+        // If clicking on a commit node, also open the file explorer
+        if (targetNode.type === "commit" && targetNode.commit && options.onCommitTreeClick) {
+            options.onCommitTreeClick(targetNode.commit);
         }
 
         event.stopImmediatePropagation();
@@ -553,7 +550,7 @@ export function createGraphController(rootElement, options = {}) {
             const baseY = targetNode.y ?? 0;
             const jitter = (range) => (Math.random() - 0.5) * range;
 
-            branchNode.x = baseX + BRANCH_NODE_OFFSET_X + jitter(2);
+            branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
             branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
             branchNode.vx = 0;
             branchNode.vy = 0;
@@ -567,7 +564,7 @@ export function createGraphController(rootElement, options = {}) {
                 type: "branch",
                 branch: branchName,
                 targetHash: targetNode.hash ?? null,
-                x: (targetNode.x ?? 0) + BRANCH_NODE_OFFSET_X + jitter(4),
+                x: (targetNode.x ?? 0) - BRANCH_NODE_OFFSET_X + jitter(4),
                 y: (targetNode.y ?? 0) + jitter(BRANCH_NODE_OFFSET_Y),
                 vx: 0,
                 vy: 0,
@@ -582,7 +579,7 @@ export function createGraphController(rootElement, options = {}) {
             type: "branch",
             branch: branchName,
             targetHash: null,
-            x: baseX + BRANCH_NODE_OFFSET_X + jitterFallback(6),
+            x: baseX - BRANCH_NODE_OFFSET_X + jitterFallback(6),
             y: baseY + jitterFallback(BRANCH_NODE_OFFSET_Y),
             vx: 0,
             vy: 0,
