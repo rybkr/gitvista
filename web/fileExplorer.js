@@ -446,6 +446,10 @@ export function createFileExplorer() {
 
     /**
      * Render diff mode: show the diff view component.
+     *
+     * Only calls diffView.open() when the commit has changed, to avoid
+     * resetting diff state (selected file, content viewer) on re-renders
+     * triggered by unrelated updates like working tree status.
      */
     function renderDiffMode() {
         el.innerHTML = "";
@@ -475,8 +479,11 @@ export function createFileExplorer() {
 
         el.appendChild(header);
 
-        // Open diff view for the current commit
-        diffView.open(state.commitHash, state.commitMessage);
+        // Only open the diff view if it is not already showing this commit.
+        // Re-opening would reset selected file state and wipe the content viewer.
+        if (!diffView.isOpen() || diffView.getCommitHash() !== state.commitHash) {
+            diffView.open(state.commitHash, state.commitMessage);
+        }
 
         // Append diff view to the explorer
         el.appendChild(diffView.el);
@@ -1007,7 +1014,7 @@ export function createFileExplorer() {
         categorize(status.modified, "modified");
         categorize(status.untracked, "untracked");
 
-        if (state.commitHash && !state.loading) {
+        if (state.commitHash && !state.loading && state.viewMode === "tree") {
             render();
         }
     }

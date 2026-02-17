@@ -117,28 +117,23 @@ export function createDiffView(backend, diffContentViewer) {
         if (state.loading) {
             const loadingEl = renderLoadingState();
             el.appendChild(loadingEl);
-            return;
-        }
-
-        // Error state (if entries is null or undefined after load failure)
-        if (state.entries === null) {
+        } else if (state.entries === null) {
+            // Error state (if entries is null or undefined after load failure)
             const errorEl = renderErrorState();
             el.appendChild(errorEl);
-            return;
-        }
-
-        // Empty state (no changed files)
-        if (state.entries.length === 0) {
+        } else if (state.entries.length === 0) {
+            // Empty state (no changed files)
             const emptyEl = renderEmptyState();
             el.appendChild(emptyEl);
-            return;
+        } else {
+            // File list
+            const fileList = renderFileList();
+            el.appendChild(fileList);
         }
 
-        // File list
-        const fileList = renderFileList();
-        el.appendChild(fileList);
-
-        // Diff content viewer (managed by caller, we just ensure it's in the DOM)
+        // Always keep the diff content viewer in the DOM so that it is not
+        // detached during loading/error/empty states. The viewer manages its
+        // own visibility via display:none/flex.
         if (diffContentViewer && diffContentViewer.el) {
             el.appendChild(diffContentViewer.el);
         }
@@ -425,6 +420,15 @@ export function createDiffView(backend, diffContentViewer) {
         return el.style.display !== "none";
     }
 
+    /**
+     * Return the commit hash currently being displayed (or null if closed).
+     * Used by the file explorer to avoid re-opening the same commit on re-renders.
+     * @returns {string|null}
+     */
+    function getCommitHash() {
+        return state.commitHash;
+    }
+
     // Initial render (empty state)
     render();
 
@@ -433,5 +437,6 @@ export function createDiffView(backend, diffContentViewer) {
         open,
         close,
         isOpen,
+        getCommitHash,
     };
 }
