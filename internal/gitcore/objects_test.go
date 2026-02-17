@@ -172,8 +172,12 @@ func TestReadCompressedData(t *testing.T) {
 
 	var compressed bytes.Buffer
 	w := zlib.NewWriter(&compressed)
-	w.Write(original)
-	w.Close()
+	if _, err := w.Write(original); err != nil {
+		t.Fatalf("failed to write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
 
 	result, err := readCompressedData(bytes.NewReader(compressed.Bytes()))
 	if err != nil {

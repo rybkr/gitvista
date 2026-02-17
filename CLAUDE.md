@@ -8,14 +8,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Run the server (serves on http://localhost:8080)
 go run ./cmd/vista -repo /path/to/git/repo
 
-# Run all tests
+# Run all unit tests
 make test
+
+# Run all CI checks (tests, lint, integration tests, build)
+make ci
+
+# Run integration tests
+make integration
+
+# Run linter
+make lint
+
+# Build binary
+make build
 
 # Run a single test by name
 go test -v ./internal/gitcore -run TestLoadPackIndexV1
-
-# Generate coverage report (covers internal/gitcore only)
-make cover-html
 ```
 
 ## Architecture

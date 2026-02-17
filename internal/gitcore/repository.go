@@ -53,9 +53,7 @@ func NewRepository(path string) (*Repository, error) {
 	if err := repo.loadRefs(); err != nil {
 		return nil, fmt.Errorf("failed to load refs: %w", err)
 	}
-	if err := repo.loadObjects(); err != nil {
-		return nil, fmt.Errorf("failed to load objects: %w", err)
-	}
+	repo.loadObjects()
 
 	return repo, nil
 }
@@ -226,9 +224,8 @@ func findGitDirectory(startPath string) (gitDir string, workDir string, err erro
 		if err == nil {
 			if info.IsDir() {
 				return gitPath, currentPath, nil
-			} else {
-				return handleGitFile(gitPath, currentPath)
 			}
+			return handleGitFile(gitPath, currentPath)
 		}
 
 		parentPath := filepath.Dir(currentPath)
@@ -242,6 +239,7 @@ func findGitDirectory(startPath string) (gitDir string, workDir string, err erro
 // handleGitFile handles the case where .git is a file (worktrees, submodules).
 // .git file format: "gitdir: /path/to/actual/.git".
 func handleGitFile(gitFilePath string, workDir string) (string, string, error) {
+	//nolint:gosec // G304: .git file path is controlled by repository location
 	content, err := os.ReadFile(gitFilePath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to read .git file: %w", err)

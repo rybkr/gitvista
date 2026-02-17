@@ -1,3 +1,4 @@
+// Package gitcore provides pure Go implementation of Git object parsing and repository traversal.
 package gitcore
 
 import (
@@ -12,16 +13,21 @@ import (
 	"strings"
 )
 
+const (
+	objectTypeCommit = "commit"
+	objectTypeTree   = "tree"
+	objectTypeBlob   = "blob"
+	objectTypeTag    = "tag"
+)
+
 // loadObjects loads all Git objects into the object store.
 // It traverses all references and their histories.
 // It assumes that all references have already been loaded.
-func (r *Repository) loadObjects() error {
+func (r *Repository) loadObjects() {
 	visited := make(map[Hash]bool)
 	for _, ref := range r.refs {
 		r.traverseObjects(ref, visited)
 	}
-
-	return nil
 }
 
 // traverseObjects recursively loads all objects beginning from the provided reference,
@@ -62,15 +68,15 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 	header, content, err := r.readLooseObject(id)
 	if err == nil {
 		switch {
-		case strings.HasPrefix(header, "commit"):
+		case strings.HasPrefix(header, objectTypeCommit):
 			if commit, err := parseCommitBody(content, id); err == nil {
 				return commit, nil
 			}
-		case strings.HasPrefix(header, "tag"):
+		case strings.HasPrefix(header, objectTypeTag):
 			if tag, err := parseTagBody(content, id); err == nil {
 				return tag, nil
 			}
-		case strings.HasPrefix(header, "tree"):
+		case strings.HasPrefix(header, objectTypeTree):
 			if tree, err := parseTreeBody(content, id); err == nil {
 				return tree, nil
 			}
@@ -98,11 +104,16 @@ func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 
 	for _, idx := range r.packIndices {
 		if offset, found := idx.FindObject(id); found {
+			//nolint:gosec // G304: Pack file paths are controlled by git repository structure
 			file, err := os.Open(idx.PackFile())
 			if err != nil {
 				continue
 			}
-			defer file.Close()
+			defer func() {
+				if err := file.Close(); err != nil {
+					log.Printf("failed to close pack file: %v", err)
+				}
+			}()
 
 			if _, err := file.Seek(offset, 0); err != nil {
 				continue
@@ -116,11 +127,16 @@ func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 
 // readLooseObjectData reads a loose object and returns raw data.
 func (r *Repository) readLooseObjectData(objectPath string) ([]byte, byte, error) {
+	//nolint:gosec // G304: Object paths are controlled by git repository structure
 	file, err := os.Open(objectPath)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close object file: %v", err)
+		}
+	}()
 
 	content, err := readCompressedData(file)
 	if err != nil {
@@ -142,13 +158,13 @@ func (r *Repository) readLooseObjectData(objectPath string) ([]byte, byte, error
 
 	var typeNum byte
 	switch objectType {
-	case "commit":
+	case objectTypeCommit:
 		typeNum = 1
-	case "tree":
+	case objectTypeTree:
 		typeNum = 2
-	case "blob":
+	case objectTypeBlob:
 		typeNum = 3
-	case "tag":
+	case objectTypeTag:
 		typeNum = 4
 	default:
 		return nil, 0, fmt.Errorf("unsupported object type: %s", objectType)
@@ -161,11 +177,16 @@ func (r *Repository) readLooseObjectData(objectPath string) ([]byte, byte, error
 func (r *Repository) readLooseObject(id Hash) (header string, content []byte, err error) {
 	objectPath := filepath.Join(r.gitDir, "objects", string(id)[:2], string(id)[2:])
 
+	//nolint:gosec // G304: Object paths are controlled by git repository structure
 	file, err := os.Open(objectPath)
 	if err != nil {
 		return "", nil, err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close loose object file: %v", err)
+		}
+	}()
 
 	content, err = readCompressedData(file)
 	if err != nil {
@@ -183,11 +204,16 @@ func (r *Repository) readLooseObject(id Hash) (header string, content []byte, er
 
 // readPackedObject reads an object from a pack file at the given offset.
 func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (Object, error) {
+	//nolint:gosec // G304: Pack file paths are controlled by git repository structure
 	file, err := os.Open(packPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open pack file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close packed object file: %v", err)
+		}
+	}()
 
 	if _, err := file.Seek(offset, 0); err != nil {
 		return nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
@@ -382,9 +408,14 @@ func readCompressedData(r io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create zlib reader: %w", err)
 	}
-	defer zr.Close()
+	defer func() {
+		if err := zr.Close(); err != nil {
+			log.Printf("failed to close zlib reader: %v", err)
+		}
+	}()
 
 	var buf bytes.Buffer
+	//nolint:gosec // G110: Decompression of git objects is safe and expected
 	if _, err := io.Copy(&buf, zr); err != nil {
 		return nil, fmt.Errorf("failed to decompress data: %w", err)
 	}

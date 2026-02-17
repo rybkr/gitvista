@@ -5,17 +5,22 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"testing"
 )
 
 // writeUint32BE writes a uint32 in big-endian to the buffer.
 func writeUint32BE(buf *bytes.Buffer, v uint32) {
-	binary.Write(buf, binary.BigEndian, v)
+	if err := binary.Write(buf, binary.BigEndian, v); err != nil {
+		panic(fmt.Sprintf("failed to write uint32: %v", err))
+	}
 }
 
 // writeUint64BE writes a uint64 in big-endian to the buffer.
 func writeUint64BE(buf *bytes.Buffer, v uint64) {
-	binary.Write(buf, binary.BigEndian, v)
+	if err := binary.Write(buf, binary.BigEndian, v); err != nil {
+		panic(fmt.Sprintf("failed to write uint64: %v", err))
+	}
 }
 
 // hashFromHex returns a 20-byte array from a 40-char hex string.
@@ -367,8 +372,12 @@ func TestReadCompressedObject(t *testing.T) {
 
 	var compressed bytes.Buffer
 	w := zlib.NewWriter(&compressed)
-	w.Write(data)
-	w.Close()
+	if _, err := w.Write(data); err != nil {
+		t.Fatalf("failed to write data: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
 
 	result, err := readCompressedObject(bytes.NewReader(compressed.Bytes()), int64(len(data)))
 	if err != nil {
@@ -384,8 +393,12 @@ func TestReadCompressedObject_SizeMismatch(t *testing.T) {
 
 	var compressed bytes.Buffer
 	w := zlib.NewWriter(&compressed)
-	w.Write(data)
-	w.Close()
+	if _, err := w.Write(data); err != nil {
+		t.Fatalf("failed to write data: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
 
 	_, err := readCompressedObject(bytes.NewReader(compressed.Bytes()), 999)
 	if err == nil {

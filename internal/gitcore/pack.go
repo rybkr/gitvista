@@ -54,11 +54,16 @@ func (r *Repository) loadPackIndices() error {
 // loadPackIndex loads a single pack index file, detecting its version internally.
 // See: https://git-scm.com/docs/pack-format#_original_version_1_pack_idx_files_have_the_following_format
 func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
+	//nolint:gosec // G304: Pack index paths are controlled by git repository structure
 	file, err := os.Open(idxPath)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close pack index file: %v", err)
+		}
+	}()
 
 	var header [4]byte
 	if _, err := io.ReadFull(file, header[:]); err != nil {
@@ -194,6 +199,7 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 		offset := offsets[i]
 		if offset&0x80000000 != 0 {
 			largeOffsetIdx := offset & 0x7Fffffff
+			//nolint:gosec // G115: largeOffsets length is bounded by pack index format
 			if largeOffsetIdx >= uint32(len(largeOffsets)) {
 				continue
 			}
@@ -450,8 +456,8 @@ func applyDelta(base []byte, delta []byte) ([]byte, error) {
 // readVarInt reads a variable-length integer according to the size encoding spec.
 // See: https://git-scm.com/docs/pack-format#_size_encoding
 func readVarInt(src *bytes.Reader) (int64, error) {
-	var result int64 = 0
-	var shift uint = 0
+	var result int64
+	var shift uint
 
 	for {
 		var b [1]byte

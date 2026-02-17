@@ -10,7 +10,7 @@ import (
 
 // handleRepository serves repository metadata via REST API.
 // Used for initial page load and debugging.
-func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
 	s.cacheMu.RLock()
 	repo := s.cached.repo
 	s.cacheMu.RUnlock()

@@ -1,3 +1,4 @@
+// Package gitvista provides Git repository visualization with a real-time web interface.
 package gitvista
 
 import (

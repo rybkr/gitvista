@@ -35,7 +35,11 @@ func (s *Server) startWatcher() error {
 // It uses a debounce timer to avoid flooding the system with updates.
 func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 	defer s.wg.Done()
-	defer watcher.Close()
+	defer func() {
+		if err := watcher.Close(); err != nil {
+			log.Printf("failed to close watcher: %v", err)
+		}
+	}()
 
 	var debounceTimer *time.Timer
 

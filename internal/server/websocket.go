@@ -18,7 +18,7 @@ const (
 
 // upgrader configures WebSocket upgrade process.
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
+	CheckOrigin: func(_ *http.Request) bool {
 		// TODO(rybkr): Implement proper CORS checking for production
 		// Consider checking origin against whitelist or validating origin == host
 		return true
@@ -34,10 +34,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conn.SetReadLimit(maxMessageSize)
-	conn.SetReadDeadline(time.Now().Add(pongWait))
+	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		log.Printf("%s Failed to set read deadline: %v", logError, err)
+	}
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 
 	log.Printf("%s WebSocket client connection: %s", logSuccess, conn.RemoteAddr())
@@ -69,7 +70,10 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 		Status: getWorkingTreeStatus(repo.WorkDir()),
 	}
 
-	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+		log.Printf("%s Failed to set write deadline: %v", logError, err)
+		return
+	}
 	if err := conn.WriteJSON(message); err != nil {
 		log.Printf("%s Failed to send initial state to %s: %v", logError, conn.RemoteAddr(), err)
 		return
@@ -122,7 +126,9 @@ func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}) {
 			return
 
 		case <-ticker.C:
-			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Printf("%s Failed to set write deadline: %v", logError, err)
+			}
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				log.Printf("%s WebSocket ping failed for %s: %v", logError, conn.RemoteAddr(), err)
 				return
@@ -138,7 +144,9 @@ func (s *Server) removeClient(conn *websocket.Conn) {
 
 	if s.clients[conn] {
 		delete(s.clients, conn)
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			log.Printf("%s Failed to close connection: %v", logError, err)
+		}
 		log.Printf("%s WebSocket client removed. Total clients: %d", logInfo, len(s.clients))
 	}
 }

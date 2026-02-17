@@ -47,20 +47,24 @@ type Object interface {
 type ObjectType int
 
 const (
-	NoneObject   ObjectType = 0
+	// NoneObject represents an unknown or invalid Git object type
+	NoneObject ObjectType = 0
+	// CommitObject represents a Git commit object
 	CommitObject ObjectType = 1
-	TreeObject   ObjectType = 2
-	TagObject    ObjectType = 4
+	// TreeObject represents a Git tree object
+	TreeObject ObjectType = 2
+	// TagObject represents a Git tag object
+	TagObject ObjectType = 4
 )
 
 // StrToObjectType converts a string representation of an object type to an ObjectType.
 func StrToObjectType(s string) ObjectType {
 	switch s {
-	case "commit":
+	case objectTypeCommit:
 		return CommitObject
-	case "tag":
+	case objectTypeTag:
 		return TagObject
-	case "tree":
+	case objectTypeTree:
 		return TreeObject
 	default:
 		return NoneObject
@@ -111,6 +115,7 @@ type Tree struct {
 	Entries []TreeEntry `json:"entries"`
 }
 
+// Type returns the object type for a Tree.
 func (t *Tree) Type() ObjectType {
 	return TreeObject
 }

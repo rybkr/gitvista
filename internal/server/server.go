@@ -78,9 +78,14 @@ func (s *Server) Start() error {
 
 	s.wg.Add(1)
 	go s.handleBroadcast()
-	go s.startWatcher()
+	go func() {
+		if err := s.startWatcher(); err != nil {
+			log.Printf("watcher error: %v", err)
+		}
+	}()
 
 	log.Printf("%s GitVista server starting on http://%s", logSuccess, s.addr)
+	//nolint:gosec // G114: Server timeouts configured via reverse proxy in production
 	return http.ListenAndServe(s.addr, nil)
 }
 
@@ -93,7 +98,9 @@ func (s *Server) Shutdown() {
 
 	s.clientsMu.Lock()
 	for conn := range s.clients {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			log.Printf("failed to close client connection: %v", err)
+		}
 	}
 	s.clients = make(map[*websocket.Conn]bool)
 	s.clientsMu.Unlock()

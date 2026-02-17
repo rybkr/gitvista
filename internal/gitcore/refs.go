@@ -72,6 +72,7 @@ func (r *Repository) loadLooseRefs(prefix string) error {
 func (r *Repository) loadPackedRefs() error {
 	packedRefsFile := filepath.Join(r.gitDir, "packed-refs")
 
+	//nolint:gosec // G304: Packed-refs path is controlled by git repository structure
 	file, err := os.Open(packedRefsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -79,7 +80,11 @@ func (r *Repository) loadPackedRefs() error {
 		}
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close packed-refs file: %v", err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -108,6 +113,7 @@ func (r *Repository) loadPackedRefs() error {
 // loadHEAD reads and caches HEAD information.
 func (r *Repository) loadHEAD() error {
 	headPath := filepath.Join(r.gitDir, "HEAD")
+	//nolint:gosec // G304: HEAD path is controlled by git repository structure
 	content, err := os.ReadFile(headPath)
 	if err != nil {
 		return fmt.Errorf("failed to read HEAD: %w", err)
@@ -141,6 +147,7 @@ func (r *Repository) loadHEAD() error {
 // resolveRef reads a single ref file and returns its hash.
 // Handles both direct hashes and symbolic refs.
 func (r *Repository) resolveRef(path string) (Hash, error) {
+	//nolint:gosec // G304: Ref paths are controlled by git repository structure
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", err

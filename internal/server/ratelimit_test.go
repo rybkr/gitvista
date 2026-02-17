@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const testIP = "192.168.1.1"
+
 func TestRateLimiter_Allow(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -64,7 +66,7 @@ func TestRateLimiter_Allow(t *testing.T) {
 				window:  tt.window,
 			}
 
-			ip := "192.168.1.1"
+			ip := testIP
 			passed := 0
 
 			for i := 0; i < tt.requests; i++ {
@@ -220,7 +222,7 @@ func TestGetClientIP(t *testing.T) {
 
 func TestRateLimitMiddleware(t *testing.T) {
 	called := false
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})

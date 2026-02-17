@@ -1,3 +1,4 @@
+// Package server provides HTTP and WebSocket server functionality for GitVista.
 package server
 
 import (
@@ -36,7 +37,10 @@ func (s *Server) sendToAllClients(message UpdateMessage) {
 	// Send to all clients (read lock only)
 	s.clientsMu.RLock()
 	for client := range s.clients {
-		client.SetWriteDeadline(time.Now().Add(writeWait))
+		if err := client.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+			log.Printf("failed to set write deadline: %v", err)
+			continue
+		}
 		if err := client.WriteJSON(message); err != nil {
 			log.Printf("Broadcast failed to %s: %v", client.RemoteAddr(), err)
 			failedClients = append(failedClients, client)
@@ -49,7 +53,9 @@ func (s *Server) sendToAllClients(message UpdateMessage) {
 		s.clientsMu.Lock()
 		for _, client := range failedClients {
 			delete(s.clients, client)
-			client.Close()
+			if err := client.Close(); err != nil {
+				log.Printf("failed to close client connection: %v", err)
+			}
 		}
 		remainingClients := len(s.clients)
 		s.clientsMu.Unlock()
