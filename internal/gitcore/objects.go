@@ -125,56 +125,9 @@ func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 	return nil, 0, fmt.Errorf("object not found: %s", id)
 }
 
-// readLooseObjectData reads a loose object and returns raw data.
-func (r *Repository) readLooseObjectData(objectPath string) ([]byte, byte, error) {
-	//nolint:gosec // G304: Object paths are controlled by git repository structure
-	file, err := os.Open(objectPath)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			log.Printf("failed to close object file: %v", err)
-		}
-	}()
-
-	content, err := readCompressedData(file)
-	if err != nil {
-		return nil, 0, fmt.Errorf("invalid compressed data: %w", err)
-	}
-
-	nullIdx := bytes.IndexByte(content, 0)
-	if nullIdx == -1 {
-		return nil, 0, fmt.Errorf("invalid object format")
-	}
-
-	header := string(content[:nullIdx])
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) != 2 {
-		return nil, 0, fmt.Errorf("invalid header: %s", header)
-	}
-
-	objectType := parts[0]
-
-	var typeNum byte
-	switch objectType {
-	case objectTypeCommit:
-		typeNum = 1
-	case objectTypeTree:
-		typeNum = 2
-	case objectTypeBlob:
-		typeNum = 3
-	case objectTypeTag:
-		typeNum = 4
-	default:
-		return nil, 0, fmt.Errorf("unsupported object type: %s", objectType)
-	}
-
-	return content[nullIdx+1:], typeNum, nil
-}
-
-// readLooseObject reads an object from loose object storage.
-func (r *Repository) readLooseObject(id Hash) (header string, content []byte, err error) {
+// readLooseObjectRaw reads a loose object from disk and returns its header and content.
+// This is the common implementation used by both readLooseObject and readLooseObjectData.
+func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte, err error) {
 	objectPath := filepath.Join(r.gitDir, "objects", string(id)[:2], string(id)[2:])
 
 	//nolint:gosec // G304: Object paths are controlled by git repository structure
@@ -188,18 +141,68 @@ func (r *Repository) readLooseObject(id Hash) (header string, content []byte, er
 		}
 	}()
 
-	content, err = readCompressedData(file)
+	data, err := readCompressedData(file)
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid compressed data: %w", err)
 	}
 
-	nullIdx := bytes.IndexByte(content, 0)
+	nullIdx := bytes.IndexByte(data, 0)
 	if nullIdx == -1 {
 		return "", nil, fmt.Errorf("invalid object format")
 	}
 
-	header, content = string(content[:nullIdx]), content[nullIdx+1:]
+	header, content = string(data[:nullIdx]), data[nullIdx+1:]
 	return header, content, nil
+}
+
+// objectTypeFromHeader converts a Git object header to its numeric type.
+func objectTypeFromHeader(header string) (byte, error) {
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid header: %s", header)
+	}
+
+	objectType := parts[0]
+
+	switch objectType {
+	case objectTypeCommit:
+		return 1, nil
+	case objectTypeTree:
+		return 2, nil
+	case objectTypeBlob:
+		return 3, nil
+	case objectTypeTag:
+		return 4, nil
+	default:
+		return 0, fmt.Errorf("unsupported object type: %s", objectType)
+	}
+}
+
+// readLooseObjectData reads a loose object and returns raw data.
+func (r *Repository) readLooseObjectData(objectPath string) ([]byte, byte, error) {
+	// Extract hash from object path (e.g., "objects/ab/cdef..." -> "abcdef...")
+	parts := strings.Split(objectPath, string(filepath.Separator))
+	if len(parts) < 2 {
+		return nil, 0, fmt.Errorf("invalid object path: %s", objectPath)
+	}
+	hash := Hash(parts[len(parts)-2] + parts[len(parts)-1])
+
+	header, content, err := r.readLooseObjectRaw(hash)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	typeNum, err := objectTypeFromHeader(header)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return content, typeNum, nil
+}
+
+// readLooseObject reads an object from loose object storage.
+func (r *Repository) readLooseObject(id Hash) (header string, content []byte, err error) {
+	return r.readLooseObjectRaw(id)
 }
 
 // readPackedObject reads an object from a pack file at the given offset.

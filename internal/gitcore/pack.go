@@ -11,6 +11,35 @@ import (
 	"strings"
 )
 
+// Pack index v2 magic number bytes: "\377tOc" (\377 = 0xFF in octal)
+// See: https://git-scm.com/docs/pack-format#_version_2_pack_idx_files_support_packs_larger_than_4_gib_and
+const (
+	packIndexV2Magic0 byte = 0xFF
+	packIndexV2Magic1 byte = 0x74 // 't'
+	packIndexV2Magic2 byte = 0x4F // 'O'
+	packIndexV2Magic3 byte = 0x63 // 'c'
+)
+
+// Pack object types as defined in the Git pack format specification.
+// See: https://git-scm.com/docs/pack-format#_object_types
+const (
+	packObjectCommit      byte = 1
+	packObjectTree        byte = 2
+	packObjectBlob        byte = 3
+	packObjectTag         byte = 4
+	packObjectOffsetDelta byte = 6
+	packObjectRefDelta    byte = 7
+)
+
+// Pack index v2 large offset constants.
+// In version 2 pack indices, a 32-bit offset with the high bit set indicates
+// that the actual offset is >= 4 GiB and must be looked up in the large offset table.
+// See: https://git-scm.com/docs/pack-format#_version_2_pack_idx_files_support_packs_larger_than_4_gib_and
+const (
+	packIndexLargeOffsetFlag uint32 = 0x80000000 // High bit set = large offset
+	packIndexLargeOffsetMask uint32 = 0x7FFFFFFF // Mask to extract large offset table index
+)
+
 // loadPackIndices scans the .git/objects/pack directory and loads all pack index files.
 // This should be done before we begin loading objects, as some objects may be stored here.
 func (r *Repository) loadPackIndices() error {
@@ -75,7 +104,7 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 	// Version 2 pack-*.idx files begin with a magic number \377toc, which is an
 	// unreasonable first four bytes for version 1 files.
 	var idx *PackIndex
-	if header[0] == 0xFF && header[1] == 0x74 && header[2] == 0x4F && header[3] == 0x63 {
+	if header[0] == packIndexV2Magic0 && header[1] == packIndexV2Magic1 && header[2] == packIndexV2Magic2 && header[3] == packIndexV2Magic3 {
 		idx, err = loadPackIndexV2(file, packPath)
 	} else {
 		// Need to reset to beginning of file for version 1.
@@ -173,7 +202,7 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 
 	var largeOffsets []uint64
 	for _, offset := range offsets {
-		if offset&0x80000000 != 0 {
+		if offset&packIndexLargeOffsetFlag != 0 {
 			if len(largeOffsets) == 0 {
 				for {
 					var largeOffset uint64
@@ -197,8 +226,8 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 		}
 
 		offset := offsets[i]
-		if offset&0x80000000 != 0 {
-			largeOffsetIdx := offset & 0x7Fffffff
+		if offset&packIndexLargeOffsetFlag != 0 {
+			largeOffsetIdx := offset & packIndexLargeOffsetMask
 			//nolint:gosec // G115: largeOffsets length is bounded by pack index format
 			if largeOffsetIdx >= uint32(len(largeOffsets)) {
 				continue
@@ -228,12 +257,12 @@ func readPackObject(rs io.ReadSeeker, resolve ObjectResolver) (data []byte, obje
 
 	// See: https://git-scm.com/docs/pack-format#_object_types
 	switch objType {
-	case 1, 2, 3, 4:
+	case packObjectCommit, packObjectTree, packObjectBlob, packObjectTag:
 		data, err := readCompressedObject(rs, size)
 		return data, objType, err
-	case 6:
+	case packObjectOffsetDelta:
 		return readOffsetDelta(rs, size, objStart, resolve)
-	case 7:
+	case packObjectRefDelta:
 		return readRefDelta(rs, size, resolve)
 	default:
 		return nil, 0, fmt.Errorf("unsupported object type: %d", objType)

@@ -377,6 +377,156 @@ export function createGraphController(rootElement, options = {}) {
     canvas.addEventListener("pointerup", pointerHandlers.up);
     canvas.addEventListener("pointercancel", pointerHandlers.cancel);
 
+    /**
+     * Reconciles commit nodes by comparing existing nodes against current commits.
+     * Creates new nodes for added commits, reuses existing nodes, and detects structural changes.
+     *
+     * @param {Map<string, import("./types.js").GraphNode>} existingNodes Map of hash -> existing commit nodes.
+     * @param {Map<string, import("./types.js").GraphCommit>} commits Current commits from state.
+     * @returns {{nodes: import("./types.js").GraphNode[], changed: boolean}} Reconciled nodes and change flag.
+     */
+    function reconcileCommitNodes(existingNodes, commits) {
+        const nextNodes = [];
+        let changed = existingNodes.size !== commits.size;
+
+        for (const commit of commits.values()) {
+            const parentNode = (commit.parents ?? [])
+                .map((parentHash) => existingNodes.get(parentHash))
+                .find((node) => node);
+            const node =
+                existingNodes.get(commit.hash) ??
+                createCommitNode(commit.hash, parentNode);
+            node.type = "commit";
+            node.hash = commit.hash;
+            node.commit = commit;
+            node.radius = node.radius ?? NODE_RADIUS;
+            nextNodes.push(node);
+            if (!existingNodes.has(commit.hash)) {
+                changed = true;
+            }
+        }
+
+        return { nodes: nextNodes, changed };
+    }
+
+    /**
+     * Builds parent-child links between commits based on commit parent relationships.
+     *
+     * @param {Map<string, import("./types.js").GraphCommit>} commits Current commits from state.
+     * @param {Set<string>} commitHashes Set of valid commit hashes (nodes that exist).
+     * @returns {Array<{source: string, target: string}>} Array of link objects.
+     */
+    function buildLinks(commits, commitHashes) {
+        const links = [];
+        for (const commit of commits.values()) {
+            if (!commit?.hash) {
+                continue;
+            }
+            for (const parentHash of commit.parents ?? []) {
+                if (!commitHashes.has(parentHash)) {
+                    continue;
+                }
+                links.push({
+                    source: commit.hash,
+                    target: parentHash,
+                });
+            }
+        }
+        return links;
+    }
+
+    /**
+     * Reconciles branch nodes by comparing existing nodes against current branches.
+     * Creates new nodes for added branches, updates targets, and prepares alignment data.
+     *
+     * @param {Map<string, import("./types.js").GraphNode>} existingNodes Map of branchName -> existing branch nodes.
+     * @param {Map<string, string>} branches Current branches from state (name -> target hash).
+     * @param {Map<string, import("./types.js").GraphNode>} commitNodeByHash Map of hash -> commit node.
+     * @returns {{nodes: import("./types.js").GraphNode[], links: Array<{source: import("./types.js").GraphNode, target: import("./types.js").GraphNode, kind: string}>, alignments: Array<{branchNode: import("./types.js").GraphNode, targetNode: import("./types.js").GraphNode}>, changed: boolean}} Reconciled data.
+     */
+    function reconcileBranchNodes(existingNodes, branches, commitNodeByHash) {
+        const nextNodes = [];
+        const branchLinks = [];
+        const alignments = [];
+        let changed = existingNodes.size !== branches.size;
+
+        for (const [branchName, targetHash] of branches.entries()) {
+            const targetNode = commitNodeByHash.get(targetHash);
+            if (!targetNode) {
+                continue;
+            }
+
+            let branchNode = existingNodes.get(branchName);
+            const isNewNode = !branchNode;
+            if (!branchNode) {
+                branchNode = createBranchNode(branchName, targetNode);
+            }
+
+            const previousHash = branchNode.targetHash;
+            branchNode.type = "branch";
+            branchNode.branch = branchName;
+            branchNode.targetHash = targetHash;
+            if (isNewNode) {
+                branchNode.spawnPhase = 0;
+                changed = true;
+            } else if (previousHash !== targetHash) {
+                changed = true;
+            }
+
+            nextNodes.push(branchNode);
+            branchLinks.push({
+                source: branchNode,
+                target: targetNode,
+                kind: "branch",
+            });
+            alignments.push({ branchNode, targetNode });
+        }
+
+        return { nodes: nextNodes, links: branchLinks, alignments, changed };
+    }
+
+    /**
+     * Applies reconciled nodes and links to the D3 simulation and handles layout logic.
+     * Manages initial layout, auto-centering, and simulation restart behavior.
+     *
+     * @param {boolean} structureChanged Whether any nodes or links were added/removed/changed.
+     * @param {boolean} initialComplete Whether the initial layout has been completed.
+     * @param {boolean} commitStructureChanged Whether commit nodes changed.
+     * @param {import("./types.js").GraphNode[]} allNodes Combined commit + branch nodes.
+     * @param {Array} allLinks Combined commit + branch links.
+     * @param {Array<{branchNode: import("./types.js").GraphNode, targetNode: import("./types.js").GraphNode}>} branchAlignments Pairs for positioning.
+     */
+    function applySimulationUpdate(
+        structureChanged,
+        initialComplete,
+        commitStructureChanged,
+        allNodes,
+        allLinks,
+        branchAlignments,
+    ) {
+        const hasCommits = allNodes.some((node) => node.type === "commit");
+
+        if (!initialComplete && hasCommits) {
+            layoutManager.applyTimelineLayout(allNodes);
+            snapBranchesToTargets(branchAlignments);
+            layoutManager.requestAutoCenter();
+            centerOnLatestCommit();
+            initialLayoutComplete = true;
+            layoutManager.restartSimulation(1.0);
+        } else {
+            snapBranchesToTargets(branchAlignments);
+            if (commitStructureChanged) {
+                layoutManager.requestAutoCenter();
+            }
+        }
+
+        layoutManager.boostSimulation(structureChanged);
+    }
+
+    /**
+     * Main graph update orchestrator. Reconciles nodes and links, updates simulation state,
+     * and triggers layout adjustments.
+     */
     function updateGraph() {
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
@@ -389,84 +539,33 @@ export function createGraphController(rootElement, options = {}) {
             }
         }
 
-        const nextCommitNodes = [];
-        let commitStructureChanged = existingCommitNodes.size !== commits.size;
-        for (const commit of commits.values()) {
-            const parentNode = (commit.parents ?? [])
-                .map((parentHash) => existingCommitNodes.get(parentHash))
-                .find((node) => node);
-            const node =
-                existingCommitNodes.get(commit.hash) ??
-                createCommitNode(commit.hash, parentNode);
-            node.type = "commit";
-            node.hash = commit.hash;
-            node.commit = commit;
-            node.radius = node.radius ?? NODE_RADIUS;
-            nextCommitNodes.push(node);
-            if (!existingCommitNodes.has(commit.hash)) {
-                commitStructureChanged = true;
-            }
-        }
-
-        const commitHashes = new Set(nextCommitNodes.map((node) => node.hash));
+        const commitReconciliation = reconcileCommitNodes(
+            existingCommitNodes,
+            commits,
+        );
+        const commitHashes = new Set(
+            commitReconciliation.nodes.map((node) => node.hash),
+        );
+        const commitLinks = buildLinks(commits, commitHashes);
         const previousLinkCount = links.length;
-        const nextLinks = [];
-        for (const commit of commits.values()) {
-            if (!commit?.hash) {
-                continue;
-            }
-            for (const parentHash of commit.parents ?? []) {
-                if (!commitHashes.has(parentHash)) {
-                    continue;
-                }
-                nextLinks.push({
-                    source: commit.hash,
-                    target: parentHash,
-                });
-            }
-        }
 
         const commitNodeByHash = new Map(
-            nextCommitNodes.map((node) => [node.hash, node]),
+            commitReconciliation.nodes.map((node) => [node.hash, node]),
         );
-        const nextBranchNodes = [];
-        const pendingBranchAlignments = [];
-        let branchStructureChanged = existingBranchNodes.size !== branches.size;
-        for (const [branchName, targetHash] of branches.entries()) {
-            const targetNode = commitNodeByHash.get(targetHash);
-            if (!targetNode) {
-                continue;
-            }
+        const branchReconciliation = reconcileBranchNodes(
+            existingBranchNodes,
+            branches,
+            commitNodeByHash,
+        );
 
-            let branchNode = existingBranchNodes.get(branchName);
-            const isNewNode = !branchNode;
-            if (!branchNode) {
-                branchNode = createBranchNode(branchName, targetNode);
-            }
+        const allNodes = [
+            ...commitReconciliation.nodes,
+            ...branchReconciliation.nodes,
+        ];
+        const allLinks = [...commitLinks, ...branchReconciliation.links];
 
-            const previousHash = branchNode.targetHash;
-            branchNode.type = "branch";
-            branchNode.branch = branchName;
-            branchNode.targetHash = targetHash;
-            if (isNewNode) {
-                branchNode.spawnPhase = 0;
-                branchStructureChanged = true;
-            } else if (previousHash !== targetHash) {
-                branchStructureChanged = true;
-            }
-
-            nextBranchNodes.push(branchNode);
-            nextLinks.push({
-                source: branchNode,
-                target: targetNode,
-                kind: "branch",
-            });
-
-            pendingBranchAlignments.push({ branchNode, targetNode });
-        }
-
-        nodes.splice(0, nodes.length, ...nextCommitNodes, ...nextBranchNodes);
-        links.splice(0, links.length, ...nextLinks);
+        nodes.splice(0, nodes.length, ...allNodes);
+        links.splice(0, links.length, ...allLinks);
 
         if (dragState && !nodes.includes(dragState.node)) {
             releaseDrag();
@@ -480,28 +579,20 @@ export function createGraphController(rootElement, options = {}) {
         simulation.nodes(nodes);
         simulation.force("link").links(links);
 
-        const linkStructureChanged = previousLinkCount !== nextLinks.length;
+        const linkStructureChanged = previousLinkCount !== allLinks.length;
         const structureChanged =
-            commitStructureChanged ||
-            branchStructureChanged ||
+            commitReconciliation.changed ||
+            branchReconciliation.changed ||
             linkStructureChanged;
-        const hasCommits = nextCommitNodes.length > 0;
 
-        if (!initialLayoutComplete && hasCommits) {
-            layoutManager.applyTimelineLayout(nodes);
-            snapBranchesToTargets(pendingBranchAlignments);
-            layoutManager.requestAutoCenter();
-            centerOnLatestCommit();
-            initialLayoutComplete = true;
-            layoutManager.restartSimulation(1.0);
-        } else {
-            snapBranchesToTargets(pendingBranchAlignments);
-            if (commitStructureChanged) {
-                layoutManager.requestAutoCenter();
-            }
-        }
-
-        layoutManager.boostSimulation(structureChanged);
+        applySimulationUpdate(
+            structureChanged,
+            initialLayoutComplete,
+            commitReconciliation.changed,
+            allNodes,
+            allLinks,
+            branchReconciliation.alignments,
+        );
     }
 
     function createCommitNode(hash, anchorNode) {

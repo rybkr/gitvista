@@ -32,7 +32,6 @@ export class BranchTooltip extends Tooltip {
         this.targetEl = createTooltipElement("div", "branch-tooltip-target");
 
         tooltip.append(this.nameEl, this.targetEl);
-        // document.body.appendChild(...) keeps the tooltip available for display updates.
         document.body.appendChild(tooltip);
         return tooltip;
     }

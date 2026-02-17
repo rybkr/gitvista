@@ -11,7 +11,6 @@
  * @returns {HTMLElement} A newly created DOM node ready for configuration.
  */
 export function createTooltipElement(tagName, className) {
-    // document.createElement(tagName) -> returns a new DOM element of the given type.
     const element = document.createElement(tagName);
 
     if (className) {
@@ -48,7 +47,6 @@ export class Tooltip {
         );
 
         tooltip.hidden = true;
-        // document.body.appendChild(...) places the tooltip in the DOM for layout and painting.
         document.body.appendChild(tooltip);
         return tooltip;
     }

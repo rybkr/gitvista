@@ -6,7 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Run the server (serves on http://localhost:8080)
+go run ./cmd/vista              # Uses current directory as repo
 go run ./cmd/vista -repo /path/to/git/repo
+go run ./cmd/vista -port 3000   # Custom port
+
+# Environment variables can also be used
+GITVISTA_REPO=/path/to/repo GITVISTA_PORT=3000 go run ./cmd/vista
 
 # Run all unit tests
 make test
@@ -25,6 +30,10 @@ make build
 
 # Run a single test by name
 go test -v ./internal/gitcore -run TestLoadPackIndexV1
+
+# Run tests with coverage
+go test -v -cover ./...
+go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out
 ```
 
 ## Architecture
@@ -42,13 +51,19 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `types.go` - Core types: `Hash`, `Commit`, `Tag`, `Tree`, `TreeEntry`, `Signature`, `RepositoryDelta`
 
 **`internal/server/`** - HTTP/WebSocket server:
-- `server.go` - Main server, client management; static files served from `./web/` directory (not embedded)
+- `server.go` - Main server, client management; serves embedded static files from `assets.go`
 - `handlers.go` - REST endpoints (see API section below)
 - `websocket.go` - WebSocket lifecycle: initial state sync, ping/pong keepalive (54s/60s timeout)
 - `watcher.go` - Filesystem watcher on `.git/` directory with debouncing; triggers repository reload and broadcasts deltas
 - `broadcast.go` - Non-blocking delta broadcast to WebSocket clients (256-item buffer, drops on overflow)
 - `update.go` - Computes `RepositoryDelta` between old and new repository states
 - `status.go` - Working tree status via `git status --porcelain` (this is the one place the git CLI is used)
+- `health.go` - Health check endpoint
+- `ratelimit.go` - Per-client rate limiting for API endpoints
+- `validation.go` - Input validation helpers (path traversal prevention, hash validation)
+- `types.go` - Server-specific types and error responses
+
+**`assets.go`** - go:embed for web assets; embeds entire `web/` directory into binary
 
 ### API Endpoints
 
@@ -84,7 +99,14 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 
 ## Testing
 
-Tests live alongside source code in `internal/gitcore/`. Test patterns:
+Tests live alongside source code in `internal/gitcore/` and `internal/server/`. Test patterns:
 - Table-driven subtests with `t.Run()`
 - Hand-constructed binary data for Git object format tests (no fixture files)
-- Coverage only measures `internal/gitcore` package (`make cover-html`)
+- Integration tests in `test/integration/` use build tag `integration`
+- Server tests cover handlers, validation, rate limiting, and status parsing
+
+## Environment Variables
+
+- `GITVISTA_REPO` - Default repository path (default: current directory)
+- `GITVISTA_PORT` - Server port (default: 8080)
+- `GITVISTA_HOST` - Bind host (default: all interfaces)

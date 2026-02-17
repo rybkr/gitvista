@@ -8,6 +8,41 @@ import (
 	"strings"
 )
 
+// extractHashParam extracts and validates a hash parameter from the URL path.
+// It performs method validation (GET only), path extraction, hash parsing, and repository retrieval.
+// Returns the parsed hash, repository, and a boolean indicating success.
+// If validation fails, appropriate HTTP errors are written to the ResponseWriter.
+func (s *Server) extractHashParam(w http.ResponseWriter, r *http.Request, prefix string) (gitcore.Hash, *gitcore.Repository, bool) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return "", nil, false
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, prefix)
+	if path == "" || path == r.URL.Path {
+		http.Error(w, "Missing hash in path", http.StatusBadRequest)
+		return "", nil, false
+	}
+	path = strings.TrimPrefix(path, "/")
+
+	hash, err := gitcore.NewHash(path)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid hash format: %v", err), http.StatusBadRequest)
+		return "", nil, false
+	}
+
+	s.cacheMu.RLock()
+	repo := s.cached.repo
+	s.cacheMu.RUnlock()
+
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return "", nil, false
+	}
+
+	return hash, repo, true
+}
+
 // handleRepository serves repository metadata via REST API.
 // Used for initial page load and debugging.
 func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
@@ -28,30 +63,8 @@ func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
 
 // handleTree serves tree object data via REST API.
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	path := strings.TrimPrefix(r.URL.Path, "/api/tree/")
-	if path == "" || path == r.URL.Path {
-		http.Error(w, "Missing tree hash in path", http.StatusBadRequest)
-		return
-	}
-	path = strings.TrimPrefix(path, "/")
-
-	treeHash, err := gitcore.NewHash(path)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid hash format: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	s.cacheMu.RLock()
-	repo := s.cached.repo
-	s.cacheMu.RUnlock()
-
-	if repo == nil {
-		http.Error(w, "Repository not available", http.StatusInternalServerError)
+	treeHash, repo, ok := s.extractHashParam(w, r, "/api/tree/")
+	if !ok {
 		return
 	}
 
@@ -69,30 +82,8 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 
 // handleBlob serves raw blob content via REST API.
 func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	path := strings.TrimPrefix(r.URL.Path, "/api/blob/")
-	if path == "" || path == r.URL.Path {
-		http.Error(w, "Missing blob hash in path", http.StatusBadRequest)
-		return
-	}
-	path = strings.TrimPrefix(path, "/")
-
-	blobHash, err := gitcore.NewHash(path)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid hash format: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	s.cacheMu.RLock()
-	repo := s.cached.repo
-	s.cacheMu.RUnlock()
-
-	if repo == nil {
-		http.Error(w, "Repository not available", http.StatusInternalServerError)
+	blobHash, repo, ok := s.extractHashParam(w, r, "/api/blob/")
+	if !ok {
 		return
 	}
 
@@ -147,22 +138,8 @@ func isBinaryContent(content []byte) bool {
 // Path format: /api/tree/blame/{commitHash}?path={dirPath}
 // Returns a map of entry names to BlameEntry structs with last-modifying commit info.
 func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Parse commit hash from URL path
-	path := strings.TrimPrefix(r.URL.Path, "/api/tree/blame/")
-	if path == "" || path == r.URL.Path {
-		http.Error(w, "Missing commit hash in path", http.StatusBadRequest)
-		return
-	}
-	path = strings.TrimPrefix(path, "/")
-
-	commitHash, err := gitcore.NewHash(path)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid commit hash format: %v", err), http.StatusBadRequest)
+	commitHash, repo, ok := s.extractHashParam(w, r, "/api/tree/blame/")
+	if !ok {
 		return
 	}
 
@@ -193,15 +170,6 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cache miss, compute blame
-	s.cacheMu.RLock()
-	repo := s.cached.repo
-	s.cacheMu.RUnlock()
-
-	if repo == nil {
-		http.Error(w, "Repository not available", http.StatusInternalServerError)
-		return
-	}
-
 	blame, err := repo.GetFileBlame(commitHash, dirPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to compute blame: %v", err), http.StatusNotFound)

@@ -36,7 +36,6 @@ export class CommitTooltip extends Tooltip {
         this.messageEl = createTooltipElement("pre", "commit-tooltip-message");
 
         tooltip.append(this.headerEl, this.messageEl);
-        // document.body.appendChild(...) -> inserts the tooltip into the live DOM tree.
         document.body.appendChild(tooltip);
         return tooltip;
     }
@@ -71,7 +70,6 @@ export class CommitTooltip extends Tooltip {
             metaParts.push(commit.author.name);
         }
         if (commit.author?.when) {
-            // new Date(...) -> converts ISO timestamp to local time for display.
             const date = new Date(commit.author.when);
             metaParts.push(date.toLocaleString());
         }
