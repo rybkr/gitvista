@@ -18,7 +18,20 @@ const (
 // TreeDiff recursively compares two trees and returns a flat list of changed files.
 // oldTreeHash can be empty for root commits. prefix builds full paths during recursion.
 // Returns an error if the number of entries exceeds maxDiffEntries.
+// Rename detection is applied once after the full recursive traversal so that
+// cross-directory renames (the common case) are correctly identified.
 func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([]DiffEntry, error) {
+	entries, err := treeDiffRecursive(repo, oldTreeHash, newTreeHash, prefix)
+	if err != nil {
+		return nil, err
+	}
+	return detectRenames(entries), nil
+}
+
+// treeDiffRecursive is the internal implementation of TreeDiff. It recurses into
+// sub-trees and collects raw added/deleted/modified entries without rename detection.
+// Rename detection is deferred to TreeDiff so it operates on the complete flat list.
+func treeDiffRecursive(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([]DiffEntry, error) {
 	entries := make([]DiffEntry, 0)
 
 	var oldTree *Tree
@@ -30,9 +43,13 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 		}
 	}
 
-	newTree, err := repo.GetTree(newTreeHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get new tree %s: %w", newTreeHash, err)
+	var newTree *Tree
+	if newTreeHash != "" {
+		var err error
+		newTree, err = repo.GetTree(newTreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get new tree %s: %w", newTreeHash, err)
+		}
 	}
 
 	oldEntries := make(map[string]TreeEntry)
@@ -43,8 +60,10 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 	}
 
 	newEntries := make(map[string]TreeEntry)
-	for _, entry := range newTree.Entries {
-		newEntries[entry.Name] = entry
+	if newTree != nil {
+		for _, entry := range newTree.Entries {
+			newEntries[entry.Name] = entry
+		}
 	}
 
 	allNames := make(map[string]bool)
@@ -71,7 +90,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 		switch {
 		case !existsInOld && existsInNew:
 			if isTreeEntry(newEntry) {
-				subEntries, err := TreeDiff(repo, "", newEntry.ID, path)
+				subEntries, err := treeDiffRecursive(repo, "", newEntry.ID, path)
 				if err != nil {
 					return nil, err
 				}
@@ -88,7 +107,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 
 		case existsInOld && !existsInNew:
 			if isTreeEntry(oldEntry) {
-				subEntries, err := TreeDiff(repo, oldEntry.ID, "", path)
+				subEntries, err := treeDiffRecursive(repo, oldEntry.ID, "", path)
 				if err != nil {
 					return nil, err
 				}
@@ -106,7 +125,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 		case existsInOld && existsInNew:
 			if oldEntry.ID != newEntry.ID {
 				if isTreeEntry(oldEntry) && isTreeEntry(newEntry) {
-					subEntries, err := TreeDiff(repo, oldEntry.ID, newEntry.ID, path)
+					subEntries, err := treeDiffRecursive(repo, oldEntry.ID, newEntry.ID, path)
 					if err != nil {
 						return nil, err
 					}
@@ -114,7 +133,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 				} else if isTreeEntry(oldEntry) || isTreeEntry(newEntry) {
 					// Type changed (file <-> directory): emit delete + add
 					if isTreeEntry(oldEntry) {
-						subEntries, err := TreeDiff(repo, oldEntry.ID, "", path)
+						subEntries, err := treeDiffRecursive(repo, oldEntry.ID, "", path)
 						if err != nil {
 							return nil, err
 						}
@@ -129,7 +148,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 						})
 					}
 					if isTreeEntry(newEntry) {
-						subEntries, err := TreeDiff(repo, "", newEntry.ID, path)
+						subEntries, err := treeDiffRecursive(repo, "", newEntry.ID, path)
 						if err != nil {
 							return nil, err
 						}
@@ -158,8 +177,6 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 		}
 	}
 
-	entries = detectRenames(entries)
-
 	return entries, nil
 }
 
@@ -168,21 +185,27 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 // blob hash (exact content match). Content-identical renames are common after
 // refactors (e.g., moving a file to a new package without editing it).
 // Files with different content are left as separate delete+add entries.
+//
+// Multiple deleted files sharing the same blob hash (e.g., duplicated config
+// files) are each tracked independently so they can be paired correctly with
+// any matching added files.
 func detectRenames(entries []DiffEntry) []DiffEntry {
-	// Build a map of deleted-file blob hashes for O(1) lookup.
 	type deletedInfo struct {
 		index int
 		path  string
 		mode  string
 	}
-	deletedByHash := make(map[Hash]deletedInfo)
+
+	// Use a slice per hash so that multiple deleted files with identical
+	// content are all tracked and can be paired without non-determinism.
+	deletedByHash := make(map[Hash][]deletedInfo)
 	for i, entry := range entries {
 		if entry.Status == DiffStatusDeleted && entry.OldHash != "" {
-			deletedByHash[entry.OldHash] = deletedInfo{
+			deletedByHash[entry.OldHash] = append(deletedByHash[entry.OldHash], deletedInfo{
 				index: i,
 				path:  entry.Path,
 				mode:  entry.OldMode,
-			}
+			})
 		}
 	}
 
@@ -190,16 +213,23 @@ func detectRenames(entries []DiffEntry) []DiffEntry {
 		return entries
 	}
 
-	// Match added entries against deleted entries by hash.
+	// Track consumed positions in each candidate slice to handle many-to-many
+	// cases without revisiting already-paired deletes.
+	consumed := make(map[Hash]int)
 	matched := make(map[int]bool)
+
 	for i := range entries {
 		if entries[i].Status != DiffStatusAdded || entries[i].NewHash == "" {
 			continue
 		}
-		info, ok := deletedByHash[entries[i].NewHash]
-		if !ok || matched[info.index] {
+		candidates := deletedByHash[entries[i].NewHash]
+		idx := consumed[entries[i].NewHash]
+		if idx >= len(candidates) {
 			continue
 		}
+		info := candidates[idx]
+		consumed[entries[i].NewHash] = idx + 1
+
 		// Promote this added entry to a rename.
 		entries[i].Status = DiffStatusRenamed
 		entries[i].OldPath = info.path
@@ -208,7 +238,7 @@ func detectRenames(entries []DiffEntry) []DiffEntry {
 		matched[info.index] = true
 	}
 
-	// Remove the matched deleted entries (in reverse order to preserve indices).
+	// Remove the matched deleted entries, preserving all other entries in order.
 	if len(matched) == 0 {
 		return entries
 	}

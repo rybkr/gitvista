@@ -302,7 +302,7 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 
 	response := map[string]any{
 		"commitHash": string(commitHash),
-		"parentHash": string(parentTreeHash),
+		"parentTreeHash": string(parentTreeHash),
 		"entries":    jsonEntries,
 		"stats": map[string]any{
 			"added":        added,

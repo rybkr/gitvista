@@ -73,18 +73,26 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/ws", s.handleWebSocket)
 
 	s.httpServer = &http.Server{
-		Addr:         s.addr,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		Addr:        s.addr,
+		Handler:     mux,
+		ReadTimeout: 15 * time.Second,
+		// WriteTimeout is intentionally 0: WebSocket connections are long-lived
+		// and hijacked from net/http, so the HTTP-level write deadline does not
+		// apply to them. Per-message write deadlines are enforced in websocket.go
+		// via conn.SetWriteDeadline.
+		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
 	}
 
 	s.wg.Add(1)
 	go s.handleBroadcast()
+	// Reserve the WaitGroup slot for the watchLoop goroutine here, before the
+	// outer goroutine starts, so s.wg.Add cannot race with s.wg.Wait in Shutdown.
+	s.wg.Add(1)
 	go func() {
 		if err := s.startWatcher(); err != nil {
 			log.Printf("watcher error: %v", err)
+			s.wg.Done() // watchLoop never started; release the reserved slot
 		}
 	}()
 

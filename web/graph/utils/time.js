@@ -5,12 +5,6 @@
  */
 
 /**
- * Returns the timestamp (ms) associated with a commit object.
- *
- * @param {import("../types.js").GraphCommit | undefined | null} commit Commit data structure.
- * @returns {number} Millisecond timestamp or 0 when unavailable.
- */
-/**
  * Formats a date-like value as a short relative time string (e.g. "3d ago").
  * Returns an empty string when the input is missing or unparseable.
  *
@@ -34,20 +28,25 @@ export function relativeTime(when) {
     return `${Math.floor(months / 12)}y ago`;
 }
 
+/**
+ * Returns the timestamp (ms) associated with a commit object.
+ *
+ * @param {import("../types.js").GraphCommit | undefined | null} commit Commit data structure.
+ * @returns {number} Millisecond timestamp or 0 when unavailable.
+ */
 export function getCommitTimestamp(commit) {
-	if (!commit) {
-		return 0;
-	}
+    if (!commit) {
+        return 0;
+    }
 
-	const when =
-		commit.committer?.when ??
-		commit.author?.when ??
-		commit.committer?.When ??
-		commit.author?.When;
-	const time = new Date(when ?? 0).getTime();
-	if (!Number.isFinite(time) || Number.isNaN(time)) {
-		return 0;
-	}
-	return time;
+    const when =
+        commit.committer?.when ??
+        commit.author?.when ??
+        commit.committer?.When ??
+        commit.author?.When;
+    const time = new Date(when ?? 0).getTime();
+    if (!Number.isFinite(time) || Number.isNaN(time)) {
+        return 0;
+    }
+    return time;
 }
-

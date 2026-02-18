@@ -1095,6 +1095,52 @@ func TestTreeDiff_MultipleRenames(t *testing.T) {
 	}
 }
 
+// TestTreeDiff_CrossDirectoryRename verifies that rename detection works when
+// a file moves between two different directories within the same commit. The
+// old entry appears under "src/" and the new entry appears under "lib/", so
+// the rename spans a directory boundary and can only be detected if
+// detectRenames runs on the complete flat list — not per-directory.
+func TestTreeDiff_CrossDirectoryRename(t *testing.T) {
+	repo, _ := setupTestRepo(t)
+
+	content := []byte("package util\n\nfunc Helper() {}\n")
+	blobHash := createBlob(t, repo, content)
+
+	// Old tree: src/util.go
+	srcTree := createTree(t, repo, []TreeEntry{
+		{ID: blobHash, Name: "util.go", Mode: "100644", Type: "blob"},
+	})
+	oldRoot := createTree(t, repo, []TreeEntry{
+		{ID: srcTree, Name: "src", Mode: "040000", Type: "tree"},
+	})
+
+	// New tree: lib/util.go (same blob, different directory)
+	libTree := createTree(t, repo, []TreeEntry{
+		{ID: blobHash, Name: "util.go", Mode: "100644", Type: "blob"},
+	})
+	newRoot := createTree(t, repo, []TreeEntry{
+		{ID: libTree, Name: "lib", Mode: "040000", Type: "tree"},
+	})
+
+	entries, err := TreeDiff(repo, oldRoot, newRoot, "")
+	if err != nil {
+		t.Fatalf("TreeDiff failed: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 rename entry, got %d: %+v", len(entries), entries)
+	}
+	if entries[0].Status != DiffStatusRenamed {
+		t.Errorf("expected Renamed, got %s", entries[0].Status)
+	}
+	if entries[0].Path != "lib/util.go" {
+		t.Errorf("expected new path 'lib/util.go', got %q", entries[0].Path)
+	}
+	if entries[0].OldPath != "src/util.go" {
+		t.Errorf("expected old path 'src/util.go', got %q", entries[0].OldPath)
+	}
+}
+
 // TestTreeDiff_RenameAndDeletion exercises the full TreeDiff pipeline for the
 // mixed case: one file renamed, one file deleted with no matching add. This
 // validates that the pipeline does not accidentally absorb unmatched deletes.

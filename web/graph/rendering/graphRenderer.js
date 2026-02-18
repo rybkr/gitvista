@@ -507,7 +507,11 @@ export class GraphRenderer {
         // Tier 2 (zoom >= 2.0): author name
         if (zoomK >= COMMIT_AUTHOR_ZOOM_THRESHOLD && node.commit.author?.name) {
             this.ctx.font = COMMIT_DETAIL_FONT;
+            this.ctx.lineWidth = 3;
+            this.ctx.lineJoin = "round";
+            this.ctx.strokeStyle = this.palette.labelHalo;
             this.ctx.globalAlpha = 0.50 * spawnAlpha;
+            this.ctx.strokeText(node.commit.author.name, labelX, detailY);
             this.ctx.fillStyle = this.palette.labelText;
             this.ctx.fillText(node.commit.author.name, labelX, detailY);
             detailY += 12;
@@ -518,7 +522,11 @@ export class GraphRenderer {
             const rel = relativeTime(node.commit.author?.when);
             if (rel) {
                 this.ctx.font = COMMIT_DETAIL_FONT;
+                this.ctx.lineWidth = 3;
+                this.ctx.lineJoin = "round";
+                this.ctx.strokeStyle = this.palette.labelHalo;
                 this.ctx.globalAlpha = 0.40 * spawnAlpha;
+                this.ctx.strokeText(rel, labelX, detailY);
                 this.ctx.fillStyle = this.palette.labelText;
                 this.ctx.fillText(rel, labelX, detailY);
             }

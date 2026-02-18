@@ -20,7 +20,6 @@ func (s *Server) startWatcher() error {
 		return err
 	}
 
-	s.wg.Add(1)
 	go s.watchLoop(watcher)
 
 	log.Printf("%s Watching Git repository for changes", logInfo)
