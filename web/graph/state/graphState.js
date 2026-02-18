@@ -21,6 +21,20 @@ export function createGraphState() {
 		tags: new Map(),      // tag name -> commit hash
 		stashes: [],          // StashEntry[]
 		hoverNode: null,      // node under the pointer (no click required)
+		// A2: text search query string, or "" when no search is active.
+		searchQuery: "",
+		// A3: structural filter toggles. The controller initialises this from
+		// localStorage via graphFilters.loadFilterState() immediately after
+		// createGraphState() is called, so the default here is "show everything".
+		filterState: {
+			hideRemotes: false,
+			hideMerges: false,
+			hideStashes: false,
+			focusBranch: "",
+		},
+		// Compound predicate built from searchQuery + filterState by
+		// buildFilterPredicate in graphController.  null = no active filter.
+		filterPredicate: null, // ((node) => boolean) | null
 	};
 }
 
@@ -33,4 +47,3 @@ export function createGraphState() {
 export function setZoomTransform(state, transform) {
 	state.zoomTransform = transform;
 }
-

@@ -10,6 +10,8 @@ import { createFileExplorer } from "./fileExplorer.js";
 import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
+import { createSearch } from "./search.js";
+import { createGraphFilters, loadFilterState } from "./graphFilters.js";
 
 const HASH_RE = /^[0-9a-f]{40}$/i;
 
@@ -111,19 +113,54 @@ document.addEventListener("DOMContentLoaded", () => {
         },
     });
 
+    // ── A2: Search bar ──────────────────────────────────────────────────────
+    // The search container lives above the graph canvas but below the filter
+    // panel. Both are prepended into #root by their respective constructors.
+    // graphFilters.createGraphFilters() calls container.prepend(), so the order
+    // of construction determines the visual stacking order:
+    //   1. createSearch() appends to searchContainer which is then appended to root.
+    //   2. createGraphFilters() prepends its panel into root — sits above search.
+    // Final render order (top → bottom): filter panel, search bar, canvas.
+
+    const searchContainer = document.createElement("div");
+    searchContainer.className = "search-container";
+    root.appendChild(searchContainer);
+
+    const search = createSearch(searchContainer, {
+        getCommits: () => graph.getCommits(),
+        onSearch: ({ query }) => {
+            // Pass the raw query string to the controller, which integrates it
+            // into the compound predicate together with the A3 structural filters.
+            graph.setSearchQuery(query || "");
+        },
+    });
+
+    // ── A3: Filter panel ────────────────────────────────────────────────────
+    // Mounted by prepending into root so it sits above the search container.
+    // loadFilterState() reads from localStorage; falls back to all-off defaults.
+
+    const graphFilters = createGraphFilters(root, {
+        initialState: loadFilterState(),
+        onChange: (filterState) => {
+            graph.setFilterState(filterState);
+        },
+    });
+
     const keyboardHelp = createKeyboardHelp();
 
     createKeyboardShortcuts({
         onJumpToHead: () => graph.centerOnCommit(graph.getHeadHash()),
+        // "/" focuses the commit search bar (not the file explorer filter).
         onFocusSearch: () => {
-            const filterInput = document.querySelector(".file-explorer-filter input");
-            if (filterInput) {
-                filterInput.focus();
-                filterInput.select();
-            }
+            search.focus();
         },
         onToggleHelp: () => keyboardHelp.toggle(),
-        onDismiss: () => keyboardHelp.hide(),
+        onDismiss: () => {
+            keyboardHelp.hide();
+            // Clear the search when the user presses Escape — consistent with
+            // how filter overlays typically behave in developer tooling.
+            search.clear();
+        },
         onNavigateNext: () => graph.navigateCommits("next"),
         onNavigatePrev: () => graph.navigateCommits("prev"),
     });
@@ -146,6 +183,11 @@ document.addEventListener("DOMContentLoaded", () => {
         onConnectionStateChange: setConnectionState,
         onDelta: (delta) => {
             graph.applyDelta(delta);
+
+            // Keep the branch dropdown current whenever the branch map changes.
+            // We call this on every delta because even commit-only deltas can
+            // change which branches exist when combined with branch deletions.
+            graphFilters.updateBranches(graph.getBranches());
 
             // Toast when new commits arrive (skip the initial bulk load by
             // gating on having a known branch name).
