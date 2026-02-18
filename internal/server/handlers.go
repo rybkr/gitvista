@@ -172,18 +172,14 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 
 	cacheKey := string(commitHash) + ":" + dirPath
 
-	var blame any
-	cached, ok := s.blameCache.Get(cacheKey)
+	blame, ok := s.blameCache.Get(cacheKey)
 	if !ok {
 		result, err := repo.GetFileBlame(commitHash, dirPath)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to compute blame: %v", err), http.StatusNotFound)
 			return
 		}
-		blame = result
 		s.blameCache.Put(cacheKey, blame)
-	} else {
-		blame = cached
 	}
 
 	w.Header().Set("Content-Type", "application/json")
