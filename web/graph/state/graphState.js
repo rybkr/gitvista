@@ -17,6 +17,10 @@ export function createGraphState() {
 		nodes: [],
 		links: [],
 		zoomTransform: d3.zoomIdentity,
+		headHash: "",
+		tags: new Map(),      // tag name -> commit hash
+		stashes: [],          // StashEntry[]
+		hoverNode: null,      // node under the pointer (no click required)
 	};
 }
 

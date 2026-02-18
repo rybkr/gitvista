@@ -21,8 +21,17 @@ import {
     NODE_SHADOW_OFFSET_Y,
     TREE_ICON_SIZE,
     TREE_ICON_OFFSET,
+    HEAD_RING_COLOR,
+    TAG_NODE_COLOR,
+    TAG_NODE_BORDER_COLOR,
+    COMMIT_MESSAGE_ZOOM_THRESHOLD,
+    COMMIT_MESSAGE_MAX_CHARS,
+    COMMIT_MESSAGE_FONT,
+    HOVER_GLOW_EXTRA_RADIUS,
+    HOVER_GLOW_OPACITY,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
+import { getAuthorColor } from "../../utils/colors.js";
 
 /**
  * Renders graph nodes and links to a 2D canvas context.
@@ -47,12 +56,15 @@ export class GraphRenderer {
         const { nodes, links, zoomTransform, viewportWidth, viewportHeight } =
             state;
         const highlightKey = state.tooltipManager?.getHighlightKey();
+        const headHash = state.headHash ?? "";
+        const hoverNode = state.hoverNode ?? null;
+        const tags = state.tags ?? new Map();
 
         this.clear(viewportWidth, viewportHeight);
         this.setupTransform(zoomTransform);
 
         this.renderLinks(links, nodes);
-        this.renderNodes(nodes, highlightKey);
+        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags);
 
         this.ctx.restore();
     }
@@ -223,15 +235,34 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey) {
+    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags) {
+        // Build a reverse map: commit hash -> array of tag names pointing at it.
+        const tagsByCommit = new Map();
+        if (tags) {
+            for (const [tagName, commitHash] of tags) {
+                const existing = tagsByCommit.get(commitHash);
+                if (existing) {
+                    existing.push(tagName);
+                } else {
+                    tagsByCommit.set(commitHash, [tagName]);
+                }
+            }
+        }
+
         for (const node of nodes) {
             if (node.type === "commit") {
-                this.renderCommitNode(node, highlightKey);
+                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode);
             }
         }
         for (const node of nodes) {
             if (node.type === "branch") {
                 this.renderBranchNode(node, highlightKey);
+            }
+        }
+        // Render tag pills after branch nodes so they appear on top.
+        for (const node of nodes) {
+            if (node.type === "commit" && tagsByCommit.has(node.hash)) {
+                this.renderTagPills(node, tagsByCommit.get(node.hash));
             }
         }
     }
@@ -242,8 +273,10 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      * @param {string|null} highlightKey Current highlight identifier.
      */
-    renderCommitNode(node, highlightKey) {
+    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
+        const isHead = headHash && node.hash === headHash;
+        const isHovered = hoverNode && node === hoverNode;
         const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
 
         const baseRadius = isMerge ? MERGE_NODE_RADIUS : NODE_RADIUS;
@@ -287,7 +320,30 @@ export class GraphRenderer {
         }
         this.ctx.globalAlpha = previousAlpha;
 
-        this.renderCommitLabel(node, spawnAlpha);
+        // Hover glow ring — drawn at full alpha, after the node fill.
+        if (isHovered && !isHighlighted) {
+            this.ctx.save();
+            this.ctx.globalAlpha = previousAlpha * HOVER_GLOW_OPACITY * spawnAlpha;
+            this.ctx.fillStyle = "#ffffff";
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, drawRadius + HOVER_GLOW_EXTRA_RADIUS, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+        }
+
+        // HEAD accent ring — gold ring drawn over the node.
+        if (isHead) {
+            this.ctx.save();
+            this.ctx.globalAlpha = previousAlpha * spawnAlpha;
+            this.ctx.lineWidth = 2.5;
+            this.ctx.strokeStyle = HEAD_RING_COLOR;
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, drawRadius + 3, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
+
+        this.renderCommitLabel(node, spawnAlpha, zoomTransform);
     }
 
     /**
@@ -296,7 +352,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderNormalCommit(node, radius) {
-        this.ctx.fillStyle = this.palette.node;
+        this.ctx.fillStyle = getAuthorColor(node.commit?.author?.email);
         this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -354,7 +410,7 @@ export class GraphRenderer {
      * @param {number} radius Half-diagonal of the diamond.
      */
     renderNormalMerge(node, radius) {
-        this.ctx.fillStyle = this.palette.mergeNode;
+        this.ctx.fillStyle = getAuthorColor(node.commit?.author?.email);
         this.applyShadow();
         this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
@@ -407,10 +463,11 @@ export class GraphRenderer {
      *
      * @param {import("../types.js").GraphNodeCommit} node Commit node to annotate.
      */
-    renderCommitLabel(node, spawnAlpha = 1) {
+    renderCommitLabel(node, spawnAlpha = 1, zoomTransform) {
         if (!node.commit?.hash) return;
 
         const text = shortenHash(node.commit.hash);
+        const zoomK = zoomTransform?.k ?? 1;
 
         this.ctx.save();
         this.ctx.font = LABEL_FONT;
@@ -430,6 +487,18 @@ export class GraphRenderer {
         this.ctx.globalAlpha = spawnAlpha;
         this.ctx.fillStyle = this.palette.labelText;
         this.ctx.fillText(text, labelX, labelY);
+
+        // At high zoom levels, show the first line of the commit message below the hash.
+        if (zoomK >= COMMIT_MESSAGE_ZOOM_THRESHOLD && node.commit.message) {
+            const firstLine = node.commit.message.split("\n")[0].trim();
+            const truncated = firstLine.length > COMMIT_MESSAGE_MAX_CHARS
+                ? firstLine.slice(0, COMMIT_MESSAGE_MAX_CHARS) + "…"
+                : firstLine;
+            this.ctx.font = COMMIT_MESSAGE_FONT;
+            this.ctx.globalAlpha = 0.65 * spawnAlpha;
+            this.ctx.fillStyle = this.palette.labelText;
+            this.ctx.fillText(truncated, labelX, labelY + 14);
+        }
 
         this.ctx.restore();
     }
@@ -528,6 +597,49 @@ export class GraphRenderer {
         this.ctx.restore();
     }
 
+
+    /**
+     * Renders tag name pills for a commit node, stacked below any branch pills.
+     * Tags use an amber color to distinguish them from blue/purple branch pills.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Commit node that has tags.
+     * @param {string[]} tagNames Array of tag names pointing at this commit.
+     */
+    renderTagPills(node, tagNames) {
+        if (!tagNames?.length) return;
+
+        this.ctx.save();
+        this.ctx.font = LABEL_FONT;
+        this.ctx.textBaseline = "middle";
+        this.ctx.textAlign = "center";
+
+        // Stack tag pills above the node (offset up by BRANCH_NODE_RADIUS intervals).
+        const PILL_STEP = 22;
+        for (let i = 0; i < tagNames.length; i++) {
+            const text = `⌂ ${tagNames[i]}`;
+            const metrics = this.ctx.measureText(text);
+            const textHeight = metrics.actualBoundingBoxAscent ?? 9;
+            const width = metrics.width + BRANCH_NODE_PADDING_X * 2;
+            const height = textHeight + BRANCH_NODE_PADDING_Y * 2;
+            // Position above the node, above where branch pills sit.
+            const px = node.x - (BRANCH_NODE_PADDING_X * 4 + metrics.width / 2);
+            const py = node.y - (BRANCH_NODE_RADIUS + PILL_STEP * (i + 1));
+
+            this.drawRoundedRect(px - width / 2, py - height / 2, width, height, BRANCH_NODE_CORNER_RADIUS);
+            this.ctx.fillStyle = TAG_NODE_COLOR;
+            this.applyShadow();
+            this.ctx.fill();
+            this.clearShadow();
+            this.ctx.lineWidth = 1.5;
+            this.ctx.strokeStyle = TAG_NODE_BORDER_COLOR;
+            this.ctx.stroke();
+
+            this.ctx.fillStyle = "#1a1a1a";
+            this.ctx.fillText(text, px, py);
+        }
+
+        this.ctx.restore();
+    }
 
     /**
      * Draws a rounded rectangle path for branch nodes.
