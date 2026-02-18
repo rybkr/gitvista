@@ -335,9 +335,6 @@ export function createDiffContentViewer() {
         }
     }
 
-    /**
-     * Close the viewer and hide it (alias for clear).
-     */
     function close() {
         el.style.display = "none";
         el.innerHTML = "";
@@ -345,15 +342,8 @@ export function createDiffContentViewer() {
         currentContextLines = DEFAULT_CONTEXT_LINES;
     }
 
-    /**
-     * Clear the viewer and hide it.
-     */
-    function clear() {
-        el.style.display = "none";
-        el.innerHTML = "";
-        currentFetchUrl = null;
-        currentContextLines = DEFAULT_CONTEXT_LINES;
-    }
+    // Alias retained for call sites that use "clear" semantics.
+    const clear = close;
 
     /**
      * Register a callback for when the back button is clicked.

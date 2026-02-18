@@ -8,12 +8,8 @@ import (
 	"time"
 )
 
-const (
-	debounceTime = 100 * time.Millisecond
-)
+const debounceTime = 100 * time.Millisecond
 
-// startWatcher initializes filesystem monitoring for the Git repository.
-// It watches the .git/ directory for changes and triggers updates.
 func (s *Server) startWatcher() error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -31,8 +27,6 @@ func (s *Server) startWatcher() error {
 	return nil
 }
 
-// watchLoop checks the .git/ folder for updates and updates the repository when one occurs.
-// It uses a debounce timer to avoid flooding the system with updates.
 func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 	defer s.wg.Done()
 	defer func() {
@@ -74,8 +68,6 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 	}
 }
 
-// shouldIgnoreEvent reports whether a file system event should be ignored for our purposes.
-// For example, a change to an internal log file does not warrant a repository update.
 func shouldIgnoreEvent(event fsnotify.Event) bool {
 	base := filepath.Base(event.Name)
 	path := event.Name

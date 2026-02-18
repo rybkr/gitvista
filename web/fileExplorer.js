@@ -49,7 +49,6 @@ const DIFF_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
 </svg>`;
 
-// TREE_SVG and FOLDER_SVG are visually identical; reuse to avoid duplication.
 const TREE_SVG = FOLDER_SVG;
 
 const EMPTY_FOLDER_SVG = `<svg width="48" height="48" viewBox="0 0 16 16" fill="none">
@@ -66,7 +65,6 @@ export function createFileExplorer() {
     const el = document.createElement("div");
     el.className = "file-explorer";
 
-    // File content viewer (managed separately, shown when a file is clicked)
     const contentViewer = createFileContentViewer();
     contentViewer.onBack(() => {
         state.selectedFile = null;
@@ -75,13 +73,10 @@ export function createFileExplorer() {
         render();
     });
 
-    // Diff view components (for commit diff mode).
-    // The back-button handler is registered internally by createDiffView.
     const diffContentViewer = createDiffContentViewer();
     const diffView = createDiffView(null, diffContentViewer);
     diffView.el.style.display = "none"; // Initially hidden
 
-    // State
     const state = {
         commitHash: null,          // Currently browsed commit hash
         commitMessage: null,        // First line of commit message
@@ -101,9 +96,6 @@ export function createFileExplorer() {
         viewMode: "tree",           // "tree" or "diff" - controls which view is shown
     };
 
-    /**
-     * Fetch tree data from API. Returns { hash, entries: [] }.
-     */
     async function fetchTree(treeHash) {
         const response = await fetch(`/api/tree/${treeHash}`);
         if (!response.ok) {
@@ -112,10 +104,6 @@ export function createFileExplorer() {
         return response.json();
     }
 
-    /**
-     * Fetch blame data for a directory at a given commit.
-     * Returns { entries: { filename: BlameEntry } }.
-     */
     async function fetchBlame(commitHash, dirPath) {
         const url = `/api/tree/blame/${commitHash}?path=${encodeURIComponent(dirPath)}`;
         const response = await fetch(url);
@@ -212,9 +200,6 @@ export function createFileExplorer() {
         return visible;
     }
 
-    /**
-     * Build the toolbar with collapse all, expand all, and filter input.
-     */
     function renderToolbar() {
         const toolbar = document.createElement("div");
         toolbar.className = "file-explorer-toolbar";
@@ -285,9 +270,6 @@ export function createFileExplorer() {
         return toolbar;
     }
 
-    /**
-     * Build breadcrumb navigation bar for the current path.
-     */
     function renderBreadcrumbs() {
         if (!state.breadcrumbPath) return null;
 
@@ -350,7 +332,6 @@ export function createFileExplorer() {
         }
     }
 
-    /** Render the styled empty state when no commit is selected. */
     function renderEmptyState() {
         const empty = document.createElement("div");
         empty.className = "file-explorer-empty";
@@ -373,7 +354,6 @@ export function createFileExplorer() {
         return empty;
     }
 
-    /** Render skeleton loading rows. */
     function renderSkeletonRows() {
         const container = document.createElement("div");
         container.className = "file-explorer-tree";
@@ -401,7 +381,7 @@ export function createFileExplorer() {
         return container;
     }
 
-    /** Look up git status for a path. For directories, checks descendants. */
+    /** For directories, returns a status indicator if any descendant has status. */
     function getStatusForPath(entryPath, isDir) {
         if (state.statusIndex.size === 0) return null;
 
@@ -420,16 +400,12 @@ export function createFileExplorer() {
     }
 
     /**
-     * Render diff mode: show the diff view component.
-     *
      * Only calls diffView.open() when the commit has changed, to avoid
-     * resetting diff state (selected file, content viewer) on re-renders
-     * triggered by unrelated updates like working tree status.
+     * resetting diff state on re-renders triggered by unrelated updates.
      */
     function renderDiffMode() {
         el.innerHTML = "";
 
-        // Header with toggle button to switch back to tree mode
         const header = document.createElement("div");
         header.className = "file-explorer-header";
         const commitInfo = document.createElement("div");
@@ -439,7 +415,6 @@ export function createFileExplorer() {
         commitInfo.textContent = `Commit: ${shortHash} - "${firstLine}"`;
         header.appendChild(commitInfo);
 
-        // Toggle button to switch back to tree view
         const toggleBtn = document.createElement("button");
         toggleBtn.className = "file-explorer-toggle";
         toggleBtn.innerHTML = TREE_SVG + " Show Tree";
@@ -454,21 +429,14 @@ export function createFileExplorer() {
 
         el.appendChild(header);
 
-        // Only open the diff view if it is not already showing this commit.
-        // Re-opening would reset selected file state and wipe the content viewer.
         if (!diffView.isOpen() || diffView.getCommitHash() !== state.commitHash) {
             diffView.open(state.commitHash, state.commitMessage);
         }
 
-        // Append diff view to the explorer
         el.appendChild(diffView.el);
     }
 
-    /**
-     * Render the file explorer UI with full ARIA tree semantics.
-     */
     function render() {
-        // Save previous visible paths for animation
         const currentEntries = el.querySelectorAll(".explorer-entry[data-path]");
         const prevPaths = new Set();
         currentEntries.forEach(row => prevPaths.add(row.getAttribute("data-path")));
@@ -481,13 +449,11 @@ export function createFileExplorer() {
             return;
         }
 
-        // If in diff mode, show diff view instead of tree
         if (state.viewMode === "diff") {
             renderDiffMode();
             return;
         }
 
-        // Header with toggle button
         const header = document.createElement("div");
         header.className = "file-explorer-header";
         const commitInfo = document.createElement("div");
@@ -497,7 +463,6 @@ export function createFileExplorer() {
         commitInfo.textContent = `Commit: ${shortHash} - "${firstLine}"`;
         header.appendChild(commitInfo);
 
-        // Toggle button to switch between tree and diff views
         const toggleBtn = document.createElement("button");
         toggleBtn.className = "file-explorer-toggle";
         toggleBtn.innerHTML = DIFF_SVG + " Show Diff";
@@ -511,23 +476,19 @@ export function createFileExplorer() {
 
         el.appendChild(header);
 
-        // Toolbar
         el.appendChild(renderToolbar());
 
-        // Breadcrumbs
         const breadcrumbs = renderBreadcrumbs();
         if (breadcrumbs) {
             el.appendChild(breadcrumbs);
         }
 
-        // Loading state — show skeleton rows
         if (state.loading) {
             el.appendChild(renderSkeletonRows());
             el.appendChild(contentViewer.el);
             return;
         }
 
-        // Tree container with ARIA tree role
         const treeContainer = document.createElement("div");
         treeContainer.className = "file-explorer-tree";
         treeContainer.setAttribute("role", "tree");
@@ -536,12 +497,10 @@ export function createFileExplorer() {
 
         const visibleEntries = buildVisibleEntries();
 
-        // Clamp focusedIndex to valid range
         if (state.focusedIndex >= visibleEntries.length) {
             state.focusedIndex = Math.max(0, visibleEntries.length - 1);
         }
 
-        // Set aria-activedescendant to the focused entry
         if (visibleEntries[state.focusedIndex]) {
             treeContainer.setAttribute("aria-activedescendant",
                 pathToId(visibleEntries[state.focusedIndex].path));
@@ -555,12 +514,10 @@ export function createFileExplorer() {
             row.setAttribute("data-path", entry.path);
             row.style.paddingLeft = `${8 + entry.depth * 16}px`;
 
-            // Animation: mark entries not in previous render as new
             if (!state.prevVisiblePaths.has(entry.path)) {
                 row.classList.add("is-new");
             }
 
-            // ARIA treeitem attributes
             row.setAttribute("role", "treeitem");
             row.setAttribute("aria-level", String(entry.depth + 1));
             row.setAttribute("aria-setsize", String(entry.setSize));
@@ -570,7 +527,6 @@ export function createFileExplorer() {
                     state.expandedDirs.has(entry.path) ? "true" : "false");
             }
 
-            // Focus and selection state
             if (i === state.focusedIndex) {
                 row.classList.add("is-focused");
             }
@@ -578,7 +534,6 @@ export function createFileExplorer() {
                 row.classList.add("is-selected");
             }
 
-            // Chevron (only for directories)
             if (entry.isDir) {
                 const chevron = document.createElement("span");
                 chevron.className = "explorer-chevron";
@@ -593,19 +548,16 @@ export function createFileExplorer() {
                 row.appendChild(spacer);
             }
 
-            // Icon — file type icons for files, folder icon for directories
             const icon = document.createElement("span");
             icon.className = "explorer-icon";
             icon.innerHTML = entry.isDir ? FOLDER_SVG : getFileIcon(entry.name);
             row.appendChild(icon);
 
-            // Name
             const name = document.createElement("span");
             name.className = "explorer-name";
             name.textContent = entry.name;
             row.appendChild(name);
 
-            // Git status badge
             const statusInfo = getStatusForPath(entry.path, entry.isDir);
             if (statusInfo) {
                 if (statusInfo.isDirIndicator) {
@@ -622,7 +574,6 @@ export function createFileExplorer() {
                 }
             }
 
-            // Blame annotations
             const blameContainer = document.createElement("span");
             blameContainer.className = "explorer-blame";
 
@@ -644,7 +595,6 @@ export function createFileExplorer() {
 
             row.appendChild(blameContainer);
 
-            // Click handler — also updates focus
             row.addEventListener("click", () => {
                 state.focusedIndex = i;
                 if (entry.isDir) {
@@ -657,13 +607,11 @@ export function createFileExplorer() {
             treeContainer.appendChild(row);
         }
 
-        // Keyboard navigation (W3C APG TreeView pattern)
         treeContainer.addEventListener("keydown", (e) => handleKeyDown(e, visibleEntries));
 
         el.appendChild(treeContainer);
         el.appendChild(contentViewer.el);
 
-        // Scroll focused item into view after full re-render
         const focusedRow = treeContainer.querySelector(".is-focused");
         if (focusedRow) {
             focusedRow.scrollIntoView({ block: "nearest" });
@@ -762,10 +710,7 @@ export function createFileExplorer() {
         }
     }
 
-    /**
-     * Lightweight focus update without full re-render.
-     * Moves the .is-focused class and updates aria-activedescendant.
-     */
+    /** Lightweight focus update without full re-render. */
     function renderFocusUpdate(entries) {
         const prevFocused = el.querySelector(".explorer-entry.is-focused");
         if (prevFocused) prevFocused.classList.remove("is-focused");
@@ -784,9 +729,6 @@ export function createFileExplorer() {
         }
     }
 
-    /**
-     * Expand all sibling directories at the same level (* key).
-     */
     function expandSiblings(current, entries) {
         const parentPath = current.path.includes("/")
             ? current.path.substring(0, current.path.lastIndexOf("/"))
@@ -802,7 +744,6 @@ export function createFileExplorer() {
         Promise.all(siblings.map(s => handleDirClick(s)));
     }
 
-    /** Collapse all directories except root. */
     function collapseAll() {
         state.expandedDirs.clear();
         state.expandedDirs.add("");
@@ -811,7 +752,6 @@ export function createFileExplorer() {
         render();
     }
 
-    /** Expand all directories that have cached tree data. */
     function expandAll() {
         function walkAndExpand(treeHash, parentPath) {
             const tree = state.treeCache.get(treeHash);
@@ -832,16 +772,11 @@ export function createFileExplorer() {
         render();
     }
 
-    /**
-     * Handle directory click: toggle expand/collapse, fetch tree data if needed,
-     * then lazily fetch blame data.
-     */
     async function handleDirClick(entry) {
         const isExpanded = state.expandedDirs.has(entry.path);
 
         if (isExpanded) {
             state.expandedDirs.delete(entry.path);
-            // Retract breadcrumb if it was inside this directory
             if (state.breadcrumbPath === entry.path ||
                 state.breadcrumbPath.startsWith(entry.path + "/")) {
                 const parent = entry.path.includes("/")
@@ -850,7 +785,6 @@ export function createFileExplorer() {
                 state.breadcrumbPath = parent;
             }
             render();
-            // Preserve focus on the collapsed directory
             const entries = buildVisibleEntries();
             const idx = entries.findIndex(e => e.path === entry.path);
             if (idx >= 0) state.focusedIndex = idx;
@@ -873,12 +807,10 @@ export function createFileExplorer() {
 
             render();
 
-            // Preserve focus on the expanded directory
             const entries = buildVisibleEntries();
             const idx = entries.findIndex(e => e.path === entry.path);
             if (idx >= 0) state.focusedIndex = idx;
 
-            // Lazily fetch blame data in background
             const blameKey = `${state.commitHash}:${entry.path}`;
             if (!state.blameCache.has(blameKey)) {
                 try {
@@ -894,12 +826,8 @@ export function createFileExplorer() {
         }
     }
 
-    /**
-     * Handle file click: show file content viewer.
-     */
     function handleFileClick(entry) {
         state.selectedFile = { path: entry.path, blobHash: entry.blobHash };
-        // Update breadcrumb to file's parent directory
         const parentPath = entry.path.includes("/")
             ? entry.path.substring(0, entry.path.lastIndexOf("/"))
             : "";
@@ -912,10 +840,6 @@ export function createFileExplorer() {
         contentViewer.open(entry.blobHash, entry.name);
     }
 
-    /**
-     * Open a commit and load its root tree.
-     * @param {Object} commit - Commit object with { hash, tree, message, ... }
-     */
     async function openCommit(commit) {
         state.generation++;
         state.commitHash = commit.hash;
@@ -929,16 +853,15 @@ export function createFileExplorer() {
         state.filterText = "";
         state.breadcrumbPath = "";
         state.loading = true;
-        state.viewMode = "tree"; // Reset to tree view when opening a new commit
+        state.viewMode = "tree";
 
         state.expandedDirs.add("");
 
-        // Close diff view if it was open
         if (diffView.isOpen()) {
             diffView.close();
         }
 
-        render(); // Show loading skeleton
+        render();
 
         try {
             const gen = state.generation;
@@ -967,10 +890,6 @@ export function createFileExplorer() {
         }
     }
 
-    /**
-     * Update working tree status from WebSocket data.
-     * Builds a statusIndex map for quick lookup during render.
-     */
     function updateWorkingTreeStatus(status) {
         state.statusIndex.clear();
         if (!status) return;
@@ -994,7 +913,6 @@ export function createFileExplorer() {
         }
     }
 
-    // Initial render
     render();
 
     return {

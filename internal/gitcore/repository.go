@@ -8,7 +8,6 @@ import (
 	"sync"
 )
 
-// Repository represents a Git repository with its metadata and object storage.
 type Repository struct {
 	gitDir  string
 	workDir string
@@ -26,11 +25,8 @@ type Repository struct {
 	mu sync.RWMutex
 }
 
-// NewRepository creates and initializes a new Repository instance.
-// path can be either:
-//   - The working directory (will find .git within)
-//   - The .git directory itself
-//   - A parent directory containing a .git directory
+// NewRepository opens a Git repository starting from path, which can be
+// the working directory, the .git directory, or any parent directory.
 func NewRepository(path string) (*Repository, error) {
 	gitDir, workDir, err := findGitDirectory(path)
 	if err != nil {
@@ -60,22 +56,10 @@ func NewRepository(path string) (*Repository, error) {
 	return repo, nil
 }
 
-// Name returns the repository's directory name.
-func (r *Repository) Name() string {
-	return filepath.Base(r.workDir)
-}
+func (r *Repository) Name() string    { return filepath.Base(r.workDir) }
+func (r *Repository) GitDir() string   { return r.gitDir }
+func (r *Repository) WorkDir() string  { return r.workDir }
 
-// GitDir returns the path to the repository's .git folder.
-func (r *Repository) GitDir() string {
-	return r.gitDir
-}
-
-// WorkDir returns the path to the repository's working directory.
-func (r *Repository) WorkDir() string {
-	return r.workDir
-}
-
-// Commits returns a map of all commit IDs to Commit structs.
 func (r *Repository) Commits() map[Hash]*Commit {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -86,7 +70,6 @@ func (r *Repository) Commits() map[Hash]*Commit {
 	return result
 }
 
-// Branches returns a map of all branch names to Commit hashes.
 func (r *Repository) Branches() map[string]Hash {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -99,30 +82,27 @@ func (r *Repository) Branches() map[string]Hash {
 	return result
 }
 
-// Head returns the current HEAD commit hash.
 func (r *Repository) Head() Hash {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.head
 }
 
-// HeadRef returns the current HEAD ref (e.g., "refs/heads/main").
-// Empty string if HEAD is detached.
+// HeadRef returns the symbolic ref (e.g., "refs/heads/main"), or empty string if detached.
 func (r *Repository) HeadRef() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.headRef
 }
 
-// HeadDetached returns true if HEAD is detached (not pointing to a branch).
 func (r *Repository) HeadDetached() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.headDetached
 }
 
-// Description returns the repository description from .git/description.
-// Returns empty string if the file doesn't exist or contains the default placeholder.
+// Description returns the .git/description contents, or empty string if
+// the file is missing or contains Git's default placeholder text.
 func (r *Repository) Description() string {
 	descPath := filepath.Join(r.gitDir, "description")
 	//nolint:gosec // G304: Description path is controlled by git repository structure
@@ -132,8 +112,6 @@ func (r *Repository) Description() string {
 	}
 
 	desc := strings.TrimSpace(string(content))
-
-	// Filter out Git's default placeholder text
 	if desc == "Unnamed repository; edit this file 'description' to name the repository." {
 		return ""
 	}
@@ -141,8 +119,7 @@ func (r *Repository) Description() string {
 	return desc
 }
 
-// Remotes returns a map of remote names to their URLs by parsing .git/config.
-// Credentials are stripped from HTTPS URLs before returning.
+// Remotes parses .git/config and returns remote names to URLs (credentials stripped).
 func (r *Repository) Remotes() map[string]string {
 	configPath := filepath.Join(r.gitDir, "config")
 	//nolint:gosec // G304: Config path is controlled by git repository structure
@@ -154,7 +131,6 @@ func (r *Repository) Remotes() map[string]string {
 	return parseRemotesFromConfig(string(content))
 }
 
-// TagNames returns a slice of all tag names.
 func (r *Repository) TagNames() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -168,13 +144,11 @@ func (r *Repository) TagNames() []string {
 	return result
 }
 
-// Tags returns a map of tag names to their target commit hashes.
-// Annotated tags are peeled to the commit they point at.
+// Tags returns tag names to target commit hashes (annotated tags are peeled).
 func (r *Repository) Tags() map[string]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Build lookup: annotated tag object hash -> commit hash
 	annotatedTargets := make(map[Hash]Hash, len(r.tags))
 	for _, tag := range r.tags {
 		annotatedTargets[tag.ID] = tag.Object
@@ -186,7 +160,6 @@ func (r *Repository) Tags() map[string]string {
 		if !ok {
 			continue
 		}
-		// Peel annotated tag objects to their commit target.
 		if commitHash, isAnnotated := annotatedTargets[hash]; isAnnotated {
 			result[name] = string(commitHash)
 		} else {
@@ -196,14 +169,12 @@ func (r *Repository) Tags() map[string]string {
 	return result
 }
 
-// Stashes returns all stash entries for this repository, newest first.
 func (r *Repository) Stashes() []StashEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.stashes
 }
 
-// GetTree loads and returns a tree object by its hash.
 func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	object, err := r.readObject(treeHash)
 	if err != nil {
@@ -218,9 +189,7 @@ func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	return tree, nil
 }
 
-// GetBlob loads and returns raw blob content by its hash.
 func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
-	// readObjectData handles both loose and packed objects, returning raw data and type byte.
 	objectData, objectType, err := r.readObjectData(blobHash)
 	if err != nil {
 		return nil, fmt.Errorf("blob not found: %s", blobHash)
@@ -233,16 +202,14 @@ func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 	return objectData, nil
 }
 
-// resolveTreeAtPath navigates from a root tree hash to a tree at the given directory path.
-// dirPath is slash-separated (e.g., "internal/gitcore"). Empty string returns the root tree.
-// Returns nil and an error if the path does not exist or is not a tree.
+// resolveTreeAtPath walks from rootTreeHash through a slash-separated dirPath
+// (e.g., "internal/gitcore") and returns the tree at that location.
+// Empty dirPath returns the root tree itself.
 func (r *Repository) resolveTreeAtPath(rootTreeHash Hash, dirPath string) (*Tree, error) {
-	// Empty path means the root tree itself
 	if dirPath == "" || dirPath == "/" {
 		return r.GetTree(rootTreeHash)
 	}
 
-	// Split path by '/' and walk through each component
 	components := strings.Split(strings.Trim(dirPath, "/"), "/")
 	currentTreeHash := rootTreeHash
 
@@ -252,11 +219,9 @@ func (r *Repository) resolveTreeAtPath(rootTreeHash Hash, dirPath string) (*Tree
 			return nil, fmt.Errorf("failed to read tree %s: %w", currentTreeHash, err)
 		}
 
-		// Find the entry matching this path component
 		found := false
 		for _, entry := range tree.Entries {
 			if entry.Name == component {
-				// Must be a tree (directory)
 				if entry.Mode != "040000" && entry.Type != "tree" {
 					return nil, fmt.Errorf("path component %q is not a directory", component)
 				}
@@ -271,13 +236,10 @@ func (r *Repository) resolveTreeAtPath(rootTreeHash Hash, dirPath string) (*Tree
 		}
 	}
 
-	// Return the final tree
 	return r.GetTree(currentTreeHash)
 }
 
-// Diff returns the difference between this repository and another,
-// represented as a RepositoryDelta struct.
-// It treats r as the new repository and old as the old repository.
+// Diff computes a RepositoryDelta treating r as the new state and old as the previous state.
 func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 	delta := NewRepositoryDelta()
 
@@ -307,7 +269,6 @@ func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 		}
 	}
 
-	// Always include current HEAD, tags, and stashes so the frontend stays in sync.
 	delta.HeadHash = string(r.Head())
 	delta.Tags = r.Tags()
 	delta.Stashes = r.Stashes()
@@ -318,8 +279,7 @@ func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 	return delta
 }
 
-// findGitDirectory locates the .git directory starting from the given path.
-// Returns both the .git directory and the working directory.
+// findGitDirectory walks up from startPath to locate the .git directory.
 func findGitDirectory(startPath string) (gitDir string, workDir string, err error) {
 	absPath, err := filepath.Abs(startPath)
 	if err != nil {
@@ -353,8 +313,7 @@ func findGitDirectory(startPath string) (gitDir string, workDir string, err erro
 	}
 }
 
-// handleGitFile handles the case where .git is a file (worktrees, submodules).
-// .git file format: "gitdir: /path/to/actual/.git".
+// handleGitFile handles .git files (worktrees, submodules) with format "gitdir: <path>".
 func handleGitFile(gitFilePath string, workDir string) (string, string, error) {
 	//nolint:gosec // G304: .git file path is controlled by repository location
 	content, err := os.ReadFile(gitFilePath)
@@ -380,7 +339,6 @@ func handleGitFile(gitFilePath string, workDir string) (string, string, error) {
 	return gitDir, workDir, nil
 }
 
-// validateGitDirectory checks if the directory is a valid Git repository.
 func validateGitDirectory(gitDir string) error {
 	info, err := os.Stat(gitDir)
 	if err != nil {
@@ -401,8 +359,6 @@ func validateGitDirectory(gitDir string) error {
 	return nil
 }
 
-// parseRemotesFromConfig parses [remote "name"] sections from .git/config.
-// Returns a map of remote names to their URLs with credentials stripped.
 func parseRemotesFromConfig(config string) map[string]string {
 	remotes := make(map[string]string)
 	var currentRemote string
@@ -410,7 +366,6 @@ func parseRemotesFromConfig(config string) map[string]string {
 	for _, line := range strings.Split(config, "\n") {
 		line = strings.TrimSpace(line)
 
-		// Match [remote "origin"] section headers
 		if strings.HasPrefix(line, "[remote \"") && strings.HasSuffix(line, "\"]") {
 			start := strings.Index(line, "\"") + 1
 			end := strings.LastIndex(line, "\"")
@@ -420,13 +375,11 @@ func parseRemotesFromConfig(config string) map[string]string {
 			continue
 		}
 
-		// Reset current remote when entering a different section
 		if strings.HasPrefix(line, "[") && !strings.HasPrefix(line, "[remote") {
 			currentRemote = ""
 			continue
 		}
 
-		// Parse url = ... within remote section
 		if currentRemote != "" && strings.HasPrefix(line, "url = ") {
 			url := strings.TrimPrefix(line, "url = ")
 			remotes[currentRemote] = stripCredentials(url)
@@ -437,7 +390,6 @@ func parseRemotesFromConfig(config string) map[string]string {
 	return remotes
 }
 
-// stripCredentials removes username:password from HTTP and HTTPS URLs.
 func stripCredentials(url string) string {
 	for _, scheme := range []string{"https://", "http://"} {
 		if strings.HasPrefix(url, scheme) && strings.Contains(url, "@") {

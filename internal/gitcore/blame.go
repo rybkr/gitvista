@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// BlameEntry records which commit last modified a file or directory entry.
 type BlameEntry struct {
 	CommitHash    Hash      `json:"commitHash"`
 	CommitMessage string    `json:"commitMessage"`
@@ -14,38 +13,31 @@ type BlameEntry struct {
 	When          time.Time `json:"when"`
 }
 
-// GetFileBlame returns per-file last-modified information for the immediate children
-// of dirPath at the given commit. It walks backward through commit history up to
-// maxDepth commits (default 1000) to determine which commit last modified each entry.
-//
-// The returned map keys are entry names (filenames or directory names), and values
-// are BlameEntry structs with the last-modifying commit's metadata.
+// GetFileBlame returns per-entry last-modified info for the immediate children of
+// dirPath at the given commit. It walks backward through history via BFS (up to
+// 1000 commits) comparing tree entries to find the commit that last changed each one.
+// Entries not resolved within the depth limit are attributed to the target commit.
 func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*BlameEntry, error) {
 	const maxDepth = 1000
 
-	// Look up the target commit
 	commits := r.Commits()
 	targetCommit, ok := commits[commitHash]
 	if !ok {
 		return nil, fmt.Errorf("commit not found: %s", commitHash)
 	}
 
-	// Resolve the tree at the target directory path
 	targetTree, err := r.resolveTreeAtPath(targetCommit.Tree, dirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve tree at path %q: %w", dirPath, err)
 	}
 
-	// Build a map of entry name -> current hash for all entries in the target tree
 	currentEntries := make(map[string]Hash)
 	for _, entry := range targetTree.Entries {
 		currentEntries[entry.Name] = entry.ID
 	}
 
-	// Result map: entry name -> blame entry
 	blame := make(map[string]*BlameEntry)
 
-	// BFS queue for walking commit history
 	type queueItem struct {
 		commit *Commit
 		depth  int
@@ -54,7 +46,6 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 	visited := make(map[Hash]bool)
 	visited[commitHash] = true
 
-	// Walk backward through history
 	for len(queue) > 0 && len(blame) < len(currentEntries) {
 		item := queue[0]
 		queue = queue[1:]
@@ -63,7 +54,6 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 			continue
 		}
 
-		// Process each parent
 		for _, parentHash := range item.commit.Parents {
 			if visited[parentHash] {
 				continue
@@ -72,68 +62,55 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 
 			parentCommit, ok := commits[parentHash]
 			if !ok {
-				// Parent not loaded, skip
 				continue
 			}
 
-			// Resolve the same directory path in the parent's tree
 			parentTree, err := r.resolveTreeAtPath(parentCommit.Tree, dirPath)
 			if err != nil {
-				// Path doesn't exist in parent (directory was added in child)
-				// All entries in current tree that aren't blamed yet were added by item.commit
-				for name := range currentEntries {
-					if _, alreadyBlamed := blame[name]; !alreadyBlamed {
-						blame[name] = newBlameEntry(item.commit)
-					}
-				}
+				// Path doesn't exist in parent -- all unblamed entries were introduced by item.commit
+				blameUnresolved(blame, currentEntries, item.commit)
 				continue
 			}
 
-			// Build parent entry map
 			parentEntries := make(map[string]Hash)
 			for _, entry := range parentTree.Entries {
 				parentEntries[entry.Name] = entry.ID
 			}
 
-			// Compare current entries with parent entries
 			for name, currentHash := range currentEntries {
 				if _, alreadyBlamed := blame[name]; alreadyBlamed {
 					continue
 				}
-
 				parentHash, existedInParent := parentEntries[name]
 				if !existedInParent || parentHash != currentHash {
-					// Entry was added or modified in item.commit
 					blame[name] = newBlameEntry(item.commit)
 				}
 			}
 
-			// Add parent to queue for further traversal
 			queue = append(queue, queueItem{commit: parentCommit, depth: item.depth + 1})
 		}
 
-		// If this commit has no parents and some entries are still unblamed,
-		// they were present since this initial commit
+		// Root commit: attribute all remaining unblamed entries
 		if len(item.commit.Parents) == 0 {
-			for name := range currentEntries {
-				if _, alreadyBlamed := blame[name]; !alreadyBlamed {
-					blame[name] = newBlameEntry(item.commit)
-				}
-			}
+			blameUnresolved(blame, currentEntries, item.commit)
 		}
 	}
 
-	// Entries not resolved within maxDepth are marked with the target commit as fallback
-	for name := range currentEntries {
-		if _, alreadyBlamed := blame[name]; !alreadyBlamed {
-			blame[name] = newBlameEntry(targetCommit)
-		}
-	}
+	// Fallback for entries not resolved within maxDepth
+	blameUnresolved(blame, currentEntries, targetCommit)
 
 	return blame, nil
 }
 
-// newBlameEntry creates a BlameEntry from a commit, using its author metadata.
+// blameUnresolved assigns commit as the blame for any entries not yet in the blame map.
+func blameUnresolved(blame map[string]*BlameEntry, entries map[string]Hash, commit *Commit) {
+	for name := range entries {
+		if _, ok := blame[name]; !ok {
+			blame[name] = newBlameEntry(commit)
+		}
+	}
+}
+
 func newBlameEntry(c *Commit) *BlameEntry {
 	return &BlameEntry{
 		CommitHash:    c.ID,
@@ -143,7 +120,6 @@ func newBlameEntry(c *Commit) *BlameEntry {
 	}
 }
 
-// firstLine extracts the first line of a commit message (subject line).
 func firstLine(message string) string {
 	for i, c := range message {
 		if c == '\n' {

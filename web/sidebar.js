@@ -30,7 +30,6 @@ export function createSidebar() {
     let width = saved.width ?? DEFAULT_WIDTH;
     let collapsed = saved.collapsed ?? false;
 
-    // Main sidebar element
     const el = document.createElement("aside");
     el.className = "sidebar";
 
@@ -53,7 +52,6 @@ export function createSidebar() {
     el.appendChild(content);
     el.appendChild(handle);
 
-    // Floating expand button (lives outside sidebar, inside #root)
     const expandBtn = document.createElement("button");
     expandBtn.className = "sidebar-expand";
     expandBtn.setAttribute("aria-label", "Expand sidebar");
@@ -84,7 +82,6 @@ export function createSidebar() {
         applyWidth();
     });
 
-    // Resize via drag handle
     let dragging = false;
     let startX = 0;
     let startWidth = 0;

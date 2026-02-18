@@ -26,6 +26,7 @@ import {
 import { GraphRenderer } from "./rendering/graphRenderer.js";
 import { LayoutManager } from "./layout/layoutManager.js";
 import { buildPalette } from "./utils/palette.js";
+import { getCommitTimestamp } from "./utils/time.js";
 import { createGraphState, setZoomTransform } from "./state/graphState.js";
 
 /**
@@ -285,20 +286,13 @@ export function createGraphController(rootElement, options = {}) {
      */
     const navigateCommits = (direction) => {
         if (!sortedCommitCache) {
-            // Build and cache a newest-first sorted list of commit nodes.
-            // Mirroring layoutManager.sortCommitsByTime() — logic identical to
-            // getCommitTimestamp() in graph/utils/time.js.
             sortedCommitCache = nodes
                 .filter((n) => n.type === "commit")
                 .sort((a, b) => {
-                    const aTime = new Date(
-                        a.commit?.committer?.when ?? a.commit?.author?.when ?? 0
-                    ).getTime();
-                    const bTime = new Date(
-                        b.commit?.committer?.when ?? b.commit?.author?.when ?? 0
-                    ).getTime();
+                    const aTime = getCommitTimestamp(a.commit);
+                    const bTime = getCommitTimestamp(b.commit);
                     if (aTime === bTime) return a.hash.localeCompare(b.hash);
-                    return bTime - aTime; // newest first
+                    return bTime - aTime;
                 });
         }
 

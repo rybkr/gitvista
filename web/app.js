@@ -10,17 +10,11 @@ import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
 
-// A valid Git commit hash is exactly 40 hex characters.
 const HASH_RE = /^[0-9a-f]{40}$/i;
 
-/**
- * Reads the current URL fragment and returns a commit hash when one is
- * present, or null when the fragment is absent or not a valid hash.
- *
- * @returns {string | null}
- */
+/** Extracts a commit hash from the URL fragment, or returns null. */
 function getHashFromUrl() {
-    const fragment = location.hash.slice(1); // strip the leading #
+    const fragment = location.hash.slice(1);
     return HASH_RE.test(fragment) ? fragment : null;
 }
 
@@ -33,7 +27,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
-    // Connection status dot — fixed bottom-right corner
     const statusDot = document.createElement("div");
     statusDot.title = "Connecting...";
     statusDot.style.cssText = `
@@ -72,7 +65,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Left sidebar with tabs
     const sidebar = createSidebar();
     root.parentElement.insertBefore(sidebar.el, root);
     root.appendChild(sidebar.expandBtn);
@@ -81,7 +73,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
 
-    // Create wrapper for repository tab (info bar + working tree status)
     const repoTabContent = document.createElement("div");
     repoTabContent.style.display = "flex";
     repoTabContent.style.flexDirection = "column";
@@ -107,27 +98,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 fileExplorer.openCommit(commit);
             }
         },
-        // Feature 3: Permalink — mirror the selected commit hash into the URL fragment.
         onCommitSelect: (hash) => {
             if (hash) {
                 history.replaceState(null, "", "#" + hash);
             } else {
-                // Selection cleared: remove the fragment without adding a history entry.
                 history.replaceState(null, "", location.pathname);
             }
         },
     });
 
-    // Feature 1b: Create the keyboard help overlay (hidden by default).
     const keyboardHelp = createKeyboardHelp();
 
-    // Feature 1a: Register all keyboard shortcuts and wire them to graph actions.
     createKeyboardShortcuts({
-        // G→H: center the viewport on the current HEAD commit.
-        onJumpToHead: () => {
-            graph.centerOnCommit(graph.getHeadHash());
-        },
-        // /: focus the file-explorer filter input when it is visible.
+        onJumpToHead: () => graph.centerOnCommit(graph.getHeadHash()),
         onFocusSearch: () => {
             const filterInput = document.querySelector(".file-explorer-filter input");
             if (filterInput) {
@@ -135,25 +118,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 filterInput.select();
             }
         },
-        // ?: toggle the keyboard shortcut help overlay.
-        onToggleHelp: () => {
-            keyboardHelp.toggle();
-        },
-        // Escape: dismiss the help overlay (the graph handles its own tooltip dismissal).
-        onDismiss: () => {
-            keyboardHelp.hide();
-        },
-        // J: navigate to the next (newer) commit.
-        onNavigateNext: () => {
-            graph.navigateCommits("next");
-        },
-        // K: navigate to the previous (older) commit.
-        onNavigatePrev: () => {
-            graph.navigateCommits("prev");
-        },
+        onToggleHelp: () => keyboardHelp.toggle(),
+        onDismiss: () => keyboardHelp.hide(),
+        onNavigateNext: () => graph.navigateCommits("next"),
+        onNavigatePrev: () => graph.navigateCommits("prev"),
     });
 
-    // Track branch/repo name for toast messages and document title
     let currentBranchName = "";
     let repoName = "";
 

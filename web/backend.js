@@ -27,7 +27,6 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
     const url = `${protocol}://${window.location.host}/api/ws`;
     logger?.info("Opening WebSocket connection", url);
 
-    // Mutable reconnection state — delay doubles each attempt up to the cap
     let reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
     let destroyed = false;
 
@@ -50,7 +49,6 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
         socket.addEventListener("open", () => {
             logger?.info("WebSocket connection established");
             const isReconnect = reconnectDelay > RECONNECT_DELAY_INITIAL_MS;
-            // Reset backoff on successful connection
             reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
             notifyState("connected");
             // Re-fetch metadata on reconnect so the info bar reflects any changes
@@ -102,7 +100,6 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
 
             setTimeout(() => connect(), reconnectDelay);
 
-            // Double the delay each attempt, capped at the maximum
             reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
         });
 

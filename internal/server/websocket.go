@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// WebSocket configuration constants.
 const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
@@ -17,17 +16,13 @@ const (
 	maxMessageSize = 512
 )
 
-// upgrader configures WebSocket upgrade process.
-// CheckOrigin allows all origins because GitVista is designed for local developer
-// use only. If deployed on a shared network, restrict origins via a reverse proxy
-// or implement origin validation here.
+// CheckOrigin allows all origins; GitVista is designed for local use only.
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(_ *http.Request) bool {
 		return true
 	},
 }
 
-// handleWebsocket upgrades HTTP connection to WebSocket and manages client lifecycle.
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -45,8 +40,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("%s WebSocket client connection: %s", logSuccess, conn.RemoteAddr())
 
-	// Send initial state before registering for broadcasts.
-	// Prevents race where broadcast arrives before client knows baseline state.
+	// Send initial state before registering for broadcasts to prevent a race
+	// where a broadcast arrives before the client knows its baseline state.
 	s.sendInitialState(conn)
 
 	writeMu := &sync.Mutex{}
@@ -63,7 +58,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go s.clientWritePump(conn, done, writeMu)
 }
 
-// sendInitialState sends full repository state as a delta to a new client.
 func (s *Server) sendInitialState(conn *websocket.Conn) {
 	s.cacheMu.RLock()
 	repo := s.cached.repo
@@ -87,10 +81,8 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 	log.Printf("%s Initial state sent to %s", logInfo, conn.RemoteAddr())
 }
 
-// clientReadPump reads from WebSocket to detect client disconnect.
-// It closes the done channel when the connection is lost, signaling
-// clientWritePump to stop. The done channel is never read here — it is
-// written (closed) only by this function's defer.
+// clientReadPump blocks on reads to detect client disconnect, then closes
+// the done channel to signal clientWritePump to stop.
 func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -100,9 +92,6 @@ func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 	}()
 
 	for {
-		// ReadMessage blocks until a message arrives or the connection closes.
-		// When clientWritePump's ping fails the conn is closed, causing this
-		// to return an error and break the loop.
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -113,8 +102,7 @@ func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 	}
 }
 
-// clientWritePump sends pings to keep the connection alive.
-// writeMu serializes this pump's writes with broadcasts from sendToAllClients.
+// clientWritePump sends keepalive pings. writeMu serializes writes with broadcasts.
 func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}, writeMu *sync.Mutex) {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
@@ -146,7 +134,6 @@ func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}, write
 	}
 }
 
-// removeClient unregisters and closes a WebSocket connection.
 func (s *Server) removeClient(conn *websocket.Conn) {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()

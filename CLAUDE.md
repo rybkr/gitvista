@@ -22,7 +22,7 @@ make ci
 # Run integration tests
 make integration
 
-# Run linter
+# Run linter (requires golangci-lint: brew install golangci-lint)
 make lint
 
 # Build binary
@@ -31,9 +31,15 @@ make build
 # Run a single test by name
 go test -v ./internal/gitcore -run TestLoadPackIndexV1
 
+# Run tests with race detection (matches CI)
+go test -race -timeout 5m ./...
+
 # Run tests with coverage
 go test -v -cover ./...
 go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out
+
+# Validate JavaScript syntax (no build toolchain needed)
+for file in web/*.js; do node --check "$file"; done
 ```
 
 ## Architecture
@@ -79,7 +85,7 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 ### Frontend (JavaScript)
 
 **`web/`** - Vanilla JS with ES modules, D3.js v7.9.0 loaded from CDN:
-- `app.js` - Entry point: bootstraps graph, sidebar, tabs, and backend connection
+- `app.js` - Entry point: bootstraps graph, sidebar, tabs, and backend connection; handles `#<commitHash>` URL fragment for deep-linking to commits
 - `backend.js` - REST fetch and WebSocket connection management
 - `logger.js` - Lightweight structured logger used throughout the frontend
 - `graph.js` - Thin wrapper that creates and exposes the graph controller
@@ -88,15 +94,22 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `graph/state/graphState.js` - State factory for commits/branches/nodes/links Maps + zoom
 - `graph/layout/layoutManager.js` - Chronological commit positioning and viewport management
 - `graph/constants.js` - Centralized D3 force parameters and UI dimensions
+- `graph/types.js` - Frontend type documentation (JSDoc shapes)
+- `graph/utils/` - Graph-specific utilities: `palette.js` (color assignment), `time.js` (date formatting)
 - `sidebar.js` - Collapsible, resizable sidebar with localStorage persistence
 - `sidebarTabs.js` - Tab switching for sidebar panels (Repository / File Explorer)
 - `infoBar.js` - Repository info header (branch, commit count, tags, remotes)
 - `fileExplorer.js` - Lazy-loading file browser with keyboard navigation (W3C APG TreeView pattern) and ARIA accessibility
+- `fileIcons.js` - File extension to icon/color mapping for the file explorer
 - `fileContentViewer.js` - File content display panel
 - `diffView.js` - Commit diff view: lists changed files for a commit
 - `diffContentViewer.js` - Line-level unified diff renderer with hunk display
 - `indexView.js` - Working tree status view (staged/modified/untracked sections)
+- `keyboardShortcuts.js` - Global keyboard handler; supports single-key and two-key sequences (e.g. `G→H` to jump to HEAD)
+- `keyboardHelp.js` - Keyboard shortcut help overlay
+- `toast.js` - Transient toast notification system
 - `tooltips/` - Commit, branch, and blob tooltip overlays (extend `baseTooltip.js`)
+- `utils/` - Shared utilities: `colors.js`, `format.js`
 
 ### Data Flow
 
@@ -106,12 +119,20 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 4. Server computes delta between old and new state, broadcasts to all clients
 5. Frontend applies delta incrementally to D3 simulation graph
 
+## Dependencies
+
+Go external dependencies (see `go.mod`):
+- `github.com/fsnotify/fsnotify` - Filesystem watcher for `.git/` directory
+- `github.com/gorilla/websocket` - WebSocket server implementation
+
+No frontend build toolchain — the JS uses native ES modules loaded directly by the browser.
+
 ## Testing
 
 Tests live alongside source code in `internal/gitcore/` and `internal/server/`. Test patterns:
 - Table-driven subtests with `t.Run()`
 - Hand-constructed binary data for Git object format tests (no fixture files)
-- Integration tests in `test/integration/` use build tag `integration`
+- Integration tests in `test/integration/` use build tag `integration`; they start a real server on port 18080 against the current repo
 - Server tests cover handlers, validation, rate limiting, and status parsing
 
 ## Environment Variables

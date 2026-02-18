@@ -40,15 +40,14 @@ const (
 	packIndexLargeOffsetMask uint32 = 0x7FFFFFFF // Mask to extract large offset table index
 )
 
-// loadPackIndices scans the .git/objects/pack directory and loads all pack index files.
-// This should be done before we begin loading objects, as some objects may be stored here.
+// loadPackIndices scans .git/objects/pack for .idx files. Must be called before loadObjects.
 func (r *Repository) loadPackIndices() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	packDir := filepath.Join(r.gitDir, "objects", "pack")
 	if _, err := os.Stat(packDir); os.IsNotExist(err) {
-		return nil // No packfiles, this is ok
+		return nil
 	} else if err != nil {
 		return err
 	}
@@ -69,7 +68,6 @@ func (r *Repository) loadPackIndices() error {
 		idxPath := filepath.Join(packDir, entry.Name())
 		idx, err := r.loadPackIndex(idxPath)
 		if err != nil {
-			// Log error but continue with other potentially valid indices
 			log.Printf("failed to load pack index %s: %v", entry.Name(), err)
 			continue
 		}
@@ -80,8 +78,7 @@ func (r *Repository) loadPackIndices() error {
 	return nil
 }
 
-// loadPackIndex loads a single pack index file, detecting its version internally.
-// See: https://git-scm.com/docs/pack-format#_original_version_1_pack_idx_files_have_the_following_format
+// loadPackIndex loads a single .idx file, auto-detecting v1 vs v2 format.
 func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 	//nolint:gosec // G304: Pack index paths are controlled by git repository structure
 	file, err := os.Open(idxPath)
@@ -101,13 +98,10 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 
 	packPath := strings.Replace(idxPath, ".idx", ".pack", 1)
 
-	// Version 2 pack-*.idx files begin with a magic number \377toc, which is an
-	// unreasonable first four bytes for version 1 files.
 	var idx *PackIndex
 	if header[0] == packIndexV2Magic0 && header[1] == packIndexV2Magic1 && header[2] == packIndexV2Magic2 && header[3] == packIndexV2Magic3 {
 		idx, err = loadPackIndexV2(file, packPath)
 	} else {
-		// Need to reset to beginning of file for version 1.
 		if _, err := file.Seek(0, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("failed to seek to beginning: %w", err)
 		}
@@ -120,8 +114,6 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 	return idx, nil
 }
 
-// loadPackIndexV1 loads a version 1 pack index from the given reader.
-// See: https://git-scm.com/docs/pack-format#_original_version_1_pack_idx_files_have_the_following_format
 func loadPackIndexV1(r io.ReadSeeker, packPath string) (*PackIndex, error) {
 	idx := &PackIndex{
 		packPath: packPath,
@@ -157,9 +149,7 @@ func loadPackIndexV1(r io.ReadSeeker, packPath string) (*PackIndex, error) {
 	return idx, nil
 }
 
-// loadPackIndexV2 loads a version 2 pack index from the given reader.
-// The reader should be positioned after the 4-byte magic number (\377tOc).
-// See: https://git-scm.com/docs/pack-format#_version_2_pack_idx_files_support_packs_larger_than_4_gib_and
+// loadPackIndexV2 reads a v2 index. Reader must be positioned after the 4-byte magic.
 func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 	idx := &PackIndex{
 		packPath: packPath,
@@ -241,9 +231,7 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 	return idx, nil
 }
 
-// readPackObject reads an object from a pack file at the current position.
-// Returns the decompressed object data and its type.
-// See: https://git-scm.com/docs/pack-format#_pack_pack_files_have_the_following_format
+// readPackObject reads a pack object at the current position, resolving deltas as needed.
 func readPackObject(rs io.ReadSeeker, resolve ObjectResolver) (data []byte, objectType byte, err error) {
 	objStart, err := rs.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -255,7 +243,6 @@ func readPackObject(rs io.ReadSeeker, resolve ObjectResolver) (data []byte, obje
 		return nil, 0, err
 	}
 
-	// See: https://git-scm.com/docs/pack-format#_object_types
 	switch objType {
 	case packObjectCommit, packObjectTree, packObjectBlob, packObjectTag:
 		data, err := readCompressedObject(rs, size)
@@ -269,9 +256,7 @@ func readPackObject(rs io.ReadSeeker, resolve ObjectResolver) (data []byte, obje
 	}
 }
 
-// readPackObjectHeader reads the variable-length header from a pack object.
-// Returns object type and the size of the uncompressed data.
-// See: https://git-scm.com/docs/pack-format#_pack_pack_files_have_the_following_format
+// readPackObjectHeader reads the variable-length encoded type and size from a pack object.
 func readPackObjectHeader(r io.Reader) (objectType byte, size int64, err error) {
 	var b [1]byte
 	if _, err := r.Read(b[:]); err != nil {
@@ -293,7 +278,6 @@ func readPackObjectHeader(r io.Reader) (objectType byte, size int64, err error) 
 	return objectType, size, nil
 }
 
-// readCompressedObject reads and decompresses zlib-compressed object data and ensures its size matches the expected size.
 func readCompressedObject(r io.Reader, expectedSize int64) ([]byte, error) {
 	content, err := readCompressedData(r)
 	if err != nil {
@@ -306,9 +290,6 @@ func readCompressedObject(r io.Reader, expectedSize int64) ([]byte, error) {
 	return content, nil
 }
 
-// readOffsetDelta reads an offset delta object.
-// Returns the resulting data after applying the delta and the type of data referred to.
-// See: https://git-scm.com/docs/pack-format#_deltified_representation
 func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResolver) ([]byte, byte, error) {
 	var b [1]byte
 
@@ -357,9 +338,6 @@ func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResol
 	return result, baseType, nil
 }
 
-// readRefDelta reads a reference delta object.
-// Returns the resulting data after applying the delta and the type of data referred to.
-// See: https://git-scm.com/docs/pack-format#_deltified_representation
 func readRefDelta(rs io.ReadSeeker, size int64, resolve ObjectResolver) ([]byte, byte, error) {
 	var baseHash [20]byte
 	if _, err := io.ReadFull(rs, baseHash[:]); err != nil {
@@ -392,8 +370,7 @@ func readRefDelta(rs io.ReadSeeker, size int64, resolve ObjectResolver) ([]byte,
 	return result, baseType, nil
 }
 
-// applyDelta applies a delta to a base object.
-// Returns the resulting data after applying the delta instructions.
+// applyDelta applies Git pack delta instructions to reconstruct an object from its base.
 // See: https://git-scm.com/docs/pack-format#_deltified_representation
 func applyDelta(base []byte, delta []byte) ([]byte, error) {
 	src := bytes.NewReader(delta)
@@ -423,9 +400,8 @@ func applyDelta(base []byte, delta []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		// The instruction type is determined by the seventh bit of the first byte.
-		if cmd[0]&0x80 != 0 {
-			// See: https://git-scm.com/docs/pack-format#_instruction_to_copy_from_base_object
+			if cmd[0]&0x80 != 0 {
+			// Copy from base object
 			var offset, size int64
 
 			for i := 0; i < 4; i++ {
@@ -458,7 +434,7 @@ func applyDelta(base []byte, delta []byte) ([]byte, error) {
 			result = append(result, base[offset:offset+size]...)
 
 		} else if cmd[0] != 0 {
-			// See: https://git-scm.com/docs/pack-format#_instruction_to_add_new_data
+			// Add new data
 			size := int(cmd[0] & 0x7F)
 			if size == 0 {
 				return nil, fmt.Errorf("copy of size zero is illegal")
@@ -470,7 +446,6 @@ func applyDelta(base []byte, delta []byte) ([]byte, error) {
 			result = append(result, data...)
 
 		} else {
-			// See: https://git-scm.com/docs/pack-format#_reserved_instruction
 			return nil, fmt.Errorf("invalid delta command: 0")
 		}
 	}
@@ -482,8 +457,6 @@ func applyDelta(base []byte, delta []byte) ([]byte, error) {
 	return result, nil
 }
 
-// readVarInt reads a variable-length integer according to the size encoding spec.
-// See: https://git-scm.com/docs/pack-format#_size_encoding
 func readVarInt(src *bytes.Reader) (int64, error) {
 	var result int64
 	var shift uint

@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-// loadRefs loads all Git references (branches, tags) into the refs map.
 func (r *Repository) loadRefs() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -30,13 +29,11 @@ func (r *Repository) loadRefs() error {
 	return nil
 }
 
-// loadLooseRefs recursively loads all refs in a directory.
-// prefix is like "heads" for branches, or "tags" for tags.
+// loadLooseRefs walks refs/<prefix> (e.g., "heads", "tags") loading each ref file.
 func (r *Repository) loadLooseRefs(prefix string) error {
 	refsDir := filepath.Join(r.gitDir, "refs", prefix)
 
 	if _, err := os.Stat(refsDir); os.IsNotExist(err) {
-		// No refs of this type yet (e.g., new repo with no tags), this is ok.
 		return nil
 	} else if err != nil {
 		return err
@@ -58,7 +55,6 @@ func (r *Repository) loadLooseRefs(prefix string) error {
 		refName := filepath.ToSlash(relPath)
 		hash, err := r.resolveRef(path)
 		if err != nil {
-			// Log the error but continue with other potentially valid refs.
 			log.Printf("error resolving ref: %v", err)
 			return nil
 		}
@@ -68,7 +64,6 @@ func (r *Repository) loadLooseRefs(prefix string) error {
 	})
 }
 
-// loadPackedRefs reads the packed-refs file and loads all refs within.
 func (r *Repository) loadPackedRefs() error {
 	packedRefsFile := filepath.Join(r.gitDir, "packed-refs")
 
@@ -110,7 +105,6 @@ func (r *Repository) loadPackedRefs() error {
 	return scanner.Err()
 }
 
-// loadHEAD reads and caches HEAD information.
 func (r *Repository) loadHEAD() error {
 	headPath := filepath.Join(r.gitDir, "HEAD")
 	//nolint:gosec // G304: HEAD path is controlled by git repository structure
@@ -128,7 +122,7 @@ func (r *Repository) loadHEAD() error {
 		if hash, exists := r.refs[r.headRef]; exists {
 			r.head = hash
 		} else {
-			r.head = "" // New repository with no commits, this is ok.
+			r.head = "" // New repository with no commits yet
 		}
 	} else {
 		r.headDetached = true
@@ -144,15 +138,13 @@ func (r *Repository) loadHEAD() error {
 	return nil
 }
 
-// loadStashes reads all stash entries from .git/logs/refs/stash (newest first).
-// Returns an empty slice if no stashes exist.
+// loadStashes reads stash entries from the reflog, newest first.
 func (r *Repository) loadStashes() []StashEntry {
 	stashRefPath := filepath.Join(r.gitDir, "refs", "stash")
 	if _, err := os.Stat(stashRefPath); os.IsNotExist(err) {
 		return nil
 	}
 
-	// The stash reflog holds one entry per stash; iterate it newest-first.
 	stashLogPath := filepath.Join(r.gitDir, "logs", "refs", "stash")
 	//nolint:gosec // G304: Stash log path is controlled by git repository structure
 	file, err := os.Open(stashLogPath)
@@ -181,14 +173,13 @@ func (r *Repository) loadStashes() []StashEntry {
 		lines = append(lines, scanner.Text())
 	}
 
-	// Reflog is oldest-first; reverse for newest-first output.
+	// Reflog is oldest-first; reverse for newest-first output
 	stashes := make([]StashEntry, 0, len(lines))
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
 			continue
 		}
-		// Reflog format: <old-hash> <new-hash> <author info> <timestamp> <tz>\t<message>
 		parts := strings.Fields(line)
 		if len(parts) < 2 {
 			continue
@@ -206,14 +197,11 @@ func (r *Repository) loadStashes() []StashEntry {
 	return stashes
 }
 
-// resolveRef reads a single ref file and returns its hash.
-// Handles both direct hashes and symbolic refs.
+// resolveRef reads a ref file, following symbolic refs if needed.
 func (r *Repository) resolveRef(path string) (Hash, error) {
 	return r.resolveRefDepth(path, 0)
 }
 
-// resolveRefDepth is the depth-limited implementation of resolveRef.
-// Prevents stack overflow from circular symbolic ref chains.
 func (r *Repository) resolveRefDepth(path string, depth int) (Hash, error) {
 	const maxSymrefDepth = 10
 	if depth > maxSymrefDepth {
