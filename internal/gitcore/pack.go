@@ -108,7 +108,7 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 		idx, err = loadPackIndexV2(file, packPath)
 	} else {
 		// Need to reset to beginning of file for version 1.
-		if _, err := file.Seek(0, 0); err != nil {
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("failed to seek to beginning: %w", err)
 		}
 		idx, err = loadPackIndexV1(file, packPath)
@@ -338,14 +338,14 @@ func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResol
 	}
 
 	basePos := objStart - offset
-	if _, err := rs.Seek(basePos, 0); err != nil {
+	if _, err := rs.Seek(basePos, io.SeekStart); err != nil {
 		return nil, 0, fmt.Errorf("failed to seek to base object at %d: %w", basePos, err)
 	}
 	baseData, baseType, err := readPackObject(rs, resolve)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read base object at %d (type %d): %w", basePos, baseType, err)
 	}
-	if _, err := rs.Seek(afterDelta, 0); err != nil {
+	if _, err := rs.Seek(afterDelta, io.SeekStart); err != nil {
 		return nil, 0, err
 	}
 

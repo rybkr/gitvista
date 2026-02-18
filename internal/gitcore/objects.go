@@ -64,24 +64,20 @@ func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
 
 // readObject parses an object from its hash.
 // It first attempts to read from loose objects, then falls back to pack files.
+// Parse errors from loose objects are returned immediately rather than silently
+// falling through to the pack search — a corrupt loose object should fail loudly.
 func (r *Repository) readObject(id Hash) (Object, error) {
-	header, content, err := r.readLooseObject(id)
+	header, content, err := r.readLooseObjectRaw(id)
 	if err == nil {
 		switch {
 		case strings.HasPrefix(header, objectTypeCommit):
-			if commit, err := parseCommitBody(content, id); err == nil {
-				return commit, nil
-			}
+			return parseCommitBody(content, id)
 		case strings.HasPrefix(header, objectTypeTag):
-			if tag, err := parseTagBody(content, id); err == nil {
-				return tag, nil
-			}
+			return parseTagBody(content, id)
 		case strings.HasPrefix(header, objectTypeTree):
-			if tree, err := parseTreeBody(content, id); err == nil {
-				return tree, nil
-			}
+			return parseTreeBody(content, id)
 		default:
-			err = fmt.Errorf("unrecognized object: %q", header)
+			return nil, fmt.Errorf("unrecognized loose object type: %q for %s", header, id)
 		}
 	}
 
@@ -91,38 +87,48 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 		}
 	}
 
-	// We didn't find the object in either packed or loose storage.
-	return nil, err
+	return nil, fmt.Errorf("object not found: %s", id)
 }
 
 // readObjectData reads any object, loose or packed, and returns raw data.
 func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
-	objectPath := filepath.Join(r.gitDir, "objects", string(id)[:2], string(id)[2:])
-	if _, err := os.Stat(objectPath); err == nil {
-		return r.readLooseObjectData(objectPath)
+	header, content, err := r.readLooseObjectRaw(id)
+	if err == nil {
+		typeNum, err := objectTypeFromHeader(header)
+		if err != nil {
+			return nil, 0, err
+		}
+		return content, typeNum, nil
 	}
 
 	for _, idx := range r.packIndices {
 		if offset, found := idx.FindObject(id); found {
-			//nolint:gosec // G304: Pack file paths are controlled by git repository structure
-			file, err := os.Open(idx.PackFile())
-			if err != nil {
-				continue
-			}
-			defer func() {
-				if err := file.Close(); err != nil {
-					log.Printf("failed to close pack file: %v", err)
-				}
-			}()
-
-			if _, err := file.Seek(offset, 0); err != nil {
-				continue
-			}
-			return readPackObject(file, r.readObjectData)
+			return r.readFromPackFile(idx.PackFile(), offset)
 		}
 	}
 
 	return nil, 0, fmt.Errorf("object not found: %s", id)
+}
+
+// readFromPackFile opens a pack file, seeks to offset, and reads a pack object.
+// Scoping the open+defer+close to this function prevents file descriptor leaks
+// when this is called inside a loop (defer runs at function return, not loop end).
+func (r *Repository) readFromPackFile(packPath string, offset int64) ([]byte, byte, error) {
+	//nolint:gosec // G304: Pack file paths are controlled by git repository structure
+	file, err := os.Open(packPath)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close pack file: %v", err)
+		}
+	}()
+
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return nil, 0, err
+	}
+	return readPackObject(file, r.readObjectData)
 }
 
 // readLooseObjectRaw reads a loose object from disk and returns its header and content.
@@ -155,74 +161,31 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 	return header, content, nil
 }
 
-// objectTypeFromHeader converts a Git object header to its numeric type.
+// objectTypeFromHeader converts a Git object header string to its pack object type byte.
+// Uses the same numeric constants as the pack format (packObjectCommit, etc.).
 func objectTypeFromHeader(header string) (byte, error) {
 	parts := strings.SplitN(header, " ", 2)
 	if len(parts) != 2 {
 		return 0, fmt.Errorf("invalid header: %s", header)
 	}
 
-	objectType := parts[0]
-
-	switch objectType {
+	switch parts[0] {
 	case objectTypeCommit:
-		return 1, nil
+		return packObjectCommit, nil
 	case objectTypeTree:
-		return 2, nil
+		return packObjectTree, nil
 	case objectTypeBlob:
-		return 3, nil
+		return packObjectBlob, nil
 	case objectTypeTag:
-		return 4, nil
+		return packObjectTag, nil
 	default:
-		return 0, fmt.Errorf("unsupported object type: %s", objectType)
+		return 0, fmt.Errorf("unsupported object type: %s", parts[0])
 	}
 }
 
-// readLooseObjectData reads a loose object and returns raw data.
-func (r *Repository) readLooseObjectData(objectPath string) ([]byte, byte, error) {
-	// Extract hash from object path (e.g., "objects/ab/cdef..." -> "abcdef...")
-	parts := strings.Split(objectPath, string(filepath.Separator))
-	if len(parts) < 2 {
-		return nil, 0, fmt.Errorf("invalid object path: %s", objectPath)
-	}
-	hash := Hash(parts[len(parts)-2] + parts[len(parts)-1])
-
-	header, content, err := r.readLooseObjectRaw(hash)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	typeNum, err := objectTypeFromHeader(header)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return content, typeNum, nil
-}
-
-// readLooseObject reads an object from loose object storage.
-func (r *Repository) readLooseObject(id Hash) (header string, content []byte, err error) {
-	return r.readLooseObjectRaw(id)
-}
-
-// readPackedObject reads an object from a pack file at the given offset.
+// readPackedObject reads an object from a pack file at the given offset and parses it.
 func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (Object, error) {
-	//nolint:gosec // G304: Pack file paths are controlled by git repository structure
-	file, err := os.Open(packPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open pack file: %w", err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			log.Printf("failed to close packed object file: %v", err)
-		}
-	}()
-
-	if _, err := file.Seek(offset, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
-	}
-
-	objectData, objectType, err := readPackObject(file, r.readObjectData)
+	objectData, objectType, err := r.readFromPackFile(packPath, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pack object: %w", err)
 	}

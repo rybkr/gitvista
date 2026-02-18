@@ -222,8 +222,7 @@ func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 		return nil, fmt.Errorf("blob not found: %s", blobHash)
 	}
 
-	// Type 3 = blob (see objects.go line 149)
-	if objectType != 3 {
+	if objectType != packObjectBlob {
 		return nil, fmt.Errorf("object %s is not a blob (type %d)", blobHash, objectType)
 	}
 
