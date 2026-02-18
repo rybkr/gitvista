@@ -58,7 +58,6 @@ type Server struct {
 func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rateLimiter := newRateLimiter(100, 200, time.Second)
-	cacheSize := parseCacheSize("GITVISTA_CACHE_SIZE", 500)
 
 	// Allow operators to tune cache capacity via env var. Values that are
 	// missing, zero, or negative fall back to the package default (500).

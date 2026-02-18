@@ -179,6 +179,7 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Failed to compute blame: %v", err), http.StatusNotFound)
 			return
 		}
+		blame = result
 		s.blameCache.Put(cacheKey, blame)
 	}
 
