@@ -29,6 +29,166 @@ import { buildPalette } from "./utils/palette.js";
 import { getCommitTimestamp } from "./utils/time.js";
 import { createGraphState, setZoomTransform } from "./state/graphState.js";
 
+// ── A3 Filter helpers ─────────────────────────────────────────────────────────
+//
+// These module-level functions are pure and have no dependency on controller
+// closure state, making them easy to unit-test and reason about in isolation.
+
+/**
+ * Returns true when the given commit node is tracked only by remote-tracking
+ * branches (i.e. every branch pointing at it starts with "refs/remotes/").
+ *
+ * A commit is kept visible if it has at least one local branch pointer OR if no
+ * branch points at it at all (orphaned commits stay visible to keep the graph
+ * connected and navigable).
+ *
+ * @param {import("./types.js").GraphNode} node Commit node being evaluated.
+ * @param {Map<string, string>} branches Live branch map (name → hash).
+ * @returns {boolean} True when the commit is exclusively remote-tracked.
+ */
+function isExclusivelyRemote(node, branches) {
+    if (node.type !== "commit") return false;
+    let hasAnyBranch = false;
+    let hasLocalBranch = false;
+    for (const [name, hash] of branches.entries()) {
+        if (hash !== node.hash) continue;
+        hasAnyBranch = true;
+        if (!name.startsWith("refs/remotes/")) {
+            hasLocalBranch = true;
+            break;
+        }
+    }
+    // If no branch points at this commit, don't hide it — it could be a
+    // reachable ancestor of a visible local branch.
+    return hasAnyBranch && !hasLocalBranch;
+}
+
+/**
+ * Returns true when the given commit node corresponds to a stash entry.
+ * Git stores stashes under refs/stash (a single ref pointing to the most
+ * recent stash commit) or as reflogs under refs/stash@{n}.  We detect stashes
+ * by checking state.stashes first, then falling back to branch-name heuristics.
+ *
+ * @param {import("./types.js").GraphNode} node Commit node being evaluated.
+ * @param {Map<string, string>} branches Live branch map.
+ * @param {Array<{hash: string}>} stashes Live stash list from delta.
+ * @returns {boolean} True when the commit is a stash entry.
+ */
+function isStashCommit(node, branches, stashes) {
+    if (node.type !== "commit") return false;
+    const hash = node.hash;
+    // Check explicit stash list from server delta — most reliable path.
+    if (Array.isArray(stashes)) {
+        for (const stash of stashes) {
+            if (stash?.hash === hash) return true;
+        }
+    }
+    // Fallback: detect via stash branch refs.
+    for (const [name, targetHash] of branches.entries()) {
+        if (targetHash !== hash) continue;
+        if (name === "refs/stash" || name.startsWith("stash@{")) return true;
+    }
+    return false;
+}
+
+/**
+ * Performs a BFS from the tip commit of a focused branch and returns a Set of
+ * all reachable commit hashes.  O(n) in the number of reachable commits;
+ * typically < 1 ms for 1000-commit histories on modern hardware.
+ *
+ * @param {string} branchTipHash Hash the focused branch points at.
+ * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
+ * @returns {Set<string>} Hashes of all commits reachable from the tip (inclusive).
+ */
+function getReachableCommits(branchTipHash, commits) {
+    const reachable = new Set();
+    const queue = [branchTipHash];
+    while (queue.length > 0) {
+        const hash = queue.pop();
+        if (!hash || reachable.has(hash)) continue;
+        reachable.add(hash);
+        const commit = commits.get(hash);
+        if (!commit) continue;
+        for (const parent of commit.parents ?? []) {
+            if (!reachable.has(parent)) {
+                queue.push(parent);
+            }
+        }
+    }
+    return reachable;
+}
+
+/**
+ * Builds a compound predicate that combines the A2 text-search query with the
+ * A3 structural filters.  Returns null when no criteria are active, which lets
+ * the dimming pass be skipped entirely on the common (no filter) path.
+ *
+ * AND semantics: a node must pass every active criterion to remain fully
+ * visible.  Failing nodes are dimmed (not removed) so the graph stays
+ * connected and the user can still orient themselves.
+ *
+ * @param {string} searchQuery Active text search string, or "" for none.
+ * @param {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} filterState
+ * @param {Map<string, string>} branches Live branch map.
+ * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
+ * @param {Array<{hash: string}>} stashes Live stash list from delta.
+ * @returns {((node: import("./types.js").GraphNode) => boolean) | null}
+ */
+function buildFilterPredicate(searchQuery, filterState, branches, commits, stashes) {
+    const hasSearch = searchQuery && searchQuery.trim().length > 0;
+    const { hideRemotes, hideMerges, hideStashes, focusBranch } = filterState;
+    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch;
+
+    // Short-circuit: nothing active → caller skips the dimming loop entirely.
+    if (!hasSearch && !hasAnyFilter) return null;
+
+    // Pre-compute the reachable set once via BFS (not per-node).
+    let reachableSet = null;
+    if (focusBranch) {
+        const tipHash = branches.get(focusBranch);
+        reachableSet = tipHash ? getReachableCommits(tipHash, commits) : new Set();
+    }
+
+    // Lowercase the query once for efficient per-node string matching.
+    const queryLower = hasSearch ? searchQuery.trim().toLowerCase() : "";
+
+    return (node) => {
+        // Branch label nodes: only apply the remote-ref filter; all other
+        // filters operate on commit data which branch nodes don't carry.
+        if (node.type === "branch") {
+            if (hideRemotes && node.branch?.startsWith("refs/remotes/")) return false;
+            return true;
+        }
+
+        // ── A2: text search ───────────────────────────────────────────────────
+        if (hasSearch) {
+            const commit = node.commit;
+            if (!commit) return false;
+            const msg = (commit.message ?? "").toLowerCase();
+            // Support both camelCase and PascalCase field names from the API.
+            const author = (commit.author?.name ?? commit.author?.Name ?? "").toLowerCase();
+            const email = (commit.author?.email ?? commit.author?.Email ?? "").toLowerCase();
+            const hash = (commit.hash ?? "").toLowerCase();
+            if (
+                !msg.includes(queryLower) &&
+                !author.includes(queryLower) &&
+                !email.includes(queryLower) &&
+                !hash.startsWith(queryLower)
+            ) {
+                return false;
+            }
+        }
+
+        // ── A3: structural filters ────────────────────────────────────────────
+        if (hideRemotes && isExclusivelyRemote(node, branches)) return false;
+        if (hideMerges && (node.commit?.parents?.length ?? 0) > 1) return false;
+        if (hideStashes && isStashCommit(node, branches, stashes)) return false;
+        if (reachableSet !== null && !reachableSet.has(node.hash)) return false;
+
+        return true;
+    };
+}
+
 /**
  * Creates and initializes the graph controller instance.
  *
@@ -698,6 +858,40 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     /**
+     * Rebuilds the compound filter predicate from the current searchQuery and
+     * filterState stored on state, then applies dimming to all current nodes.
+     * Call this whenever either field changes.
+     */
+    function rebuildAndApplyPredicate() {
+        applyDimmingFromPredicate();
+        render();
+    }
+
+    /**
+     * Iterates all nodes and sets node.dimmed according to the active compound
+     * predicate (A2 search + A3 structural filters).  When no criteria are active,
+     * buildFilterPredicate returns null and all nodes are un-dimmed without looping.
+     *
+     * This is called after every delta so that branch/commit data inside the
+     * predicate closure is always current (the BFS reachable set rebuilds here).
+     */
+    function applyDimmingFromPredicate() {
+        // Rebuild predicate so it captures the latest branches/commits/stashes.
+        state.filterPredicate = buildFilterPredicate(
+            state.searchQuery,
+            state.filterState,
+            branches,
+            commits,
+            state.stashes,
+        );
+        const predicate = state.filterPredicate;
+        for (const node of nodes) {
+            // null predicate = no active filter → show everything at full opacity.
+            node.dimmed = predicate !== null ? !predicate(node) : false;
+        }
+    }
+
+    /**
      * Main graph update orchestrator. Reconciles nodes and links, updates simulation state,
      * and triggers layout adjustments.
      */
@@ -753,6 +947,11 @@ export function createGraphController(rootElement, options = {}) {
 
         simulation.nodes(nodes);
         simulation.force("link").links(links);
+
+        // Apply the active compound predicate (A2 search + A3 filters) to set
+        // node.dimmed.  This runs after reconciliation so newly-created nodes are
+        // included, and rebuilds the predicate so BFS data is never stale.
+        applyDimmingFromPredicate();
 
         const linkStructureChanged = previousLinkCount !== allLinks.length;
         const structureChanged =
@@ -981,5 +1180,42 @@ export function createGraphController(rootElement, options = {}) {
             headHash = hash || null;
             state.headHash = hash || "";
         },
+        /**
+         * Updates the active text search query and immediately re-applies the
+         * compound filter predicate (A2 search + A3 structural filters).
+         * Pass "" or null to clear the search while keeping other filters active.
+         *
+         * @param {string | null} searchQuery Raw search string from the search bar.
+         */
+        setSearchQuery: (searchQuery) => {
+            state.searchQuery = searchQuery ?? "";
+            rebuildAndApplyPredicate();
+        },
+        /**
+         * Updates the A3 structural filter state and immediately re-applies the
+         * compound predicate.  Called by graphFilters.js onChange callback.
+         *
+         * @param {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} filterState
+         */
+        setFilterState: (filterState) => {
+            state.filterState = filterState;
+            rebuildAndApplyPredicate();
+        },
+        /**
+         * Returns the live branches Map so the filter panel can populate its
+         * branch-focus dropdown with current branch names without going through
+         * a full delta cycle.
+         *
+         * @returns {Map<string, string>} branch-name → commit-hash map.
+         */
+        getBranches: () => branches,
+        /**
+         * Provides access to the live commits Map for external components such
+         * as the search component that need to scan commit data without going
+         * through the full applyDelta pathway.
+         *
+         * @returns {Map<string, import("./types.js").GraphCommit>}
+         */
+        getCommits: () => commits,
     };
 }

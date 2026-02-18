@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +20,7 @@ type Server struct {
 	webFS       fs.FS
 	rateLimiter *rateLimiter
 	httpServer  *http.Server
+	logger      *slog.Logger
 
 	cacheMu sync.RWMutex
 	cached  struct {
@@ -32,8 +35,8 @@ type Server struct {
 
 	broadcast chan UpdateMessage
 
-	blameCache sync.Map // keyed by "commitHash:dirPath"
-	diffCache  sync.Map // keyed by "commitHash" or "commitHash:filePath:ctxN"
+	blameCache *LRUCache[any] // keyed by "commitHash:dirPath"
+	diffCache  *LRUCache[any] // keyed by "commitHash" or "commitHash:filePath:ctxN"
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -43,14 +46,18 @@ type Server struct {
 func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rateLimiter := newRateLimiter(100, 200, time.Second)
+	cacheSize := parseCacheSize("GITVISTA_CACHE_SIZE", 500)
 
 	s := &Server{
 		repo:        repo,
 		addr:        addr,
 		webFS:       webFS,
 		rateLimiter: rateLimiter,
+		logger:      slog.Default(),
 		clients:     make(map[*websocket.Conn]*sync.Mutex),
 		broadcast:   make(chan UpdateMessage, broadcastChannelSize),
+		blameCache:  NewLRUCache[any](cacheSize),
+		diffCache:   NewLRUCache[any](cacheSize),
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -91,12 +98,12 @@ func (s *Server) Start() error {
 	s.wg.Add(1)
 	go func() {
 		if err := s.startWatcher(); err != nil {
-			log.Printf("watcher error: %v", err)
+			s.logger.Error("watcher error", "err", err)
 			s.wg.Done() // watchLoop never started; release the reserved slot
 		}
 	}()
 
-	log.Printf("%s GitVista server starting on http://%s", logSuccess, s.addr)
+	s.logger.Info("GitVista server starting", "addr", s.addr)
 	err := s.httpServer.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
@@ -105,14 +112,14 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown() {
-	log.Printf("%s Server shutting down...", logInfo)
+	s.logger.Info("Server shutting down")
 
 	// Gracefully drain in-flight HTTP requests before stopping goroutines.
 	if s.httpServer != nil {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Printf("%s HTTP server shutdown error: %v", logError, err)
+			s.logger.Error("HTTP server shutdown error", "err", err)
 		}
 	}
 
@@ -124,11 +131,22 @@ func (s *Server) Shutdown() {
 	s.clientsMu.Lock()
 	for conn := range s.clients {
 		if err := conn.Close(); err != nil {
-			log.Printf("%s Failed to close client connection: %v", logError, err)
+			s.logger.Error("Failed to close client connection", "err", err)
 		}
 	}
 	s.clients = make(map[*websocket.Conn]*sync.Mutex)
 	s.clientsMu.Unlock()
 
-	log.Printf("%s Server shutdown complete", logSuccess)
+	s.logger.Info("Server shutdown complete")
+}
+
+// parseCacheSize reads the GITVISTA_CACHE_SIZE env var and returns a valid cache size.
+// If the env var is not set, missing, or invalid, returns the defaultSize.
+func parseCacheSize(envVar string, defaultSize int) int {
+	if raw := os.Getenv(envVar); raw != "" {
+		if size, err := strconv.Atoi(raw); err == nil && size > 0 {
+			return size
+		}
+	}
+	return defaultSize
 }
