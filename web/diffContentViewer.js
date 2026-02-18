@@ -25,7 +25,6 @@ export function createDiffContentViewer() {
     el.style.display = "none"; // Hidden by default
 
     let onBackCallback = null;
-    let onFileSelectCallback = null;
 
     // State tracking for the currently displayed diff, used by expand-context
     let currentFetchUrl = null;       // URL used to fetch the current diff
@@ -363,14 +362,6 @@ export function createDiffContentViewer() {
         onBackCallback = callback;
     }
 
-    /**
-     * Register a callback for when user selects a different file.
-     * (Optional feature for future multi-file navigation)
-     */
-    function onFileSelect(callback) {
-        onFileSelectCallback = callback;
-    }
-
     return {
         el,
         show,
@@ -380,6 +371,5 @@ export function createDiffContentViewer() {
         close,
         clear,
         onBack,
-        onFileSelect,
     };
 }

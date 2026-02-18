@@ -48,34 +48,6 @@
  */
 
 /**
- * Tree and blob nodes are no longer rendered in the graph.
- * Tree access is now handled via a clickable icon on commit nodes
- * that opens the file browser sidebar.
- *
- * @typedef {GraphNodeBase & {
- *   type: "tree",
- *   hash: string,
- *   commitHash?: string,
- *   tree?: object,
- *   entryName?: string,
- *   expanded?: boolean,
- *   childIds?: string[],
- *   id?: string
- * }} GraphNodeTree
- */
-
-/**
- * @typedef {GraphNodeBase & {
- *   type: "blob",
- *   hash: string,
- *   entryName: string,
- *   parentTreeHash: string,
- *   mode?: string,
- *   id: string
- * }} GraphNodeBlob
- */
-
-/**
  * @typedef {GraphNodeCommit | GraphNodeBranch} GraphNode
  */
 
