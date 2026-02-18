@@ -864,3 +864,282 @@ func TestDiffStatus_String(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// B2: rename detection — additional cases not covered by the basic tests
+// ---------------------------------------------------------------------------
+
+// TestDetectRenames_EmptyInput verifies that an empty entry slice is handled
+// without panic and returns an empty (non-nil) slice.
+func TestDetectRenames_EmptyInput(t *testing.T) {
+	result := detectRenames([]DiffEntry{})
+	if result == nil {
+		t.Fatal("detectRenames returned nil for empty input; expected empty slice")
+	}
+	if len(result) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(result))
+	}
+}
+
+// TestDetectRenames_MultipleRenames verifies that two independent renames in the
+// same diff are both detected. This exercises the matched-set logic to ensure the
+// first rename does not consume the deleted-entry index used by the second.
+func TestDetectRenames_MultipleRenames(t *testing.T) {
+	hashA := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hashB := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	entries := []DiffEntry{
+		{Path: "old_a.go", Status: DiffStatusDeleted, OldHash: hashA, OldMode: "100644"},
+		{Path: "old_b.go", Status: DiffStatusDeleted, OldHash: hashB, OldMode: "100644"},
+		{Path: "new_a.go", Status: DiffStatusAdded, NewHash: hashA},
+		{Path: "new_b.go", Status: DiffStatusAdded, NewHash: hashB},
+	}
+
+	result := detectRenames(entries)
+
+	// Two deletes should be removed; two adds should be promoted to renames.
+	if len(result) != 2 {
+		t.Fatalf("expected 2 rename entries, got %d: %+v", len(result), result)
+	}
+
+	renames := map[string]string{} // newPath -> oldPath
+	for _, e := range result {
+		if e.Status != DiffStatusRenamed {
+			t.Errorf("entry %q: expected Renamed, got %s", e.Path, e.Status)
+		}
+		renames[e.Path] = e.OldPath
+	}
+
+	if renames["new_a.go"] != "old_a.go" {
+		t.Errorf("new_a.go should have OldPath old_a.go, got %q", renames["new_a.go"])
+	}
+	if renames["new_b.go"] != "old_b.go" {
+		t.Errorf("new_b.go should have OldPath old_b.go, got %q", renames["new_b.go"])
+	}
+}
+
+// TestDetectRenames_RenamePreservesOldMode verifies that the OldMode from the
+// deleted entry is carried forward onto the promoted rename entry.
+func TestDetectRenames_RenamePreservesOldMode(t *testing.T) {
+	hash := Hash("cccccccccccccccccccccccccccccccccccccccc")
+
+	entries := []DiffEntry{
+		{Path: "script.sh", Status: DiffStatusDeleted, OldHash: hash, OldMode: "100755"},
+		{Path: "run.sh", Status: DiffStatusAdded, NewHash: hash, NewMode: "100755"},
+	}
+
+	result := detectRenames(entries)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 rename entry, got %d", len(result))
+	}
+	if result[0].OldMode != "100755" {
+		t.Errorf("OldMode not preserved: got %q, want %q", result[0].OldMode, "100755")
+	}
+	if result[0].OldHash != hash {
+		t.Errorf("OldHash not set on rename: got %q, want %q", result[0].OldHash, hash)
+	}
+}
+
+// TestDetectRenames_OneRenameOneDeletion verifies the mixed case where one file
+// is renamed (matching add exists) and another file is simply deleted (no matching
+// add). The deleted-with-no-match must remain as a DiffStatusDeleted entry.
+func TestDetectRenames_OneRenameOneDeletion(t *testing.T) {
+	matchedHash := Hash("dddddddddddddddddddddddddddddddddddddddd")
+	orphanHash := Hash("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+
+	entries := []DiffEntry{
+		// This delete has a matching add — should become a rename.
+		{Path: "old_name.go", Status: DiffStatusDeleted, OldHash: matchedHash, OldMode: "100644"},
+		// This delete has NO matching add — must remain as deleted.
+		{Path: "gone_forever.go", Status: DiffStatusDeleted, OldHash: orphanHash, OldMode: "100644"},
+		// The matching add for old_name.go.
+		{Path: "new_name.go", Status: DiffStatusAdded, NewHash: matchedHash},
+	}
+
+	result := detectRenames(entries)
+
+	// Expect: 1 rename (new_name.go <- old_name.go) + 1 deletion (gone_forever.go).
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %+v", len(result), result)
+	}
+
+	byPath := map[string]DiffEntry{}
+	for _, e := range result {
+		byPath[e.Path] = e
+	}
+
+	renamed, ok := byPath["new_name.go"]
+	if !ok {
+		t.Fatal("expected new_name.go in result")
+	}
+	if renamed.Status != DiffStatusRenamed {
+		t.Errorf("new_name.go: expected Renamed, got %s", renamed.Status)
+	}
+	if renamed.OldPath != "old_name.go" {
+		t.Errorf("new_name.go: expected OldPath old_name.go, got %q", renamed.OldPath)
+	}
+
+	deleted, ok := byPath["gone_forever.go"]
+	if !ok {
+		t.Fatal("expected gone_forever.go to remain in result as Deleted")
+	}
+	if deleted.Status != DiffStatusDeleted {
+		t.Errorf("gone_forever.go: expected Deleted, got %s", deleted.Status)
+	}
+}
+
+// TestDetectRenames_NoAddedEntries verifies that when only deletes are present
+// (no adds to match against) the entries are returned unchanged.
+func TestDetectRenames_NoAddedEntries(t *testing.T) {
+	entries := []DiffEntry{
+		{Path: "a.go", Status: DiffStatusDeleted, OldHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{Path: "b.go", Status: DiffStatusDeleted, OldHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+
+	result := detectRenames(entries)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries unchanged, got %d", len(result))
+	}
+	for _, e := range result {
+		if e.Status != DiffStatusDeleted {
+			t.Errorf("entry %q: expected Deleted, got %s", e.Path, e.Status)
+		}
+	}
+}
+
+// TestDetectRenames_DuplicateHashNotDoubleClaimed verifies that when two added
+// files share the same blob hash but only one deleted file matches that hash,
+// only one rename is produced; the other add stays as DiffStatusAdded.
+func TestDetectRenames_DuplicateHashNotDoubleClaimed(t *testing.T) {
+	sharedHash := Hash("ffffffffffffffffffffffffffffffffffffffff")
+
+	entries := []DiffEntry{
+		// Only one deleted file with sharedHash.
+		{Path: "original.go", Status: DiffStatusDeleted, OldHash: sharedHash, OldMode: "100644"},
+		// Two added files with the same hash.
+		{Path: "copy_one.go", Status: DiffStatusAdded, NewHash: sharedHash},
+		{Path: "copy_two.go", Status: DiffStatusAdded, NewHash: sharedHash},
+	}
+
+	result := detectRenames(entries)
+
+	// Exactly one rename and one remaining add; the delete must be consumed.
+	renames := 0
+	adds := 0
+	for _, e := range result {
+		switch e.Status {
+		case DiffStatusRenamed:
+			renames++
+		case DiffStatusAdded:
+			adds++
+		default:
+			t.Errorf("unexpected status %s for entry %q", e.Status, e.Path)
+		}
+	}
+
+	if renames != 1 {
+		t.Errorf("expected exactly 1 rename, got %d", renames)
+	}
+	if adds != 1 {
+		t.Errorf("expected exactly 1 remaining add, got %d", adds)
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 total entries, got %d: %+v", len(result), result)
+	}
+}
+
+// TestTreeDiff_MultipleRenames exercises the full TreeDiff pipeline (not just
+// detectRenames directly) with two files renamed in the same commit so we can
+// confirm the integration path from tree comparison through rename detection.
+func TestTreeDiff_MultipleRenames(t *testing.T) {
+	repo, _ := setupTestRepo(t)
+
+	contentA := []byte("package api\n\nfunc HandlerA() {}\n")
+	contentB := []byte("package api\n\nfunc HandlerB() {}\n")
+	hashA := createBlob(t, repo, contentA)
+	hashB := createBlob(t, repo, contentB)
+
+	oldTree := createTree(t, repo, []TreeEntry{
+		{ID: hashA, Name: "handler_a_old.go", Mode: "100644", Type: "blob"},
+		{ID: hashB, Name: "handler_b_old.go", Mode: "100644", Type: "blob"},
+	})
+	newTree := createTree(t, repo, []TreeEntry{
+		{ID: hashA, Name: "handler_a_new.go", Mode: "100644", Type: "blob"},
+		{ID: hashB, Name: "handler_b_new.go", Mode: "100644", Type: "blob"},
+	})
+
+	entries, err := TreeDiff(repo, oldTree, newTree, "")
+	if err != nil {
+		t.Fatalf("TreeDiff failed: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 rename entries, got %d: %+v", len(entries), entries)
+	}
+
+	renames := map[string]string{} // newPath -> oldPath
+	for _, e := range entries {
+		if e.Status != DiffStatusRenamed {
+			t.Errorf("entry %q: expected Renamed, got %s", e.Path, e.Status)
+		}
+		renames[e.Path] = e.OldPath
+	}
+
+	if renames["handler_a_new.go"] != "handler_a_old.go" {
+		t.Errorf("handler_a_new.go: unexpected OldPath %q", renames["handler_a_new.go"])
+	}
+	if renames["handler_b_new.go"] != "handler_b_old.go" {
+		t.Errorf("handler_b_new.go: unexpected OldPath %q", renames["handler_b_new.go"])
+	}
+}
+
+// TestTreeDiff_RenameAndDeletion exercises the full TreeDiff pipeline for the
+// mixed case: one file renamed, one file deleted with no matching add. This
+// validates that the pipeline does not accidentally absorb unmatched deletes.
+func TestTreeDiff_RenameAndDeletion(t *testing.T) {
+	repo, _ := setupTestRepo(t)
+
+	renamedContent := []byte("// renamed file\n")
+	deletedContent := []byte("// this file is gone\n")
+	renamedHash := createBlob(t, repo, renamedContent)
+	deletedHash := createBlob(t, repo, deletedContent)
+
+	oldTree := createTree(t, repo, []TreeEntry{
+		{ID: renamedHash, Name: "before.go", Mode: "100644", Type: "blob"},
+		{ID: deletedHash, Name: "removed.go", Mode: "100644", Type: "blob"},
+	})
+	newTree := createTree(t, repo, []TreeEntry{
+		{ID: renamedHash, Name: "after.go", Mode: "100644", Type: "blob"},
+		// removed.go is gone; no matching add
+	})
+
+	entries, err := TreeDiff(repo, oldTree, newTree, "")
+	if err != nil {
+		t.Fatalf("TreeDiff failed: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries (1 rename + 1 delete), got %d: %+v", len(entries), entries)
+	}
+
+	byPath := map[string]DiffEntry{}
+	for _, e := range entries {
+		byPath[e.Path] = e
+	}
+
+	if r, ok := byPath["after.go"]; !ok {
+		t.Error("expected after.go (rename) in result")
+	} else if r.Status != DiffStatusRenamed {
+		t.Errorf("after.go: expected Renamed, got %s", r.Status)
+	} else if r.OldPath != "before.go" {
+		t.Errorf("after.go: expected OldPath before.go, got %q", r.OldPath)
+	}
+
+	if d, ok := byPath["removed.go"]; !ok {
+		t.Error("expected removed.go (delete) in result")
+	} else if d.Status != DiffStatusDeleted {
+		t.Errorf("removed.go: expected Deleted, got %s", d.Status)
+	}
+}
