@@ -45,34 +45,18 @@ export const NODE_SHADOW_OFFSET_Y = 2;
 export const TREE_ICON_SIZE = 7;
 export const TREE_ICON_OFFSET = 2;
 
-// HEAD commit ring accent color
-export const HEAD_RING_COLOR = "#f0a500";
-
-// Tag pill colors (amber, distinct from branch blue/purple)
-export const TAG_NODE_COLOR = "#f59e0b";
-export const TAG_NODE_BORDER_COLOR = "#d97706";
-
-// Stash node color (muted purple)
-export const STASH_NODE_COLOR = "#8b5cf6";
-export const STASH_NODE_SIZE = 9;
-
-// Zoom threshold above which commit message labels appear
-export const COMMIT_MESSAGE_ZOOM_THRESHOLD = 1.5;
-export const COMMIT_MESSAGE_MAX_CHARS = 40;
-export const COMMIT_MESSAGE_FONT =
-    "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
-
-// Zoom threshold above which the author name appears below the commit message
-export const COMMIT_AUTHOR_ZOOM_THRESHOLD = 2.0;
-
-// Zoom threshold above which the relative commit date appears below the author name
-export const COMMIT_DATE_ZOOM_THRESHOLD = 3.0;
-
-// Smaller font used for author and date detail lines
-export const COMMIT_DETAIL_FONT =
-    "9px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
-
-// Hover glow ring opacity and extra radius
-export const HOVER_GLOW_EXTRA_RADIUS = 5;
-export const HOVER_GLOW_OPACITY = 0.28;
+// Lane layout constants for lane-based positioning strategy
+export const LANE_WIDTH = 80; // Pixels between lane centers
+export const LANE_MARGIN = 60; // Left margin for lane 0
+export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
+export const LANE_COLORS = [
+    "#0969da", // Blue
+    "#8250df", // Purple
+    "#1a7f37", // Green
+    "#bf8700", // Yellow/Orange
+    "#cf222e", // Red
+    "#0550ae", // Dark blue
+    "#6639ba", // Dark purple
+    "#116329"  // Dark green
+];
 

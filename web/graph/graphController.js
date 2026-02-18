@@ -6,25 +6,21 @@
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
 import { TooltipManager } from "../tooltips/index.js";
 import {
-    ALPHA_DECAY,
     BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_OFFSET_Y,
     BRANCH_NODE_RADIUS,
-    CHARGE_STRENGTH,
-    COLLISION_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
-    DRAG_ALPHA_TARGET,
-    LINK_DISTANCE,
-    LINK_STRENGTH,
+    LANE_MARGIN,
+    LANE_WIDTH,
     NODE_RADIUS,
-    VELOCITY_DECAY,
     ZOOM_MAX,
     ZOOM_MIN,
     TREE_ICON_SIZE,
     TREE_ICON_OFFSET,
 } from "./constants.js";
 import { GraphRenderer } from "./rendering/graphRenderer.js";
-import { LayoutManager } from "./layout/layoutManager.js";
+import { ForceStrategy } from "./layout/forceStrategy.js";
+import { LaneStrategy } from "./layout/laneStrategy.js";
 import { buildPalette } from "./utils/palette.js";
 import { getCommitTimestamp } from "./utils/time.js";
 import { createGraphState, setZoomTransform } from "./state/graphState.js";
@@ -220,45 +216,24 @@ export function createGraphController(rootElement, options = {}) {
     let dragState = null;
     let isDraggingNode = false;
     const pointerHandlers = {};
-    let initialLayoutComplete = false;
 
     let viewportWidth = 0;
     let viewportHeight = 0;
 
-    // rAF handle for render batching — ensures at most one canvas draw per frame
-    // regardless of how many render() callers fire (simulation tick, zoom, hover, etc.)
-    let rafId = null;
-
-    // Hash of the HEAD commit. Kept in sync with state.headHash — both must be
-    // updated together. state.headHash drives canvas rendering; headHash drives
-    // the HEAD button and keyboard shortcut (G→H).
-    let headHash = null;
-    // Hash of the commit node currently selected/highlighted, or null.
-    let selectedHash = null;
-    // Sorted commit node cache — invalidated whenever the graph structure changes.
-    let sortedCommitCache = null;
-
-    const simulation = d3
-        .forceSimulation(nodes)
-        .velocityDecay(VELOCITY_DECAY)
-        .alphaDecay(ALPHA_DECAY)
-        .force("charge", d3.forceManyBody().strength(CHARGE_STRENGTH))
-        .force("collision", d3.forceCollide().radius(COLLISION_RADIUS))
-        .force(
-            "link",
-            d3
-                .forceLink(links)
-                .id((d) => d.id ?? d.hash)
-                .distance(LINK_DISTANCE)
-                .strength(LINK_STRENGTH),
-        )
-        .on("tick", tick);
-
-    const layoutManager = new LayoutManager(
-        simulation,
+    // Create both layout strategies
+    const forceStrategy = new ForceStrategy({
         viewportWidth,
         viewportHeight,
-    );
+        onTick: tick,
+    });
+    const laneStrategy = new LaneStrategy();
+
+    // Restore layout mode from localStorage, default to "force"
+    const STORAGE_KEY_LAYOUT_MODE = "gitvista-layout-mode";
+    const savedMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
+    const initialMode = savedMode === "lane" ? "lane" : "force";
+    let layoutStrategy = initialMode === "lane" ? laneStrategy : forceStrategy;
+    state.layoutMode = initialMode;
 
     const zoom = d3
         .zoom()
@@ -266,7 +241,7 @@ export function createGraphController(rootElement, options = {}) {
         .scaleExtent([ZOOM_MIN, ZOOM_MAX])
         .on("zoom", (event) => {
             if (event.sourceEvent) {
-                layoutManager.disableAutoCenter();
+                layoutStrategy.disableAutoCenter();
             }
             zoomTransform = event.transform;
             setZoomTransform(state, zoomTransform);
@@ -275,18 +250,31 @@ export function createGraphController(rootElement, options = {}) {
 
     canvas.style.cursor = "default";
 
+    // Build controls toolbar with mode toggle and rebalance
     const controls = document.createElement("div");
     controls.className = "graph-controls";
 
+    const forceBtn = document.createElement("button");
+    forceBtn.textContent = "Force";
+    forceBtn.setAttribute("aria-label", "Switch to force-directed layout");
+    if (initialMode === "force") {
+        forceBtn.classList.add("is-active");
+    }
+
+    const laneBtn = document.createElement("button");
+    laneBtn.textContent = "Lanes";
+    laneBtn.setAttribute("aria-label", "Switch to lane-based layout");
+    if (initialMode === "lane") {
+        laneBtn.classList.add("is-active");
+    }
+
     const rebalanceBtn = document.createElement("button");
     rebalanceBtn.textContent = "Rebalance";
-    rebalanceBtn.addEventListener("click", () => {
-        for (const node of nodes) {
-            node.fx = null;
-            node.fy = null;
-        }
-        simulation.alpha(0.8).restart();
-    });
+    rebalanceBtn.setAttribute("aria-label", "Rebalance force-directed layout");
+    rebalanceBtn.disabled = !layoutStrategy.supportsRebalance;
+
+    controls.appendChild(forceBtn);
+    controls.appendChild(laneBtn);
     controls.appendChild(rebalanceBtn);
 
     // "Jump to HEAD" button — centers the view on the current HEAD commit.
@@ -300,12 +288,60 @@ export function createGraphController(rootElement, options = {}) {
 
     rootElement.appendChild(controls);
 
-    // Pass navigateCommits into TooltipManager so the CommitTooltip's Prev/Next
-    // buttons can drive navigation without a circular reference to the controller.
-    // navigateCommits is declared later in this scope; JS closures make this safe.
-    const tooltipManager = new TooltipManager(canvas, {
-        navigate: (direction) => navigateCommits(direction),
+    /**
+     * Switch between force-directed and lane-based layout modes.
+     *
+     * @param {"force" | "lane"} newMode The layout mode to switch to.
+     */
+    const switchLayout = (newMode) => {
+        if (state.layoutMode === newMode) {
+            return; // Already in this mode
+        }
+
+        // Deactivate current strategy
+        layoutStrategy.deactivate();
+
+        // Switch to new strategy
+        if (newMode === "lane") {
+            layoutStrategy = laneStrategy;
+        } else {
+            layoutStrategy = forceStrategy;
+        }
+
+        // Update state and localStorage
+        state.layoutMode = newMode;
+        localStorage.setItem(STORAGE_KEY_LAYOUT_MODE, newMode);
+
+        // Update button active states
+        if (newMode === "force") {
+            forceBtn.classList.add("is-active");
+            laneBtn.classList.remove("is-active");
+        } else {
+            laneBtn.classList.add("is-active");
+            forceBtn.classList.remove("is-active");
+        }
+
+        // Enable/disable rebalance button based on strategy support
+        rebalanceBtn.disabled = !layoutStrategy.supportsRebalance;
+
+        // Activate new strategy with current graph state
+        const viewport = { width: viewportWidth, height: viewportHeight };
+        layoutStrategy.activate(nodes, links, commits, branches, viewport);
+
+        // Force immediate reposition
+        updateGraph();
+    };
+
+    // Wire button click handlers
+    forceBtn.addEventListener("click", () => switchLayout("force"));
+    laneBtn.addEventListener("click", () => switchLayout("lane"));
+    rebalanceBtn.addEventListener("click", () => {
+        if (layoutStrategy.supportsRebalance) {
+            layoutStrategy.rebalance();
+        }
     });
+
+    const tooltipManager = new TooltipManager(canvas);
     const renderer = new GraphRenderer(canvas, buildPalette(canvas));
 
     const updateTooltipPosition = () => {
@@ -391,10 +427,10 @@ export function createGraphController(rootElement, options = {}) {
     };
 
     const centerOnLatestCommit = () => {
-        const latest = layoutManager.findLatestCommit(nodes);
-        if (latest) {
+        const target = layoutStrategy.findCenterTarget(nodes);
+        if (target) {
             // d3.select(canvas).call(...) translates view to center on target coordinates.
-            d3.select(canvas).call(zoom.translateTo, latest.x, latest.y);
+            d3.select(canvas).call(zoom.translateTo, target.x, target.y);
         }
     };
 
@@ -493,10 +529,9 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         const current = dragState;
-        current.node.fx = null;
-        current.node.fy = null;
-        current.node.vx = 0;
-        current.node.vy = 0;
+
+        // Delegate to layout strategy for drag end handling
+        layoutStrategy.handleDragEnd(current.node);
 
         if (canvas.releasePointerCapture) {
             try {
@@ -508,7 +543,6 @@ export function createGraphController(rootElement, options = {}) {
 
         dragState = null;
         isDraggingNode = false;
-        simulation.alphaTarget(0);
     };
 
     const handlePointerDown = (event) => {
@@ -525,7 +559,7 @@ export function createGraphController(rootElement, options = {}) {
             return;
         }
 
-        layoutManager.disableAutoCenter();
+        layoutStrategy.disableAutoCenter();
 
         // Show/hide tooltip for selection feedback
         const currentTarget = tooltipManager.getTargetData();
@@ -560,10 +594,8 @@ export function createGraphController(rootElement, options = {}) {
             dragged: false,
         };
 
-        targetNode.fx = x;
-        targetNode.fy = y;
-        targetNode.vx = 0;
-        targetNode.vy = 0;
+        // Delegate initial drag position to layout strategy
+        layoutStrategy.handleDrag(targetNode, x, y);
 
         try {
             canvas.setPointerCapture(event.pointerId);
@@ -582,12 +614,6 @@ export function createGraphController(rootElement, options = {}) {
         if (dragState && event.pointerId === dragState.pointerId) {
             event.preventDefault();
             const { x, y } = toGraphCoordinates(event);
-            dragState.node.fx = x;
-            dragState.node.fy = y;
-            dragState.node.vx = 0;
-            dragState.node.vy = 0;
-            dragState.node.x = x;
-            dragState.node.y = y;
 
             if (!dragState.dragged) {
                 const distance = Math.hypot(
@@ -601,9 +627,12 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (dragState.dragged) {
-                simulation.alphaTarget(DRAG_ALPHA_TARGET).restart();
+                // Delegate drag handling to layout strategy
+                const needsRender = layoutStrategy.handleDrag(dragState.node, x, y);
+                if (needsRender) {
+                    render();
+                }
             }
-            render();
             return;
         }
 
@@ -666,7 +695,7 @@ export function createGraphController(rootElement, options = {}) {
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        layoutManager.updateViewport(cssWidth, cssHeight);
+        layoutStrategy.updateViewport(cssWidth, cssHeight);
         render();
     };
 
@@ -945,8 +974,8 @@ export function createGraphController(rootElement, options = {}) {
             hideTooltip();
         }
 
-        simulation.nodes(nodes);
-        simulation.force("link").links(links);
+        // Snap branch nodes to their target commits before updating layout strategy
+        snapBranchesToTargets(pendingBranchAlignments);
 
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after reconciliation so newly-created nodes are
@@ -959,14 +988,20 @@ export function createGraphController(rootElement, options = {}) {
             branchReconciliation.changed ||
             linkStructureChanged;
 
-        applySimulationUpdate(
+        // Delegate layout updates to the strategy
+        layoutStrategy.updateGraph(
+            nodes,
+            links,
+            commits,
+            branches,
+            { width: viewportWidth, height: viewportHeight },
             structureChanged,
-            initialLayoutComplete,
-            commitReconciliation.changed,
-            allNodes,
-            allLinks,
-            branchReconciliation.alignments,
         );
+
+        // Center on latest commit if auto-centering is requested
+        if (layoutStrategy.shouldAutoCenter()) {
+            centerOnLatestCommit();
+        }
     }
 
     function createCommitNode(hash, anchorNode) {
@@ -1002,6 +1037,9 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function snapBranchesToTargets(pairs) {
+        // Track per-commit branch count for stacking in lane mode
+        const perCommitCount = new Map();
+
         for (const pair of pairs) {
             if (!pair) continue;
             const { branchNode, targetNode } = pair;
@@ -1009,11 +1047,29 @@ export function createGraphController(rootElement, options = {}) {
                 continue;
             }
 
-            const baseX = targetNode.x ?? 0;
-            const baseY = targetNode.y ?? 0;
+            if (state.layoutMode === "lane") {
+                // In lane mode, position branches based on lane structure, not current commit position
+                const laneIndex = targetNode.laneIndex ?? 0;
+                const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
 
-            branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
-            branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
+                // Stack multiple branches on the same commit vertically
+                const key = targetNode.hash ?? laneIndex;
+                const index = perCommitCount.get(key) || 0;
+                perCommitCount.set(key, index + 1);
+
+                // Position branch above its commit (negative Y offset), stacked if multiple
+                const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
+                branchNode.x = laneX - BRANCH_NODE_OFFSET_X;
+                branchNode.y = (targetNode.y ?? 0) - BRANCH_NODE_OFFSET_Y * 4 - stackOffset;
+            } else {
+                // Force mode: small jitter is fine since simulation will settle
+                const baseX = targetNode.x ?? 0;
+                const baseY = targetNode.y ?? 0;
+                const jitter = (range) => (Math.random() - 0.5) * range;
+                branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
+                branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
+            }
+
             branchNode.vx = 0;
             branchNode.vy = 0;
         }
@@ -1065,9 +1121,9 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function tick() {
-        if (layoutManager.shouldAutoCenter()) {
+        // Auto-centering is handled in updateGraph now
+        if (layoutStrategy.shouldAutoCenter()) {
             centerOnLatestCommit();
-            layoutManager.checkAutoCenterStop(simulation.alpha());
         }
         render();
     }
@@ -1084,7 +1140,9 @@ export function createGraphController(rootElement, options = {}) {
         window.removeEventListener("resize", resize);
         resizeObserver?.disconnect();
         d3.select(canvas).on(".zoom", null);
-        simulation.stop();
+        // Deactivate both strategies to clean up resources
+        forceStrategy.deactivate();
+        laneStrategy.deactivate();
         removeThemeWatcher?.();
         releaseDrag();
         canvas.removeEventListener("pointerdown", pointerHandlers.down);
@@ -1143,6 +1201,15 @@ export function createGraphController(rootElement, options = {}) {
 
         updateGraph();
     }
+
+    // Activate the layout strategy with initial empty state
+    layoutStrategy.activate(
+        nodes,
+        links,
+        commits,
+        branches,
+        { width: viewportWidth, height: viewportHeight },
+    );
 
     return {
         applyDelta,

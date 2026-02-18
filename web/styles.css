@@ -770,119 +770,13 @@ canvas {
     position: relative;
 }
 
-/* ── Commit search bar ── */
-
-/* Outer wrapper positions the search bar in the top-left of the graph canvas,
-   mirroring the top-right position of .graph-controls. z-index matches
-   graph-controls (10) so both float above the canvas at the same layer. */
-.search-container {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    z-index: 10;
+.graph-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
-/* Inner wrapper provides the pill shape and shadow consistent with .graph-controls. */
-.commit-search {
-    position: relative;
-    display: flex;
-    align-items: center;
+.graph-controls button:disabled:hover {
     background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    box-shadow: 0 4px 16px var(--node-shadow-color);
-    overflow: hidden;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    min-width: 200px;
-    max-width: 300px;
-}
-
-.commit-search:focus-within {
-    border-color: var(--node-color);
-    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15), 0 4px 16px var(--node-shadow-color);
-}
-
-@media (prefers-color-scheme: dark) {
-    .commit-search {
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    }
-    .commit-search:focus-within {
-        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.18), 0 8px 24px rgba(0, 0, 0, 0.4);
-    }
-}
-
-/* Magnifier icon — positioned to the left of the input text. */
-.commit-search-icon {
-    position: absolute;
-    left: 10px;
-    display: inline-flex;
-    align-items: center;
-    color: var(--text-secondary);
-    pointer-events: none;
-    opacity: 0.7;
-}
-
-.commit-search-input {
-    width: 100%;
-    padding: 8px 28px 8px 30px;
-    border: none;
-    background: transparent;
-    font-size: 13px;
-    font-family: inherit;
-    color: var(--text-color);
-    outline: none;
-    /* Remove browser-native search decorations (Webkit cancel button, IE clear).
-       Our custom clear button replaces them for cross-browser consistency. */
-    -webkit-appearance: none;
-    appearance: none;
-}
-
-.commit-search-input::-webkit-search-cancel-button,
-.commit-search-input::-webkit-search-decoration {
-    -webkit-appearance: none;
-    appearance: none;
-}
-
-.commit-search-input::placeholder {
-    color: var(--text-secondary);
-    opacity: 0.6;
-}
-
-/* Clear (×) button — hidden until the input has content. */
-.commit-search-clear {
-    position: absolute;
-    right: 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0;
-    transition: color 0.12s ease, background 0.12s ease;
-    flex-shrink: 0;
-}
-
-.commit-search-clear:hover {
-    color: var(--text-color);
-    background: rgba(14, 165, 233, 0.08);
-}
-
-@media (prefers-color-scheme: dark) {
-    .commit-search-clear:hover {
-        background: rgba(88, 166, 255, 0.1);
-    }
-}
-
-.commit-search-clear:focus-visible {
-    outline: 2px solid var(--node-color);
-    outline-offset: 1px;
 }
 
 .commit-tooltip {

@@ -35,7 +35,9 @@
  *   type: "commit",
  *   hash: string,
  *   commit?: GraphCommit,
- *   radius?: number
+ *   radius?: number,
+ *   laneIndex?: number,
+ *   laneColor?: string
  * }} GraphNodeCommit
  */
 
@@ -92,5 +94,6 @@
  * @property {GraphNode[]} nodes Collection of nodes rendered on the canvas.
  * @property {Array<{source: string | GraphNode, target: string | GraphNode, kind?: string}>} links Force simulation link definitions.
  * @property {import("d3").ZoomTransform} zoomTransform Current D3 zoom transform.
+ * @property {string} layoutMode Current layout mode: "force" or "timeline".
  */
 

@@ -165,10 +165,11 @@ export class GraphRenderer {
 
     /**
      * Draws a single directional link with an arrowhead.
+     * Supports lane-aware coloring and stepped paths for cross-lane connections.
      *
      * @param {import("../types.js").GraphNode} source Source node.
      * @param {import("../types.js").GraphNode} target Target node.
-     * @param {boolean} isBranch True when the arrow represents a branch link.
+     * @param {string} linkKind Link kind ("branch" or undefined).
      */
     renderLink(source, target, linkKind) {
         const dx = target.x - source.x;
@@ -178,15 +179,30 @@ export class GraphRenderer {
             return;
         }
 
-        const color = linkKind === "branch"
-            ? this.palette.branchLink
-            : this.palette.link;
+        // Determine link color: branch links always use branchLink palette,
+        // commit links use lane color if present, otherwise default palette
+        let color;
+        if (linkKind === "branch") {
+            color = this.palette.branchLink;
+        } else {
+            color = source.laneColor || this.palette.link;
+        }
 
         const targetRadius = target.type === "branch"
             ? BRANCH_NODE_RADIUS
             : NODE_RADIUS;
 
-        this.renderArrow(source, target, dx, dy, distance, targetRadius, color);
+        // Check if this is a cross-lane connection (lane mode only)
+        const isCrossLane =
+            source.laneIndex !== undefined &&
+            target.laneIndex !== undefined &&
+            source.laneIndex !== target.laneIndex;
+
+        if (isCrossLane) {
+            this.renderSteppedArrow(source, target, targetRadius, color);
+        } else {
+            this.renderArrow(source, target, dx, dy, distance, targetRadius, color);
+        }
     }
 
     /**
@@ -221,6 +237,50 @@ export class GraphRenderer {
         this.ctx.save();
         this.ctx.translate(arrowTipX, arrowTipY);
         this.ctx.rotate(Math.atan2(dy, dx));
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, 0);
+        this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
+        this.ctx.lineTo(-ARROW_LENGTH, -ARROW_WIDTH / 2);
+        this.ctx.closePath();
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a stepped path for cross-lane connections with an arrowhead.
+     * The path consists of three segments:
+     * 1. Vertical line from source downward
+     * 2. Horizontal line across lanes
+     * 3. Vertical line to target with arrowhead
+     *
+     * For octopus merges (multiple parents), stagger the midpoint Y to avoid overlap.
+     *
+     * @param {import("../types.js").GraphNode} source Source node.
+     * @param {import("../types.js").GraphNode} target Target node.
+     * @param {number} targetRadius Radius of the target node for arrow placement.
+     * @param {string} color Stroke and fill color for the arrow.
+     */
+    renderSteppedArrow(source, target, targetRadius, color) {
+        // Calculate midpoint Y with stagger for octopus merges
+        // Use hash of source position to deterministically stagger multiple parents
+        const stagger = ((source.x * 17 + source.y * 13) % 20) - 10;
+        const midY = (source.y + target.y) / 2 + stagger;
+
+        // Draw the stepped path
+        this.ctx.strokeStyle = color;
+        this.ctx.beginPath();
+        this.ctx.moveTo(source.x, source.y);
+        this.ctx.lineTo(source.x, midY); // Vertical down from source
+        this.ctx.lineTo(target.x, midY); // Horizontal across lanes
+        this.ctx.lineTo(target.x, target.y - targetRadius - ARROW_LENGTH); // Vertical to near target
+        this.ctx.stroke();
+
+        // Draw arrowhead pointing down at target
+        const arrowTipY = target.y - targetRadius;
+        this.ctx.save();
+        this.ctx.translate(target.x, arrowTipY);
+        this.ctx.rotate(Math.PI / 2); // Point downward
         this.ctx.beginPath();
         this.ctx.moveTo(0, 0);
         this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
@@ -364,14 +424,13 @@ export class GraphRenderer {
 
     /**
      * Renders a non-highlighted commit node.
+     * Uses lane color if available (lane mode), otherwise falls back to palette.
      *
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderNormalCommit(node, radius) {
-        const authorEmail = node.commit?.author?.email;
-        this.ctx.fillStyle = authorEmail
-            ? getAuthorColor(authorEmail)
-            : this.palette.node;
+        // Use lane color if present (lane layout mode), otherwise use default palette
+        this.ctx.fillStyle = node.laneColor || this.palette.node;
         this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
