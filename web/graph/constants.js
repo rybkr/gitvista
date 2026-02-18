@@ -60,3 +60,19 @@ export const LANE_COLORS = [
     "#116329"  // Dark green
 ];
 
+// Tag node styling
+export const TAG_NODE_COLOR = "#ffd33d";
+export const TAG_NODE_BORDER_COLOR = "#9a6700";
+
+// Progressive detail: commit message, author, and date zoom thresholds
+export const COMMIT_MESSAGE_ZOOM_THRESHOLD = 1.5;
+export const COMMIT_MESSAGE_MAX_CHARS = 60;
+export const COMMIT_MESSAGE_FONT = "11px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
+export const COMMIT_AUTHOR_ZOOM_THRESHOLD = 2.0;
+export const COMMIT_DATE_ZOOM_THRESHOLD = 3.0;
+export const COMMIT_DETAIL_FONT = "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
+
+// Hover glow effect
+export const HOVER_GLOW_EXTRA_RADIUS = 4;
+export const HOVER_GLOW_OPACITY = 0.25;
+

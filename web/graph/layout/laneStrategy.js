@@ -276,7 +276,7 @@ export class LaneStrategy {
 		// Assign remaining branches to sequential lanes
 		// Each branch gets its own lane for consistent horizontal spacing
 		let currentLane = 1;
-		for (const [branchName, targetHash] of branches) {
+		for (const [, targetHash] of branches) {
 			// Check if this commit is already assigned
 			const existingLane = this.commitToLane.get(targetHash);
 			if (existingLane !== undefined) {
@@ -332,30 +332,6 @@ export class LaneStrategy {
 			// Follow first parent for linear history
 			current = firstParentOnly ? commit.parents[0] : null;
 		}
-	}
-
-	/**
-	 * Finds the lowest available lane for a commit chain.
-	 * Checks for collisions with already-assigned commits.
-	 *
-	 * @param {string} startHash Starting commit hash
-	 * @param {Map<string, Object>} commits Map of commit hash to commit data
-	 * @param {Set<string>} assigned Set of already-assigned commit hashes
-	 * @returns {number} Lowest available lane index
-	 */
-	findLowestAvailableLane(startHash, commits, assigned) {
-		// Build set of lanes used by already-assigned commits
-		const usedLanes = new Set();
-		for (const [hash, lane] of this.commitToLane) {
-			usedLanes.add(lane);
-		}
-
-		// Find first available lane
-		let lane = 0;
-		while (usedLanes.has(lane)) {
-			lane++;
-		}
-		return lane;
 	}
 
 	/**

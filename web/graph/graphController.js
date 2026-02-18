@@ -205,7 +205,6 @@ const jitter = (range) => (Math.random() - 0.5) * range;
 
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d", { alpha: false });
     canvas.factor = window.devicePixelRatio || 1;
     rootElement.appendChild(canvas);
 
@@ -219,6 +218,13 @@ export function createGraphController(rootElement, options = {}) {
 
     let viewportWidth = 0;
     let viewportHeight = 0;
+
+    let selectedHash = null;
+    let headHash = null;
+    let sortedCommitCache = null;
+    let rafId = null;
+    let initialLayoutComplete = false;
+    let pendingBranchAlignments = [];
 
     // Create both layout strategies
     const forceStrategy = new ForceStrategy({
@@ -445,7 +451,7 @@ export function createGraphController(rootElement, options = {}) {
         if (hash) {
             const target = nodes.find((n) => n.type === "commit" && n.hash === hash);
             if (target) {
-                layoutManager.disableAutoCenter();
+                layoutStrategy.disableAutoCenter();
                 d3.select(canvas).call(zoom.translateTo, target.x, target.y);
                 return;
             }
@@ -846,44 +852,6 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         return { nodes: nextNodes, links: branchLinks, alignments, changed };
-    }
-
-    /**
-     * Applies reconciled nodes and links to the D3 simulation and handles layout logic.
-     * Manages initial layout, auto-centering, and simulation restart behavior.
-     *
-     * @param {boolean} structureChanged Whether any nodes or links were added/removed/changed.
-     * @param {boolean} initialComplete Whether the initial layout has been completed.
-     * @param {boolean} commitStructureChanged Whether commit nodes changed.
-     * @param {import("./types.js").GraphNode[]} allNodes Combined commit + branch nodes.
-     * @param {Array} allLinks Combined commit + branch links.
-     * @param {Array<{branchNode: import("./types.js").GraphNode, targetNode: import("./types.js").GraphNode}>} branchAlignments Pairs for positioning.
-     */
-    function applySimulationUpdate(
-        structureChanged,
-        initialComplete,
-        commitStructureChanged,
-        allNodes,
-        allLinks,
-        branchAlignments,
-    ) {
-        const hasCommits = allNodes.some((node) => node.type === "commit");
-
-        if (!initialComplete && hasCommits) {
-            layoutManager.applyTimelineLayout(allNodes);
-            snapBranchesToTargets(branchAlignments);
-            layoutManager.requestAutoCenter();
-            centerOnLatestCommit();
-            initialLayoutComplete = true;
-            layoutManager.restartSimulation(1.0);
-        } else {
-            snapBranchesToTargets(branchAlignments);
-            if (commitStructureChanged) {
-                layoutManager.requestAutoCenter();
-            }
-        }
-
-        layoutManager.boostSimulation(structureChanged);
     }
 
     /**

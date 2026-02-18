@@ -17,7 +17,7 @@ export function createGraphState() {
 		nodes: [],
 		links: [],
 		zoomTransform: d3.zoomIdentity,
-		layoutMode: "force", // Current layout mode: "force" or "timeline"
+		layoutMode: "force", // Current layout mode: "force" or "lane"
 	};
 }
 
