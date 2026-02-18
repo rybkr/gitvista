@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { initThemeToggle } from "./themeToggle.js";
 import { createGraph } from "./graph.js";
 import { startBackend } from "./backend.js";
 import { createSidebar } from "./sidebar.js";
@@ -20,6 +21,9 @@ function getHashFromUrl() {
 
 document.addEventListener("DOMContentLoaded", () => {
     logger.info("Bootstrapping frontend");
+
+    // Apply persisted theme preference immediately before any rendering occurs.
+    initThemeToggle();
 
     const root = document.querySelector("#root");
     if (!root) {
