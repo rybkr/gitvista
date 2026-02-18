@@ -275,15 +275,19 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 	}
 
 	jsonEntries := make([]map[string]any, len(entries))
-	var added, modified, deleted int
+	var added, modified, deleted, renamed int
 	for i, entry := range entries {
-		jsonEntries[i] = map[string]any{
+		jsonEntry := map[string]any{
 			"path":    entry.Path,
 			"status":  entry.Status.String(),
 			"oldHash": string(entry.OldHash),
 			"newHash": string(entry.NewHash),
 			"binary":  entry.IsBinary,
 		}
+		if entry.OldPath != "" {
+			jsonEntry["oldPath"] = entry.OldPath
+		}
+		jsonEntries[i] = jsonEntry
 		switch entry.Status {
 		case gitcore.DiffStatusAdded:
 			added++
@@ -291,6 +295,8 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 			modified++
 		case gitcore.DiffStatusDeleted:
 			deleted++
+		case gitcore.DiffStatusRenamed:
+			renamed++
 		}
 	}
 
@@ -302,6 +308,7 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 			"added":        added,
 			"modified":     modified,
 			"deleted":      deleted,
+			"renamed":      renamed,
 			"filesChanged": len(entries),
 		},
 	}

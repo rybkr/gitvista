@@ -390,6 +390,88 @@ func TestTreeDiff_NestedDirectories(t *testing.T) {
 	}
 }
 
+func TestTreeDiff_ExactRenameDetection(t *testing.T) {
+	repo, _ := setupTestRepo(t)
+
+	// Same content moved to a new path => should be detected as rename
+	content := []byte("package main\n\nfunc hello() {}\n")
+	blobHash := createBlob(t, repo, content)
+
+	oldTree := createTree(t, repo, []TreeEntry{
+		{ID: blobHash, Name: "hello.go", Mode: "100644", Type: "blob"},
+	})
+	newTree := createTree(t, repo, []TreeEntry{
+		{ID: blobHash, Name: "world.go", Mode: "100644", Type: "blob"},
+	})
+
+	entries, err := TreeDiff(repo, oldTree, newTree, "")
+	if err != nil {
+		t.Fatalf("TreeDiff failed: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (rename), got %d: %+v", len(entries), entries)
+	}
+	if entries[0].Status != DiffStatusRenamed {
+		t.Errorf("expected Renamed, got %s", entries[0].Status)
+	}
+	if entries[0].Path != "world.go" {
+		t.Errorf("expected new path 'world.go', got %q", entries[0].Path)
+	}
+	if entries[0].OldPath != "hello.go" {
+		t.Errorf("expected old path 'hello.go', got %q", entries[0].OldPath)
+	}
+	if entries[0].OldHash != blobHash {
+		t.Errorf("expected OldHash to match blob hash")
+	}
+}
+
+func TestTreeDiff_ModifiedRenameNotDetected(t *testing.T) {
+	repo, _ := setupTestRepo(t)
+
+	// Different content => different hashes => NOT detected as rename
+	oldBlob := createBlob(t, repo, []byte("version 1\n"))
+	newBlob := createBlob(t, repo, []byte("version 2\n"))
+
+	oldTree := createTree(t, repo, []TreeEntry{
+		{ID: oldBlob, Name: "old.txt", Mode: "100644", Type: "blob"},
+	})
+	newTree := createTree(t, repo, []TreeEntry{
+		{ID: newBlob, Name: "new.txt", Mode: "100644", Type: "blob"},
+	})
+
+	entries, err := TreeDiff(repo, oldTree, newTree, "")
+	if err != nil {
+		t.Fatalf("TreeDiff failed: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries (delete+add), got %d", len(entries))
+	}
+	statuses := map[string]bool{}
+	for _, e := range entries {
+		statuses[e.Status.String()] = true
+	}
+	if !statuses["added"] || !statuses["deleted"] {
+		t.Errorf("expected added and deleted statuses, got %v", statuses)
+	}
+}
+
+func TestDetectRenames_NoDeletedEntries(t *testing.T) {
+	// When there are no deleted entries, entries should be returned unchanged.
+	entries := []DiffEntry{
+		{Path: "a.txt", Status: DiffStatusAdded, NewHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{Path: "b.txt", Status: DiffStatusModified, OldHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", NewHash: "cccccccccccccccccccccccccccccccccccccccc"},
+	}
+	result := detectRenames(entries)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries unchanged, got %d", len(result))
+	}
+	if result[0].Status != DiffStatusAdded || result[1].Status != DiffStatusModified {
+		t.Errorf("statuses changed unexpectedly: %v, %v", result[0].Status, result[1].Status)
+	}
+}
+
 func TestTreeDiff_Submodule(t *testing.T) {
 	repo, _ := setupTestRepo(t)
 
