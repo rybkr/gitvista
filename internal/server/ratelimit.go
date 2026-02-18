@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+const (
+	cleanupInterval  = 1 * time.Minute
+	clientExpiration = 5 * time.Minute
+)
+
 // rateLimiter implements a simple token bucket rate limiter per client IP.
 type rateLimiter struct {
 	mu      sync.Mutex
@@ -13,6 +18,7 @@ type rateLimiter struct {
 	rate    int           // tokens per interval
 	burst   int           // max tokens
 	window  time.Duration // time window
+	stop    chan struct{}
 }
 
 // bucket represents a token bucket for a single client.
@@ -29,12 +35,17 @@ func newRateLimiter(rate int, burst int, window time.Duration) *rateLimiter {
 		rate:    rate,
 		burst:   burst,
 		window:  window,
+		stop:    make(chan struct{}),
 	}
 
-	// Cleanup goroutine to remove stale clients
 	go rl.cleanup()
 
 	return rl
+}
+
+// Close stops the cleanup goroutine. Call during server shutdown.
+func (rl *rateLimiter) Close() {
+	close(rl.stop)
 }
 
 // allow checks if a request from the given IP should be allowed.
@@ -55,8 +66,9 @@ func (rl *rateLimiter) allow(ip string) bool {
 	now := time.Now()
 	elapsed := now.Sub(b.lastCheck)
 
-	// Add tokens based on elapsed time
-	tokensToAdd := int(elapsed / rl.window * time.Duration(rl.rate))
+	// Fix: use floating-point division to correctly compute fractional windows.
+	// Integer division of elapsed/window always truncates to 0 for sub-window intervals.
+	tokensToAdd := int(float64(elapsed) / float64(rl.window) * float64(rl.rate))
 	b.tokens += tokensToAdd
 	if b.tokens > rl.burst {
 		b.tokens = rl.burst
@@ -71,20 +83,26 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return false
 }
 
-// cleanup removes clients that haven't made requests in 5 minutes.
+// cleanup removes clients that haven't made requests in clientExpiration and runs
+// every cleanupInterval. Exits when Close() is called.
 func (rl *rateLimiter) cleanup() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		rl.mu.Lock()
-		now := time.Now()
-		for ip, b := range rl.clients {
-			if now.Sub(b.lastCheck) > 5*time.Minute {
-				delete(rl.clients, ip)
+	for {
+		select {
+		case <-rl.stop:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			now := time.Now()
+			for ip, b := range rl.clients {
+				if now.Sub(b.lastCheck) > clientExpiration {
+					delete(rl.clients, ip)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 

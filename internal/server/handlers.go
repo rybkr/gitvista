@@ -53,6 +53,11 @@ func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
 	repo := s.cached.repo
 	s.cacheMu.RUnlock()
 
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
 	// Build current branch name from HEAD ref
 	currentBranch := ""
 	headRef := repo.HeadRef()
@@ -132,14 +137,15 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	if isBinary {
 		response["content"] = ""
 	} else {
-		// Cap content at 512KB to prevent browser from choking on huge files
-		maxSize := 512 * 1024
-		text := string(content)
-		if len(text) > maxSize {
-			text = text[:maxSize]
+		// Cap content at 512KB to prevent browser from choking on huge files.
+		// Truncate on byte boundary (not string rune boundary) to avoid splitting
+		// UTF-8 multi-byte sequences; then re-validate as a complete UTF-8 string.
+		const maxSize = 512 * 1024
+		if len(content) > maxSize {
+			content = content[:maxSize]
 			response["truncated"] = true
 		}
-		response["content"] = text
+		response["content"] = string(content)
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -235,7 +241,7 @@ func (s *Server) handleCommitDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if this is a file-level diff request
-	isFileDiff := strings.Contains(path, "/file")
+	isFileDiff := strings.HasSuffix(path, "/file")
 
 	// Extract commit hash (everything before "/file" if present)
 	commitHashStr := path
@@ -380,10 +386,11 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	}
 	filePath = sanitized
 
-	// Parse context lines parameter; default to 3 when absent or invalid
+	// Parse context lines parameter; default to 3 when absent or invalid.
+	// Cap at 100 to prevent excessive response sizes.
 	contextLines := gitcore.DefaultContextLines
 	if raw := r.URL.Query().Get("context"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 100 {
 			contextLines = n
 		}
 	}

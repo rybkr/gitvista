@@ -107,15 +107,6 @@ export class GraphRenderer {
     }
 
     /**
-     * Backwards compatibility alias for historical misspelling.
-     *
-     * @param {import("../types.js").GraphPalette} palette Updated palette.
-     */
-    updatePallete(palette) {
-        this.updatePalette(palette);
-    }
-
-    /**
      * Draws all links connecting commit and branch nodes.
      *
      * @param {Array<{source: string | import("../types.js").GraphNode, target: string | import("../types.js").GraphNode, kind?: string}>} links Link definitions from the force simulation.

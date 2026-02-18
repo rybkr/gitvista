@@ -209,6 +209,17 @@ func (r *Repository) loadStashes() []StashEntry {
 // resolveRef reads a single ref file and returns its hash.
 // Handles both direct hashes and symbolic refs.
 func (r *Repository) resolveRef(path string) (Hash, error) {
+	return r.resolveRefDepth(path, 0)
+}
+
+// resolveRefDepth is the depth-limited implementation of resolveRef.
+// Prevents stack overflow from circular symbolic ref chains.
+func (r *Repository) resolveRefDepth(path string, depth int) (Hash, error) {
+	const maxSymrefDepth = 10
+	if depth > maxSymrefDepth {
+		return "", fmt.Errorf("symbolic ref chain too deep (possible cycle) at: %s", path)
+	}
+
 	//nolint:gosec // G304: Ref paths are controlled by git repository structure
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -220,7 +231,7 @@ func (r *Repository) resolveRef(path string) (Hash, error) {
 	if strings.HasPrefix(line, "ref: ") {
 		targetRef := strings.TrimPrefix(line, "ref: ")
 		targetPath := filepath.Join(r.gitDir, targetRef)
-		return r.resolveRef(targetPath)
+		return r.resolveRefDepth(targetPath, depth+1)
 	}
 
 	hash, err := NewHash(line)

@@ -77,7 +77,9 @@ func (r *Repository) WorkDir() string {
 
 // Commits returns a map of all commit IDs to Commit structs.
 func (r *Repository) Commits() map[Hash]*Commit {
-	result := make(map[Hash]*Commit)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make(map[Hash]*Commit, len(r.commits))
 	for _, commit := range r.commits {
 		result[commit.ID] = commit
 	}
@@ -86,6 +88,8 @@ func (r *Repository) Commits() map[Hash]*Commit {
 
 // Branches returns a map of all branch names to Commit hashes.
 func (r *Repository) Branches() map[string]Hash {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	result := make(map[string]Hash)
 	for ref, hash := range r.refs {
 		if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
@@ -222,8 +226,7 @@ func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 		return nil, fmt.Errorf("blob not found: %s", blobHash)
 	}
 
-	// Type 3 = blob (see objects.go line 149)
-	if objectType != 3 {
+	if objectType != packObjectBlob {
 		return nil, fmt.Errorf("object %s is not a blob (type %d)", blobHash, objectType)
 	}
 
@@ -434,13 +437,14 @@ func parseRemotesFromConfig(config string) map[string]string {
 	return remotes
 }
 
-// stripCredentials removes username:password from HTTPS URLs.
+// stripCredentials removes username:password from HTTP and HTTPS URLs.
 func stripCredentials(url string) string {
-	// Match https://username:password@host/path
-	if strings.HasPrefix(url, "https://") && strings.Contains(url, "@") {
-		parts := strings.SplitN(url, "@", 2)
-		if len(parts) == 2 {
-			return "https://" + parts[1]
+	for _, scheme := range []string{"https://", "http://"} {
+		if strings.HasPrefix(url, scheme) && strings.Contains(url, "@") {
+			parts := strings.SplitN(url, "@", 2)
+			if len(parts) == 2 {
+				return scheme + parts[1]
+			}
 		}
 	}
 	return url

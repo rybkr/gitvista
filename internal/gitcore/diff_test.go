@@ -433,7 +433,7 @@ func TestComputeFileDiff_AddedFile(t *testing.T) {
 	newHash := createBlob(t, repo, newContent)
 
 	// Compute diff (no old file)
-	diff, err := ComputeFileDiff(repo, "", newHash, "test.txt", defaultContextLines)
+	diff, err := ComputeFileDiff(repo, "", newHash, "test.txt", DefaultContextLines)
 	if err != nil {
 		t.Fatalf("ComputeFileDiff failed: %v", err)
 	}
@@ -473,7 +473,7 @@ func TestComputeFileDiff_DeletedFile(t *testing.T) {
 	oldHash := createBlob(t, repo, oldContent)
 
 	// Compute diff (no new file)
-	diff, err := ComputeFileDiff(repo, oldHash, "", "test.txt", defaultContextLines)
+	diff, err := ComputeFileDiff(repo, oldHash, "", "test.txt", DefaultContextLines)
 	if err != nil {
 		t.Fatalf("ComputeFileDiff failed: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestComputeFileDiff_ModifiedLines(t *testing.T) {
 	newHash := createBlob(t, repo, newContent)
 
 	// Compute diff
-	diff, err := ComputeFileDiff(repo, oldHash, newHash, "test.txt", defaultContextLines)
+	diff, err := ComputeFileDiff(repo, oldHash, newHash, "test.txt", DefaultContextLines)
 	if err != nil {
 		t.Fatalf("ComputeFileDiff failed: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestComputeFileDiff_BinaryFile(t *testing.T) {
 	binaryHash := createBlob(t, repo, binaryContent)
 
 	// Compute diff
-	diff, err := ComputeFileDiff(repo, "", binaryHash, "binary.bin", defaultContextLines)
+	diff, err := ComputeFileDiff(repo, "", binaryHash, "binary.bin", DefaultContextLines)
 	if err != nil {
 		t.Fatalf("ComputeFileDiff failed: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestComputeFileDiff_LargeFile(t *testing.T) {
 	largeHash := createBlob(t, repo, largeContent)
 
 	// Compute diff
-	diff, err := ComputeFileDiff(repo, "", largeHash, "large.txt", defaultContextLines)
+	diff, err := ComputeFileDiff(repo, "", largeHash, "large.txt", DefaultContextLines)
 	if err != nil {
 		t.Fatalf("ComputeFileDiff failed: %v", err)
 	}
