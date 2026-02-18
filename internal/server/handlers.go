@@ -172,14 +172,14 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 
 	cacheKey := string(commitHash) + ":" + dirPath
 
-	blame, ok := s.blameCache.Load(cacheKey)
+	blame, ok := s.blameCache.Get(cacheKey)
 	if !ok {
 		blame, err = repo.GetFileBlame(commitHash, dirPath)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to compute blame: %v", err), http.StatusNotFound)
 			return
 		}
-		s.blameCache.Store(cacheKey, blame)
+		s.blameCache.Put(cacheKey, blame)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -255,7 +255,7 @@ func resolveCommitAndParent(w http.ResponseWriter, repo *gitcore.Repository, com
 
 func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repository, commitHash gitcore.Hash) {
 	cacheKey := string(commitHash)
-	if cached, ok := s.diffCache.Load(cacheKey); ok {
+	if cached, ok := s.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(cached); err != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -313,7 +313,7 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 		},
 	}
 
-	s.diffCache.Store(cacheKey, response)
+	s.diffCache.Put(cacheKey, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -346,7 +346,7 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 
 	// Include context count so different depths are cached separately.
 	cacheKey := string(commitHash) + ":" + filePath + ":ctx" + strconv.Itoa(contextLines)
-	if cached, ok := s.diffCache.Load(cacheKey); ok {
+	if cached, ok := s.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(cached); err != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -394,7 +394,7 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 		"hunks":     fileDiff.Hunks,
 	}
 
-	s.diffCache.Store(cacheKey, response)
+	s.diffCache.Put(cacheKey, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
