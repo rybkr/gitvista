@@ -1,12 +1,12 @@
 package server
 
 import (
-	"github.com/gorilla/websocket"
-	"github.com/rybkr/gitvista/internal/gitcore"
-	"log"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/rybkr/gitvista/internal/gitcore"
 )
 
 const (
@@ -26,19 +26,19 @@ var upgrader = websocket.Upgrader{
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("%s WebSocket upgrade failed: %v", logError, err)
+		s.logger.Error("WebSocket upgrade failed", "err", err)
 		return
 	}
 
 	conn.SetReadLimit(maxMessageSize)
 	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
-		log.Printf("%s Failed to set read deadline: %v", logError, err)
+		s.logger.Error("Failed to set read deadline", "addr", conn.RemoteAddr(), "err", err)
 	}
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 
-	log.Printf("%s WebSocket client connection: %s", logSuccess, conn.RemoteAddr())
+	s.logger.Info("WebSocket client connected", "addr", conn.RemoteAddr())
 
 	// Send initial state before registering for broadcasts to prevent a race
 	// where a broadcast arrives before the client knows its baseline state.
@@ -51,7 +51,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	clientCount := len(s.clients)
 	s.clientsMu.Unlock()
 
-	log.Printf("%s WebSocket client registered. Total clients: %d", logInfo, clientCount)
+	s.logger.Info("WebSocket client registered", "addr", conn.RemoteAddr(), "totalClients", clientCount)
 
 	done := make(chan struct{})
 	go s.clientReadPump(conn, done)
@@ -70,15 +70,15 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 	}
 
 	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-		log.Printf("%s Failed to set write deadline: %v", logError, err)
+		s.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err)
 		return
 	}
 	if err := conn.WriteJSON(message); err != nil {
-		log.Printf("%s Failed to send initial state to %s: %v", logError, conn.RemoteAddr(), err)
+		s.logger.Error("Failed to send initial state", "addr", conn.RemoteAddr(), "err", err)
 		return
 	}
 
-	log.Printf("%s Initial state sent to %s", logInfo, conn.RemoteAddr())
+	s.logger.Info("Initial state sent", "addr", conn.RemoteAddr())
 }
 
 // clientReadPump blocks on reads to detect client disconnect, then closes
@@ -86,7 +86,7 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("%s Recovered panic in clientReadPump: %v", logWarning, r)
+			s.logger.Warn("Recovered panic in clientReadPump", "addr", conn.RemoteAddr(), "panic", r)
 		}
 		close(done)
 	}()
@@ -95,7 +95,7 @@ func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("%s WebSocket read error from %s: %v", logError, conn.RemoteAddr(), err)
+				s.logger.Error("WebSocket read error", "addr", conn.RemoteAddr(), "err", err)
 			}
 			return
 		}
@@ -111,7 +111,7 @@ func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}, write
 	for {
 		select {
 		case <-done:
-			log.Printf("%s WebSocket client disconnected: %s", logInfo, conn.RemoteAddr())
+			s.logger.Info("WebSocket client disconnected", "addr", conn.RemoteAddr())
 			return
 
 		case <-ticker.C:
@@ -124,10 +124,10 @@ func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}, write
 			writeMu.Unlock()
 
 			if err1 != nil {
-				log.Printf("%s Failed to set write deadline: %v", logError, err1)
+				s.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err1)
 			}
 			if err2 != nil {
-				log.Printf("%s WebSocket ping failed for %s: %v", logError, conn.RemoteAddr(), err2)
+				s.logger.Error("WebSocket ping failed", "addr", conn.RemoteAddr(), "err", err2)
 				return
 			}
 		}
@@ -141,8 +141,8 @@ func (s *Server) removeClient(conn *websocket.Conn) {
 	if _, ok := s.clients[conn]; ok {
 		delete(s.clients, conn)
 		if err := conn.Close(); err != nil {
-			log.Printf("%s Failed to close connection: %v", logError, err)
+			s.logger.Error("Failed to close connection", "addr", conn.RemoteAddr(), "err", err)
 		}
-		log.Printf("%s WebSocket client removed. Total clients: %d", logInfo, len(s.clients))
+		s.logger.Info("WebSocket client removed", "totalClients", len(s.clients))
 	}
 }

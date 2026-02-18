@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 )
 
@@ -23,6 +22,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(status); err != nil {
-		log.Printf("failed to encode health status: %v", err)
+		s.logger.Error("Failed to encode health status", "err", err)
 	}
 }

@@ -2,10 +2,10 @@
 package server
 
 import (
-	"github.com/gorilla/websocket"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const broadcastChannelSize = 256
@@ -16,7 +16,7 @@ func (s *Server) handleBroadcast() {
 	for {
 		select {
 		case <-s.ctx.Done():
-			log.Println("Broadcast handler exiting")
+			s.logger.Debug("Broadcast handler exiting")
 			return
 
 		case message := <-s.broadcast:
@@ -46,10 +46,10 @@ func (s *Server) sendToAllClients(message UpdateMessage) {
 		mu.Unlock()
 
 		if err1 != nil {
-			log.Printf("%s Failed to set write deadline: %v", logError, err1)
+			s.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err1)
 			failedClients = append(failedClients, conn)
 		} else if err2 != nil {
-			log.Printf("%s Broadcast failed to %s: %v", logError, conn.RemoteAddr(), err2)
+			s.logger.Error("Broadcast failed", "addr", conn.RemoteAddr(), "err", err2)
 			failedClients = append(failedClients, conn)
 		}
 	}
@@ -59,14 +59,16 @@ func (s *Server) sendToAllClients(message UpdateMessage) {
 		for _, conn := range failedClients {
 			delete(s.clients, conn)
 			if err := conn.Close(); err != nil {
-				log.Printf("%s Failed to close client connection: %v", logError, err)
+				s.logger.Error("Failed to close client connection", "err", err)
 			}
 		}
 		remainingClients := len(s.clients)
 		s.clientsMu.Unlock()
 
-		log.Printf("%s Removed %d failed clients. Total clients: %d", logInfo,
-			len(failedClients), remainingClients)
+		s.logger.Info("Removed failed clients",
+			"removed", len(failedClients),
+			"remaining", remainingClients,
+		)
 	}
 }
 
@@ -76,6 +78,8 @@ func (s *Server) broadcastUpdate(message UpdateMessage) {
 	select {
 	case s.broadcast <- message:
 	default:
-		log.Println("WARNING: Broadcast channel full, dropping message. Clients may be slow.")
+		// Warn at the Warn level rather than Info — a dropped broadcast means
+		// clients may miss an update and will need to reconnect for consistency.
+		s.logger.Warn("Broadcast channel full, dropping message; clients may be slow")
 	}
 }

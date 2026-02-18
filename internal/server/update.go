@@ -4,12 +4,11 @@ import (
 	"strings"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"log"
 )
 
 // updateRepository reloads repository state and broadcasts changes to clients.
 func (s *Server) updateRepository() {
-	log.Println("Updating repository...")
+	s.logger.Debug("Updating repository")
 
 	s.cacheMu.RLock()
 	oldRepo := s.cached.repo
@@ -18,7 +17,7 @@ func (s *Server) updateRepository() {
 
 	newRepo, err := gitcore.NewRepository(gitDir)
 	if err != nil {
-		log.Printf("ERROR: Failed to reload repository: %v", err)
+		s.logger.Error("Failed to reload repository", "err", err)
 		return
 	}
 
@@ -47,7 +46,7 @@ func (s *Server) updateRepository() {
 	if !delta.IsEmpty() || status != nil || headInfo != nil {
 		s.broadcastUpdate(UpdateMessage{Delta: delta, Status: status, Head: headInfo})
 	} else {
-		log.Println("No changes detected")
+		s.logger.Debug("No changes detected after repository reload")
 	}
 }
 

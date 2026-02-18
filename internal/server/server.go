@@ -20,7 +20,11 @@ type Server struct {
 	webFS       fs.FS
 	rateLimiter *rateLimiter
 	httpServer  *http.Server
-	logger      *slog.Logger
+	// logger is the structured logger for this server instance. It is
+	// initialised from slog.Default() in NewServer so that the global handler
+	// configured in main.go (format, level) is inherited automatically, while
+	// still being injectable in tests via a null-writer handler.
+	logger *slog.Logger
 
 	cacheMu sync.RWMutex
 	cached  struct {
@@ -35,6 +39,10 @@ type Server struct {
 
 	broadcast chan UpdateMessage
 
+	// blameCache and diffCache are LRU caches bounded by cacheSize entries.
+	// Keys are content-addressed (commit hash + path), so no invalidation is
+	// needed on repository reload — a hash collision is cryptographically
+	// impossible and stale entries are naturally evicted by the LRU policy.
 	blameCache *LRUCache[any] // keyed by "commitHash:dirPath"
 	diffCache  *LRUCache[any] // keyed by "commitHash" or "commitHash:filePath:ctxN"
 
@@ -43,10 +51,23 @@ type Server struct {
 	wg     sync.WaitGroup
 }
 
+// NewServer constructs a Server ready to be started. The structured logger is
+// taken from slog.Default() so it respects whatever handler main.go configured
+// (text or JSON, level). Tests may override s.logger with a silent handler to
+// suppress output.
 func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rateLimiter := newRateLimiter(100, 200, time.Second)
 	cacheSize := parseCacheSize("GITVISTA_CACHE_SIZE", 500)
+
+	// Allow operators to tune cache capacity via env var. Values that are
+	// missing, zero, or negative fall back to the package default (500).
+	cacheSize := defaultCacheSize
+	if raw := os.Getenv("GITVISTA_CACHE_SIZE"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			cacheSize = n
+		}
+	}
 
 	s := &Server{
 		repo:        repo,
@@ -103,7 +124,7 @@ func (s *Server) Start() error {
 		}
 	}()
 
-	s.logger.Info("GitVista server starting", "addr", s.addr)
+	s.logger.Info("GitVista server starting", "addr", "http://"+s.addr)
 	err := s.httpServer.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
@@ -138,15 +159,4 @@ func (s *Server) Shutdown() {
 	s.clientsMu.Unlock()
 
 	s.logger.Info("Server shutdown complete")
-}
-
-// parseCacheSize reads the GITVISTA_CACHE_SIZE env var and returns a valid cache size.
-// If the env var is not set, missing, or invalid, returns the defaultSize.
-func parseCacheSize(envVar string, defaultSize int) int {
-	if raw := os.Getenv(envVar); raw != "" {
-		if size, err := strconv.Atoi(raw); err == nil && size > 0 {
-			return size
-		}
-	}
-	return defaultSize
 }
