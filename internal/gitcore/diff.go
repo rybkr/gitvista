@@ -7,9 +7,12 @@ import (
 )
 
 const (
-	maxDiffEntries = 500     // Maximum number of file changes to process
-	maxBlobSize    = 512 * 1024 // Maximum blob size for diff (512KB)
-	contextLines   = 3       // Number of context lines in unified diff
+	maxDiffEntries      = 500        // Maximum number of file changes to process
+	maxBlobSize         = 512 * 1024 // Maximum blob size for diff (512KB)
+	defaultContextLines = 3          // Default number of context lines in unified diff
+
+	// DefaultContextLines is the exported default for callers outside this package.
+	DefaultContextLines = defaultContextLines
 )
 
 // TreeDiff recursively compares two trees and returns a flat list of changed files.
@@ -199,9 +202,11 @@ func isSubmodule(entry TreeEntry) bool {
 
 // ComputeFileDiff computes the line-level unified diff between two blobs.
 // oldBlobHash can be empty for added files, newBlobHash can be empty for deleted files.
+// contextLines controls how many unchanged lines to include around each change;
+// pass defaultContextLines (3) for standard unified diff output.
 // Returns a FileDiff struct with hunks containing line-level changes.
 // Files larger than maxBlobSize are marked as truncated.
-func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path string) (*FileDiff, error) {
+func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path string, contextLines int) (*FileDiff, error) {
 	result := &FileDiff{
 		Path:    path,
 		OldHash: oldBlobHash,
@@ -245,7 +250,7 @@ func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path strin
 	oldLines := splitLines(oldContent)
 	newLines := splitLines(newContent)
 
-	// Compute diff using Myers algorithm
+	// Compute diff using Myers algorithm with caller-specified context depth
 	hunks := myersDiff(oldLines, newLines, contextLines)
 	result.Hunks = hunks
 

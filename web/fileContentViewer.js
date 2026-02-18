@@ -12,6 +12,32 @@ const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
+const HLJS_CSS = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css";
+const HLJS_JS  = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js";
+
+let hljsPromise = null;
+
+function loadHighlightJs() {
+    if (hljsPromise) return hljsPromise;
+    hljsPromise = new Promise((resolve) => {
+        // Inject CSS once
+        if (!document.querySelector(`link[href="${HLJS_CSS}"]`)) {
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = HLJS_CSS;
+            document.head.appendChild(link);
+        }
+        // Already loaded
+        if (window.hljs) { resolve(window.hljs); return; }
+        const script = document.createElement("script");
+        script.src = HLJS_JS;
+        script.onload = () => resolve(window.hljs);
+        script.onerror = () => resolve(null); // Fail gracefully
+        document.head.appendChild(script);
+    });
+    return hljsPromise;
+}
+
 export function createFileContentViewer() {
     const el = document.createElement("div");
     el.className = "file-content";
@@ -84,24 +110,39 @@ export function createFileContentViewer() {
                 binaryMsg.textContent = `Binary file (${formatSize(blobData.size)})`;
                 body.appendChild(binaryMsg);
             } else {
-                // Text file with line numbers
+                // Text file — render with line numbers and optional syntax highlighting
                 const lines = blobData.content.split("\n");
-                for (let i = 0; i < lines.length; i++) {
-                    const lineEl = document.createElement("div");
-                    lineEl.className = "file-content-line";
 
-                    const lineNum = document.createElement("span");
-                    lineNum.className = "file-content-linenum";
-                    lineNum.textContent = String(i + 1);
-
-                    const lineText = document.createElement("span");
-                    lineText.className = "file-content-text";
-                    lineText.textContent = lines[i];
-
-                    lineEl.appendChild(lineNum);
-                    lineEl.appendChild(lineText);
-                    body.appendChild(lineEl);
+                const codeWrapper = document.createElement("pre");
+                codeWrapper.className = "file-content-pre";
+                const codeEl = document.createElement("code");
+                // Set language class so hljs can auto-detect from extension
+                if (fileName) {
+                    const ext = fileName.split(".").pop().toLowerCase();
+                    codeEl.className = `language-${ext}`;
                 }
+                codeEl.textContent = blobData.content;
+                codeWrapper.appendChild(codeEl);
+                body.appendChild(codeWrapper);
+
+                // Render line numbers alongside the pre block
+                const lineNumsPre = document.createElement("pre");
+                lineNumsPre.className = "file-content-linenums";
+                lineNumsPre.setAttribute("aria-hidden", "true");
+                lines.forEach((_, i) => {
+                    const span = document.createElement("span");
+                    span.className = "file-content-linenum";
+                    span.textContent = String(i + 1) + "\n";
+                    lineNumsPre.appendChild(span);
+                });
+                codeWrapper.insertAdjacentElement("beforebegin", lineNumsPre);
+
+                // Lazy-load hljs and apply highlighting
+                loadHighlightJs().then((hljs) => {
+                    if (hljs && body.contains(codeEl)) {
+                        hljs.highlightElement(codeEl);
+                    }
+                });
 
                 // Truncation notice if applicable
                 if (blobData.truncated) {
