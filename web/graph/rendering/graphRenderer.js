@@ -135,8 +135,16 @@ export class GraphRenderer {
                 continue;
             }
 
+            // Dim links whose commit endpoints are both dimmed — fades non-matching
+            // sub-graphs without removing them from the force simulation.
+            // Branch links are always rendered at full opacity so branch labels
+            // remain legible during a search.
+            const isDimmedLink = link.kind !== "branch" &&
+                (source.dimmed || target.dimmed);
+            const dimAlpha = isDimmedLink ? 0.15 : 1;
+
             const prevAlpha = this.ctx.globalAlpha;
-            this.ctx.globalAlpha = prevAlpha * warmup;
+            this.ctx.globalAlpha = prevAlpha * warmup * dimAlpha;
             this.renderLink(source, target, link.kind);
             this.ctx.globalAlpha = prevAlpha;
         }
@@ -272,6 +280,10 @@ export class GraphRenderer {
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
         const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
+        // node.dimmed is set by applyDimmingFromPredicate() in graphController
+        // when a search/filter is active. We reduce alpha to 15% so non-matching
+        // commits recede without being removed from the D3 simulation.
+        const isDimmed = node.dimmed === true;
 
         const baseRadius = isMerge ? MERGE_NODE_RADIUS : NODE_RADIUS;
         const highlightRadius = isMerge
@@ -297,8 +309,12 @@ export class GraphRenderer {
         const radiusScale = 0.55 + 0.45 * spawnAlpha;
         const drawRadius = node.radius * radiusScale;
 
+        // Compound alpha: context alpha × spawn fade-in × dimming multiplier.
+        // Dimmed nodes are drawn at 15% — visible enough to preserve graph
+        // topology without competing with full-opacity matching commits.
         const previousAlpha = this.ctx.globalAlpha;
-        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
+        const dimMultiplier = isDimmed ? 0.15 : 1;
+        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01) * dimMultiplier;
         if (isHighlighted) {
             if (isMerge) {
                 this.renderHighlightedMerge(node, drawRadius);
@@ -314,8 +330,9 @@ export class GraphRenderer {
         }
         this.ctx.globalAlpha = previousAlpha;
 
-        // Hover glow ring — drawn at full alpha, after the node fill.
-        if (isHovered && !isHighlighted) {
+        // Hover glow ring — suppressed for dimmed nodes so the glow doesn't
+        // punch through the 15% alpha and confuse the user.
+        if (isHovered && !isHighlighted && !isDimmed) {
             this.ctx.save();
             this.ctx.globalAlpha = previousAlpha * HOVER_GLOW_OPACITY * spawnAlpha;
             this.ctx.fillStyle = "#ffffff";
@@ -325,10 +342,11 @@ export class GraphRenderer {
             this.ctx.restore();
         }
 
-        // HEAD accent ring — subtle thin ring in the theme's highlight color.
+        // HEAD accent ring — rendered even when dimmed so HEAD is identifiable
+        // during search. Its alpha is scaled by dimMultiplier for consistency.
         if (isHead) {
             this.ctx.save();
-            this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45;
+            this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45 * dimMultiplier;
             this.ctx.lineWidth = 1.5;
             this.ctx.strokeStyle = this.palette.nodeHighlight;
             this.ctx.beginPath();
@@ -337,7 +355,11 @@ export class GraphRenderer {
             this.ctx.restore();
         }
 
-        this.renderCommitLabel(node, spawnAlpha, zoomTransform);
+        // Skip label rendering for dimmed nodes — labels at 15% opacity would
+        // clutter the view without adding navigational value.
+        if (!isDimmed) {
+            this.renderCommitLabel(node, spawnAlpha, zoomTransform);
+        }
     }
 
     /**
