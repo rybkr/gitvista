@@ -158,7 +158,67 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 		}
 	}
 
+	entries = detectRenames(entries)
+
 	return entries, nil
+}
+
+// detectRenames post-processes diff entries to identify file renames.
+// A rename is detected when a deleted file and an added file share the same
+// blob hash (exact content match). Content-identical renames are common after
+// refactors (e.g., moving a file to a new package without editing it).
+// Files with different content are left as separate delete+add entries.
+func detectRenames(entries []DiffEntry) []DiffEntry {
+	// Build a map of deleted-file blob hashes for O(1) lookup.
+	type deletedInfo struct {
+		index int
+		path  string
+		mode  string
+	}
+	deletedByHash := make(map[Hash]deletedInfo)
+	for i, entry := range entries {
+		if entry.Status == DiffStatusDeleted && entry.OldHash != "" {
+			deletedByHash[entry.OldHash] = deletedInfo{
+				index: i,
+				path:  entry.Path,
+				mode:  entry.OldMode,
+			}
+		}
+	}
+
+	if len(deletedByHash) == 0 {
+		return entries
+	}
+
+	// Match added entries against deleted entries by hash.
+	matched := make(map[int]bool)
+	for i := range entries {
+		if entries[i].Status != DiffStatusAdded || entries[i].NewHash == "" {
+			continue
+		}
+		info, ok := deletedByHash[entries[i].NewHash]
+		if !ok || matched[info.index] {
+			continue
+		}
+		// Promote this added entry to a rename.
+		entries[i].Status = DiffStatusRenamed
+		entries[i].OldPath = info.path
+		entries[i].OldHash = entries[i].NewHash
+		entries[i].OldMode = info.mode
+		matched[info.index] = true
+	}
+
+	// Remove the matched deleted entries (in reverse order to preserve indices).
+	if len(matched) == 0 {
+		return entries
+	}
+	result := make([]DiffEntry, 0, len(entries)-len(matched))
+	for i, entry := range entries {
+		if !matched[i] {
+			result = append(result, entry)
+		}
+	}
+	return result
 }
 
 func isTreeEntry(entry TreeEntry) bool {
