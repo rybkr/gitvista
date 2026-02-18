@@ -5,6 +5,7 @@ import (
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -17,10 +18,11 @@ const (
 )
 
 // upgrader configures WebSocket upgrade process.
+// CheckOrigin allows all origins because GitVista is designed for local developer
+// use only. If deployed on a shared network, restrict origins via a reverse proxy
+// or implement origin validation here.
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(_ *http.Request) bool {
-		// TODO(rybkr): Implement proper CORS checking for production
-		// Consider checking origin against whitelist or validating origin == host
 		return true
 	},
 }
@@ -47,8 +49,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Prevents race where broadcast arrives before client knows baseline state.
 	s.sendInitialState(conn)
 
+	writeMu := &sync.Mutex{}
+
 	s.clientsMu.Lock()
-	s.clients[conn] = true
+	s.clients[conn] = writeMu
 	clientCount := len(s.clients)
 	s.clientsMu.Unlock()
 
@@ -56,7 +60,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	done := make(chan struct{})
 	go s.clientReadPump(conn, done)
-	go s.clientWritePump(conn, done)
+	go s.clientWritePump(conn, done, writeMu)
 }
 
 // sendInitialState sends full repository state as a delta to a new client.
@@ -83,8 +87,10 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 	log.Printf("%s Initial state sent to %s", logInfo, conn.RemoteAddr())
 }
 
-// clientReadPump reads from WebSocket to detect disconnect.
-// It doesn't process messages, just detects when the connection closes.
+// clientReadPump reads from WebSocket to detect client disconnect.
+// It closes the done channel when the connection is lost, signaling
+// clientWritePump to stop. The done channel is never read here — it is
+// written (closed) only by this function's defer.
 func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -94,13 +100,9 @@ func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 	}()
 
 	for {
-		select {
-		case <-done:
-			return
-		default:
-		}
-
-		// ReadMessage blocks until a message arrives or an error occurs.
+		// ReadMessage blocks until a message arrives or the connection closes.
+		// When clientWritePump's ping fails the conn is closed, causing this
+		// to return an error and break the loop.
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -108,14 +110,12 @@ func (s *Server) clientReadPump(conn *websocket.Conn, done chan struct{}) {
 			}
 			return
 		}
-
-		// Message received but not yet processed.
 	}
 }
 
 // clientWritePump sends pings to keep the connection alive.
-// It handles disconnection by closing the done channel.
-func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}) {
+// writeMu serializes this pump's writes with broadcasts from sendToAllClients.
+func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}, writeMu *sync.Mutex) {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 	defer s.removeClient(conn)
@@ -127,11 +127,19 @@ func (s *Server) clientWritePump(conn *websocket.Conn, done chan struct{}) {
 			return
 
 		case <-ticker.C:
-			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-				log.Printf("%s Failed to set write deadline: %v", logError, err)
+			writeMu.Lock()
+			err1 := conn.SetWriteDeadline(time.Now().Add(writeWait))
+			var err2 error
+			if err1 == nil {
+				err2 = conn.WriteMessage(websocket.PingMessage, nil)
 			}
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Printf("%s WebSocket ping failed for %s: %v", logError, conn.RemoteAddr(), err)
+			writeMu.Unlock()
+
+			if err1 != nil {
+				log.Printf("%s Failed to set write deadline: %v", logError, err1)
+			}
+			if err2 != nil {
+				log.Printf("%s WebSocket ping failed for %s: %v", logError, conn.RemoteAddr(), err2)
 				return
 			}
 		}
@@ -143,7 +151,7 @@ func (s *Server) removeClient(conn *websocket.Conn) {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 
-	if s.clients[conn] {
+	if _, ok := s.clients[conn]; ok {
 		delete(s.clients, conn)
 		if err := conn.Close(); err != nil {
 			log.Printf("%s Failed to close connection: %v", logError, err)

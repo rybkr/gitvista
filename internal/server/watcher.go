@@ -80,7 +80,9 @@ func shouldIgnoreEvent(event fsnotify.Event) bool {
 	base := filepath.Base(event.Name)
 	path := event.Name
 
-	if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+	// Git uses atomic renames for many operations (pack index updates, ref updates).
+	// Rename events must not be ignored or branch/commit changes will be missed.
+	if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
 		return true
 	}
 	if strings.HasSuffix(base, ".lock") {

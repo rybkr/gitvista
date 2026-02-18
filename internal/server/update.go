@@ -16,7 +16,12 @@ func (s *Server) updateRepository() {
 	oldRepo := s.cached.repo
 	s.cacheMu.RUnlock()
 
-	newRepo, err := gitcore.NewRepository(s.repo.GitDir())
+	// Read GitDir under the read lock to avoid a data race with concurrent updates.
+	s.cacheMu.RLock()
+	gitDir := s.cached.repo.GitDir()
+	s.cacheMu.RUnlock()
+
+	newRepo, err := gitcore.NewRepository(gitDir)
 	if err != nil {
 		log.Printf("ERROR: Failed to reload repository: %v", err)
 		return
@@ -31,7 +36,6 @@ func (s *Server) updateRepository() {
 	}
 
 	s.cacheMu.Lock()
-	s.repo = newRepo
 	s.cached.repo = newRepo
 	s.cacheMu.Unlock()
 
