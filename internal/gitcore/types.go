@@ -33,7 +33,11 @@ func NewHashFromBytes(b [20]byte) (Hash, error) {
 }
 
 // Short returns the truncated representation of a Hash.
+// Returns the full hash if it is shorter than 7 characters.
 func (h Hash) Short() string {
+	if len(h) < 7 {
+		return string(h)
+	}
 	return string(h)[:7]
 }
 
@@ -53,6 +57,8 @@ const (
 	CommitObject ObjectType = 1
 	// TreeObject represents a Git tree object
 	TreeObject ObjectType = 2
+	// BlobObject represents a Git blob object
+	BlobObject ObjectType = 3
 	// TagObject represents a Git tag object
 	TagObject ObjectType = 4
 )
@@ -235,7 +241,11 @@ func NewRepositoryDelta() *RepositoryDelta {
 
 // IsEmpty reports whether a RepositoryDelta represents no difference.
 func (d *RepositoryDelta) IsEmpty() bool {
-	return len(d.AddedCommits) == 0 && len(d.DeletedCommits) == 0
+	return len(d.AddedCommits) == 0 &&
+		len(d.DeletedCommits) == 0 &&
+		len(d.AddedBranches) == 0 &&
+		len(d.DeletedBranches) == 0 &&
+		len(d.AmendedBranches) == 0
 }
 
 // DiffStatus represents the type of change made to a file.

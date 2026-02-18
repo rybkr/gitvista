@@ -222,10 +222,16 @@ func parseCommitBody(body []byte, id Hash) (*Commit, error) {
 		}
 
 		if strings.HasPrefix(line, "parent ") {
-			parent := Hash(strings.TrimPrefix(line, "parent "))
+			parent, err := NewHash(strings.TrimPrefix(line, "parent "))
+			if err != nil {
+				return nil, fmt.Errorf("invalid parent hash: %w", err)
+			}
 			commit.Parents = append(commit.Parents, parent)
 		} else if strings.HasPrefix(line, "tree ") {
-			tree := Hash(strings.TrimPrefix(line, "tree "))
+			tree, err := NewHash(strings.TrimPrefix(line, "tree "))
+			if err != nil {
+				return nil, fmt.Errorf("invalid tree hash: %w", err)
+			}
 			commit.Tree = tree
 		} else if strings.HasPrefix(line, "author ") {
 			authorLine := strings.TrimPrefix(line, "author ")
@@ -368,7 +374,12 @@ func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 	}
 }
 
+// maxDecompressedSize caps the size of any single decompressed Git object.
+// Objects larger than this are rejected to prevent zip-bomb style attacks.
+const maxDecompressedSize = 256 * 1024 * 1024 // 256MB
+
 // readCompressedData reads and decompresses zlib-compressed data from the given reader.
+// Returns an error if the decompressed output exceeds maxDecompressedSize.
 func readCompressedData(r io.Reader) ([]byte, error) {
 	zr, err := zlib.NewReader(r)
 	if err != nil {
@@ -381,9 +392,11 @@ func readCompressedData(r io.Reader) ([]byte, error) {
 	}()
 
 	var buf bytes.Buffer
-	//nolint:gosec // G110: Decompression of git objects is safe and expected
-	if _, err := io.Copy(&buf, zr); err != nil {
+	if _, err := io.Copy(&buf, io.LimitReader(zr, maxDecompressedSize+1)); err != nil {
 		return nil, fmt.Errorf("failed to decompress data: %w", err)
+	}
+	if buf.Len() > maxDecompressedSize {
+		return nil, fmt.Errorf("decompressed object exceeds maximum allowed size (%d bytes)", maxDecompressedSize)
 	}
 
 	return buf.Bytes(), nil
