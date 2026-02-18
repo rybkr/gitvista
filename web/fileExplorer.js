@@ -15,6 +15,7 @@ import { createFileContentViewer } from "./fileContentViewer.js";
 import { createDiffView } from "./diffView.js";
 import { createDiffContentViewer } from "./diffContentViewer.js";
 import { getFileIcon } from "./fileIcons.js";
+import { formatRelativeTime } from "./utils/format.js";
 
 // SVG icons
 const FOLDER_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -57,26 +58,6 @@ const EMPTY_FOLDER_SVG = `<svg width="48" height="48" viewBox="0 0 16 16" fill="
     <path d="M1.5 3C1.5 2.44772 1.94772 2 2.5 2H6.29289C6.42551 2 6.55268 2.05268 6.64645 2.14645L7.85355 3.35355C7.94732 3.44732 8.07449 3.5 8.20711 3.5H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3Z" fill="currentColor" opacity="0.1"/>
     <path d="M2.5 2H6.29289C6.42551 2 6.55268 2.05268 6.64645 2.14645L7.85355 3.35355C7.94732 3.44732 8.07449 3.5 8.20711 3.5H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3C1.5 2.44772 1.94772 2 2.5 2Z" stroke="currentColor" stroke-width="0.8"/>
 </svg>`;
-
-/**
- * Format a date as a relative time string (e.g., "3d ago", "2mo ago").
- */
-function formatRelativeTime(dateStr) {
-    const date = new Date(dateStr);
-    const now = Date.now();
-    const diffMs = now - date.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return "now";
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.floor(diffHr / 24);
-    if (diffDay < 30) return `${diffDay}d ago`;
-    const diffMon = Math.floor(diffDay / 30);
-    if (diffMon < 12) return `${diffMon}mo ago`;
-    const diffYr = Math.floor(diffDay / 365);
-    return `${diffYr}y ago`;
-}
 
 /** Convert a file path to a valid DOM id for ARIA references. */
 function pathToId(path) {
