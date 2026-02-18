@@ -13,8 +13,10 @@ import { BlobTooltip } from "./blobTooltip.js";
 export class TooltipManager {
     /**
      * @param {HTMLCanvasElement} canvas Canvas used for coordinate conversions.
+     * @param {{ navigate?: (direction: 'prev' | 'next') => void }} [opts]
+     *   Optional callbacks forwarded to specialized tooltips.
      */
-    constructor(canvas) {
+    constructor(canvas, opts = {}) {
         this.canvas = canvas;
         this.tooltips = {
             commit: new CommitTooltip(canvas),
@@ -22,6 +24,12 @@ export class TooltipManager {
             blob: new BlobTooltip(canvas),
         };
         this.activeTooltip = null;
+
+        // Wire the navigation callback into the commit tooltip so its Prev/Next
+        // buttons can trigger commit navigation without holding a controller reference.
+        if (typeof opts.navigate === "function") {
+            this.tooltips.commit.setNavigate(opts.navigate);
+        }
     }
 
     /**

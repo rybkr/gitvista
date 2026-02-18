@@ -32,8 +32,16 @@ import { createGraphState, setZoomTransform } from "./state/graphState.js";
  * Creates and initializes the graph controller instance.
  *
  * @param {HTMLElement} rootElement DOM node that hosts the canvas.
- * @param {{onCommitTreeClick?: (commit: import("./types.js").GraphCommit) => void}} [options] Optional callbacks.
- * @returns {{ applyDelta(delta: unknown): void, destroy(): void }} Public graph API.
+ * @param {{
+ *   onCommitTreeClick?: (commit: import("./types.js").GraphCommit) => void,
+ *   onCommitSelect?: (hash: string | null) => void,
+ * }} [options] Optional callbacks.
+ * @returns {{
+ *   applyDelta(delta: unknown): void,
+ *   centerOnCommit(hash: string): void,
+ *   navigateCommits(direction: 'prev' | 'next'): void,
+ *   destroy(): void,
+ * }} Public graph API.
  */
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
@@ -52,6 +60,11 @@ export function createGraphController(rootElement, options = {}) {
 
     let viewportWidth = 0;
     let viewportHeight = 0;
+
+    // Hash of the HEAD commit, updated by applyDelta when the delta carries headHash.
+    let headHash = null;
+    // Hash of the commit node currently selected/highlighted, or null.
+    let selectedHash = null;
 
     const simulation = d3
         .forceSimulation(nodes)
@@ -103,9 +116,24 @@ export function createGraphController(rootElement, options = {}) {
         simulation.alpha(0.8).restart();
     });
     controls.appendChild(rebalanceBtn);
+
+    // "Jump to HEAD" button — centers the view on the current HEAD commit.
+    const headBtn = document.createElement("button");
+    headBtn.textContent = "\u2302 HEAD";
+    headBtn.title = "Jump to HEAD commit (G then H)";
+    headBtn.addEventListener("click", () => {
+        centerOnCommit(headHash);
+    });
+    controls.appendChild(headBtn);
+
     rootElement.appendChild(controls);
 
-    const tooltipManager = new TooltipManager(canvas);
+    // Pass navigateCommits into TooltipManager so the CommitTooltip's Prev/Next
+    // buttons can drive navigation without a circular reference to the controller.
+    // navigateCommits is declared later in this scope; JS closures make this safe.
+    const tooltipManager = new TooltipManager(canvas, {
+        navigate: (direction) => navigateCommits(direction),
+    });
     const renderer = new GraphRenderer(canvas, buildPalette(canvas));
 
     const updateTooltipPosition = () => {
@@ -198,6 +226,100 @@ export function createGraphController(rootElement, options = {}) {
         }
     };
 
+    /**
+     * Centers the viewport on the commit node with the given hash.
+     * If the hash is null/undefined or not found among current nodes, falls back
+     * to centering on the latest (HEAD) commit instead.
+     *
+     * @param {string | null} hash 40-character commit hash to center on.
+     */
+    const centerOnCommit = (hash) => {
+        if (hash) {
+            const target = nodes.find((n) => n.type === "commit" && n.hash === hash);
+            if (target) {
+                layoutManager.disableAutoCenter();
+                d3.select(canvas).call(zoom.translateTo, target.x, target.y);
+                return;
+            }
+        }
+        // Graceful fallback: center on whatever the latest commit is.
+        centerOnLatestCommit();
+    };
+
+    /**
+     * Selects a commit by hash, shows its tooltip, fires onCommitSelect, and
+     * centers the viewport on it.  Used by keyboard navigation and permalink restore.
+     *
+     * @param {string} hash 40-character commit hash to select.
+     */
+    const selectAndCenterCommit = (hash) => {
+        const node = nodes.find((n) => n.type === "commit" && n.hash === hash);
+        if (!node) {
+            return;
+        }
+        selectedHash = hash;
+        showTooltip(node);
+        options.onCommitSelect?.(hash);
+        centerOnCommit(hash);
+    };
+
+    /**
+     * Moves the selection to the next or previous commit in chronological order.
+     * Commits are sorted newest-first (matching the timeline layout), so:
+     *   - 'next' moves toward newer commits (lower index).
+     *   - 'prev' moves toward older commits (higher index).
+     * If nothing is selected, the HEAD commit is selected as the starting point.
+     *
+     * @param {'prev' | 'next'} direction Direction to navigate.
+     */
+    const navigateCommits = (direction) => {
+        const commitNodes = nodes.filter((n) => n.type === "commit");
+        if (commitNodes.length === 0) {
+            return;
+        }
+
+        // Sort newest-first, mirroring layoutManager.sortCommitsByTime().
+        // We inline the timestamp extraction here to avoid an extra import;
+        // the logic is identical to getCommitTimestamp() in graph/utils/time.js.
+        commitNodes.sort((a, b) => {
+            const aTime = new Date(
+                a.commit?.committer?.when ?? a.commit?.author?.when ?? 0
+            ).getTime();
+            const bTime = new Date(
+                b.commit?.committer?.when ?? b.commit?.author?.when ?? 0
+            ).getTime();
+            if (aTime === bTime) {
+                return a.hash.localeCompare(b.hash);
+            }
+            return bTime - aTime; // newest first
+        });
+
+        // Determine the current position in the sorted array.
+        let currentIndex = commitNodes.findIndex((n) => n.hash === selectedHash);
+
+        if (currentIndex === -1) {
+            // Nothing selected: start from HEAD (or the first node when HEAD is absent).
+            const headIndex = headHash
+                ? commitNodes.findIndex((n) => n.hash === headHash)
+                : -1;
+            currentIndex = headIndex !== -1 ? headIndex : 0;
+            selectAndCenterCommit(commitNodes[currentIndex].hash);
+            return;
+        }
+
+        // 'next' = newer = lower index in newest-first array.
+        // 'prev' = older = higher index in newest-first array.
+        const delta = direction === "next" ? -1 : 1;
+        const nextIndex = currentIndex + delta;
+
+        if (nextIndex < 0 || nextIndex >= commitNodes.length) {
+            // Already at the boundary; no-op.
+            return;
+        }
+
+        selectAndCenterCommit(commitNodes[nextIndex].hash);
+    };
+
     const releaseDrag = () => {
         if (!dragState) {
             return;
@@ -242,8 +364,16 @@ export function createGraphController(rootElement, options = {}) {
         const currentTarget = tooltipManager.getTargetData();
         if (tooltipManager.isVisible() && currentTarget === targetNode) {
             hideTooltip();
+            // Deselect: clear permalink and selection state.
+            selectedHash = null;
+            options.onCommitSelect?.(null);
         } else {
             showTooltip(targetNode);
+            // Track selection for permalink and keyboard navigation.
+            if (targetNode.type === "commit") {
+                selectedHash = targetNode.hash;
+                options.onCommitSelect?.(targetNode.hash);
+            }
         }
 
         // If clicking on a commit node, also open the file explorer
@@ -763,5 +893,37 @@ export function createGraphController(rootElement, options = {}) {
     return {
         applyDelta,
         destroy,
+        /**
+         * Centers the viewport on the commit with the given hash.
+         * Falls back to the latest commit when the hash is not found.
+         *
+         * @param {string | null} hash Commit hash to center on.
+         */
+        centerOnCommit,
+        /**
+         * Moves the selection one step in chronological order.
+         *
+         * @param {'prev' | 'next'} direction 'prev' = older, 'next' = newer.
+         */
+        navigateCommits,
+        /**
+         * Selects the commit with the given hash, shows its tooltip, fires
+         * onCommitSelect, and centers the viewport on it.
+         *
+         * @param {string} hash Commit hash to select.
+         */
+        selectAndCenter: selectAndCenterCommit,
+        /** Returns the current HEAD hash or null when unknown. */
+        getHeadHash: () => headHash,
+        /**
+         * Updates the tracked HEAD commit hash.
+         * Called by app.js from the onHead WebSocket callback so the HEAD button
+         * and G→H shortcut always refer to the correct commit.
+         *
+         * @param {string | null} hash Current HEAD commit hash.
+         */
+        setHeadHash: (hash) => {
+            headHash = hash || null;
+        },
     };
 }

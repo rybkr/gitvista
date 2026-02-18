@@ -1,12 +1,17 @@
 /**
  * @fileoverview Commit tooltip implementation for the Git graph UI.
  * Renders commit metadata within a structured tooltip layout.
+ * Includes Prev/Next navigation buttons wired via setNavigate().
  */
 
 import { Tooltip, createTooltipElement } from "./baseTooltip.js";
 
 /**
  * Tooltip that displays commit details such as hash, author, and message.
+ *
+ * Navigation support: call `setNavigate(fn)` after construction to wire the
+ * Prev and Next buttons. The callback receives `'prev'` or `'next'` and is
+ * expected to call `navigateCommits()` on the graph controller.
  */
 export class CommitTooltip extends Tooltip {
     /**
@@ -14,10 +19,28 @@ export class CommitTooltip extends Tooltip {
      */
     constructor(canvas) {
         super(canvas);
+        // _navigate is set post-construction via setNavigate().
+        this._navigate = null;
     }
 
     /**
-     * Builds the DOM structure comprising header and message sections.
+     * Wires the Prev/Next buttons to a navigation callback.
+     * Must be called after construction; this design avoids the super()-before-this
+     * constraint when passing callbacks through the base class constructor.
+     *
+     * @param {(direction: 'prev' | 'next') => void} fn Callback invoked on button click.
+     */
+    setNavigate(fn) {
+        this._navigate = fn;
+        // Reflect the new state on already-created buttons.
+        if (this.prevBtn) {
+            this.prevBtn.disabled = false;
+            this.nextBtn.disabled = false;
+        }
+    }
+
+    /**
+     * Builds the DOM structure: header (hash + meta), message body, and nav buttons.
      *
      * @returns {HTMLDivElement} Tooltip root element appended to the document body.
      */
@@ -35,7 +58,35 @@ export class CommitTooltip extends Tooltip {
 
         this.messageEl = createTooltipElement("pre", "commit-tooltip-message");
 
-        tooltip.append(this.headerEl, this.messageEl);
+        // Navigation row — CSS restores pointer-events so buttons are clickable
+        // despite the parent tooltip being pointer-events: none.
+        this.navEl = createTooltipElement("div", "commit-tooltip-nav");
+
+        this.prevBtn = /** @type {HTMLButtonElement} */ (
+            createTooltipElement("button", "commit-tooltip-nav-btn")
+        );
+        this.prevBtn.textContent = "\u2190 Prev";
+        this.prevBtn.type = "button";
+        this.prevBtn.disabled = true; // enabled once setNavigate() is called
+
+        this.nextBtn = /** @type {HTMLButtonElement} */ (
+            createTooltipElement("button", "commit-tooltip-nav-btn")
+        );
+        this.nextBtn.textContent = "Next \u2192";
+        this.nextBtn.type = "button";
+        this.nextBtn.disabled = true; // enabled once setNavigate() is called
+
+        this.prevBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this._navigate?.("prev");
+        });
+        this.nextBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this._navigate?.("next");
+        });
+
+        this.navEl.append(this.prevBtn, this.nextBtn);
+        tooltip.append(this.headerEl, this.messageEl, this.navEl);
         document.body.appendChild(tooltip);
         return tooltip;
     }
@@ -57,6 +108,7 @@ export class CommitTooltip extends Tooltip {
 
     /**
      * Populates tooltip with commit hash, author metadata, and message.
+     * Also updates button enabled state based on whether a navigate callback is wired.
      *
      * @param {import("../graph/types.js").GraphNodeCommit} node Commit node data.
      */
@@ -73,9 +125,14 @@ export class CommitTooltip extends Tooltip {
             const date = new Date(commit.author.when);
             metaParts.push(date.toLocaleString());
         }
-        this.metaEl.textContent = metaParts.join(" • ");
+        this.metaEl.textContent = metaParts.join(" \u2022 ");
 
         this.messageEl.textContent = commit.message || "(no message)";
+
+        // Keep button state consistent: enabled when navigate is wired.
+        const hasNav = typeof this._navigate === "function";
+        this.prevBtn.disabled = !hasNav;
+        this.nextBtn.disabled = !hasNav;
     }
 
     /**
@@ -87,14 +144,14 @@ export class CommitTooltip extends Tooltip {
     }
 
     /**
-	 * @returns {{x: number, y: number}} Tooltip offset relative to commit node.
-	 */
-	getOffset() {
-		return { x: 24, y: -12 };
-	}
+     * @returns {{x: number, y: number}} Tooltip offset relative to commit node.
+     */
+    getOffset() {
+        return { x: 24, y: -12 };
+    }
 
-	/**
-     * @returns {string|null} Hash used to highlight corresponding commit node.
+    /**
+     * @returns {string|null} Hash used to highlight the corresponding commit node.
      */
     getHighlightKey() {
         return this.targetData?.hash || null;
