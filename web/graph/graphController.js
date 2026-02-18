@@ -61,6 +61,10 @@ export function createGraphController(rootElement, options = {}) {
     let viewportWidth = 0;
     let viewportHeight = 0;
 
+    // rAF handle for render batching — ensures at most one canvas draw per frame
+    // regardless of how many render() callers fire (simulation tick, zoom, hover, etc.)
+    let rafId = null;
+
     // Hash of the HEAD commit, updated by applyDelta when the delta carries headHash.
     let headHash = null;
     // Hash of the commit node currently selected/highlighted, or null.
@@ -831,16 +835,20 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function render() {
-        renderer.render({
-            nodes,
-            links,
-            zoomTransform,
-            viewportWidth,
-            viewportHeight,
-            tooltipManager,
-            headHash: state.headHash,
-            hoverNode: state.hoverNode,
-            tags: state.tags,
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            renderer.render({
+                nodes,
+                links,
+                zoomTransform,
+                viewportWidth,
+                viewportHeight,
+                tooltipManager,
+                headHash: state.headHash,
+                hoverNode: state.hoverNode,
+                tags: state.tags,
+            });
         });
     }
 
@@ -853,6 +861,10 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function destroy() {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
         window.removeEventListener("resize", resize);
         resizeObserver?.disconnect();
         d3.select(canvas).on(".zoom", null);

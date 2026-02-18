@@ -21,7 +21,6 @@ import {
     NODE_SHADOW_OFFSET_Y,
     TREE_ICON_SIZE,
     TREE_ICON_OFFSET,
-    HEAD_RING_COLOR,
     TAG_NODE_COLOR,
     TAG_NODE_BORDER_COLOR,
     COMMIT_MESSAGE_ZOOM_THRESHOLD,
@@ -31,7 +30,6 @@ import {
     HOVER_GLOW_OPACITY,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
-import { getAuthorColor } from "../../utils/colors.js";
 
 /**
  * Renders graph nodes and links to a 2D canvas context.
@@ -331,14 +329,14 @@ export class GraphRenderer {
             this.ctx.restore();
         }
 
-        // HEAD accent ring — gold ring drawn over the node.
+        // HEAD accent ring — subtle thin ring in the theme's highlight color.
         if (isHead) {
             this.ctx.save();
-            this.ctx.globalAlpha = previousAlpha * spawnAlpha;
-            this.ctx.lineWidth = 2.5;
-            this.ctx.strokeStyle = HEAD_RING_COLOR;
+            this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45;
+            this.ctx.lineWidth = 1.5;
+            this.ctx.strokeStyle = this.palette.nodeHighlight;
             this.ctx.beginPath();
-            this.ctx.arc(node.x, node.y, drawRadius + 3, 0, Math.PI * 2);
+            this.ctx.arc(node.x, node.y, drawRadius + 3.5, 0, Math.PI * 2);
             this.ctx.stroke();
             this.ctx.restore();
         }
@@ -352,7 +350,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderNormalCommit(node, radius) {
-        this.ctx.fillStyle = getAuthorColor(node.commit?.author?.email);
+        this.ctx.fillStyle = this.palette.node;
         this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -410,7 +408,7 @@ export class GraphRenderer {
      * @param {number} radius Half-diagonal of the diamond.
      */
     renderNormalMerge(node, radius) {
-        this.ctx.fillStyle = getAuthorColor(node.commit?.author?.email);
+        this.ctx.fillStyle = this.palette.mergeNode;
         this.applyShadow();
         this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
