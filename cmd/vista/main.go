@@ -2,10 +2,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/internal/gitcore"
@@ -54,8 +57,22 @@ func main() {
 	log.Printf("Repository: %s", *repoPath)
 	log.Printf("Listening on http://%s", addr)
 
-	if err := serv.Start(); err != nil {
-		log.Fatalf("Server error: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- serv.Start()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
+	case <-ctx.Done():
+		stop() // Reset signal handling so a second signal force-exits.
+		serv.Shutdown()
 	}
 }
 

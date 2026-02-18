@@ -17,6 +17,7 @@ type Server struct {
 	addr        string
 	webFS       fs.FS
 	rateLimiter *rateLimiter
+	httpServer  *http.Server
 
 	cacheMu sync.RWMutex
 	cached  struct {
@@ -60,15 +61,24 @@ func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
 
 // Start begins serving and blocks until the server exits or encounters a fatal error.
 func (s *Server) Start() error {
-	http.Handle("/", http.FileServer(http.FS(s.webFS)))
-	http.HandleFunc("/health", s.handleHealth)
-	http.HandleFunc("/api/repository", s.rateLimiter.middleware(s.handleRepository))
-	http.HandleFunc("/api/tree/blame/", s.rateLimiter.middleware(s.handleTreeBlame))
-	http.HandleFunc("/api/tree/", s.rateLimiter.middleware(s.handleTree))
-	http.HandleFunc("/api/blob/", s.rateLimiter.middleware(s.handleBlob))
-	http.HandleFunc("/api/commit/diff/", s.rateLimiter.middleware(s.handleCommitDiff))
-	http.HandleFunc("/api/working-tree/diff", s.rateLimiter.middleware(s.handleWorkingTreeDiff))
-	http.HandleFunc("/api/ws", s.handleWebSocket)
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(http.FS(s.webFS)))
+	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/api/repository", s.rateLimiter.middleware(s.handleRepository))
+	mux.HandleFunc("/api/tree/blame/", s.rateLimiter.middleware(s.handleTreeBlame))
+	mux.HandleFunc("/api/tree/", s.rateLimiter.middleware(s.handleTree))
+	mux.HandleFunc("/api/blob/", s.rateLimiter.middleware(s.handleBlob))
+	mux.HandleFunc("/api/commit/diff/", s.rateLimiter.middleware(s.handleCommitDiff))
+	mux.HandleFunc("/api/working-tree/diff", s.rateLimiter.middleware(s.handleWorkingTreeDiff))
+	mux.HandleFunc("/api/ws", s.handleWebSocket)
+
+	s.httpServer = &http.Server{
+		Addr:         s.addr,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 
 	s.wg.Add(1)
 	go s.handleBroadcast()
@@ -79,12 +89,25 @@ func (s *Server) Start() error {
 	}()
 
 	log.Printf("%s GitVista server starting on http://%s", logSuccess, s.addr)
-	//nolint:gosec // G114: Server timeouts configured via reverse proxy in production
-	return http.ListenAndServe(s.addr, nil)
+	err := s.httpServer.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
 }
 
 func (s *Server) Shutdown() {
 	log.Printf("%s Server shutting down...", logInfo)
+
+	// Gracefully drain in-flight HTTP requests before stopping goroutines.
+	if s.httpServer != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("%s HTTP server shutdown error: %v", logError, err)
+		}
+	}
+
 	s.cancel()
 	s.rateLimiter.Close()
 
