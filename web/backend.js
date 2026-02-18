@@ -4,7 +4,7 @@ const RECONNECT_DELAY_MAX_MS = 30000;
 
 export async function startBackend({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
     await loadRepositoryMetadata(logger, onRepoMetadata);
-    return openWebSocket({ onDelta, onStatus, onHead, onConnectionStateChange, logger });
+    return openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger });
 }
 
 async function loadRepositoryMetadata(logger, onRepoMetadata) {
@@ -22,7 +22,7 @@ async function loadRepositoryMetadata(logger, onRepoMetadata) {
     }
 }
 
-function openWebSocket({ onDelta, onStatus, onHead, onConnectionStateChange, logger }) {
+function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const url = `${protocol}://${window.location.host}/api/ws`;
     logger?.info("Opening WebSocket connection", url);
@@ -49,9 +49,15 @@ function openWebSocket({ onDelta, onStatus, onHead, onConnectionStateChange, log
 
         socket.addEventListener("open", () => {
             logger?.info("WebSocket connection established");
+            const isReconnect = reconnectDelay > RECONNECT_DELAY_INITIAL_MS;
             // Reset backoff on successful connection
             reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
             notifyState("connected");
+            // Re-fetch metadata on reconnect so the info bar reflects any changes
+            // (new branches, changed HEAD, etc.) that occurred while disconnected.
+            if (isReconnect) {
+                loadRepositoryMetadata(logger, onRepoMetadata);
+            }
         });
 
         socket.addEventListener("message", (event) => {

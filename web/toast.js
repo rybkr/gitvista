@@ -116,10 +116,18 @@ function removeToast(el) {
     clearTimeout(el._toastTimer);
     el.style.opacity = "0";
     el.style.transform = "translateY(8px)";
-    el.addEventListener("transitionend", () => {
+
+    const cleanup = () => {
+        clearTimeout(fallbackTimer);
+        if (!el.parentElement) return; // Already removed
         el.remove();
         const idx = visible.indexOf(el);
         if (idx !== -1) visible.splice(idx, 1);
         if (queue.length > 0) renderToast(queue.shift());
-    }, { once: true });
+    };
+
+    // Safety net: if transitionend never fires (tab backgrounded, interrupted
+    // animation, etc.), remove the element after the transition duration anyway.
+    const fallbackTimer = setTimeout(cleanup, 300);
+    el.addEventListener("transitionend", cleanup, { once: true });
 }

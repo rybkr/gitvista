@@ -48,11 +48,15 @@ export function createInfoBar() {
     content.className = "info-bar-content";
     container.appendChild(content);
 
+    // Persists the last full metadata so updateHead() can preserve the repo name.
+    let lastMetadata = null;
+
     /**
      * Update the info bar with full repository metadata.
      * @param {Object} data - Repository metadata from /api/repository
      */
     function update(data) {
+        lastMetadata = data;
         content.innerHTML = "";
 
         // Repository name
@@ -104,8 +108,8 @@ export function createInfoBar() {
     function updateHead(headInfo) {
         content.innerHTML = "";
 
-        // Extract repo name from existing data or use a placeholder
-        const repoName = content.dataset.repoName || "Repository";
+        // Preserve repo name from the last full metadata fetch
+        const repoName = lastMetadata?.name || "Repository";
         addRow(content, "Repository", repoName);
 
         // Current branch/HEAD

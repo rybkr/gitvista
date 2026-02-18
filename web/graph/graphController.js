@@ -43,6 +43,9 @@ import { createGraphState, setZoomTransform } from "./state/graphState.js";
  *   destroy(): void,
  * }} Public graph API.
  */
+/** Returns a random value in the range [-range/2, range/2]. */
+const jitter = (range) => (Math.random() - 0.5) * range;
+
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
@@ -65,10 +68,14 @@ export function createGraphController(rootElement, options = {}) {
     // regardless of how many render() callers fire (simulation tick, zoom, hover, etc.)
     let rafId = null;
 
-    // Hash of the HEAD commit, updated by applyDelta when the delta carries headHash.
+    // Hash of the HEAD commit. Kept in sync with state.headHash — both must be
+    // updated together. state.headHash drives canvas rendering; headHash drives
+    // the HEAD button and keyboard shortcut (G→H).
     let headHash = null;
     // Hash of the commit node currently selected/highlighted, or null.
     let selectedHash = null;
+    // Sorted commit node cache — invalidated whenever the graph structure changes.
+    let sortedCommitCache = null;
 
     const simulation = d3
         .forceSimulation(nodes)
@@ -277,26 +284,28 @@ export function createGraphController(rootElement, options = {}) {
      * @param {'prev' | 'next'} direction Direction to navigate.
      */
     const navigateCommits = (direction) => {
-        const commitNodes = nodes.filter((n) => n.type === "commit");
+        if (!sortedCommitCache) {
+            // Build and cache a newest-first sorted list of commit nodes.
+            // Mirroring layoutManager.sortCommitsByTime() — logic identical to
+            // getCommitTimestamp() in graph/utils/time.js.
+            sortedCommitCache = nodes
+                .filter((n) => n.type === "commit")
+                .sort((a, b) => {
+                    const aTime = new Date(
+                        a.commit?.committer?.when ?? a.commit?.author?.when ?? 0
+                    ).getTime();
+                    const bTime = new Date(
+                        b.commit?.committer?.when ?? b.commit?.author?.when ?? 0
+                    ).getTime();
+                    if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                    return bTime - aTime; // newest first
+                });
+        }
+
+        const commitNodes = sortedCommitCache;
         if (commitNodes.length === 0) {
             return;
         }
-
-        // Sort newest-first, mirroring layoutManager.sortCommitsByTime().
-        // We inline the timestamp extraction here to avoid an extra import;
-        // the logic is identical to getCommitTimestamp() in graph/utils/time.js.
-        commitNodes.sort((a, b) => {
-            const aTime = new Date(
-                a.commit?.committer?.when ?? a.commit?.author?.when ?? 0
-            ).getTime();
-            const bTime = new Date(
-                b.commit?.committer?.when ?? b.commit?.author?.when ?? 0
-            ).getTime();
-            if (aTime === bTime) {
-                return a.hash.localeCompare(b.hash);
-            }
-            return bTime - aTime; // newest first
-        });
 
         // Determine the current position in the sorted array.
         let currentIndex = commitNodes.findIndex((n) => n.hash === selectedHash);
@@ -409,6 +418,12 @@ export function createGraphController(rootElement, options = {}) {
         }
     };
 
+    // Pending hover check scheduled via rAF — avoids running the O(n) node scan
+    // on every pixel of mouse movement (can be 60+ events/sec on modern hardware).
+    let pendingHoverX = 0;
+    let pendingHoverY = 0;
+    let hoverRafId = null;
+
     const handlePointerMove = (event) => {
         if (dragState && event.pointerId === dragState.pointerId) {
             event.preventDefault();
@@ -438,14 +453,22 @@ export function createGraphController(rootElement, options = {}) {
             return;
         }
 
-        // Hover detection: update hoverNode when not dragging and trigger a re-render.
+        // Capture coordinates immediately (event object may be reused by the browser).
         const { x, y } = toGraphCoordinates(event);
-        const hit = findNodeAt(x, y);
-        if (hit !== state.hoverNode) {
-            state.hoverNode = hit;
-            canvas.style.cursor = hit ? "pointer" : "default";
-            render();
-        }
+        pendingHoverX = x;
+        pendingHoverY = y;
+
+        // Throttle the O(n) hit-test to at most once per animation frame.
+        if (hoverRafId !== null) return;
+        hoverRafId = requestAnimationFrame(() => {
+            hoverRafId = null;
+            const hit = findNodeAt(pendingHoverX, pendingHoverY);
+            if (hit !== state.hoverNode) {
+                state.hoverNode = hit;
+                canvas.style.cursor = hit ? "pointer" : "default";
+                render();
+            }
+        });
     };
 
     const handlePointerUp = (event) => {
@@ -685,6 +708,7 @@ export function createGraphController(rootElement, options = {}) {
      * and triggers layout adjustments.
      */
     function updateGraph() {
+        sortedCommitCache = null; // Invalidate on every structural update
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
 
@@ -762,15 +786,13 @@ export function createGraphController(rootElement, options = {}) {
             ) * 0.18;
         const radius = Math.random() * maxRadius;
         const angle = Math.random() * Math.PI * 2;
-        const jitter = () => (Math.random() - 0.5) * 35;
 
         if (anchorNode) {
-            const offsetJitter = () => (Math.random() - 0.5) * 6;
             return {
                 type: "commit",
                 hash,
-                x: anchorNode.x + offsetJitter(),
-                y: anchorNode.y + offsetJitter(),
+                x: anchorNode.x + jitter(6),
+                y: anchorNode.y + jitter(6),
                 vx: 0,
                 vy: 0,
             };
@@ -779,8 +801,8 @@ export function createGraphController(rootElement, options = {}) {
         return {
             type: "commit",
             hash,
-            x: centerX + Math.cos(angle) * radius + jitter(),
-            y: centerY + Math.sin(angle) * radius + jitter(),
+            x: centerX + Math.cos(angle) * radius + jitter(35),
+            y: centerY + Math.sin(angle) * radius + jitter(35),
             vx: 0,
             vy: 0,
         };
@@ -796,7 +818,6 @@ export function createGraphController(rootElement, options = {}) {
 
             const baseX = targetNode.x ?? 0;
             const baseY = targetNode.y ?? 0;
-            const jitter = (range) => (Math.random() - 0.5) * range;
 
             branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
             branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
@@ -807,7 +828,6 @@ export function createGraphController(rootElement, options = {}) {
 
     function createBranchNode(branchName, targetNode) {
         if (targetNode) {
-            const jitter = (range) => (Math.random() - 0.5) * range;
             return {
                 type: "branch",
                 branch: branchName,
@@ -821,14 +841,13 @@ export function createGraphController(rootElement, options = {}) {
 
         const baseX = (viewportWidth || canvas.width) / 2;
         const baseY = (viewportHeight || canvas.height) / 2;
-        const jitterFallback = (range) => (Math.random() - 0.5) * range;
 
         return {
             type: "branch",
             branch: branchName,
             targetHash: null,
-            x: baseX - BRANCH_NODE_OFFSET_X + jitterFallback(6),
-            y: baseY + jitterFallback(BRANCH_NODE_OFFSET_Y),
+            x: baseX - BRANCH_NODE_OFFSET_X + jitter(6),
+            y: baseY + jitter(BRANCH_NODE_OFFSET_Y),
             vx: 0,
             vy: 0,
         };
@@ -864,6 +883,10 @@ export function createGraphController(rootElement, options = {}) {
         if (rafId !== null) {
             cancelAnimationFrame(rafId);
             rafId = null;
+        }
+        if (hoverRafId !== null) {
+            cancelAnimationFrame(hoverRafId);
+            hoverRafId = null;
         }
         window.removeEventListener("resize", resize);
         resizeObserver?.disconnect();
@@ -912,7 +935,10 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         // Sync HEAD, tags, and stashes from every delta.
+        // Keep headHash (used by the HEAD button) and state.headHash (used by the
+        // renderer) in lockstep so they never refer to different commits.
         if (delta.headHash) {
+            headHash = delta.headHash;
             state.headHash = delta.headHash;
         }
         if (delta.tags) {
@@ -959,6 +985,7 @@ export function createGraphController(rootElement, options = {}) {
          */
         setHeadHash: (hash) => {
             headHash = hash || null;
+            state.headHash = hash || "";
         },
     };
 }

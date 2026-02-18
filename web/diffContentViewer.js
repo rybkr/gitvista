@@ -32,18 +32,22 @@ export function createDiffContentViewer() {
     let currentContextLines = DEFAULT_CONTEXT_LINES;
 
     /**
-     * Render a status badge based on file status.
+     * Create a status badge element for a given file status.
+     * Returns a DOM element (not an HTML string) to avoid XSS via file paths.
      */
-    function getStatusBadge(status) {
+    function createStatusBadge(status) {
         const badges = {
-            added: { text: "A", class: "diff-status-badge--added" },
-            modified: { text: "M", class: "diff-status-badge--modified" },
-            deleted: { text: "D", class: "diff-status-badge--deleted" },
-            renamed: { text: "R", class: "diff-status-badge--renamed" },
-            copied: { text: "C", class: "diff-status-badge--copied" },
+            added: { text: "A", cls: "diff-status-badge--added" },
+            modified: { text: "M", cls: "diff-status-badge--modified" },
+            deleted: { text: "D", cls: "diff-status-badge--deleted" },
+            renamed: { text: "R", cls: "diff-status-badge--renamed" },
+            copied: { text: "C", cls: "diff-status-badge--copied" },
         };
-        const badge = badges[status] || { text: "?", class: "diff-status-badge" };
-        return `<span class="diff-status-badge ${badge.class}">${badge.text}</span>`;
+        const badge = badges[status] || { text: "?", cls: "" };
+        const el = document.createElement("span");
+        el.className = badge.cls ? `diff-status-badge ${badge.cls}` : "diff-status-badge";
+        el.textContent = badge.text;
+        return el;
     }
 
     /**
@@ -197,13 +201,14 @@ export function createDiffContentViewer() {
         });
         el.appendChild(backBtn);
 
-        // File header with status badge and path
+        // File header with status badge and path — use DOM construction to avoid XSS
         const header = document.createElement("div");
         header.className = "diff-file-header";
-        header.innerHTML = `
-            ${getStatusBadge(fileDiff.status)}
-            <span class="diff-file-path">${fileDiff.path}</span>
-        `;
+        header.appendChild(createStatusBadge(fileDiff.status));
+        const pathEl = document.createElement("span");
+        pathEl.className = "diff-file-path";
+        pathEl.textContent = fileDiff.path;
+        header.appendChild(pathEl);
         el.appendChild(header);
 
         // Content body
