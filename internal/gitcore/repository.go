@@ -17,6 +17,7 @@ type Repository struct {
 	refs        map[string]Hash
 	commits     []*Commit
 	tags        []*Tag
+	stashes     []StashEntry
 
 	head         Hash
 	headRef      string
@@ -54,6 +55,7 @@ func NewRepository(path string) (*Repository, error) {
 		return nil, fmt.Errorf("failed to load refs: %w", err)
 	}
 	repo.loadObjects()
+	repo.stashes = repo.loadStashes()
 
 	return repo, nil
 }
@@ -162,6 +164,41 @@ func (r *Repository) TagNames() []string {
 	return result
 }
 
+// Tags returns a map of tag names to their target commit hashes.
+// Annotated tags are peeled to the commit they point at.
+func (r *Repository) Tags() map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Build lookup: annotated tag object hash -> commit hash
+	annotatedTargets := make(map[Hash]Hash, len(r.tags))
+	for _, tag := range r.tags {
+		annotatedTargets[tag.ID] = tag.Object
+	}
+
+	result := make(map[string]string, len(r.refs))
+	for ref, hash := range r.refs {
+		name, ok := strings.CutPrefix(ref, "refs/tags/")
+		if !ok {
+			continue
+		}
+		// Peel annotated tag objects to their commit target.
+		if commitHash, isAnnotated := annotatedTargets[hash]; isAnnotated {
+			result[name] = string(commitHash)
+		} else {
+			result[name] = string(hash)
+		}
+	}
+	return result
+}
+
+// Stashes returns all stash entries for this repository, newest first.
+func (r *Repository) Stashes() []StashEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.stashes
+}
+
 // GetTree loads and returns a tree object by its hash.
 func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	object, err := r.readObject(treeHash)
@@ -265,6 +302,14 @@ func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 		if _, found := newBranches[branch]; !found {
 			delta.DeletedBranches[branch] = hash
 		}
+	}
+
+	// Always include current HEAD, tags, and stashes so the frontend stays in sync.
+	delta.HeadHash = string(r.Head())
+	delta.Tags = r.Tags()
+	delta.Stashes = r.Stashes()
+	if delta.Stashes == nil {
+		delta.Stashes = []StashEntry{}
 	}
 
 	return delta

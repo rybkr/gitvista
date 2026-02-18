@@ -433,6 +433,15 @@ export function createGraphController(rootElement, options = {}) {
             render();
             return;
         }
+
+        // Hover detection: update hoverNode when not dragging and trigger a re-render.
+        const { x, y } = toGraphCoordinates(event);
+        const hit = findNodeAt(x, y);
+        if (hit !== state.hoverNode) {
+            state.hoverNode = hit;
+            canvas.style.cursor = hit ? "pointer" : "default";
+            render();
+        }
     };
 
     const handlePointerUp = (event) => {
@@ -829,6 +838,9 @@ export function createGraphController(rootElement, options = {}) {
             viewportWidth,
             viewportHeight,
             tooltipManager,
+            headHash: state.headHash,
+            hoverNode: state.hoverNode,
+            tags: state.tags,
         });
     }
 
@@ -885,6 +897,17 @@ export function createGraphController(rootElement, options = {}) {
         }
         for (const name of Object.keys(delta.deletedBranches || {})) {
             branches.delete(name);
+        }
+
+        // Sync HEAD, tags, and stashes from every delta.
+        if (delta.headHash) {
+            state.headHash = delta.headHash;
+        }
+        if (delta.tags) {
+            state.tags = new Map(Object.entries(delta.tags));
+        }
+        if (Array.isArray(delta.stashes)) {
+            state.stashes = delta.stashes;
         }
 
         updateGraph();

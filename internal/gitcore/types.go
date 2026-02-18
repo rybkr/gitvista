@@ -198,6 +198,12 @@ func (p *PackIndex) Offsets() map[Hash]int64 {
 	return cp
 }
 
+// StashEntry represents a single Git stash entry.
+type StashEntry struct {
+	Hash    Hash   `json:"hash"`
+	Message string `json:"message"`
+}
+
 // RepositoryDelta represents the difference between two repositories in a digestable format.
 // This structure gets sent to the front end during live updates.
 type RepositoryDelta struct {
@@ -207,6 +213,13 @@ type RepositoryDelta struct {
 	AddedBranches   map[string]Hash `json:"addedBranches"`
 	AmendedBranches map[string]Hash `json:"amendedBranches"`
 	DeletedBranches map[string]Hash `json:"deletedBranches"`
+
+	// HeadHash is the current HEAD commit hash, sent on every delta.
+	HeadHash string `json:"headHash"`
+	// Tags maps tag names to their target commit hashes (annotated tags are peeled).
+	Tags map[string]string `json:"tags"`
+	// Stashes contains all stash entries, newest first.
+	Stashes []StashEntry `json:"stashes"`
 }
 
 // NewRepositoryDelta returns a new RepositoryDelta struct.
@@ -215,6 +228,8 @@ func NewRepositoryDelta() *RepositoryDelta {
 		AddedBranches:   make(map[string]Hash),
 		AmendedBranches: make(map[string]Hash),
 		DeletedBranches: make(map[string]Hash),
+		Tags:            make(map[string]string),
+		Stashes:         []StashEntry{},
 	}
 }
 

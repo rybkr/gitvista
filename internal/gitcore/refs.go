@@ -144,6 +144,68 @@ func (r *Repository) loadHEAD() error {
 	return nil
 }
 
+// loadStashes reads all stash entries from .git/logs/refs/stash (newest first).
+// Returns an empty slice if no stashes exist.
+func (r *Repository) loadStashes() []StashEntry {
+	stashRefPath := filepath.Join(r.gitDir, "refs", "stash")
+	if _, err := os.Stat(stashRefPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	// The stash reflog holds one entry per stash; iterate it newest-first.
+	stashLogPath := filepath.Join(r.gitDir, "logs", "refs", "stash")
+	//nolint:gosec // G304: Stash log path is controlled by git repository structure
+	file, err := os.Open(stashLogPath)
+	if err != nil {
+		// Fallback: just the stash tip from refs/stash
+		//nolint:gosec // G304: Stash ref path is controlled by git repository structure
+		content, err := os.ReadFile(stashRefPath)
+		if err != nil {
+			return nil
+		}
+		hash, err := NewHash(strings.TrimSpace(string(content)))
+		if err != nil {
+			return nil
+		}
+		return []StashEntry{{Hash: hash, Message: "stash@{0}"}}
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to close stash log: %v", err)
+		}
+	}()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	// Reflog is oldest-first; reverse for newest-first output.
+	stashes := make([]StashEntry, 0, len(lines))
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		// Reflog format: <old-hash> <new-hash> <author info> <timestamp> <tz>\t<message>
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		hash, err := NewHash(parts[1])
+		if err != nil {
+			continue
+		}
+		msg := fmt.Sprintf("stash@{%d}", len(stashes))
+		if tabIdx := strings.Index(line, "\t"); tabIdx >= 0 {
+			msg = strings.TrimSpace(line[tabIdx+1:])
+		}
+		stashes = append(stashes, StashEntry{Hash: hash, Message: msg})
+	}
+	return stashes
+}
+
 // resolveRef reads a single ref file and returns its hash.
 // Handles both direct hashes and symbolic refs.
 func (r *Repository) resolveRef(path string) (Hash, error) {
