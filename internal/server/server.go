@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +20,11 @@ type Server struct {
 	webFS       fs.FS
 	rateLimiter *rateLimiter
 	httpServer  *http.Server
+	// logger is the structured logger for this server instance. It is
+	// initialised from slog.Default() in NewServer so that the global handler
+	// configured in main.go (format, level) is inherited automatically, while
+	// still being injectable in tests via a null-writer handler.
+	logger *slog.Logger
 
 	cacheMu sync.RWMutex
 	cached  struct {
@@ -32,25 +39,45 @@ type Server struct {
 
 	broadcast chan UpdateMessage
 
-	blameCache sync.Map // keyed by "commitHash:dirPath"
-	diffCache  sync.Map // keyed by "commitHash" or "commitHash:filePath:ctxN"
+	// blameCache and diffCache are LRU caches bounded by cacheSize entries.
+	// Keys are content-addressed (commit hash + path), so no invalidation is
+	// needed on repository reload — a hash collision is cryptographically
+	// impossible and stale entries are naturally evicted by the LRU policy.
+	blameCache *LRUCache[any] // keyed by "commitHash:dirPath"
+	diffCache  *LRUCache[any] // keyed by "commitHash" or "commitHash:filePath:ctxN"
 
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
+// NewServer constructs a Server ready to be started. The structured logger is
+// taken from slog.Default() so it respects whatever handler main.go configured
+// (text or JSON, level). Tests may override s.logger with a silent handler to
+// suppress output.
 func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rateLimiter := newRateLimiter(100, 200, time.Second)
+
+	// Allow operators to tune cache capacity via env var. Values that are
+	// missing, zero, or negative fall back to the package default (500).
+	cacheSize := defaultCacheSize
+	if raw := os.Getenv("GITVISTA_CACHE_SIZE"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			cacheSize = n
+		}
+	}
 
 	s := &Server{
 		repo:        repo,
 		addr:        addr,
 		webFS:       webFS,
 		rateLimiter: rateLimiter,
+		logger:      slog.Default(),
 		clients:     make(map[*websocket.Conn]*sync.Mutex),
 		broadcast:   make(chan UpdateMessage, broadcastChannelSize),
+		blameCache:  NewLRUCache[any](cacheSize),
+		diffCache:   NewLRUCache[any](cacheSize),
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -91,12 +118,12 @@ func (s *Server) Start() error {
 	s.wg.Add(1)
 	go func() {
 		if err := s.startWatcher(); err != nil {
-			log.Printf("watcher error: %v", err)
+			s.logger.Error("watcher error", "err", err)
 			s.wg.Done() // watchLoop never started; release the reserved slot
 		}
 	}()
 
-	log.Printf("%s GitVista server starting on http://%s", logSuccess, s.addr)
+	s.logger.Info("GitVista server starting", "addr", "http://"+s.addr)
 	err := s.httpServer.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
@@ -105,14 +132,14 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown() {
-	log.Printf("%s Server shutting down...", logInfo)
+	s.logger.Info("Server shutting down")
 
 	// Gracefully drain in-flight HTTP requests before stopping goroutines.
 	if s.httpServer != nil {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Printf("%s HTTP server shutdown error: %v", logError, err)
+			s.logger.Error("HTTP server shutdown error", "err", err)
 		}
 	}
 
@@ -124,11 +151,11 @@ func (s *Server) Shutdown() {
 	s.clientsMu.Lock()
 	for conn := range s.clients {
 		if err := conn.Close(); err != nil {
-			log.Printf("%s Failed to close client connection: %v", logError, err)
+			s.logger.Error("Failed to close client connection", "err", err)
 		}
 	}
 	s.clients = make(map[*websocket.Conn]*sync.Mutex)
 	s.clientsMu.Unlock()
 
-	log.Printf("%s Server shutdown complete", logSuccess)
+	s.logger.Info("Server shutdown complete")
 }

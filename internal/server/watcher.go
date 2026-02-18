@@ -1,11 +1,11 @@
 package server
 
 import (
-	"github.com/fsnotify/fsnotify"
-	"log"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 const debounceTime = 100 * time.Millisecond
@@ -22,7 +22,7 @@ func (s *Server) startWatcher() error {
 
 	go s.watchLoop(watcher)
 
-	log.Printf("%s Watching Git repository for changes", logInfo)
+	s.logger.Info("Watching Git repository for changes", "gitDir", s.repo.GitDir())
 	return nil
 }
 
@@ -30,7 +30,7 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 	defer s.wg.Done()
 	defer func() {
 		if err := watcher.Close(); err != nil {
-			log.Printf("failed to close watcher: %v", err)
+			s.logger.Error("Failed to close watcher", "err", err)
 		}
 	}()
 
@@ -49,7 +49,9 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 				continue
 			}
 
-			log.Printf("%s Change detected: %s", logInfo, filepath.Base(event.Name))
+			// Log at Debug to avoid flooding logs on active repos; operators
+			// who need per-file visibility can enable GITVISTA_LOG_LEVEL=debug.
+			s.logger.Debug("Change detected", "file", filepath.Base(event.Name))
 
 			if debounceTimer != nil {
 				debounceTimer.Stop()
@@ -62,7 +64,7 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 			if !ok {
 				return
 			}
-			log.Printf("%s Watcher error: %v", logError, err)
+			s.logger.Error("Watcher error", "err", err)
 		}
 	}
 }
