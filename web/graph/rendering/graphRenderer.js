@@ -30,6 +30,7 @@ import {
     HOVER_GLOW_OPACITY,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
+import { getAuthorColor } from "../../utils/colors.js";
 
 /**
  * Renders graph nodes and links to a 2D canvas context.
@@ -341,7 +342,10 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderNormalCommit(node, radius) {
-        this.ctx.fillStyle = this.palette.node;
+        const authorEmail = node.commit?.author?.email;
+        this.ctx.fillStyle = authorEmail
+            ? getAuthorColor(authorEmail)
+            : this.palette.node;
         this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -399,7 +403,10 @@ export class GraphRenderer {
      * @param {number} radius Half-diagonal of the diamond.
      */
     renderNormalMerge(node, radius) {
-        this.ctx.fillStyle = this.palette.mergeNode;
+        const authorEmail = node.commit?.author?.email;
+        this.ctx.fillStyle = authorEmail
+            ? getAuthorColor(authorEmail)
+            : this.palette.mergeNode;
         this.applyShadow();
         this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
