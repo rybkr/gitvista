@@ -78,6 +78,7 @@ func (s *Server) Start() error {
 	http.HandleFunc("/api/tree/", s.rateLimiter.middleware(s.handleTree))
 	http.HandleFunc("/api/blob/", s.rateLimiter.middleware(s.handleBlob))
 	http.HandleFunc("/api/commit/diff/", s.rateLimiter.middleware(s.handleCommitDiff))
+	http.HandleFunc("/api/working-tree/diff", s.rateLimiter.middleware(s.handleWorkingTreeDiff))
 
 	// WebSocket has its own connection limits, no rate limit needed
 	http.HandleFunc("/api/ws", s.handleWebSocket)
