@@ -122,7 +122,7 @@ func TestRepositoryDelta_IsEmpty(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "delta with added branch (BUG: IsEmpty doesn't check branches)",
+			name: "delta with added branch",
 			delta: &RepositoryDelta{
 				AddedCommits:    []*Commit{},
 				DeletedCommits:  []*Commit{},
@@ -130,10 +130,10 @@ func TestRepositoryDelta_IsEmpty(t *testing.T) {
 				DeletedBranches: make(map[string]Hash),
 				AmendedBranches: make(map[string]Hash),
 			},
-			want: true, // BUG: should be false, but IsEmpty() only checks commits
+			want: false,
 		},
 		{
-			name: "delta with deleted branch (BUG: IsEmpty doesn't check branches)",
+			name: "delta with deleted branch",
 			delta: &RepositoryDelta{
 				AddedCommits:    []*Commit{},
 				DeletedCommits:  []*Commit{},
@@ -141,10 +141,10 @@ func TestRepositoryDelta_IsEmpty(t *testing.T) {
 				DeletedBranches: map[string]Hash{"old": Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")},
 				AmendedBranches: make(map[string]Hash),
 			},
-			want: true, // BUG: should be false, but IsEmpty() only checks commits
+			want: false,
 		},
 		{
-			name: "delta with amended branch (BUG: IsEmpty doesn't check branches)",
+			name: "delta with amended branch",
 			delta: &RepositoryDelta{
 				AddedCommits:    []*Commit{},
 				DeletedCommits:  []*Commit{},
@@ -152,7 +152,7 @@ func TestRepositoryDelta_IsEmpty(t *testing.T) {
 				DeletedBranches: make(map[string]Hash),
 				AmendedBranches: map[string]Hash{"main": Hash("cccccccccccccccccccccccccccccccccccccccc")},
 			},
-			want: true, // BUG: should be false, but IsEmpty() only checks commits
+			want: false,
 		},
 	}
 
@@ -380,7 +380,7 @@ func TestStripCredentials(t *testing.T) {
 		{ //nolint:gosec // G101: Test data, not actual credentials
 			name: "HTTP with credentials",
 			url:  "http://user:token@example.com/repo.git",
-			want: "http://user:token@example.com/repo.git", // Only strips HTTPS
+			want: "http://example.com/repo.git",
 		},
 	}
 

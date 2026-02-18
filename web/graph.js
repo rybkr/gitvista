@@ -11,7 +11,16 @@ import { createGraphController } from "./graph/graphController.js";
  * @param {HTMLElement} rootElement Container that will host the graph canvas.
  * @param {object} [options] Options forwarded to the graph controller.
  * @param {function} [options.onCommitTreeClick] Called when a commit's tree icon is clicked.
- * @returns {{ applyDelta(delta: unknown): void, destroy(): void }} Public graph API surface.
+ * @param {function} [options.onCommitSelect] Called with the selected commit hash (or null).
+ * @returns {{
+ *   applyDelta(delta: unknown): void,
+ *   centerOnCommit(hash: string | null): void,
+ *   navigateCommits(direction: 'prev' | 'next'): void,
+ *   selectAndCenter(hash: string): void,
+ *   getHeadHash(): string | null,
+ *   setHeadHash(hash: string | null): void,
+ *   destroy(): void,
+ * }} Public graph API surface.
  */
 export function createGraph(rootElement, options) {
     return createGraphController(rootElement, options);

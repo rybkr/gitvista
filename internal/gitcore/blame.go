@@ -83,12 +83,7 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 				// All entries in current tree that aren't blamed yet were added by item.commit
 				for name := range currentEntries {
 					if _, alreadyBlamed := blame[name]; !alreadyBlamed {
-						blame[name] = &BlameEntry{
-							CommitHash:    item.commit.ID,
-							CommitMessage: firstLine(item.commit.Message),
-							AuthorName:    item.commit.Author.Name,
-							When:          item.commit.Author.When,
-						}
+						blame[name] = newBlameEntry(item.commit)
 					}
 				}
 				continue
@@ -109,12 +104,7 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 				parentHash, existedInParent := parentEntries[name]
 				if !existedInParent || parentHash != currentHash {
 					// Entry was added or modified in item.commit
-					blame[name] = &BlameEntry{
-						CommitHash:    item.commit.ID,
-						CommitMessage: firstLine(item.commit.Message),
-						AuthorName:    item.commit.Author.Name,
-						When:          item.commit.Author.When,
-					}
+					blame[name] = newBlameEntry(item.commit)
 				}
 			}
 
@@ -127,12 +117,7 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 		if len(item.commit.Parents) == 0 {
 			for name := range currentEntries {
 				if _, alreadyBlamed := blame[name]; !alreadyBlamed {
-					blame[name] = &BlameEntry{
-						CommitHash:    item.commit.ID,
-						CommitMessage: firstLine(item.commit.Message),
-						AuthorName:    item.commit.Author.Name,
-						When:          item.commit.Author.When,
-					}
+					blame[name] = newBlameEntry(item.commit)
 				}
 			}
 		}
@@ -141,16 +126,21 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 	// Entries not resolved within maxDepth are marked with the target commit as fallback
 	for name := range currentEntries {
 		if _, alreadyBlamed := blame[name]; !alreadyBlamed {
-			blame[name] = &BlameEntry{
-				CommitHash:    targetCommit.ID,
-				CommitMessage: firstLine(targetCommit.Message),
-				AuthorName:    targetCommit.Author.Name,
-				When:          targetCommit.Author.When,
-			}
+			blame[name] = newBlameEntry(targetCommit)
 		}
 	}
 
 	return blame, nil
+}
+
+// newBlameEntry creates a BlameEntry from a commit, using its author metadata.
+func newBlameEntry(c *Commit) *BlameEntry {
+	return &BlameEntry{
+		CommitHash:    c.ID,
+		CommitMessage: firstLine(c.Message),
+		AuthorName:    c.Author.Name,
+		When:          c.Author.When,
+	}
 }
 
 // firstLine extracts the first line of a commit message (subject line).

@@ -7,9 +7,12 @@ import (
 )
 
 const (
-	maxDiffEntries = 500     // Maximum number of file changes to process
+	maxDiffEntries = 500        // Maximum number of file changes to process
 	maxBlobSize    = 512 * 1024 // Maximum blob size for diff (512KB)
-	contextLines   = 3       // Number of context lines in unified diff
+
+	// DefaultContextLines is the number of unchanged lines to include around each
+	// change in unified diff output.
+	DefaultContextLines = 3
 )
 
 // TreeDiff recursively compares two trees and returns a flat list of changed files.
@@ -77,7 +80,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 			// Added entry
 			if isTreeEntry(newEntry) {
 				// Recursively add all files in the new tree
-				subEntries, err := treeDiffRecursive(repo, "", newEntry.ID, path)
+				subEntries, err := TreeDiff(repo, "", newEntry.ID, path)
 				if err != nil {
 					return nil, err
 				}
@@ -98,7 +101,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 			// Deleted entry
 			if isTreeEntry(oldEntry) {
 				// Recursively delete all files in the old tree
-				subEntries, err := treeDiffRecursive(repo, oldEntry.ID, "", path)
+				subEntries, err := TreeDiff(repo, oldEntry.ID, "", path)
 				if err != nil {
 					return nil, err
 				}
@@ -121,7 +124,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 				// Different hash - either modified file or changed tree
 				if isTreeEntry(oldEntry) && isTreeEntry(newEntry) {
 					// Both are trees - recurse
-					subEntries, err := treeDiffRecursive(repo, oldEntry.ID, newEntry.ID, path)
+					subEntries, err := TreeDiff(repo, oldEntry.ID, newEntry.ID, path)
 					if err != nil {
 						return nil, err
 					}
@@ -130,7 +133,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 					// Type changed (file <-> directory)
 					// Delete old, add new
 					if isTreeEntry(oldEntry) {
-						subEntries, err := treeDiffRecursive(repo, oldEntry.ID, "", path)
+						subEntries, err := TreeDiff(repo, oldEntry.ID, "", path)
 						if err != nil {
 							return nil, err
 						}
@@ -146,7 +149,7 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 						})
 					}
 					if isTreeEntry(newEntry) {
-						subEntries, err := treeDiffRecursive(repo, "", newEntry.ID, path)
+						subEntries, err := TreeDiff(repo, "", newEntry.ID, path)
 						if err != nil {
 							return nil, err
 						}
@@ -182,10 +185,6 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 	return entries, nil
 }
 
-// treeDiffRecursive is a helper for TreeDiff that handles recursive tree traversal.
-func treeDiffRecursive(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([]DiffEntry, error) {
-	return TreeDiff(repo, oldTreeHash, newTreeHash, prefix)
-}
 
 // isTreeEntry checks if a TreeEntry represents a directory.
 func isTreeEntry(entry TreeEntry) bool {
@@ -199,9 +198,11 @@ func isSubmodule(entry TreeEntry) bool {
 
 // ComputeFileDiff computes the line-level unified diff between two blobs.
 // oldBlobHash can be empty for added files, newBlobHash can be empty for deleted files.
+// contextLines controls how many unchanged lines to include around each change;
+// pass DefaultContextLines for standard unified diff output.
 // Returns a FileDiff struct with hunks containing line-level changes.
 // Files larger than maxBlobSize are marked as truncated.
-func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path string) (*FileDiff, error) {
+func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path string, contextLines int) (*FileDiff, error) {
 	result := &FileDiff{
 		Path:    path,
 		OldHash: oldBlobHash,
@@ -245,7 +246,7 @@ func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path strin
 	oldLines := splitLines(oldContent)
 	newLines := splitLines(newContent)
 
-	// Compute diff using Myers algorithm
+	// Compute diff using Myers algorithm with caller-specified context depth
 	hunks := myersDiff(oldLines, newLines, contextLines)
 	result.Hunks = hunks
 
@@ -377,6 +378,7 @@ func computeEdits(oldLines, newLines []string) []edit {
 }
 
 // backtrack reconstructs the edit script from the trace.
+// Builds in reverse order then flips once to avoid O(n^2) prepend allocations.
 func backtrack(oldLines, newLines []string, trace [][]int, d int, max int) []edit {
 	edits := make([]edit, 0)
 	x := len(oldLines)
@@ -388,7 +390,6 @@ func backtrack(oldLines, newLines []string, trace [][]int, d int, max int) []edi
 		kIdx := k + max
 
 		var prevK int
-		// Determine which direction we came from with bounds checking
 		kPrevLeft := kIdx - 1
 		kPrevRight := kIdx + 1
 		canGoLeft := k != -depth && kPrevLeft >= 0 && kPrevLeft < len(vPrev)
@@ -404,56 +405,62 @@ func backtrack(oldLines, newLines []string, trace [][]int, d int, max int) []edi
 		prevX := vPrev[prevKIdx]
 		prevY := prevX - prevK
 
-		// From (x,y), we need to get back to (prevX, prevY)
-		// First, follow any diagonal matches backwards
-		// We can only follow the diagonal if the lines actually match
 		for x > prevX && y > prevY && x > 0 && y > 0 && oldLines[x-1] == newLines[y-1] {
 			x--
 			y--
-			edits = append([]edit{{Type: editKeep, OldLine: x, NewLine: y}}, edits...)
+			edits = append(edits, edit{Type: editKeep, OldLine: x, NewLine: y})
 		}
 
-		// Now we're at a position where we need to undo the edit operation
-		// The edit happened when going from (prevX, prevY) to current position
 		if prevY < 0 {
-			// This shouldn't happen in valid scenarios
 			prevY = 0
 		}
 
-		// Determine which edit operation got us here
 		if x > prevX {
-			// We have more x, so we must have moved right (delete)
 			x--
-			edits = append([]edit{{Type: editDelete, OldLine: x}}, edits...)
+			edits = append(edits, edit{Type: editDelete, OldLine: x})
 		} else if y > prevY {
-			// We have more y, so we must have moved down (insert)
 			y--
-			edits = append([]edit{{Type: editInsert, NewLine: y}}, edits...)
+			edits = append(edits, edit{Type: editInsert, NewLine: y})
 		}
-		// If x == prevX && y == prevY, we only followed diagonals (no edit)
 	}
 
-	// Add remaining edits from the beginning of the files
-	// These must also be prepended since we've been building backwards
 	for x > 0 && y > 0 {
 		x--
 		y--
-		edits = append([]edit{{Type: editKeep, OldLine: x, NewLine: y}}, edits...)
+		edits = append(edits, edit{Type: editKeep, OldLine: x, NewLine: y})
 	}
-
-	// Handle any remaining deletions at the start
 	for x > 0 {
 		x--
-		edits = append([]edit{{Type: editDelete, OldLine: x}}, edits...)
+		edits = append(edits, edit{Type: editDelete, OldLine: x})
 	}
-
-	// Handle any remaining insertions at the start
 	for y > 0 {
 		y--
-		edits = append([]edit{{Type: editInsert, NewLine: y}}, edits...)
+		edits = append(edits, edit{Type: editInsert, NewLine: y})
+	}
+
+	for i, j := 0, len(edits)-1; i < j; i, j = i+1, j-1 {
+		edits[i], edits[j] = edits[j], edits[i]
 	}
 
 	return edits
+}
+
+// appendTrailingContext adds up to context lines after lastChangeIdx to the hunk.
+func appendTrailingContext(hunk *DiffHunk, edits []edit, oldLines []string, lastChangeIdx, context int) {
+	end := lastChangeIdx + context + 1
+	if end > len(edits) {
+		end = len(edits)
+	}
+	for j := lastChangeIdx + 1; j < end; j++ {
+		if edits[j].Type == editKeep {
+			hunk.Lines = append(hunk.Lines, DiffLine{
+				Type:    "context",
+				Content: oldLines[edits[j].OldLine],
+				OldLine: edits[j].OldLine + 1,
+				NewLine: edits[j].NewLine + 1,
+			})
+		}
+	}
 }
 
 // buildHunks converts edits into hunks with context lines.
@@ -533,16 +540,7 @@ func buildHunks(oldLines, newLines []string, edits []edit, context int) []DiffHu
 				// Check if we should close the hunk (too far from last change)
 				if lastChangeIdx >= 0 && i-lastChangeIdx > context*2 {
 					// Add trailing context and close hunk
-					for j := lastChangeIdx + 1; j <= lastChangeIdx+context && j < len(edits); j++ {
-						if edits[j].Type == editKeep {
-							currentHunk.Lines = append(currentHunk.Lines, DiffLine{
-								Type:    "context",
-								Content: oldLines[edits[j].OldLine],
-								OldLine: edits[j].OldLine + 1,
-								NewLine: edits[j].NewLine + 1,
-							})
-						}
-					}
+					appendTrailingContext(currentHunk, edits, oldLines, lastChangeIdx, context)
 
 					// Finalize hunk
 					finalizeHunk(currentHunk)
@@ -585,20 +583,7 @@ func buildHunks(oldLines, newLines []string, edits []edit, context int) []DiffHu
 	// Close final hunk with trailing context
 	if currentHunk != nil {
 		// Add trailing context
-		contextEnd := lastChangeIdx + context + 1
-		if contextEnd > len(edits) {
-			contextEnd = len(edits)
-		}
-		for j := lastChangeIdx + 1; j < contextEnd; j++ {
-			if edits[j].Type == editKeep {
-				currentHunk.Lines = append(currentHunk.Lines, DiffLine{
-					Type:    "context",
-					Content: oldLines[edits[j].OldLine],
-					OldLine: edits[j].OldLine + 1,
-					NewLine: edits[j].NewLine + 1,
-				})
-			}
-		}
+		appendTrailingContext(currentHunk, edits, oldLines, lastChangeIdx, context)
 
 		finalizeHunk(currentHunk)
 		hunks = append(hunks, *currentHunk)

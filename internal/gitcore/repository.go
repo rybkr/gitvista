@@ -17,6 +17,7 @@ type Repository struct {
 	refs        map[string]Hash
 	commits     []*Commit
 	tags        []*Tag
+	stashes     []StashEntry
 
 	head         Hash
 	headRef      string
@@ -54,6 +55,7 @@ func NewRepository(path string) (*Repository, error) {
 		return nil, fmt.Errorf("failed to load refs: %w", err)
 	}
 	repo.loadObjects()
+	repo.stashes = repo.loadStashes()
 
 	return repo, nil
 }
@@ -75,7 +77,9 @@ func (r *Repository) WorkDir() string {
 
 // Commits returns a map of all commit IDs to Commit structs.
 func (r *Repository) Commits() map[Hash]*Commit {
-	result := make(map[Hash]*Commit)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make(map[Hash]*Commit, len(r.commits))
 	for _, commit := range r.commits {
 		result[commit.ID] = commit
 	}
@@ -84,6 +88,8 @@ func (r *Repository) Commits() map[Hash]*Commit {
 
 // Branches returns a map of all branch names to Commit hashes.
 func (r *Repository) Branches() map[string]Hash {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	result := make(map[string]Hash)
 	for ref, hash := range r.refs {
 		if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
@@ -162,6 +168,41 @@ func (r *Repository) TagNames() []string {
 	return result
 }
 
+// Tags returns a map of tag names to their target commit hashes.
+// Annotated tags are peeled to the commit they point at.
+func (r *Repository) Tags() map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Build lookup: annotated tag object hash -> commit hash
+	annotatedTargets := make(map[Hash]Hash, len(r.tags))
+	for _, tag := range r.tags {
+		annotatedTargets[tag.ID] = tag.Object
+	}
+
+	result := make(map[string]string, len(r.refs))
+	for ref, hash := range r.refs {
+		name, ok := strings.CutPrefix(ref, "refs/tags/")
+		if !ok {
+			continue
+		}
+		// Peel annotated tag objects to their commit target.
+		if commitHash, isAnnotated := annotatedTargets[hash]; isAnnotated {
+			result[name] = string(commitHash)
+		} else {
+			result[name] = string(hash)
+		}
+	}
+	return result
+}
+
+// Stashes returns all stash entries for this repository, newest first.
+func (r *Repository) Stashes() []StashEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.stashes
+}
+
 // GetTree loads and returns a tree object by its hash.
 func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	object, err := r.readObject(treeHash)
@@ -185,8 +226,7 @@ func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 		return nil, fmt.Errorf("blob not found: %s", blobHash)
 	}
 
-	// Type 3 = blob (see objects.go line 149)
-	if objectType != 3 {
+	if objectType != packObjectBlob {
 		return nil, fmt.Errorf("object %s is not a blob (type %d)", blobHash, objectType)
 	}
 
@@ -265,6 +305,14 @@ func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 		if _, found := newBranches[branch]; !found {
 			delta.DeletedBranches[branch] = hash
 		}
+	}
+
+	// Always include current HEAD, tags, and stashes so the frontend stays in sync.
+	delta.HeadHash = string(r.Head())
+	delta.Tags = r.Tags()
+	delta.Stashes = r.Stashes()
+	if delta.Stashes == nil {
+		delta.Stashes = []StashEntry{}
 	}
 
 	return delta
@@ -389,13 +437,14 @@ func parseRemotesFromConfig(config string) map[string]string {
 	return remotes
 }
 
-// stripCredentials removes username:password from HTTPS URLs.
+// stripCredentials removes username:password from HTTP and HTTPS URLs.
 func stripCredentials(url string) string {
-	// Match https://username:password@host/path
-	if strings.HasPrefix(url, "https://") && strings.Contains(url, "@") {
-		parts := strings.SplitN(url, "@", 2)
-		if len(parts) == 2 {
-			return "https://" + parts[1]
+	for _, scheme := range []string{"https://", "http://"} {
+		if strings.HasPrefix(url, scheme) && strings.Contains(url, "@") {
+			parts := strings.SplitN(url, "@", 2)
+			if len(parts) == 2 {
+				return scheme + parts[1]
+			}
 		}
 	}
 	return url

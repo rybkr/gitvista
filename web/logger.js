@@ -2,11 +2,12 @@ const LOG_PREFIX = "[GitVista]";
 
 function log(level, message, detail) {
     const time = new Date().toISOString();
+    const fn = level === "ERROR" ? console.error : level === "WARN" ? console.warn : console.log;
     if (detail !== undefined) {
-        console.log(`${LOG_PREFIX} ${time} [${level}] ${message}`, detail);
+        fn(`${LOG_PREFIX} ${time} [${level}] ${message}`, detail);
         return;
     }
-    console.log(`${LOG_PREFIX} ${time} [${level}] ${message}`);
+    fn(`${LOG_PREFIX} ${time} [${level}] ${message}`);
 }
 
 export const logger = {

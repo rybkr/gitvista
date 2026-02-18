@@ -5,7 +5,6 @@
 
 import { CommitTooltip } from "./commitTooltip.js";
 import { BranchTooltip } from "./branchTooltip.js";
-import { BlobTooltip } from "./blobTooltip.js";
 
 /**
  * Central coordinator that dispatches tooltip rendering based on node type.
@@ -13,15 +12,22 @@ import { BlobTooltip } from "./blobTooltip.js";
 export class TooltipManager {
     /**
      * @param {HTMLCanvasElement} canvas Canvas used for coordinate conversions.
+     * @param {{ navigate?: (direction: 'prev' | 'next') => void }} [opts]
+     *   Optional callbacks forwarded to specialized tooltips.
      */
-    constructor(canvas) {
+    constructor(canvas, opts = {}) {
         this.canvas = canvas;
         this.tooltips = {
             commit: new CommitTooltip(canvas),
             branch: new BranchTooltip(canvas),
-            blob: new BlobTooltip(canvas),
         };
         this.activeTooltip = null;
+
+        // Wire the navigation callback into the commit tooltip so its Prev/Next
+        // buttons can trigger commit navigation without holding a controller reference.
+        if (typeof opts.navigate === "function") {
+            this.tooltips.commit.setNavigate(opts.navigate);
+        }
     }
 
     /**
@@ -102,12 +108,6 @@ export class TooltipManager {
         if (node.type === "branch") {
             return node.branch === highlightKey;
         }
-        if (node.type === "tree") {
-            return node.hash === highlightKey;
-        }
-        if (node.type === "blob") {
-            return node.id === highlightKey;
-        }
 
         return false;
     }
@@ -131,4 +131,3 @@ export class TooltipManager {
 
 export { CommitTooltip } from "./commitTooltip.js";
 export { BranchTooltip } from "./branchTooltip.js";
-export { BlobTooltip } from "./blobTooltip.js";

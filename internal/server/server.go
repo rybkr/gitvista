@@ -25,7 +25,10 @@ type Server struct {
 	}
 
 	clientsMu sync.RWMutex
-	clients   map[*websocket.Conn]bool
+	// clients maps each WebSocket connection to its per-connection write mutex.
+	// All writes to a conn (broadcasts and pings) must hold the per-conn mutex
+	// to satisfy gorilla/websocket's "one concurrent writer" contract.
+	clients map[*websocket.Conn]*sync.Mutex
 
 	broadcast chan UpdateMessage
 
@@ -54,7 +57,7 @@ func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
 		addr:        addr,
 		webFS:       webFS,
 		rateLimiter: rateLimiter,
-		clients:     make(map[*websocket.Conn]bool),
+		clients:     make(map[*websocket.Conn]*sync.Mutex),
 		broadcast:   make(chan UpdateMessage, broadcastChannelSize),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -78,6 +81,7 @@ func (s *Server) Start() error {
 	http.HandleFunc("/api/tree/", s.rateLimiter.middleware(s.handleTree))
 	http.HandleFunc("/api/blob/", s.rateLimiter.middleware(s.handleBlob))
 	http.HandleFunc("/api/commit/diff/", s.rateLimiter.middleware(s.handleCommitDiff))
+	http.HandleFunc("/api/working-tree/diff", s.rateLimiter.middleware(s.handleWorkingTreeDiff))
 
 	// WebSocket has its own connection limits, no rate limit needed
 	http.HandleFunc("/api/ws", s.handleWebSocket)
@@ -99,16 +103,17 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown() {
 	log.Printf("%s Server shutting down...", logInfo)
 	s.cancel()
+	s.rateLimiter.Close()
 
 	s.wg.Wait()
 
 	s.clientsMu.Lock()
 	for conn := range s.clients {
 		if err := conn.Close(); err != nil {
-			log.Printf("failed to close client connection: %v", err)
+			log.Printf("%s Failed to close client connection: %v", logError, err)
 		}
 	}
-	s.clients = make(map[*websocket.Conn]bool)
+	s.clients = make(map[*websocket.Conn]*sync.Mutex)
 	s.clientsMu.Unlock()
 
 	log.Printf("%s Server shutdown complete", logSuccess)

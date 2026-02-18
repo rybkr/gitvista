@@ -106,8 +106,24 @@ export class Tooltip {
         const canvasRect = this.canvas.getBoundingClientRect();
 
         const offset = this.getOffset();
-        const left = canvasRect.left + tx + offset.x;
-        const top = canvasRect.top + ty + offset.y;
+        let left = canvasRect.left + tx + offset.x;
+        let top = canvasRect.top + ty + offset.y;
+
+        // Clamp to viewport so the tooltip never clips outside the screen.
+        const rect = this.element.getBoundingClientRect();
+        const tooltipWidth = rect.width || 260;
+        const tooltipHeight = rect.height || 80;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        if (left + tooltipWidth > vw) {
+            left = canvasRect.left + tx - tooltipWidth - Math.abs(offset.x);
+        }
+        if (top + tooltipHeight > vh) {
+            top = canvasRect.top + ty - tooltipHeight - Math.abs(offset.y);
+        }
+        left = Math.max(4, left);
+        top = Math.max(4, top);
 
         this.element.style.transform = `translate(${left}px, ${top}px)`;
     }

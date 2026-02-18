@@ -33,7 +33,11 @@ func NewHashFromBytes(b [20]byte) (Hash, error) {
 }
 
 // Short returns the truncated representation of a Hash.
+// Returns the full hash if it is shorter than 7 characters.
 func (h Hash) Short() string {
+	if len(h) < 7 {
+		return string(h)
+	}
 	return string(h)[:7]
 }
 
@@ -53,6 +57,8 @@ const (
 	CommitObject ObjectType = 1
 	// TreeObject represents a Git tree object
 	TreeObject ObjectType = 2
+	// BlobObject represents a Git blob object
+	BlobObject ObjectType = 3
 	// TagObject represents a Git tag object
 	TagObject ObjectType = 4
 )
@@ -198,6 +204,12 @@ func (p *PackIndex) Offsets() map[Hash]int64 {
 	return cp
 }
 
+// StashEntry represents a single Git stash entry.
+type StashEntry struct {
+	Hash    Hash   `json:"hash"`
+	Message string `json:"message"`
+}
+
 // RepositoryDelta represents the difference between two repositories in a digestable format.
 // This structure gets sent to the front end during live updates.
 type RepositoryDelta struct {
@@ -207,6 +219,13 @@ type RepositoryDelta struct {
 	AddedBranches   map[string]Hash `json:"addedBranches"`
 	AmendedBranches map[string]Hash `json:"amendedBranches"`
 	DeletedBranches map[string]Hash `json:"deletedBranches"`
+
+	// HeadHash is the current HEAD commit hash, sent on every delta.
+	HeadHash string `json:"headHash"`
+	// Tags maps tag names to their target commit hashes (annotated tags are peeled).
+	Tags map[string]string `json:"tags"`
+	// Stashes contains all stash entries, newest first.
+	Stashes []StashEntry `json:"stashes"`
 }
 
 // NewRepositoryDelta returns a new RepositoryDelta struct.
@@ -215,12 +234,18 @@ func NewRepositoryDelta() *RepositoryDelta {
 		AddedBranches:   make(map[string]Hash),
 		AmendedBranches: make(map[string]Hash),
 		DeletedBranches: make(map[string]Hash),
+		Tags:            make(map[string]string),
+		Stashes:         []StashEntry{},
 	}
 }
 
 // IsEmpty reports whether a RepositoryDelta represents no difference.
 func (d *RepositoryDelta) IsEmpty() bool {
-	return len(d.AddedCommits) == 0 && len(d.DeletedCommits) == 0
+	return len(d.AddedCommits) == 0 &&
+		len(d.DeletedCommits) == 0 &&
+		len(d.AddedBranches) == 0 &&
+		len(d.DeletedBranches) == 0 &&
+		len(d.AmendedBranches) == 0
 }
 
 // DiffStatus represents the type of change made to a file.

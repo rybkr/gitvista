@@ -3,9 +3,12 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
+	"strconv"
+	"strings"
+
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"net/http"
-	"strings"
 )
 
 // extractHashParam extracts and validates a hash parameter from the URL path.
@@ -49,6 +52,11 @@ func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
 	s.cacheMu.RLock()
 	repo := s.cached.repo
 	s.cacheMu.RUnlock()
+
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
 
 	// Build current branch name from HEAD ref
 	currentBranch := ""
@@ -129,14 +137,15 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	if isBinary {
 		response["content"] = ""
 	} else {
-		// Cap content at 512KB to prevent browser from choking on huge files
-		maxSize := 512 * 1024
-		text := string(content)
-		if len(text) > maxSize {
-			text = text[:maxSize]
+		// Cap content at 512KB to prevent browser from choking on huge files.
+		// Truncate on byte boundary (not string rune boundary) to avoid splitting
+		// UTF-8 multi-byte sequences; then re-validate as a complete UTF-8 string.
+		const maxSize = 512 * 1024
+		if len(content) > maxSize {
+			content = content[:maxSize]
 			response["truncated"] = true
 		}
-		response["content"] = text
+		response["content"] = string(content)
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -232,7 +241,7 @@ func (s *Server) handleCommitDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if this is a file-level diff request
-	isFileDiff := strings.Contains(path, "/file")
+	isFileDiff := strings.HasSuffix(path, "/file")
 
 	// Extract commit hash (everything before "/file" if present)
 	commitHashStr := path
@@ -377,8 +386,17 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	}
 	filePath = sanitized
 
-	// Build cache key
-	cacheKey := string(commitHash) + ":" + filePath
+	// Parse context lines parameter; default to 3 when absent or invalid.
+	// Cap at 100 to prevent excessive response sizes.
+	contextLines := gitcore.DefaultContextLines
+	if raw := r.URL.Query().Get("context"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 100 {
+			contextLines = n
+		}
+	}
+
+	// Build cache key; include context count so different depths are cached separately
+	cacheKey := string(commitHash) + ":" + filePath + ":ctx" + strconv.Itoa(contextLines)
 
 	// Check cache first
 	if cached, ok := s.diffCache.Load(cacheKey); ok {
@@ -430,7 +448,7 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	}
 
 	// Compute file-level diff
-	fileDiff, err := gitcore.ComputeFileDiff(repo, targetEntry.OldHash, targetEntry.NewHash, filePath)
+	fileDiff, err := gitcore.ComputeFileDiff(repo, targetEntry.OldHash, targetEntry.NewHash, filePath, contextLines)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to compute file diff: %v", err), http.StatusInternalServerError)
 		return
@@ -455,4 +473,180 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
+}
+
+// handleWorkingTreeDiff serves a unified diff of unstaged/staged working-tree changes
+// for a single file relative to HEAD.
+// Route: GET /api/working-tree/diff?path={filePath}
+//
+// Shells out to "git diff HEAD -- <path>" following the same pattern used in status.go.
+// Returns a JSON object compatible with the FileDiff shape expected by diffContentViewer.js.
+func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Validate the path to prevent directory traversal
+	sanitized, err := sanitizePath(filePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid path: %v", err), http.StatusBadRequest)
+		return
+	}
+	filePath = sanitized
+
+	// Obtain the working directory from the cached repository
+	s.cacheMu.RLock()
+	repo := s.cached.repo
+	s.cacheMu.RUnlock()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Shell out to git diff HEAD, following the same pattern as status.go.
+	// "git diff HEAD" captures both staged and unstaged changes relative to the last commit.
+	cmd := exec.Command("git", "diff", "HEAD", "--", filePath)
+	cmd.Dir = repo.WorkDir()
+	out, err := cmd.Output()
+	if err != nil {
+		// Non-zero exit can mean the file is untracked (no history); treat as empty diff
+		out = []byte{}
+	}
+
+	// If there is no output the file is either untracked or identical to HEAD
+	if len(strings.TrimSpace(string(out))) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]any{
+			"path":      filePath,
+			"status":    "untracked",
+			"isBinary":  false,
+			"truncated": false,
+			"hunks":     []any{},
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Parse the raw unified diff output into our FileDiff structure
+	fileDiff := parseUnifiedDiff(string(out), filePath)
+
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]any{
+		"path":      fileDiff.Path,
+		"status":    "modified",
+		"isBinary":  fileDiff.IsBinary,
+		"truncated": fileDiff.Truncated,
+		"hunks":     fileDiff.Hunks,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+// parseUnifiedDiff converts the text output of "git diff" into a FileDiff struct.
+// It handles the standard unified diff format produced by git:
+//
+//	diff --git a/file b/file
+//	--- a/file
+//	+++ b/file
+//	@@ -oldStart,oldLines +newStart,newLines @@
+//	 context line
+//	-deleted line
+//	+added line
+func parseUnifiedDiff(raw, filePath string) *gitcore.FileDiff {
+	result := &gitcore.FileDiff{
+		Path:  filePath,
+		Hunks: make([]gitcore.DiffHunk, 0),
+	}
+
+	// Check for binary marker in the diff header
+	if strings.Contains(raw, "Binary files") || strings.Contains(raw, "GIT binary patch") {
+		result.IsBinary = true
+		return result
+	}
+
+	lines := strings.Split(raw, "\n")
+	var currentHunk *gitcore.DiffHunk
+	oldLine := 0
+	newLine := 0
+
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "@@"):
+			// Finalize any open hunk before starting a new one
+			if currentHunk != nil {
+				result.Hunks = append(result.Hunks, *currentHunk)
+			}
+			currentHunk = &gitcore.DiffHunk{
+				Lines: make([]gitcore.DiffLine, 0),
+			}
+			// Parse "@@ -oldStart,oldLines +newStart,newLines @@"
+			// We extract start positions to correctly track running line numbers
+			var oStart, oCount, nStart, nCount int
+			_, scanErr := fmt.Sscanf(line, "@@ -%d,%d +%d,%d @@", &oStart, &oCount, &nStart, &nCount)
+			if scanErr != nil {
+				// Try single-line hunk format "@@ -N +N @@"
+				oCount = 1
+				nCount = 1
+				fmt.Sscanf(line, "@@ -%d +%d @@", &oStart, &nStart) //nolint:errcheck
+			}
+			currentHunk.OldStart = oStart
+			currentHunk.NewStart = nStart
+			oldLine = oStart
+			newLine = nStart
+
+		case currentHunk == nil:
+			// Skip header lines before the first hunk (diff --git, ---, +++ lines)
+			continue
+
+		case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
+			currentHunk.Lines = append(currentHunk.Lines, gitcore.DiffLine{
+				Type:    "deletion",
+				Content: line[1:],
+				OldLine: oldLine,
+				NewLine: 0,
+			})
+			currentHunk.OldLines++
+			oldLine++
+
+		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
+			currentHunk.Lines = append(currentHunk.Lines, gitcore.DiffLine{
+				Type:    "addition",
+				Content: line[1:],
+				OldLine: 0,
+				NewLine: newLine,
+			})
+			currentHunk.NewLines++
+			newLine++
+
+		case strings.HasPrefix(line, " "):
+			// Context line (leading space)
+			currentHunk.Lines = append(currentHunk.Lines, gitcore.DiffLine{
+				Type:    "context",
+				Content: line[1:],
+				OldLine: oldLine,
+				NewLine: newLine,
+			})
+			currentHunk.OldLines++
+			currentHunk.NewLines++
+			oldLine++
+			newLine++
+		}
+	}
+
+	// Finalize the last open hunk
+	if currentHunk != nil {
+		result.Hunks = append(result.Hunks, *currentHunk)
+	}
+
+	return result
 }

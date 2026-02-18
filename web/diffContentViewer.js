@@ -4,11 +4,20 @@
  * Renders hunks with dual line number gutters (old/new), syntax highlighting
  * for added/deleted/context lines, and handles binary files and truncated diffs.
  * Follows the established ES module pattern from fileContentViewer.js.
+ *
+ * Expand-context: "↕ Expand context" buttons appear between hunks where hidden
+ * lines exist. Each click re-fetches the diff with context increased by 5 lines.
  */
 
 const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
+
+// How many extra context lines each "Expand context" click adds
+const CONTEXT_EXPAND_STEP = 5;
+
+// Default context lines — must match the backend defaultContextLines constant
+const DEFAULT_CONTEXT_LINES = 3;
 
 export function createDiffContentViewer() {
     const el = document.createElement("div");
@@ -16,21 +25,28 @@ export function createDiffContentViewer() {
     el.style.display = "none"; // Hidden by default
 
     let onBackCallback = null;
-    let onFileSelectCallback = null;
+
+    // State tracking for the currently displayed diff, used by expand-context
+    let currentFetchUrl = null;       // URL used to fetch the current diff
+    let currentContextLines = DEFAULT_CONTEXT_LINES;
 
     /**
-     * Render a status badge based on file status.
+     * Create a status badge element for a given file status.
+     * Returns a DOM element (not an HTML string) to avoid XSS via file paths.
      */
-    function getStatusBadge(status) {
+    function createStatusBadge(status) {
         const badges = {
-            added: { text: "A", class: "diff-status-badge--added" },
-            modified: { text: "M", class: "diff-status-badge--modified" },
-            deleted: { text: "D", class: "diff-status-badge--deleted" },
-            renamed: { text: "R", class: "diff-status-badge--renamed" },
-            copied: { text: "C", class: "diff-status-badge--copied" },
+            added: { text: "A", cls: "diff-status-badge--added" },
+            modified: { text: "M", cls: "diff-status-badge--modified" },
+            deleted: { text: "D", cls: "diff-status-badge--deleted" },
+            renamed: { text: "R", cls: "diff-status-badge--renamed" },
+            copied: { text: "C", cls: "diff-status-badge--copied" },
         };
-        const badge = badges[status] || { text: "?", class: "diff-status-badge" };
-        return `<span class="diff-status-badge ${badge.class}">${badge.text}</span>`;
+        const badge = badges[status] || { text: "?", cls: "" };
+        const el = document.createElement("span");
+        el.className = badge.cls ? `diff-status-badge ${badge.cls}` : "diff-status-badge";
+        el.textContent = badge.text;
+        return el;
     }
 
     /**
@@ -101,6 +117,65 @@ export function createDiffContentViewer() {
     }
 
     /**
+     * Render an "expand context" button shown between two adjacent hunks when
+     * there are hidden lines between them.  Clicking re-fetches the diff with
+     * currentContextLines increased by CONTEXT_EXPAND_STEP.
+     *
+     * @param {number} hiddenCount - Number of lines hidden between the two hunks
+     * @param {HTMLElement} hunksContainer - Container to replace on re-fetch
+     * @param {Object} fileDiff - The current FileDiff being shown
+     */
+    function renderExpandButton(hiddenCount, hunksContainer, fileDiff) {
+        const btn = document.createElement("button");
+        btn.className = "diff-expand-context";
+        btn.innerHTML = `\u2195 Show ${hiddenCount} hidden line${hiddenCount !== 1 ? "s" : ""} &mdash; Expand context`;
+        btn.title = `Re-fetch with ${currentContextLines + CONTEXT_EXPAND_STEP} context lines`;
+
+        btn.addEventListener("click", () => {
+            if (!currentFetchUrl) return;
+
+            // Increment context for this session
+            currentContextLines += CONTEXT_EXPAND_STEP;
+
+            // Build the new URL with the updated ?context= parameter
+            const url = new URL(currentFetchUrl, window.location.origin);
+            url.searchParams.set("context", String(currentContextLines));
+
+            showLoading();
+            fetch(url.toString())
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return res.json();
+                })
+                .then((newDiff) => {
+                    // Preserve status from the original diff since working-tree
+                    // diffs returned by the API may not carry it in the re-fetch
+                    if (!newDiff.status) {
+                        newDiff.status = fileDiff.status;
+                    }
+                    show(newDiff);
+                })
+                .catch((err) => {
+                    showError(`Failed to expand context: ${err.message}`);
+                });
+        });
+
+        return btn;
+    }
+
+    /**
+     * Compute the number of source lines that fall between two consecutive hunks.
+     * This is the gap in old-file line numbers between the end of hunkA and the
+     * start of hunkB.  Returns 0 when the hunks are adjacent.
+     */
+    function hiddenLinesBetween(hunkA, hunkB) {
+        const endOfA = hunkA.oldStart + hunkA.oldLines - 1;
+        const startOfB = hunkB.oldStart;
+        const gap = startOfB - endOfA - 1;
+        return gap > 0 ? gap : 0;
+    }
+
+    /**
      * Display a FileDiff object.
      *
      * @param {Object} fileDiff - The file diff object from the API
@@ -125,13 +200,14 @@ export function createDiffContentViewer() {
         });
         el.appendChild(backBtn);
 
-        // File header with status badge and path
+        // File header with status badge and path — use DOM construction to avoid XSS
         const header = document.createElement("div");
         header.className = "diff-file-header";
-        header.innerHTML = `
-            ${getStatusBadge(fileDiff.status)}
-            <span class="diff-file-path">${fileDiff.path}</span>
-        `;
+        header.appendChild(createStatusBadge(fileDiff.status));
+        const pathEl = document.createElement("span");
+        pathEl.className = "diff-file-path";
+        pathEl.textContent = fileDiff.path;
+        header.appendChild(pathEl);
         el.appendChild(header);
 
         // Content body
@@ -157,14 +233,33 @@ export function createDiffContentViewer() {
             deletedFileMsg.className = "diff-file-notice diff-file-notice--deleted";
             deletedFileMsg.textContent = "Deleted file";
             body.appendChild(deletedFileMsg);
+        } else if (fileDiff.status === "untracked") {
+            // Untracked file — no diff against HEAD is available
+            const untrackedMsg = document.createElement("div");
+            untrackedMsg.className = "diff-file-notice diff-file-notice--untracked";
+            untrackedMsg.textContent = "New file \u2014 not yet tracked";
+            body.appendChild(untrackedMsg);
         }
 
-        // Render hunks
+        // Render hunks, inserting expand-context buttons between non-adjacent hunks
         if (!fileDiff.isBinary && fileDiff.hunks && fileDiff.hunks.length > 0) {
             const hunksContainer = document.createElement("div");
             hunksContainer.className = "diff-hunks";
 
-            for (const hunk of fileDiff.hunks) {
+            for (let i = 0; i < fileDiff.hunks.length; i++) {
+                const hunk = fileDiff.hunks[i];
+
+                // Insert an expand button before this hunk when there is a gap
+                // between it and the previous one, indicating hidden context lines
+                if (i > 0 && currentFetchUrl) {
+                    const hidden = hiddenLinesBetween(fileDiff.hunks[i - 1], hunk);
+                    if (hidden > 0) {
+                        hunksContainer.appendChild(
+                            renderExpandButton(hidden, hunksContainer, fileDiff)
+                        );
+                    }
+                }
+
                 hunksContainer.appendChild(renderHunk(hunk));
             }
 
@@ -219,11 +314,35 @@ export function createDiffContentViewer() {
     }
 
     /**
+     * Fetch and display a diff from a URL.
+     * Tracks the URL so that expand-context buttons can re-fetch with more context.
+     *
+     * @param {string} url - Full URL for the diff API endpoint (without ?context=)
+     */
+    async function showFromUrl(url) {
+        // Reset context depth for each new file view
+        currentFetchUrl = url;
+        currentContextLines = DEFAULT_CONTEXT_LINES;
+
+        showLoading();
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const fileDiff = await res.json();
+            show(fileDiff);
+        } catch (err) {
+            showError(`Failed to load diff: ${err.message}`);
+        }
+    }
+
+    /**
      * Close the viewer and hide it (alias for clear).
      */
     function close() {
         el.style.display = "none";
         el.innerHTML = "";
+        currentFetchUrl = null;
+        currentContextLines = DEFAULT_CONTEXT_LINES;
     }
 
     /**
@@ -232,6 +351,8 @@ export function createDiffContentViewer() {
     function clear() {
         el.style.display = "none";
         el.innerHTML = "";
+        currentFetchUrl = null;
+        currentContextLines = DEFAULT_CONTEXT_LINES;
     }
 
     /**
@@ -241,22 +362,14 @@ export function createDiffContentViewer() {
         onBackCallback = callback;
     }
 
-    /**
-     * Register a callback for when user selects a different file.
-     * (Optional feature for future multi-file navigation)
-     */
-    function onFileSelect(callback) {
-        onFileSelectCallback = callback;
-    }
-
     return {
         el,
         show,
+        showFromUrl,
         showLoading,
         showError,
         close,
         clear,
         onBack,
-        onFileSelect,
     };
 }

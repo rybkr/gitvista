@@ -4,12 +4,12 @@
  */
 
 export const NODE_RADIUS = 6;
-export const LINK_DISTANCE = 50;
-export const LINK_STRENGTH = 0.4;
-export const CHARGE_STRENGTH = -110;
+export const LINK_DISTANCE = 60;
+export const LINK_STRENGTH = 0.6;
+export const CHARGE_STRENGTH = -250;
 export const COLLISION_RADIUS = 14;
-export const VELOCITY_DECAY = 0.55;
-export const ALPHA_DECAY = 0.035;
+export const VELOCITY_DECAY = 0.40;
+export const ALPHA_DECAY = 0.045;
 export const DRAG_ALPHA_TARGET = 0.12;
 export const LINK_THICKNESS = NODE_RADIUS * 0.32;
 export const ARROW_LENGTH = NODE_RADIUS * 2;
@@ -44,4 +44,25 @@ export const NODE_SHADOW_OFFSET_Y = 2;
 // Tree icon constants (displayed on commit nodes instead of separate tree nodes)
 export const TREE_ICON_SIZE = 7;
 export const TREE_ICON_OFFSET = 2;
+
+// HEAD commit ring accent color
+export const HEAD_RING_COLOR = "#f0a500";
+
+// Tag pill colors (amber, distinct from branch blue/purple)
+export const TAG_NODE_COLOR = "#f59e0b";
+export const TAG_NODE_BORDER_COLOR = "#d97706";
+
+// Stash node color (muted purple)
+export const STASH_NODE_COLOR = "#8b5cf6";
+export const STASH_NODE_SIZE = 9;
+
+// Zoom threshold above which commit message labels appear
+export const COMMIT_MESSAGE_ZOOM_THRESHOLD = 1.5;
+export const COMMIT_MESSAGE_MAX_CHARS = 40;
+export const COMMIT_MESSAGE_FONT =
+    "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
+
+// Hover glow ring opacity and extra radius
+export const HOVER_GLOW_EXTRA_RADIUS = 5;
+export const HOVER_GLOW_OPACITY = 0.28;
 

@@ -32,9 +32,20 @@ import { createGraphState, setZoomTransform } from "./state/graphState.js";
  * Creates and initializes the graph controller instance.
  *
  * @param {HTMLElement} rootElement DOM node that hosts the canvas.
- * @param {{onCommitTreeClick?: (commit: import("./types.js").GraphCommit) => void}} [options] Optional callbacks.
- * @returns {{ applyDelta(delta: unknown): void, destroy(): void }} Public graph API.
+ * @param {{
+ *   onCommitTreeClick?: (commit: import("./types.js").GraphCommit) => void,
+ *   onCommitSelect?: (hash: string | null) => void,
+ * }} [options] Optional callbacks.
+ * @returns {{
+ *   applyDelta(delta: unknown): void,
+ *   centerOnCommit(hash: string): void,
+ *   navigateCommits(direction: 'prev' | 'next'): void,
+ *   destroy(): void,
+ * }} Public graph API.
  */
+/** Returns a random value in the range [-range/2, range/2]. */
+const jitter = (range) => (Math.random() - 0.5) * range;
+
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
@@ -52,6 +63,19 @@ export function createGraphController(rootElement, options = {}) {
 
     let viewportWidth = 0;
     let viewportHeight = 0;
+
+    // rAF handle for render batching — ensures at most one canvas draw per frame
+    // regardless of how many render() callers fire (simulation tick, zoom, hover, etc.)
+    let rafId = null;
+
+    // Hash of the HEAD commit. Kept in sync with state.headHash — both must be
+    // updated together. state.headHash drives canvas rendering; headHash drives
+    // the HEAD button and keyboard shortcut (G→H).
+    let headHash = null;
+    // Hash of the commit node currently selected/highlighted, or null.
+    let selectedHash = null;
+    // Sorted commit node cache — invalidated whenever the graph structure changes.
+    let sortedCommitCache = null;
 
     const simulation = d3
         .forceSimulation(nodes)
@@ -103,9 +127,24 @@ export function createGraphController(rootElement, options = {}) {
         simulation.alpha(0.8).restart();
     });
     controls.appendChild(rebalanceBtn);
+
+    // "Jump to HEAD" button — centers the view on the current HEAD commit.
+    const headBtn = document.createElement("button");
+    headBtn.textContent = "\u2302 HEAD";
+    headBtn.title = "Jump to HEAD commit (G then H)";
+    headBtn.addEventListener("click", () => {
+        centerOnCommit(headHash);
+    });
+    controls.appendChild(headBtn);
+
     rootElement.appendChild(controls);
 
-    const tooltipManager = new TooltipManager(canvas);
+    // Pass navigateCommits into TooltipManager so the CommitTooltip's Prev/Next
+    // buttons can drive navigation without a circular reference to the controller.
+    // navigateCommits is declared later in this scope; JS closures make this safe.
+    const tooltipManager = new TooltipManager(canvas, {
+        navigate: (direction) => navigateCommits(direction),
+    });
     const renderer = new GraphRenderer(canvas, buildPalette(canvas));
 
     const updateTooltipPosition = () => {
@@ -198,6 +237,102 @@ export function createGraphController(rootElement, options = {}) {
         }
     };
 
+    /**
+     * Centers the viewport on the commit node with the given hash.
+     * If the hash is null/undefined or not found among current nodes, falls back
+     * to centering on the latest (HEAD) commit instead.
+     *
+     * @param {string | null} hash 40-character commit hash to center on.
+     */
+    const centerOnCommit = (hash) => {
+        if (hash) {
+            const target = nodes.find((n) => n.type === "commit" && n.hash === hash);
+            if (target) {
+                layoutManager.disableAutoCenter();
+                d3.select(canvas).call(zoom.translateTo, target.x, target.y);
+                return;
+            }
+        }
+        // Graceful fallback: center on whatever the latest commit is.
+        centerOnLatestCommit();
+    };
+
+    /**
+     * Selects a commit by hash, shows its tooltip, fires onCommitSelect, and
+     * centers the viewport on it.  Used by keyboard navigation and permalink restore.
+     *
+     * @param {string} hash 40-character commit hash to select.
+     */
+    const selectAndCenterCommit = (hash) => {
+        const node = nodes.find((n) => n.type === "commit" && n.hash === hash);
+        if (!node) {
+            return;
+        }
+        selectedHash = hash;
+        showTooltip(node);
+        options.onCommitSelect?.(hash);
+        centerOnCommit(hash);
+    };
+
+    /**
+     * Moves the selection to the next or previous commit in chronological order.
+     * Commits are sorted newest-first (matching the timeline layout), so:
+     *   - 'next' moves toward newer commits (lower index).
+     *   - 'prev' moves toward older commits (higher index).
+     * If nothing is selected, the HEAD commit is selected as the starting point.
+     *
+     * @param {'prev' | 'next'} direction Direction to navigate.
+     */
+    const navigateCommits = (direction) => {
+        if (!sortedCommitCache) {
+            // Build and cache a newest-first sorted list of commit nodes.
+            // Mirroring layoutManager.sortCommitsByTime() — logic identical to
+            // getCommitTimestamp() in graph/utils/time.js.
+            sortedCommitCache = nodes
+                .filter((n) => n.type === "commit")
+                .sort((a, b) => {
+                    const aTime = new Date(
+                        a.commit?.committer?.when ?? a.commit?.author?.when ?? 0
+                    ).getTime();
+                    const bTime = new Date(
+                        b.commit?.committer?.when ?? b.commit?.author?.when ?? 0
+                    ).getTime();
+                    if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                    return bTime - aTime; // newest first
+                });
+        }
+
+        const commitNodes = sortedCommitCache;
+        if (commitNodes.length === 0) {
+            return;
+        }
+
+        // Determine the current position in the sorted array.
+        let currentIndex = commitNodes.findIndex((n) => n.hash === selectedHash);
+
+        if (currentIndex === -1) {
+            // Nothing selected: start from HEAD (or the first node when HEAD is absent).
+            const headIndex = headHash
+                ? commitNodes.findIndex((n) => n.hash === headHash)
+                : -1;
+            currentIndex = headIndex !== -1 ? headIndex : 0;
+            selectAndCenterCommit(commitNodes[currentIndex].hash);
+            return;
+        }
+
+        // 'next' = newer = lower index in newest-first array.
+        // 'prev' = older = higher index in newest-first array.
+        const delta = direction === "next" ? -1 : 1;
+        const nextIndex = currentIndex + delta;
+
+        if (nextIndex < 0 || nextIndex >= commitNodes.length) {
+            // Already at the boundary; no-op.
+            return;
+        }
+
+        selectAndCenterCommit(commitNodes[nextIndex].hash);
+    };
+
     const releaseDrag = () => {
         if (!dragState) {
             return;
@@ -242,8 +377,16 @@ export function createGraphController(rootElement, options = {}) {
         const currentTarget = tooltipManager.getTargetData();
         if (tooltipManager.isVisible() && currentTarget === targetNode) {
             hideTooltip();
+            // Deselect: clear permalink and selection state.
+            selectedHash = null;
+            options.onCommitSelect?.(null);
         } else {
             showTooltip(targetNode);
+            // Track selection for permalink and keyboard navigation.
+            if (targetNode.type === "commit") {
+                selectedHash = targetNode.hash;
+                options.onCommitSelect?.(targetNode.hash);
+            }
         }
 
         // If clicking on a commit node, also open the file explorer
@@ -275,6 +418,12 @@ export function createGraphController(rootElement, options = {}) {
         }
     };
 
+    // Pending hover check scheduled via rAF — avoids running the O(n) node scan
+    // on every pixel of mouse movement (can be 60+ events/sec on modern hardware).
+    let pendingHoverX = 0;
+    let pendingHoverY = 0;
+    let hoverRafId = null;
+
     const handlePointerMove = (event) => {
         if (dragState && event.pointerId === dragState.pointerId) {
             event.preventDefault();
@@ -303,6 +452,23 @@ export function createGraphController(rootElement, options = {}) {
             render();
             return;
         }
+
+        // Capture coordinates immediately (event object may be reused by the browser).
+        const { x, y } = toGraphCoordinates(event);
+        pendingHoverX = x;
+        pendingHoverY = y;
+
+        // Throttle the O(n) hit-test to at most once per animation frame.
+        if (hoverRafId !== null) return;
+        hoverRafId = requestAnimationFrame(() => {
+            hoverRafId = null;
+            const hit = findNodeAt(pendingHoverX, pendingHoverY);
+            if (hit !== state.hoverNode) {
+                state.hoverNode = hit;
+                canvas.style.cursor = hit ? "pointer" : "default";
+                render();
+            }
+        });
     };
 
     const handlePointerUp = (event) => {
@@ -542,6 +708,7 @@ export function createGraphController(rootElement, options = {}) {
      * and triggers layout adjustments.
      */
     function updateGraph() {
+        sortedCommitCache = null; // Invalidate on every structural update
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
 
@@ -619,15 +786,13 @@ export function createGraphController(rootElement, options = {}) {
             ) * 0.18;
         const radius = Math.random() * maxRadius;
         const angle = Math.random() * Math.PI * 2;
-        const jitter = () => (Math.random() - 0.5) * 35;
 
         if (anchorNode) {
-            const offsetJitter = () => (Math.random() - 0.5) * 6;
             return {
                 type: "commit",
                 hash,
-                x: anchorNode.x + offsetJitter(),
-                y: anchorNode.y + offsetJitter(),
+                x: anchorNode.x + jitter(6),
+                y: anchorNode.y + jitter(6),
                 vx: 0,
                 vy: 0,
             };
@@ -636,8 +801,8 @@ export function createGraphController(rootElement, options = {}) {
         return {
             type: "commit",
             hash,
-            x: centerX + Math.cos(angle) * radius + jitter(),
-            y: centerY + Math.sin(angle) * radius + jitter(),
+            x: centerX + Math.cos(angle) * radius + jitter(35),
+            y: centerY + Math.sin(angle) * radius + jitter(35),
             vx: 0,
             vy: 0,
         };
@@ -653,7 +818,6 @@ export function createGraphController(rootElement, options = {}) {
 
             const baseX = targetNode.x ?? 0;
             const baseY = targetNode.y ?? 0;
-            const jitter = (range) => (Math.random() - 0.5) * range;
 
             branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
             branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
@@ -664,7 +828,6 @@ export function createGraphController(rootElement, options = {}) {
 
     function createBranchNode(branchName, targetNode) {
         if (targetNode) {
-            const jitter = (range) => (Math.random() - 0.5) * range;
             return {
                 type: "branch",
                 branch: branchName,
@@ -678,27 +841,33 @@ export function createGraphController(rootElement, options = {}) {
 
         const baseX = (viewportWidth || canvas.width) / 2;
         const baseY = (viewportHeight || canvas.height) / 2;
-        const jitterFallback = (range) => (Math.random() - 0.5) * range;
 
         return {
             type: "branch",
             branch: branchName,
             targetHash: null,
-            x: baseX - BRANCH_NODE_OFFSET_X + jitterFallback(6),
-            y: baseY + jitterFallback(BRANCH_NODE_OFFSET_Y),
+            x: baseX - BRANCH_NODE_OFFSET_X + jitter(6),
+            y: baseY + jitter(BRANCH_NODE_OFFSET_Y),
             vx: 0,
             vy: 0,
         };
     }
 
     function render() {
-        renderer.render({
-            nodes,
-            links,
-            zoomTransform,
-            viewportWidth,
-            viewportHeight,
-            tooltipManager,
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            renderer.render({
+                nodes,
+                links,
+                zoomTransform,
+                viewportWidth,
+                viewportHeight,
+                tooltipManager,
+                headHash: state.headHash,
+                hoverNode: state.hoverNode,
+                tags: state.tags,
+            });
         });
     }
 
@@ -711,6 +880,14 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function destroy() {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        if (hoverRafId !== null) {
+            cancelAnimationFrame(hoverRafId);
+            hoverRafId = null;
+        }
         window.removeEventListener("resize", resize);
         resizeObserver?.disconnect();
         d3.select(canvas).on(".zoom", null);
@@ -757,11 +934,58 @@ export function createGraphController(rootElement, options = {}) {
             branches.delete(name);
         }
 
+        // Sync HEAD, tags, and stashes from every delta.
+        // Keep headHash (used by the HEAD button) and state.headHash (used by the
+        // renderer) in lockstep so they never refer to different commits.
+        if (delta.headHash) {
+            headHash = delta.headHash;
+            state.headHash = delta.headHash;
+        }
+        if (delta.tags) {
+            state.tags = new Map(Object.entries(delta.tags));
+        }
+        if (Array.isArray(delta.stashes)) {
+            state.stashes = delta.stashes;
+        }
+
         updateGraph();
     }
 
     return {
         applyDelta,
         destroy,
+        /**
+         * Centers the viewport on the commit with the given hash.
+         * Falls back to the latest commit when the hash is not found.
+         *
+         * @param {string | null} hash Commit hash to center on.
+         */
+        centerOnCommit,
+        /**
+         * Moves the selection one step in chronological order.
+         *
+         * @param {'prev' | 'next'} direction 'prev' = older, 'next' = newer.
+         */
+        navigateCommits,
+        /**
+         * Selects the commit with the given hash, shows its tooltip, fires
+         * onCommitSelect, and centers the viewport on it.
+         *
+         * @param {string} hash Commit hash to select.
+         */
+        selectAndCenter: selectAndCenterCommit,
+        /** Returns the current HEAD hash or null when unknown. */
+        getHeadHash: () => headHash,
+        /**
+         * Updates the tracked HEAD commit hash.
+         * Called by app.js from the onHead WebSocket callback so the HEAD button
+         * and G→H shortcut always refer to the correct commit.
+         *
+         * @param {string | null} hash Current HEAD commit hash.
+         */
+        setHeadHash: (hash) => {
+            headHash = hash || null;
+            state.headHash = hash || "";
+        },
     };
 }

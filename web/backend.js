@@ -1,6 +1,10 @@
-export async function startBackend({ onDelta, onStatus, onHead, onRepoMetadata, logger }) {
+// Reconnection backoff constants
+const RECONNECT_DELAY_INITIAL_MS = 1000;
+const RECONNECT_DELAY_MAX_MS = 30000;
+
+export async function startBackend({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
     await loadRepositoryMetadata(logger, onRepoMetadata);
-    return openWebSocket({ onDelta, onStatus, onHead, logger });
+    return openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger });
 }
 
 async function loadRepositoryMetadata(logger, onRepoMetadata) {
@@ -18,16 +22,42 @@ async function loadRepositoryMetadata(logger, onRepoMetadata) {
     }
 }
 
-function openWebSocket({ onDelta, onStatus, onHead, logger }) {
+function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const url = `${protocol}://${window.location.host}/api/ws`;
     logger?.info("Opening WebSocket connection", url);
 
-    try {
-        const socket = new WebSocket(url);
+    // Mutable reconnection state — delay doubles each attempt up to the cap
+    let reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
+    let destroyed = false;
+
+    function notifyState(state) {
+        onConnectionStateChange?.(state);
+    }
+
+    function connect() {
+        if (destroyed) return;
+
+        let socket;
+        try {
+            socket = new WebSocket(url);
+        } catch (error) {
+            logger?.error("WebSocket setup failed", error);
+            notifyState("disconnected");
+            return;
+        }
 
         socket.addEventListener("open", () => {
             logger?.info("WebSocket connection established");
+            const isReconnect = reconnectDelay > RECONNECT_DELAY_INITIAL_MS;
+            // Reset backoff on successful connection
+            reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
+            notifyState("connected");
+            // Re-fetch metadata on reconnect so the info bar reflects any changes
+            // (new branches, changed HEAD, etc.) that occurred while disconnected.
+            if (isReconnect) {
+                loadRepositoryMetadata(logger, onRepoMetadata);
+            }
         });
 
         socket.addEventListener("message", (event) => {
@@ -63,16 +93,25 @@ function openWebSocket({ onDelta, onStatus, onHead, logger }) {
                 code: event.code,
                 reason: event.reason || "No reason provided",
             });
+
+            if (destroyed) return;
+
+            // Reconnect with exponential backoff regardless of close code.
+            notifyState("reconnecting");
+            logger?.info(`Reconnecting in ${reconnectDelay}ms`);
+
+            setTimeout(() => connect(), reconnectDelay);
+
+            // Double the delay each attempt, capped at the maximum
+            reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
         });
 
         socket.addEventListener("error", (error) => {
             logger?.error("WebSocket encountered an error", error);
+            // The close event fires after error, so reconnection is handled there.
         });
-
-        return socket;
-    } catch (error) {
-        logger?.error("WebSocket setup failed", error);
-        return null;
     }
+
+    connect();
 }
 
