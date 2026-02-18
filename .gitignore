@@ -1,0 +1,19 @@
+# Build artifacts
+gitvista
+vista
+*.exe
+*.out
+
+# Test coverage
+coverage.out
+test/cover/
+gosec-report.json
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Tool caches
+.ruff_cache/

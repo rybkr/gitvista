@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diff Content Viewer Test</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+        }
+        .test-container {
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            max-width: 800px;
+            margin: 0 auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .test-controls {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--surface-color);
+            display: flex;
+            gap: 8px;
+        }
+        .test-controls button {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--surface-color);
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .test-controls button:hover {
+            background: rgba(208, 215, 222, 0.32);
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="test-controls">
+            <button onclick="testModifiedFile()">Test Modified File</button>
+            <button onclick="testAddedFile()">Test Added File</button>
+            <button onclick="testDeletedFile()">Test Deleted File</button>
+            <button onclick="testBinaryFile()">Test Binary File</button>
+            <button onclick="testTruncatedDiff()">Test Truncated Diff</button>
+            <button onclick="testLargeDiff()">Test Large Diff</button>
+        </div>
+        <div id="viewer-container"></div>
+    </div>
+
+    <script type="module">
+        import { createDiffContentViewer } from './diffContentViewer.js';
+
+        const viewer = createDiffContentViewer();
+        document.getElementById('viewer-container').appendChild(viewer.el);
+        viewer.el.style.display = 'flex';
+
+        viewer.onBack(() => {
+            console.log('Back button clicked');
+        });
+
+        // Test data generators
+        window.testModifiedFile = function() {
+            viewer.show({
+                path: "web/app.js",
+                status: "modified",
+                binary: false,
+                hunks: [
+                    {
+                        oldStart: 10,
+                        oldCount: 7,
+                        newStart: 10,
+                        newCount: 9,
+                        lines: [
+                            { type: "context", content: "import { createGraph } from './graph/graphController.js'", oldNum: 10, newNum: 10 },
+                            { type: "context", content: "import { createSidebar } from './sidebar.js'", oldNum: 11, newNum: 11 },
+                            { type: "delete", content: "import { oldThing } from './old.js'", oldNum: 12 },
+                            { type: "add", content: "import { newThing } from './new.js'", newNum: 12 },
+                            { type: "add", content: "import { anotherThing } from './another.js'", newNum: 13 },
+                            { type: "context", content: "", oldNum: 13, newNum: 14 },
+                            { type: "context", content: "function main() {", oldNum: 14, newNum: 15 },
+                            { type: "delete", content: "    const old = oldThing()", oldNum: 15 },
+                            { type: "add", content: "    const updated = newThing()", newNum: 16 },
+                            { type: "add", content: "    const extra = anotherThing()", newNum: 17 },
+                            { type: "context", content: "    return true", oldNum: 16, newNum: 18 },
+                            { type: "context", content: "}", oldNum: 17, newNum: 19 }
+                        ]
+                    },
+                    {
+                        oldStart: 45,
+                        oldCount: 3,
+                        newStart: 47,
+                        newCount: 5,
+                        lines: [
+                            { type: "context", content: "function cleanup() {", oldNum: 45, newNum: 47 },
+                            { type: "add", content: "    console.log('Starting cleanup')", newNum: 48 },
+                            { type: "add", content: "    performCleanup()", newNum: 49 },
+                            { type: "context", content: "    return null", oldNum: 46, newNum: 50 },
+                            { type: "context", content: "}", oldNum: 47, newNum: 51 }
+                        ]
+                    }
+                ],
+                truncated: false
+            });
+        };
+
+        window.testAddedFile = function() {
+            viewer.show({
+                path: "web/newFeature.js",
+                status: "added",
+                binary: false,
+                hunks: [
+                    {
+                        oldStart: 0,
+                        oldCount: 0,
+                        newStart: 1,
+                        newCount: 8,
+                        lines: [
+                            { type: "add", content: "/**", newNum: 1 },
+                            { type: "add", content: " * New feature implementation", newNum: 2 },
+                            { type: "add", content: " */", newNum: 3 },
+                            { type: "add", content: "", newNum: 4 },
+                            { type: "add", content: "export function newFeature() {", newNum: 5 },
+                            { type: "add", content: "    console.log('New feature')", newNum: 6 },
+                            { type: "add", content: "    return true", newNum: 7 },
+                            { type: "add", content: "}", newNum: 8 }
+                        ]
+                    }
+                ],
+                truncated: false
+            });
+        };
+
+        window.testDeletedFile = function() {
+            viewer.show({
+                path: "web/deprecated.js",
+                status: "deleted",
+                binary: false,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldCount: 5,
+                        newStart: 0,
+                        newCount: 0,
+                        lines: [
+                            { type: "delete", content: "// Deprecated functionality", oldNum: 1 },
+                            { type: "delete", content: "export function oldFunc() {", oldNum: 2 },
+                            { type: "delete", content: "    return false", oldNum: 3 },
+                            { type: "delete", content: "}", oldNum: 4 }
+                        ]
+                    }
+                ],
+                truncated: false
+            });
+        };
+
+        window.testBinaryFile = function() {
+            viewer.show({
+                path: "assets/logo.png",
+                status: "modified",
+                binary: true,
+                hunks: [],
+                truncated: false
+            });
+        };
+
+        window.testTruncatedDiff = function() {
+            viewer.show({
+                path: "data/large-dataset.json",
+                status: "modified",
+                binary: false,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldCount: 100,
+                        newStart: 1,
+                        newCount: 150,
+                        lines: [
+                            { type: "context", content: "{", oldNum: 1, newNum: 1 },
+                            { type: "context", content: "  \"items\": [", oldNum: 2, newNum: 2 },
+                            { type: "delete", content: "    {\"id\": 1, \"value\": \"old\"}", oldNum: 3 },
+                            { type: "add", content: "    {\"id\": 1, \"value\": \"new\", \"timestamp\": 1234567890}", newNum: 3 },
+                            { type: "context", content: "  ]", oldNum: 4, newNum: 4 },
+                            { type: "context", content: "}", oldNum: 5, newNum: 5 }
+                        ]
+                    }
+                ],
+                truncated: true
+            });
+        };
+
+        window.testLargeDiff = function() {
+            const lines = [];
+            for (let i = 1; i <= 200; i++) {
+                const type = i % 5 === 0 ? "add" : i % 7 === 0 ? "delete" : "context";
+                const line = {
+                    type,
+                    content: `Line ${i} of code with some content`,
+                };
+                if (type === "delete") {
+                    line.oldNum = i;
+                } else if (type === "add") {
+                    line.newNum = i;
+                } else {
+                    line.oldNum = i;
+                    line.newNum = i;
+                }
+                lines.push(line);
+            }
+
+            viewer.show({
+                path: "src/components/LargeComponent.tsx",
+                status: "modified",
+                binary: false,
+                hunks: [
+                    {
+                        oldStart: 1,
+                        oldCount: 200,
+                        newStart: 1,
+                        newCount: 200,
+                        lines
+                    }
+                ],
+                truncated: false
+            });
+        };
+
+        // Load modified file by default
+        testModifiedFile();
+    </script>
+</body>
+</html>
