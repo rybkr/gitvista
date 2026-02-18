@@ -26,11 +26,15 @@ import {
     COMMIT_MESSAGE_ZOOM_THRESHOLD,
     COMMIT_MESSAGE_MAX_CHARS,
     COMMIT_MESSAGE_FONT,
+    COMMIT_AUTHOR_ZOOM_THRESHOLD,
+    COMMIT_DATE_ZOOM_THRESHOLD,
+    COMMIT_DETAIL_FONT,
     HOVER_GLOW_EXTRA_RADIUS,
     HOVER_GLOW_OPACITY,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 import { getAuthorColor } from "../../utils/colors.js";
+import { relativeTime } from "../utils/time.js";
 
 /**
  * Renders graph nodes and links to a 2D canvas context.
@@ -484,7 +488,10 @@ export class GraphRenderer {
         this.ctx.fillStyle = this.palette.labelText;
         this.ctx.fillText(text, labelX, labelY);
 
-        // At high zoom levels, show the first line of the commit message below the hash.
+        // Progressive detail: each tier adds text below the previous, tracking Y with detailY.
+        let detailY = labelY + 14;
+
+        // Tier 1 (zoom >= 1.5): first line of commit message
         if (zoomK >= COMMIT_MESSAGE_ZOOM_THRESHOLD && node.commit.message) {
             const firstLine = node.commit.message.split("\n")[0].trim();
             const truncated = firstLine.length > COMMIT_MESSAGE_MAX_CHARS
@@ -493,7 +500,28 @@ export class GraphRenderer {
             this.ctx.font = COMMIT_MESSAGE_FONT;
             this.ctx.globalAlpha = 0.65 * spawnAlpha;
             this.ctx.fillStyle = this.palette.labelText;
-            this.ctx.fillText(truncated, labelX, labelY + 14);
+            this.ctx.fillText(truncated, labelX, detailY);
+            detailY += 13;
+        }
+
+        // Tier 2 (zoom >= 2.0): author name
+        if (zoomK >= COMMIT_AUTHOR_ZOOM_THRESHOLD && node.commit.author?.name) {
+            this.ctx.font = COMMIT_DETAIL_FONT;
+            this.ctx.globalAlpha = 0.50 * spawnAlpha;
+            this.ctx.fillStyle = this.palette.labelText;
+            this.ctx.fillText(node.commit.author.name, labelX, detailY);
+            detailY += 12;
+        }
+
+        // Tier 3 (zoom >= 3.0): relative commit date
+        if (zoomK >= COMMIT_DATE_ZOOM_THRESHOLD) {
+            const rel = relativeTime(node.commit.author?.when);
+            if (rel) {
+                this.ctx.font = COMMIT_DETAIL_FONT;
+                this.ctx.globalAlpha = 0.40 * spawnAlpha;
+                this.ctx.fillStyle = this.palette.labelText;
+                this.ctx.fillText(rel, labelX, detailY);
+            }
         }
 
         this.ctx.restore();

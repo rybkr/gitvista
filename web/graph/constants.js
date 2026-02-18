@@ -62,6 +62,16 @@ export const COMMIT_MESSAGE_MAX_CHARS = 40;
 export const COMMIT_MESSAGE_FONT =
     "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
 
+// Zoom threshold above which the author name appears below the commit message
+export const COMMIT_AUTHOR_ZOOM_THRESHOLD = 2.0;
+
+// Zoom threshold above which the relative commit date appears below the author name
+export const COMMIT_DATE_ZOOM_THRESHOLD = 3.0;
+
+// Smaller font used for author and date detail lines
+export const COMMIT_DETAIL_FONT =
+    "9px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
+
 // Hover glow ring opacity and extra radius
 export const HOVER_GLOW_EXTRA_RADIUS = 5;
 export const HOVER_GLOW_OPACITY = 0.28;
