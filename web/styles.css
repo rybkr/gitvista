@@ -642,6 +642,50 @@ canvas {
     transition: opacity 0.12s ease;
 }
 
+/* Navigation row appended to the commit tooltip.
+   Re-enables pointer-events on just this element so the Prev/Next buttons
+   are clickable even though the parent tooltip is pointer-events: none. */
+.commit-tooltip-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-color);
+    pointer-events: auto;
+}
+
+.commit-tooltip-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+    font-family: inherit;
+}
+
+.commit-tooltip-nav-btn:hover {
+    background: rgba(208, 215, 222, 0.32);
+    color: var(--text-color);
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-tooltip-nav-btn:hover {
+        background: rgba(48, 54, 61, 0.8);
+    }
+}
+
+.commit-tooltip-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 @media (prefers-color-scheme: dark) {
     .commit-tooltip {
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
