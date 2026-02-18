@@ -18,6 +18,13 @@ export function createGraphState() {
 		links: [],
 		zoomTransform: d3.zoomIdentity,
 		layoutMode: "force", // Current layout mode: "force" or "lane"
+		searchQuery: "",
+		filterState: { hideRemotes: false, hideMerges: false, hideStashes: false, focusBranch: "" },
+		filterPredicate: null, // Derived: compiled from searchQuery + filterState; not serializable
+		stashes: [],
+		hoverNode: null,
+		headHash: "",
+		tags: new Map(),
 	};
 }
 

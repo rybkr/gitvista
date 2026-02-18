@@ -217,7 +217,8 @@ body {
     font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--bg-color);
     color: var(--text-color);
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
     display: flex;
     padding: 0;
     font-weight: 400;
@@ -653,24 +654,20 @@ body {
     opacity: 0.5;
 }
 
-/* Floating toggle shown when sidebar is collapsed */
+/* Toggle shown in canvas toolbar when sidebar is collapsed */
 .sidebar-expand {
-    position: absolute;
-    top: 16px;
-    left: 16px;
-    z-index: 25;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: var(--surface-color);
+    background: transparent;
     color: var(--text-color);
     cursor: pointer;
-    box-shadow: 0 4px 12px var(--node-shadow-color);
     transition: all 0.15s ease;
+    flex-shrink: 0;
 }
 
 .sidebar-expand:hover {
@@ -684,8 +681,26 @@ body {
     }
 }
 
+/* ── Canvas Toolbar ── */
+
+/*
+ * In-flow strip between the filter panel and the canvas. Contains the sidebar
+ * expand button (when collapsed), commit search, and graph layout controls.
+ * Replaces the former scattered absolute-positioned overlays that caused
+ * z-index conflicts and overlapping on narrow viewports.
+ */
+.canvas-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    background: var(--bg-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
 canvas {
-    /* flex: 1 so the canvas fills all space not consumed by the filter panel.
+    /* flex: 1 so the canvas fills all space not consumed by the toolbar.
        min-height: 0 prevents flex children from overflowing the container. */
     flex: 1;
     width: 100%;
@@ -695,25 +710,121 @@ canvas {
     touch-action: none;
 }
 
-.graph-controls {
+/* ── Search Bar ── */
+
+.search-container {
+    flex: 1;
+    min-width: 0;
+    max-width: 300px;
+}
+
+.commit-search {
+    display: flex;
+    align-items: center;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    width: 100%;
+}
+
+.commit-search:focus-within {
+    border-color: var(--node-color);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search:focus-within {
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.18);
+    }
+}
+
+/* Magnifier icon — positioned to the left of the input text. */
+.commit-search-icon {
     position: absolute;
-    top: 20px;
-    right: 20px;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+.commit-search-input {
+    width: 100%;
+    padding: 8px 32px 8px 30px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text-color);
+    outline: none;
+    /* Remove browser-native search decorations (Webkit cancel button, IE clear).
+       Our custom clear button replaces them for cross-browser consistency. */
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.commit-search-input::-webkit-search-cancel-button,
+.commit-search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.commit-search-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+/* Clear (×) button — hidden until the input has content. */
+.commit-search-clear {
+    position: absolute;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.12s ease, background 0.12s ease;
+    flex-shrink: 0;
+}
+
+.commit-search-clear:hover {
+    color: var(--text-color);
+    background: rgba(14, 165, 233, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-clear:hover {
+        background: rgba(88, 166, 255, 0.1);
+    }
+}
+
+.commit-search-clear:focus-visible {
+    box-shadow: 0 0 0 2px var(--node-color);
+    border-radius: 4px;
+    outline: none;
+}
+
+.graph-controls {
     display: flex;
     gap: 0;
     padding: 0;
     border-radius: 10px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    box-shadow: 0 4px 16px var(--node-shadow-color);
-    z-index: 10;
     overflow: hidden;
-}
-
-@media (prefers-color-scheme: dark) {
-    .graph-controls {
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    }
+    flex-shrink: 0;
+    margin-left: auto;
 }
 
 .graph-controls button {

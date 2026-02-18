@@ -15,8 +15,6 @@ import {
     NODE_RADIUS,
     ZOOM_MAX,
     ZOOM_MIN,
-    TREE_ICON_SIZE,
-    TREE_ICON_OFFSET,
 } from "./constants.js";
 import { GraphRenderer } from "./rendering/graphRenderer.js";
 import { ForceStrategy } from "./layout/forceStrategy.js";
@@ -205,7 +203,6 @@ const jitter = (range) => (Math.random() - 0.5) * range;
 
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
-    canvas.factor = window.devicePixelRatio || 1;
     rootElement.appendChild(canvas);
 
     const state = createGraphState();
@@ -220,11 +217,8 @@ export function createGraphController(rootElement, options = {}) {
     let viewportHeight = 0;
 
     let selectedHash = null;
-    let headHash = null;
     let sortedCommitCache = null;
     let rafId = null;
-    let initialLayoutComplete = false;
-    let pendingBranchAlignments = [];
 
     // Create both layout strategies
     const forceStrategy = new ForceStrategy({
@@ -288,7 +282,7 @@ export function createGraphController(rootElement, options = {}) {
     headBtn.textContent = "\u2302 HEAD";
     headBtn.title = "Jump to HEAD commit (G then H)";
     headBtn.addEventListener("click", () => {
-        centerOnCommit(headHash);
+        centerOnCommit(state.headHash || null);
     });
     controls.appendChild(headBtn);
 
@@ -398,40 +392,6 @@ export function createGraphController(rootElement, options = {}) {
         return bestNode;
     };
 
-    /**
-     * Hit-tests whether the given graph coordinates land within a commit node's tree icon.
-     * Returns the commit node if the icon is clicked, null otherwise.
-     *
-     * @param {number} x Graph X coordinate.
-     * @param {number} y Graph Y coordinate.
-     * @returns {import("./types.js").GraphNodeCommit | null} Commit node if tree icon clicked.
-     */
-    const findTreeIconAt = (x, y) => {
-        for (const node of nodes) {
-            if (node.type !== "commit" || !node.commit?.tree) {
-                continue;
-            }
-
-            const iconSize = TREE_ICON_SIZE;
-            const offsetX = node.radius + TREE_ICON_OFFSET;
-            const offsetY = -(node.radius + TREE_ICON_OFFSET);
-            const iconX = node.x + offsetX;
-            const iconY = node.y + offsetY;
-
-            // Check if click is within the folder icon bounds (with some padding for easier clicking)
-            const padding = 2;
-            if (
-                x >= iconX - padding &&
-                x <= iconX + iconSize + padding &&
-                y >= iconY - iconSize * 0.2 - padding &&
-                y <= iconY + iconSize * 0.6 + padding
-            ) {
-                return node;
-            }
-        }
-        return null;
-    };
-
     const centerOnLatestCommit = () => {
         const target = layoutStrategy.findCenterTarget(nodes);
         if (target) {
@@ -508,8 +468,8 @@ export function createGraphController(rootElement, options = {}) {
 
         if (currentIndex === -1) {
             // Nothing selected: start from HEAD (or the first node when HEAD is absent).
-            const headIndex = headHash
-                ? commitNodes.findIndex((n) => n.hash === headHash)
+            const headIndex = state.headHash
+                ? commitNodes.findIndex((n) => n.hash === state.headHash)
                 : -1;
             currentIndex = headIndex !== -1 ? headIndex : 0;
             selectAndCenterCommit(commitNodes[currentIndex].hash);
@@ -672,11 +632,14 @@ export function createGraphController(rootElement, options = {}) {
     d3.select(canvas).call(zoom).on("dblclick.zoom", null);
 
     const resize = () => {
-        const parent = canvas.parentElement;
-        const cssWidth =
-            (parent?.clientWidth ?? window.innerWidth) || window.innerWidth;
-        const cssHeight =
-            (parent?.clientHeight ?? window.innerHeight) || window.innerHeight;
+        // Read the canvas's own flex-computed size (not the parent's) to avoid
+        // a feedback loop: #root is a column flex container whose height is
+        // determined by body's cross-axis stretch.  Reading parent.clientHeight
+        // and writing it back as canvas.style.height would make #root grow on
+        // every call.  Fall back to window dimensions on the very first call
+        // before the browser has completed layout.
+        const cssWidth = canvas.clientWidth || window.innerWidth;
+        const cssHeight = canvas.clientHeight || window.innerHeight;
         const dpr = window.devicePixelRatio || 1;
 
         // Guard against invalid dimensions that would put canvas in error state
@@ -696,10 +659,11 @@ export function createGraphController(rootElement, options = {}) {
         viewportWidth = cssWidth;
         viewportHeight = cssHeight;
 
+        // Set the drawing buffer size (high-DPI).  Do NOT set
+        // canvas.style.width/height — the CSS rules (flex: 1; width: 100%)
+        // handle display sizing and must not be overridden by inline styles.
         canvas.width = physicalWidth;
         canvas.height = physicalHeight;
-        canvas.style.width = `${cssWidth}px`;
-        canvas.style.height = `${cssHeight}px`;
 
         layoutStrategy.updateViewport(cssWidth, cssHeight);
         render();
@@ -943,7 +907,7 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         // Snap branch nodes to their target commits before updating layout strategy
-        snapBranchesToTargets(pendingBranchAlignments);
+        snapBranchesToTargets(branchReconciliation.alignments);
 
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after reconciliation so newly-created nodes are
@@ -1154,10 +1118,7 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         // Sync HEAD, tags, and stashes from every delta.
-        // Keep headHash (used by the HEAD button) and state.headHash (used by the
-        // renderer) in lockstep so they never refer to different commits.
         if (delta.headHash) {
-            headHash = delta.headHash;
             state.headHash = delta.headHash;
         }
         if (delta.tags) {
@@ -1203,7 +1164,7 @@ export function createGraphController(rootElement, options = {}) {
          */
         selectAndCenter: selectAndCenterCommit,
         /** Returns the current HEAD hash or null when unknown. */
-        getHeadHash: () => headHash,
+        getHeadHash: () => state.headHash || null,
         /**
          * Updates the tracked HEAD commit hash.
          * Called by app.js from the onHead WebSocket callback so the HEAD button
@@ -1212,7 +1173,6 @@ export function createGraphController(rootElement, options = {}) {
          * @param {string | null} hash Current HEAD commit hash.
          */
         setHeadHash: (hash) => {
-            headHash = hash || null;
             state.headHash = hash || "";
         },
         /**
@@ -1233,7 +1193,7 @@ export function createGraphController(rootElement, options = {}) {
          * @param {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} filterState
          */
         setFilterState: (filterState) => {
-            state.filterState = filterState;
+            state.filterState = { ...filterState };
             rebuildAndApplyPredicate();
         },
         /**

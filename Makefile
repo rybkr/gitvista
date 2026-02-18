@@ -35,3 +35,7 @@ build:
 clean:
 	$(GOCLEAN)
 	rm -f gitvista
+
+## cloc: Count lines of code
+cloc:
+	cloc .

@@ -28,6 +28,9 @@ make lint
 # Build binary
 make build
 
+# Count lines of code
+make cloc
+
 # Run a single test by name
 go test -v ./internal/gitcore -run TestLoadPackIndexV1
 
@@ -54,12 +57,13 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `objects.go` - Reads loose and packed Git objects (commits, tags, trees), handles zlib decompression
 - `pack.go` - Pack file and index parsing (v2 format), delta object reconstruction
 - `blame.go` - Per-directory blame via BFS commit walk (max 1000 commits), cached by `commitHash:dirPath` in sync.Map
-- `diff.go` - Tree diffing (`TreeDiff`) and line-level file diffing (`ComputeFileDiff`); limits: 500 entries, 512KB blobs, 3 context lines
+- `diff.go` - Tree diffing (`TreeDiff`) and line-level file diffing (`ComputeFileDiff`); limits: 500 entries, 512KB blobs, 3 context lines. Includes exact-hash rename detection post-processing
 - `types.go` - Core types: `Hash`, `Commit`, `Tag`, `Tree`, `TreeEntry`, `Signature`, `RepositoryDelta`, `DiffEntry`, `CommitDiff`, `FileDiff`, `DiffHunk`, `DiffLine`
 
 **`internal/server/`** - HTTP/WebSocket server:
-- `server.go` - Main server, client management; serves embedded static files from `assets.go`
-- `handlers.go` - REST endpoints; holds `sync.Map` caches for blame and diff results (keyed by `commitHash[:dirPath]`)
+- `server.go` - Main server with HTTP timeouts, graceful shutdown, and client management; serves embedded static files from `assets.go`
+- `handlers.go` - REST endpoints; uses LRU caches for blame and diff results (keyed by `commitHash[:dirPath]`)
+- `cache.go` - Generic thread-safe LRU cache with bounded size and eviction policy (replaces unbounded sync.Map)
 - `websocket.go` - WebSocket lifecycle: initial state sync, ping/pong keepalive (54s/60s timeout)
 - `watcher.go` - Filesystem watcher on `.git/` directory with debouncing; triggers repository reload and broadcasts deltas
 - `broadcast.go` - Non-blocking delta broadcast to WebSocket clients (256-item buffer, drops on overflow)
@@ -85,17 +89,24 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 ### Frontend (JavaScript)
 
 **`web/`** - Vanilla JS with ES modules, D3.js v7.9.0 loaded from CDN:
-- `app.js` - Entry point: bootstraps graph, sidebar, tabs, and backend connection; handles `#<commitHash>` URL fragment for deep-linking to commits
+- `app.js` - Entry point: bootstraps graph, sidebar, tabs, theme, search, filters, and backend connection; handles `#<commitHash>` URL fragment for deep-linking to commits
 - `backend.js` - REST fetch and WebSocket connection management
 - `logger.js` - Lightweight structured logger used throughout the frontend
 - `graph.js` - Thin wrapper that creates and exposes the graph controller
-- `graph/graphController.js` - D3 force simulation, zoom/pan, node dragging, delta application
-- `graph/rendering/graphRenderer.js` - Canvas-based rendering of commits, branches, links
-- `graph/state/graphState.js` - State factory for commits/branches/nodes/links Maps + zoom
-- `graph/layout/layoutManager.js` - Chronological commit positioning and viewport management
-- `graph/constants.js` - Centralized D3 force parameters and UI dimensions
-- `graph/types.js` - Frontend type documentation (JSDoc shapes)
-- `graph/utils/` - Graph-specific utilities: `palette.js` (color assignment), `time.js` (date formatting)
+- `search.js` - Commit search bar with debounced text filtering across message, author, email, and hash; opacity-based dimming of non-matching nodes
+- `graphFilters.js` - Graph filtering UI: hide remote branches, merge commits, stashes; branch focus selector with compound filter predicates
+- `themeToggle.js` - Three-state theme toggle (light/dark/system) persisted to localStorage
+- `graph/graphController.js` - D3 force simulation, zoom/pan, node dragging, delta application, search/filter integration
+- `graph/rendering/graphRenderer.js` - Canvas-based rendering of commits, branches, links with author-colored nodes
+- `graph/state/graphState.js` - State factory for commits/branches/nodes/links Maps + zoom, search query, filter state, layout mode
+- `graph/layout/layoutManager.js` - Layout orchestration with pluggable strategy pattern
+- `graph/layout/layoutStrategy.js` - Abstract layout strategy interface
+- `graph/layout/forceStrategy.js` - Force-directed layout strategy (original behavior)
+- `graph/layout/laneStrategy.js` - Lane-based DAG layout strategy with parallel branch lanes
+- `graph/constants.js` - Centralized D3 force parameters, UI dimensions, lane layout constants, progressive zoom thresholds
+- `graph/types.js` - Frontend type documentation (JSDoc shapes) including lane and filter state types
+- `graph/utils/palette.js` - Theme-aware color palette management
+- `graph/utils/time.js` - Date formatting utilities
 - `sidebar.js` - Collapsible, resizable sidebar with localStorage persistence
 - `sidebarTabs.js` - Tab switching for sidebar panels (Repository / File Explorer)
 - `infoBar.js` - Repository info header (branch, commit count, tags, remotes)
@@ -105,19 +116,20 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `diffView.js` - Commit diff view: lists changed files for a commit
 - `diffContentViewer.js` - Line-level unified diff renderer with hunk display
 - `indexView.js` - Working tree status view (staged/modified/untracked sections)
-- `keyboardShortcuts.js` - Global keyboard handler; supports single-key and two-key sequences (e.g. `G→H` to jump to HEAD)
+- `keyboardShortcuts.js` - Global keyboard handler; supports single-key and two-key sequences (e.g. `G→H` to jump to HEAD, `/` to focus search)
 - `keyboardHelp.js` - Keyboard shortcut help overlay
 - `toast.js` - Transient toast notification system
 - `tooltips/` - Commit, branch, and blob tooltip overlays (extend `baseTooltip.js`)
-- `utils/` - Shared utilities: `colors.js`, `format.js`
+- `utils/` - Shared utilities: `colors.js` (author color hashing), `format.js`
 
 ### Data Flow
 
-1. Server loads repository from `.git/` directory at startup (pure Go, no git CLI)
+1. Server loads repository from `.git/` directory at startup (pure Go, no git CLI) with structured logging
 2. Client connects via WebSocket, receives initial state as `RepositoryDelta`
 3. Filesystem watcher detects `.git/` changes, debounces, reloads repository
 4. Server computes delta between old and new state, broadcasts to all clients
 5. Frontend applies delta incrementally to D3 simulation graph
+6. Search queries and filter predicates are applied client-side to dim/hide nodes without removing them from the simulation
 
 ## Dependencies
 
@@ -133,10 +145,13 @@ Tests live alongside source code in `internal/gitcore/` and `internal/server/`. 
 - Table-driven subtests with `t.Run()`
 - Hand-constructed binary data for Git object format tests (no fixture files)
 - Integration tests in `test/integration/` use build tag `integration`; they start a real server on port 18080 against the current repo
-- Server tests cover handlers, validation, rate limiting, and status parsing
+- Server tests cover handlers, validation, rate limiting, status parsing, and LRU cache behavior
 
 ## Environment Variables
 
 - `GITVISTA_REPO` - Default repository path (default: current directory)
 - `GITVISTA_PORT` - Server port (default: 8080)
 - `GITVISTA_HOST` - Bind host (default: all interfaces)
+- `GITVISTA_LOG_LEVEL` - Log verbosity: `debug`, `info`, `warn`, `error` (default: `info`)
+- `GITVISTA_LOG_FORMAT` - Log output format: `text` or `json` (default: `text`)
+- `GITVISTA_CACHE_SIZE` - LRU cache capacity in entries (default: 500)

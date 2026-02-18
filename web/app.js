@@ -73,7 +73,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const sidebar = createSidebar();
     root.parentElement.insertBefore(sidebar.el, root);
-    root.appendChild(sidebar.expandBtn);
 
     const infoBar = createInfoBar();
     const indexView = createIndexView();
@@ -113,30 +112,40 @@ document.addEventListener("DOMContentLoaded", () => {
         },
     });
 
-    // ── A2: Search bar ──────────────────────────────────────────────────────
-    // The search container lives above the graph canvas but below the filter
-    // panel. Both are prepended into #root by their respective constructors.
-    // graphFilters.createGraphFilters() calls container.prepend(), so the order
-    // of construction determines the visual stacking order:
-    //   1. createSearch() appends to searchContainer which is then appended to root.
-    //   2. createGraphFilters() prepends its panel into root — sits above search.
-    // Final render order (top → bottom): filter panel, search bar, canvas.
+    // ── Canvas Toolbar ──────────────────────────────────────────────────────
+    // Assembles sidebar-expand, search, and graph controls into a single
+    // in-flow toolbar strip. This prevents the overlapping that occurred when
+    // these elements were all independently absolute-positioned over the canvas.
+
+    const canvasToolbar = document.createElement("div");
+    canvasToolbar.className = "canvas-toolbar";
+    canvasToolbar.appendChild(sidebar.expandBtn);
 
     const searchContainer = document.createElement("div");
     searchContainer.className = "search-container";
-    root.appendChild(searchContainer);
+    canvasToolbar.appendChild(searchContainer);
 
     const search = createSearch(searchContainer, {
         getCommits: () => graph.getCommits(),
         onSearch: ({ query }) => {
-            // Pass the raw query string to the controller, which integrates it
-            // into the compound predicate together with the A3 structural filters.
             graph.setSearchQuery(query || "");
         },
     });
 
+    // Move graph controls (created by graphController) into the toolbar.
+    const graphControlsEl = root.querySelector(".graph-controls");
+    if (graphControlsEl) {
+        canvasToolbar.appendChild(graphControlsEl);
+    }
+
+    // Insert toolbar before the canvas so it sits between filter panel and canvas.
+    const canvasEl = root.querySelector("canvas");
+    if (canvasEl) {
+        root.insertBefore(canvasToolbar, canvasEl);
+    }
+
     // ── A3: Filter panel ────────────────────────────────────────────────────
-    // Mounted by prepending into root so it sits above the search container.
+    // Mounted by prepending into root so it sits above the toolbar.
     // loadFilterState() reads from localStorage; falls back to all-off defaults.
 
     const graphFilters = createGraphFilters(root, {

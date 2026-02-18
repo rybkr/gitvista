@@ -4,12 +4,19 @@
  */
 
 export const NODE_RADIUS = 6;
-export const LINK_DISTANCE = 60;
-export const LINK_STRENGTH = 0.6;
-export const CHARGE_STRENGTH = -250;
+
+/*
+ * Force-simulation physics — tuned for compact layout with fast settling.
+ * Reduced repulsion + weaker links + higher damping keeps clusters tight;
+ * COLLISION_RADIUS prevents node overlap, and labels appear at zoom >= 1.5×
+ * (DETAIL_THRESHOLDS) so density is acceptable at default zoom.
+ */
+export const LINK_DISTANCE = 50;
+export const LINK_STRENGTH = 0.4;
+export const CHARGE_STRENGTH = -110;
 export const COLLISION_RADIUS = 14;
-export const VELOCITY_DECAY = 0.40;
-export const ALPHA_DECAY = 0.045;
+export const VELOCITY_DECAY = 0.55;
+export const ALPHA_DECAY = 0.035;
 export const DRAG_ALPHA_TARGET = 0.12;
 export const LINK_THICKNESS = NODE_RADIUS * 0.32;
 export const ARROW_LENGTH = NODE_RADIUS * 2;
@@ -19,7 +26,6 @@ export const DRAG_ACTIVATION_DISTANCE = 4;
 export const CLICK_TOLERANCE = 6;
 export const TIMELINE_SPACING = 0.95;
 export const TIMELINE_PADDING = 160;
-export const TIMELINE_FALLBACK_GAP = 320;
 export const TIMELINE_MARGIN = 40;
 export const TIMELINE_AUTO_CENTER_ALPHA = 0.12;
 export const LABEL_FONT =

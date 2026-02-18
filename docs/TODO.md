@@ -1,6 +1,6 @@
 # GitVista Feature Roadmap
 
-> Last updated: 2026-02-18 (Post-feature-development update)
+> Last updated: 2026-02-18 (Post-sprint-2 update)
 > Methodology: Three parallel codebase audits covering Graph/Navigation, Diff/Code Understanding, and Infrastructure/Metadata themes. All ideas verified against the actual source files; corrections noted inline.
 > RICE Score = (Reach × Impact × Confidence) / Effort. All metrics on a 1–10 scale where Effort 10 = very high effort.
 
@@ -16,7 +16,7 @@ The following were listed as future work in the original roadmap but are **fully
 | **Commit permalink deep links** (`#<hash>` in URL) | `getHashFromUrl()` + `history.replaceState` in `web/app.js` (lines 13–19, 101–106, 160–168) |
 | **Configurable context lines in diff view** | Backend: `?context=N` in `handleFileDiff` (`internal/server/handlers.go` lines 334–341). Frontend: expand buttons, `CONTEXT_EXPAND_STEP`, and URL re-fetch in `web/diffContentViewer.js` lines 17–164 |
 
-### Feature Sprint Completion (Commit 992bc92+)
+### Feature Sprint 1 (Commit 992bc92+)
 The following high-RICE roadmap items have been completed and merged to main:
 
 | Priority | ID | Feature | RICE | Status | Commit |
@@ -24,9 +24,18 @@ The following high-RICE roadmap items have been completed and merged to main:
 | 1 | A1 | **Wire `getAuthorColor` into renderer** | 560 | ✅ SHIPPED | 05b7a91 |
 | 2 | F1 | **HTTP Timeouts and Graceful Shutdown** | 252 | ✅ SHIPPED | (merged via b63c6e0) |
 | 3 | F3 | **Theme-Pinning Toggle** (light/dark/system) | 243 | ✅ SHIPPED | 311442f |
-| 4 | B1 | **Inline Syntax Highlighting in Diff View** | 168 | 🏗️ IN PROGRESS | — |
 | 5 | A4 | **Progressive Commit Detail at Zoom** | 158 | ✅ SHIPPED | 9a1637e |
 | 6 | B2 | **Rename Detection in Diffs** | 149 | ✅ SHIPPED | (merged via b63c6e0) |
+
+### Feature Sprint 2 (dev branch)
+| Priority | ID | Feature | RICE | Status | Notes |
+|----------|----|---------|----|--------|-------|
+| 12 | F4 | **LRU Cache Eviction** | 112 | ✅ SHIPPED | Bounded LRU cache in `internal/server/cache.go` replaces unbounded sync.Map. Configurable via `GITVISTA_CACHE_SIZE` env var (default: 500). |
+| 8 | F6 | **Structured Logging** | 135 | ✅ SHIPPED | `log/slog` integration with `GITVISTA_LOG_LEVEL` and `GITVISTA_LOG_FORMAT` env vars. Zero new dependencies. |
+| 13 | A2 | **Commit Search and Filtering** | 98 | ✅ SHIPPED | Debounced search bar in `web/search.js`. Searches message, author, email, hash. Opacity-based dimming of non-matching nodes. `/` keyboard shortcut. |
+| 14 | A3 | **Configurable Graph Display Filters** | 98 | ✅ SHIPPED | Filter panel in `web/graphFilters.js`. Hide remote branches, merge commits, stashes. Branch focus selector with BFS reachability. Compound filter predicates with search. State persisted to localStorage. |
+| — | — | **Lane-Based Layout Strategy** | — | ✅ SHIPPED | Dual layout system: force-directed (original) and lane-based DAG layout. Strategy pattern in `web/graph/layout/`. Toolbar buttons for switching. Persisted to localStorage. |
+| 4 | B1 | **Inline Syntax Highlighting in Diff View** | 168 | 🏗️ IN PROGRESS | — |
 
 ### Frontend Design Upgrade (Commit 992bc92)
 **Refined Geometric Modernism** visual overhaul:
@@ -363,13 +372,13 @@ Strategic flags: items with outsized long-term value that may score lower due to
 | 5 | A4 | **Progressive Commit Detail at Zoom** | 7 | 5 | 9 | 2 | **158** | ✅ DONE | Zoom threshold pattern exists in `renderCommitLabel`. Author name and date on `node.commit.author`. Zero backend changes. |
 | 6 | B2 | **Rename Detection in Diffs** | 7 | 8 | 8 | 3 | **149** | ✅ DONE | `DiffStatusRenamed`, `DiffEntry.OldPath`, and frontend badge stubs already exist. Backend exact-hash post-processing pass is the only new work. |
 | 7 | B4 | **Working Tree Diff Context Expansion** | 5 | 6 | 9 | 2 | **135** | One-line backend change (`-U{N}` flag to `git diff HEAD`). Frontend expand-context mechanism already works for commit diffs. |
-| 8 | F6 | **Structured Logging** | 5 | 6 | 9 | 2 | **135** | `log/slog` is stdlib since Go 1.21. Zero new dependencies. Removes ANSI escape codes from piped output. |
+| 8 | F6 | **Structured Logging** | 5 | 6 | 9 | 2 | **135** | ✅ DONE | `log/slog` stdlib integration. `GITVISTA_LOG_LEVEL` and `GITVISTA_LOG_FORMAT` env vars. |
 | 9 | A5 | **Export Graph as PNG** | 6 | 5 | 9 | 2 | **135** | `canvas.toDataURL("image/png")` — DPR scaling already correct. Add a download button to the graph toolbar. |
 | 10 | C1 | **Clickable Blame Hash → Graph Navigation** | 7 | 8 | 9 | 4 | **126** | Pure frontend wiring. Expose `navigateToCommit(hash)` from `graphController.js`; call it from `fileExplorer.js` blame column click handler. |
 | 11 | F2 | **Watcher Polling Fallback** | 7 | 8 | 8 | 4 | **112** | Docker bind-mount is a primary deployment target. `GITVISTA_POLL_INTERVAL` env var entirely absent. Debounce constant needs to become a config field. |
-| 12 | F4 | **LRU Cache Eviction** | 6 | 7 | 8 | 3 | **112** | Unbounded `sync.Map` growth in `blameCache` and `diffCache`. Bespoke LRU in `internal/server/cache.go` to avoid new dependencies. |
-| 13 | A2 | **Commit Search and Filtering** | 8 | 7 | 7 | 4 | **98** | All data in-memory. Use opacity-based hiding (simpler) or derived `visibleCommits` set (cleaner) to preserve node positions. |
-| 14 | A3 | **Configurable Graph Display Filters** | 7 | 6 | 7 | 3 | **98** | Filter hook at `reconcileCommitNodes` boundary. Remote/stash/merge-commit toggles, all client-side. |
+| 12 | F4 | **LRU Cache Eviction** | 6 | 7 | 8 | 3 | **112** | ✅ DONE | Bounded LRU in `internal/server/cache.go`. `GITVISTA_CACHE_SIZE` env var (default: 500). |
+| 13 | A2 | **Commit Search and Filtering** | 8 | 7 | 7 | 4 | **98** | ✅ DONE | `web/search.js` with opacity-based dimming. `/` keyboard shortcut. |
+| 14 | A3 | **Configurable Graph Display Filters** | 7 | 6 | 7 | 3 | **98** | ✅ DONE | `web/graphFilters.js` with compound filter predicates. localStorage persistence. |
 | 15 | A6 | **Keyboard Branch Jump** | 7 | 6 | 7 | 3 | **98** | `b` key + overlay branch picker. `state.branches` Map has all data. Follows file-explorer filter pattern. |
 | 16 | B3 | **Diff Search / Find in Diff** | 6 | 7 | 8 | 4 | **84** | Pure frontend. `DiffLine.content` strings are in the DOM. Precedent in `fileExplorer.js` filter. |
 | 17 | D1 | **Compound URL Deep Links** | 6 | 7 | 7 | 4 | **74** | Commit-level permalink already ships. Extend to sidebar state (tab + file + diff). Requires restoration sequencing across async loads. |
@@ -393,32 +402,39 @@ Strategic flags: items with outsized long-term value that may score lower due to
 
 ## Top Priorities for Next Sprint
 
-### ✅ Recently Completed (5 features, ~3 RICE 1000+)
-- A1: Wire `getAuthorColor` into renderer ✓
-- F1: HTTP Timeouts and Graceful Shutdown ✓
-- F3: Theme-Pinning Toggle (light/dark/system) ✓
-- A4: Progressive Commit Detail at Zoom Levels ✓
-- B2: Rename Detection in Diffs ✓
+### ✅ Sprint 1 Completed (5 features)
+- A1: Wire `getAuthorColor` into renderer
+- F1: HTTP Timeouts and Graceful Shutdown
+- F3: Theme-Pinning Toggle (light/dark/system)
+- A4: Progressive Commit Detail at Zoom Levels
+- B2: Rename Detection in Diffs
+
+### ✅ Sprint 2 Completed (5 features)
+- F4: LRU Cache Eviction (bounded cache with configurable size)
+- F6: Structured Logging (slog with env var configuration)
+- A2: Commit Search and Filtering (debounced search with opacity dimming)
+- A3: Configurable Graph Display Filters (hide remotes/merges/stashes, branch focus)
+- Lane-Based Layout Strategy (dual force/lane layout with toolbar switching)
 
 ### 🎨 Frontend Design System Completed
 A comprehensive visual overhaul with Geist typography, vibrant teal accent color (#0ea5e9), refined shadows, improved spacing, and smooth micro-interactions across all UI components.
 
 ### Next Recommended Items
 
-**1. Inline Syntax Highlighting in Diff View (B1, RICE 168)**
+**1. Inline Syntax Highlighting in Diff View (B1, RICE 168) — IN PROGRESS**
 Apply highlight.js to diff content in `diffContentViewer.js`. The library is already loaded in `fileContentViewer.js`; just extend the same pattern to diffs. Tokenize each `DiffLine.content` through `hljs.highlight()` per-line or wrap hunks in `<code>` elements. Detect language from file path extension (already done in `fileContentViewer.js`).
 
 **2. Working Tree Diff Context Expansion (B4, RICE 135)**
 In `handleWorkingTreeDiff` (`internal/server/handlers.go`, line 428), read `r.URL.Query().Get("context")`, parse it as an integer (capped at 100, defaulting to 3), and pass `-U{N}` to the `git diff HEAD` subprocess args. The frontend expand-context mechanism requires no changes — it already re-fetches with `?context=` updated.
 
-**3. Structured Logging (F6, RICE 135)**
-Replace scattered `log.Printf` calls with Go 1.21's stdlib `log/slog`. Add `GITVISTA_LOG_LEVEL` (debug/info/warn/error) and `GITVISTA_LOG_FORMAT` (text/json) env vars. Zero new dependencies.
+**3. Export Graph as PNG (A5, RICE 135)**
+`canvas.toDataURL("image/png")` — DPR scaling already correct. Add a download button to the graph toolbar.
 
-**4. Commit Search and Filtering (A2, RICE 98)**
-A debounced search bar highlighting matching commits and dimming non-matching ones. Use opacity-based hiding (simpler) or derived `visibleCommits` set (cleaner) to preserve node positions. All data (`Message`, `Author.Name`, `Author.Email`, `ID`) is already present on every graph node.
+**4. Clickable Blame Hash → Graph Navigation (C1, RICE 126)**
+Pure frontend wiring. Expose `navigateToCommit(hash)` from `graphController.js`; call it from `fileExplorer.js` blame column click handler.
 
-**5. Configurable Graph Display Filters (A3, RICE 98)**
-Filter panel with toggles: show/hide remote branches, stash nodes, merge commits (`Parents.length > 1`), and branch selector to highlight commits reachable from a chosen branch. Filter hook sits at `reconcileCommitNodes` boundary.
+**5. Watcher Polling Fallback (F2, RICE 112)**
+Docker bind-mount is a primary deployment target. `GITVISTA_POLL_INTERVAL` env var entirely absent. Debounce constant needs to become a config field.
 
 ---
 
