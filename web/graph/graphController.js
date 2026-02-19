@@ -113,23 +113,25 @@ function getReachableCommits(branchTipHash, commits) {
 }
 
 /**
- * Builds a compound predicate that combines the A2 text-search query with the
- * A3 structural filters.  Returns null when no criteria are active, which lets
- * the dimming pass be skipped entirely on the common (no filter) path.
+ * Builds a compound predicate that combines the structured search matcher with
+ * the A3 structural filters.  Returns null when no criteria are active, which
+ * lets the dimming pass be skipped entirely on the common (no filter) path.
  *
  * AND semantics: a node must pass every active criterion to remain fully
  * visible.  Failing nodes are dimmed (not removed) so the graph stays
  * connected and the user can still orient themselves.
  *
- * @param {string} searchQuery Active text search string, or "" for none.
+ * @param {{ query: import("./types.js").SearchQuery, matcher: ((commit: import("./types.js").GraphCommit) => boolean) | null } | null} searchState Structured search state from search.js.
  * @param {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} filterState
  * @param {Map<string, string>} branches Live branch map.
  * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
  * @param {Array<{hash: string}>} stashes Live stash list from delta.
  * @returns {((node: import("./types.js").GraphNode) => boolean) | null}
  */
-function buildFilterPredicate(searchQuery, filterState, branches, commits, stashes) {
-    const hasSearch = searchQuery && searchQuery.trim().length > 0;
+function buildFilterPredicate(searchState, filterState, branches, commits, stashes) {
+    // The matcher is null when the query is empty (parseSearchQuery sets isEmpty).
+    const matcher = searchState?.matcher ?? null;
+    const hasSearch = matcher !== null;
     const { hideRemotes, hideMerges, hideStashes, focusBranch } = filterState;
     const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch;
 
@@ -143,9 +145,6 @@ function buildFilterPredicate(searchQuery, filterState, branches, commits, stash
         reachableSet = tipHash ? getReachableCommits(tipHash, commits) : new Set();
     }
 
-    // Lowercase the query once for efficient per-node string matching.
-    const queryLower = hasSearch ? searchQuery.trim().toLowerCase() : "";
-
     return (node) => {
         // Branch label nodes: only apply the remote-ref filter; all other
         // filters operate on commit data which branch nodes don't carry.
@@ -154,23 +153,13 @@ function buildFilterPredicate(searchQuery, filterState, branches, commits, stash
             return true;
         }
 
-        // ── A2: text search ───────────────────────────────────────────────────
+        // ── A2: structured search matcher ─────────────────────────────────────
+        // Delegates all field matching (text, author, hash, date, merge, branch)
+        // to the compiled predicate from searchQuery.js.
         if (hasSearch) {
             const commit = node.commit;
             if (!commit) return false;
-            const msg = (commit.message ?? "").toLowerCase();
-            // Support both camelCase and PascalCase field names from the API.
-            const author = (commit.author?.name ?? commit.author?.Name ?? "").toLowerCase();
-            const email = (commit.author?.email ?? commit.author?.Email ?? "").toLowerCase();
-            const hash = (commit.hash ?? "").toLowerCase();
-            if (
-                !msg.includes(queryLower) &&
-                !author.includes(queryLower) &&
-                !email.includes(queryLower) &&
-                !hash.startsWith(queryLower)
-            ) {
-                return false;
-            }
+            if (!matcher(commit)) return false;
         }
 
         // ── A3: structural filters ────────────────────────────────────────────
@@ -839,7 +828,7 @@ export function createGraphController(rootElement, options = {}) {
     function applyDimmingFromPredicate() {
         // Rebuild predicate so it captures the latest branches/commits/stashes.
         state.filterPredicate = buildFilterPredicate(
-            state.searchQuery,
+            state.searchState,
             state.filterState,
             branches,
             commits,
@@ -1176,15 +1165,35 @@ export function createGraphController(rootElement, options = {}) {
             state.headHash = hash || "";
         },
         /**
-         * Updates the active text search query and immediately re-applies the
-         * compound filter predicate (A2 search + A3 structural filters).
-         * Pass "" or null to clear the search while keeping other filters active.
+         * Updates the active structured search state and immediately re-applies
+         * the compound filter predicate (A2 search + A3 structural filters).
+         * Pass null to clear the search while keeping other filters active.
          *
-         * @param {string | null} searchQuery Raw search string from the search bar.
+         * The searchState object is produced by search.js from searchQuery.js
+         * and carries both the parsed query and the compiled matcher function.
+         *
+         * @param {{ query: import("./types.js").SearchQuery, matcher: ((commit: import("./types.js").GraphCommit) => boolean) | null } | null} searchState
          */
-        setSearchQuery: (searchQuery) => {
-            state.searchQuery = searchQuery ?? "";
+        setSearchState: (searchState) => {
+            state.searchState = searchState ?? null;
             rebuildAndApplyPredicate();
+        },
+        /**
+         * Returns the number of commit nodes currently NOT dimmed (i.e. passing
+         * all active search and structural filters).  Used by the search UI to
+         * display "N / M" result counts.
+         *
+         * @returns {{ matching: number, total: number }}
+         */
+        getCommitCount: () => {
+            let total = 0;
+            let matching = 0;
+            for (const node of nodes) {
+                if (node.type !== "commit") continue;
+                total++;
+                if (!node.dimmed) matching++;
+            }
+            return { matching, total };
         },
         /**
          * Updates the A3 structural filter state and immediately re-applies the

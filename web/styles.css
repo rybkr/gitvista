@@ -757,6 +757,19 @@ canvas {
     flex: 1;
     min-width: 0;
     max-width: 300px;
+    /* Transition is defined here so the width animates in both directions
+       (expanding on focus, contracting on blur). */
+    transition: max-width 0.2s ease;
+}
+
+/*
+ * Outer wrapper providing the relative positioning context for the dropdown.
+ * It spans 100% of .search-container and does not clip overflow, so the
+ * dropdown can appear below the toolbar strip.
+ */
+.commit-search-positioner {
+    position: relative;
+    width: 100%;
 }
 
 .commit-search {
@@ -765,18 +778,21 @@ canvas {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    overflow: hidden;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    /* overflow:hidden removed — the dropdown positions outside the wrapper */
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, max-width 0.2s ease;
     width: 100%;
+    position: relative; /* needed for absolute-positioned icon and clear button */
 }
 
-.commit-search:focus-within {
+.commit-search:focus-within,
+.commit-search.is-focused {
     border-color: var(--node-color);
     box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
 }
 
 @media (prefers-color-scheme: dark) {
-    .commit-search:focus-within {
+    .commit-search:focus-within,
+    .commit-search.is-focused {
         box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.18);
     }
 }
@@ -793,8 +809,12 @@ canvas {
 }
 
 .commit-search-input {
-    width: 100%;
-    padding: 8px 32px 8px 30px;
+    flex: 1;
+    min-width: 0;
+    /* Left padding makes room for the absolutely-positioned magnifier icon.
+       Right padding is kept small since the result count and clear button
+       are flex siblings that follow the input in the row. */
+    padding: 8px 4px 8px 30px;
     border: none;
     background: transparent;
     font-size: 13px;
@@ -818,15 +838,37 @@ canvas {
     opacity: 0.6;
 }
 
+/*
+ * Result count badge — shown inline between the input and clear button when a
+ * search is active.  Uses monospace so digit widths stay stable as count changes.
+ */
+.commit-search-result-count {
+    display: none;
+    align-items: center;
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    padding: 0 6px 0 4px;
+    pointer-events: none;
+}
+
+/* Zero-results warning: highlight in warning color */
+.commit-search-result-count.is-empty {
+    color: var(--warning-color);
+}
+
 /* Clear (×) button — hidden until the input has content. */
 .commit-search-clear {
-    position: absolute;
-    right: 6px;
-    display: inline-flex;
+    display: none; /* toggled via JS */
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
+    margin-right: 5px;
     border: none;
     border-radius: 4px;
     background: transparent;
@@ -836,7 +878,6 @@ canvas {
     cursor: pointer;
     padding: 0;
     transition: color 0.12s ease, background 0.12s ease;
-    flex-shrink: 0;
 }
 
 .commit-search-clear:hover {
@@ -854,6 +895,149 @@ canvas {
     box-shadow: 0 0 0 2px var(--node-color);
     border-radius: 4px;
     outline: none;
+}
+
+/* ── Search Expand on Focus ── */
+
+/*
+ * When the search container (and hence positioner) gains focus-within, the
+ * parent .search-container's max-width expands from 300px to 480px.
+ * We do this on the container rather than the wrapper so the positioner
+ * naturally widens with it.
+ */
+.search-container:focus-within {
+    max-width: 480px;
+    transition: max-width 0.2s ease;
+}
+
+/* ── Search Dropdown ── */
+
+/*
+ * The dropdown is position:absolute relative to .commit-search-positioner,
+ * dropping below the search bar.  z-index matches the filter popover (50).
+ */
+.commit-search-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px var(--node-shadow-color), 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    /* Constrain height so the dropdown doesn't cover the entire canvas */
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-dropdown {
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+}
+
+/* Section header within the dropdown */
+.commit-search-dropdown-section {
+    padding: 4px 0;
+}
+
+.commit-search-dropdown-section + .commit-search-dropdown-section {
+    border-top: 1px solid var(--border-color);
+}
+
+.commit-search-dropdown-heading {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+/* ── Qualifier Suggestion Row ── */
+
+.commit-search-suggestion {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.commit-search-suggestion:hover,
+.commit-search-suggestion:focus {
+    background: rgba(14, 165, 233, 0.07);
+    outline: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-suggestion:hover,
+    .commit-search-suggestion:focus {
+        background: rgba(88, 166, 255, 0.09);
+    }
+}
+
+.commit-search-suggestion-keyword {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--node-color);
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 110px;
+}
+
+.commit-search-suggestion-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Recent Search Row ── */
+
+.commit-search-recent {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.commit-search-recent:hover,
+.commit-search-recent:focus {
+    background: rgba(14, 165, 233, 0.07);
+    outline: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-recent:hover,
+    .commit-search-recent:focus {
+        background: rgba(88, 166, 255, 0.09);
+    }
+}
+
+.commit-search-recent-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.commit-search-recent-text {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .graph-controls {

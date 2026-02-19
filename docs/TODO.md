@@ -1,8 +1,53 @@
 # GitVista Feature Roadmap
 
-> Last updated: 2026-02-18 (Post-sprint-2 update)
+> Last updated: 2026-02-19 (Added competitive analysis)
 > Methodology: Three parallel codebase audits covering Graph/Navigation, Diff/Code Understanding, and Infrastructure/Metadata themes. All ideas verified against the actual source files; corrections noted inline.
 > RICE Score = (Reach × Impact × Confidence) / Effort. All metrics on a 1–10 scale where Effort 10 = very high effort.
+
+---
+
+## COMPETITIVE ANALYSIS — Git Explorer Landscape
+
+### What GitVista does well
+
+- **Pure Go git parsing** — reads loose objects, pack files (v1/v2), refs, tags, stashes directly with no libgit2 dependency
+- **Real-time updates** — fsnotify watcher + WebSocket broadcasting on every `.git` change (unique differentiator)
+- **Two graph layouts** — lane-based (git-style swimlanes) and force-directed (D3 physics simulation)
+- **File explorer** with lazy tree loading, keyboard navigation (W3C APG TreeView), and blame annotations
+- **Unified diff viewer** with file-level and commit-level views, rename detection, and configurable context
+- **Commit search**, graph filtering, dark/light/system theme, working tree status
+
+### Feature comparison with other git explorers
+
+| Feature | GitKraken / Sourcetree | gitk / tig | GitVista |
+|---|---|---|---|
+| Full commit history graph | Yes | Yes | Yes |
+| File/tree browsing | Yes | Yes | Yes |
+| Blame (line-level) | Yes | Yes | Entry-level only |
+| Log filtering (author, date range, path) | Yes | Yes | Message/author/hash only |
+| Submodule exploration | Yes | Partial | No |
+| Reflog viewer | Yes | Yes | No |
+| Worktree support | Some | Yes | No |
+| Stash contents/diff | Yes | Yes | Listed only |
+| Interactive rebase visualization | GitKraken | No | No |
+| Commit signature/GPG verification | Yes | Yes | No |
+| Multi-repo | Some | No | No |
+| File history (follow renames) | Yes | Yes | No |
+| **Real-time live updates** | No | No | **Yes** |
+| **Web-based (zero install for viewers)** | No | No | **Yes** |
+| **Dual graph layout strategies** | No | No | **Yes** |
+
+### Key gaps to close for "most comprehensive explorer"
+
+1. **Line-level blame** (C4) — the most common form of blame; current entry-level blame is a starting point
+2. **File history with rename following** — not yet on the roadmap; would require commit-walk per file path
+3. **Reflog viewer** — not yet on the roadmap; reflog data is partially parsed for stashes
+4. **Richer log filtering** (author, date range, path) — current search covers message/author/hash only
+5. **Stash contents/diff viewing** — stashes are listed but their contents cannot be explored
+
+### Bottom line
+
+GitVista is a **strong git explorer** with a unique real-time web angle that most tools lack. Its pure-Go parser and live-updating WebSocket architecture are genuinely differentiating. For "most comprehensive explorer," the biggest gaps are line-level blame, file history, reflog viewing, and richer log filtering.
 
 ---
 

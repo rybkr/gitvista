@@ -120,9 +120,11 @@ document.addEventListener("DOMContentLoaded", () => {
     canvasToolbar.appendChild(searchContainer);
 
     const search = createSearch(searchContainer, {
+        getBranches: () => graph.getBranches(),
         getCommits: () => graph.getCommits(),
-        onSearch: ({ query }) => {
-            graph.setSearchQuery(query || "");
+        getCommitCount: () => graph.getCommitCount(),
+        onSearch: ({ searchState }) => {
+            graph.setSearchState(searchState ?? null);
         },
     });
 
