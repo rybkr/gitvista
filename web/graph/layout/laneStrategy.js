@@ -6,9 +6,9 @@
  *
  * Algorithm:
  * 1. Sort commits chronologically (newest first)
- * 2. Assign main branch (main/master/trunk) first-parent chain to lane 0
- * 3. Assign remaining branches to lowest available lanes
- * 4. Assign orphan commits (unreachable from branches) to rightmost lanes
+ * 2. Seed lane 0 with the main branch tip
+ * 3. Process commits in order — each inherits the lane of its child
+ * 4. Merge parents get new/reused lanes; lanes freed on convergence
  * 5. Position nodes: Y = chronological, X = lane index
  * 6. Animate smooth transitions between modes
  */
@@ -218,13 +218,19 @@ export class LaneStrategy {
 	}
 
 	/**
-	 * Assigns commits to lanes using topological sort and branch tracking.
+	 * Assigns commits to lanes using a topological column-reuse algorithm.
+	 *
+	 * Processes commits chronologically (newest first) and maintains a set of
+	 * "active lanes" — columns that track which parent hash they expect next.
+	 * Each commit inherits the lane of its child, and lanes are freed and
+	 * reused when branches converge, keeping the graph compact.
 	 *
 	 * Algorithm:
-	 * 1. Build parent-child adjacency maps
-	 * 2. Identify main branch and assign its first-parent chain to lane 0
-	 * 3. Assign remaining branches to lowest available lanes
-	 * 4. Assign orphan commits to rightmost lanes
+	 * 1. Seed lane 0 with the main branch tip
+	 * 2. Process commits newest-first
+	 * 3. Each commit takes the lane that expects it (or the lowest free lane)
+	 * 4. First parent inherits the lane; merge parents get new/reused lanes
+	 * 5. When multiple lanes converge on one commit, extras are freed
 	 *
 	 * @param {Array<Object>} nodes Array of graph nodes
 	 * @param {Map<string, Object>} commits Map of commit hash to commit data
@@ -236,21 +242,18 @@ export class LaneStrategy {
 		const commitNodes = nodes.filter((n) => n.type === "commit");
 		if (commitNodes.length === 0) return;
 
-		// Build parent-child relationships
-		const childrenMap = new Map(); // hash -> array of child hashes
-		for (const node of commitNodes) {
-			const commit = commits.get(node.hash);
-			if (!commit?.parents) continue;
+		// Sort commits chronologically (newest first)
+		const ordered = [...commitNodes].sort((a, b) => {
+			const aTime = getCommitTimestamp(commits.get(a.hash));
+			const bTime = getCommitTimestamp(commits.get(b.hash));
+			if (aTime === bTime) return a.hash.localeCompare(b.hash);
+			return bTime - aTime;
+		});
 
-			for (const parentHash of commit.parents) {
-				if (!childrenMap.has(parentHash)) {
-					childrenMap.set(parentHash, []);
-				}
-				childrenMap.get(parentHash).push(node.hash);
-			}
-		}
+		// Active lanes: index = column, value = hash expected next (or null if free)
+		const activeLanes = [];
 
-		// Find main branch (main, master, or trunk)
+		// Seed lane 0 with main branch tip so it always occupies the leftmost column
 		const mainBranchNames = ["main", "master", "trunk"];
 		let mainBranchHash = null;
 		for (const name of mainBranchNames) {
@@ -259,79 +262,90 @@ export class LaneStrategy {
 				break;
 			}
 		}
-
-		// If no main branch found, use the first branch
 		if (!mainBranchHash && branches.size > 0) {
 			mainBranchHash = branches.values().next().value;
 		}
-
-		// Track which commits have been assigned
-		const assigned = new Set();
-
-		// Assign main branch first-parent chain to lane 0
 		if (mainBranchHash) {
-			this.assignBranchChain(mainBranchHash, 0, commits, assigned, true);
+			activeLanes.push(mainBranchHash);
 		}
 
-		// Assign remaining branches to sequential lanes
-		// Each branch gets its own lane for consistent horizontal spacing
-		let currentLane = 1;
-		for (const [, targetHash] of branches) {
-			// Check if this commit is already assigned
-			const existingLane = this.commitToLane.get(targetHash);
-			if (existingLane !== undefined) {
-				// Extend existing lane for shared commits
-				this.assignBranchChain(targetHash, existingLane, commits, assigned, true);
-				continue;
+		for (const node of ordered) {
+			const hash = node.hash;
+			const commit = commits.get(hash);
+			const parents = commit?.parents || [];
+
+			// Find all lanes expecting this commit
+			let lane = -1;
+			const convergingLanes = [];
+			for (let i = 0; i < activeLanes.length; i++) {
+				if (activeLanes[i] === hash) {
+					if (lane === -1) {
+						lane = i;
+					} else {
+						convergingLanes.push(i);
+					}
+				}
 			}
 
-			// Assign this branch to the next sequential lane
-			this.assignBranchChain(targetHash, currentLane, commits, assigned, true);
-			currentLane++;
-		}
+			if (lane === -1) {
+				// New branch tip — find lowest free lane
+				lane = this._findFreeLane(activeLanes);
+			}
 
-		// Assign orphan commits (not reachable from any branch)
-		for (const node of commitNodes) {
-			if (!assigned.has(node.hash)) {
-				this.commitToLane.set(node.hash, currentLane);
-				assigned.add(node.hash);
-				currentLane++;
+			// Free converging lanes (branches merging into this commit)
+			for (const cl of convergingLanes) {
+				activeLanes[cl] = null;
+			}
+
+			this.commitToLane.set(hash, lane);
+
+			if (parents.length === 0) {
+				// Root commit — free the lane
+				activeLanes[lane] = null;
+			} else {
+				// First parent continues this lane
+				activeLanes[lane] = parents[0];
+
+				// Additional parents (merge sources) get new/reused lanes
+				for (let i = 1; i < parents.length; i++) {
+					const parentHash = parents[i];
+					// Only allocate if no lane already expects this parent
+					let alreadyExpected = false;
+					for (let j = 0; j < activeLanes.length; j++) {
+						if (activeLanes[j] === parentHash) {
+							alreadyExpected = true;
+							break;
+						}
+					}
+					if (!alreadyExpected) {
+						const mergeLane = this._findFreeLane(activeLanes);
+						activeLanes[mergeLane] = parentHash;
+					}
+				}
 			}
 		}
 
 		// Apply lane assignments to nodes
 		for (const node of commitNodes) {
-			const laneIndex = this.commitToLane.get(node.hash) || 0;
+			const laneIndex = this.commitToLane.get(node.hash) ?? 0;
 			node.laneIndex = laneIndex;
 			node.laneColor = LANE_COLORS[laneIndex % LANE_COLORS.length];
 		}
 	}
 
 	/**
-	 * Assigns a branch's commit chain to a specific lane.
-	 * Follows first-parent chain for linear history.
+	 * Finds the lowest free (null) slot in the active lanes array.
+	 * Appends a new slot if none are free.
 	 *
-	 * @param {string} startHash Starting commit hash
-	 * @param {number} lane Lane index to assign
-	 * @param {Map<string, Object>} commits Map of commit hash to commit data
-	 * @param {Set<string>} assigned Set of already-assigned commit hashes
-	 * @param {boolean} firstParentOnly Whether to follow only first parent
+	 * @param {Array<string|null>} activeLanes Active lane tracking array
+	 * @returns {number} Index of the free lane
 	 */
-	assignBranchChain(startHash, lane, commits, assigned, firstParentOnly) {
-		let current = startHash;
-		const visited = new Set();
-
-		while (current && !assigned.has(current) && !visited.has(current)) {
-			visited.add(current);
-			this.commitToLane.set(current, lane);
-			assigned.add(current);
-
-			const commit = commits.get(current);
-			if (!commit?.parents || commit.parents.length === 0) break;
-
-			// Follow first parent for linear history
-			current = firstParentOnly ? commit.parents[0] : null;
+	_findFreeLane(activeLanes) {
+		for (let i = 0; i < activeLanes.length; i++) {
+			if (activeLanes[i] === null) return i;
 		}
+		activeLanes.push(null);
+		return activeLanes.length - 1;
 	}
 
 	/**
