@@ -1,8 +1,9 @@
 /**
- * @fileoverview Graph filter panel component.
- * Renders a collapsible strip of toggles and a branch-focus dropdown above the
- * canvas. Changes fire an onChange callback with the updated filter state so
- * callers can push it into the graph controller without tight coupling.
+ * @fileoverview Graph filter popover component.
+ *
+ * Renders a toolbar trigger button with an active-filter badge. Clicking the
+ * button opens a popover dropdown with filter toggles and a branch-focus
+ * dropdown. Click-outside or Escape dismisses the popover.
  *
  * Filter state shape:
  *   { hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }
@@ -12,14 +13,8 @@
 
 import { logger } from "./logger.js";
 
-/** localStorage key for persisting filter preferences. */
 const STORAGE_KEY = "gitvista-filter-state";
 
-/**
- * Default filter state — everything visible, no branch focus.
- *
- * @returns {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }}
- */
 function defaultFilterState() {
     return {
         hideRemotes: false,
@@ -31,114 +26,113 @@ function defaultFilterState() {
 
 /**
  * Loads filter state from localStorage. Falls back gracefully on parse errors.
- *
- * @returns {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }}
  */
 export function loadFilterState() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return defaultFilterState();
         const parsed = JSON.parse(raw);
-        // Merge against defaults so new fields added in future versions are safe.
         return { ...defaultFilterState(), ...parsed };
     } catch {
         return defaultFilterState();
     }
 }
 
-/**
- * Persists filter state to localStorage.
- *
- * @param {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} state
- */
 function saveFilterState(state) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
-        // Ignore quota errors — filter state loss on next reload is acceptable.
         logger.warn("graphFilters: unable to save filter state to localStorage");
     }
 }
 
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+
+const FILTER_ICON = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1.5 2h13M3.5 6h9M5.5 10h5M7 14h2"/>
+</svg>`;
+
 /**
- * Creates and mounts the graph filter panel.
+ * Creates the graph filter popover system.
  *
- * The panel is a collapsible strip that renders above the graph canvas. It
- * contains three toggles (hide remotes, hide merges, hide stashes) and a
- * branch-focus dropdown populated from the live branch map.
+ * Returns an object with a trigger button element (to mount in a toolbar) and
+ * methods to update branches and read state.
  *
- * @param {HTMLElement} container The element to prepend the panel into (the
- *   graph root element).
  * @param {{
- *   initialState?: { hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string },
- *   onChange: (state: { hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }) => void,
+ *   initialState?: object,
+ *   onChange: (state: object) => void,
  * }} options
- * @returns {{
- *   el: HTMLElement,
- *   updateBranches: (branches: Map<string, string>) => void,
- *   getState: () => { hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string },
- *   destroy: () => void,
- * }}
  */
-export function createGraphFilters(container, options) {
+export function createGraphFilters(options) {
     const { onChange } = options;
-
-    // Clone to avoid mutating the caller's object.
     let filterState = { ...(options.initialState ?? loadFilterState()) };
+    let isOpen = false;
 
-    // ── Root element ──────────────────────────────────────────────────────────
+    // ── Trigger button ────────────────────────────────────────────────────────
 
-    const el = document.createElement("div");
-    el.className = "graph-filter-panel";
-    el.setAttribute("role", "toolbar");
-    el.setAttribute("aria-label", "Graph filters");
+    const trigger = document.createElement("button");
+    trigger.className = "graph-filter-trigger";
+    trigger.type = "button";
+    trigger.setAttribute("aria-label", "Graph filters");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-haspopup", "true");
 
-    // ── Collapse toggle ───────────────────────────────────────────────────────
+    const triggerIcon = document.createElement("span");
+    triggerIcon.className = "graph-filter-trigger-icon";
+    triggerIcon.innerHTML = FILTER_ICON;
 
-    const header = document.createElement("div");
-    header.className = "graph-filter-header";
+    const triggerLabel = document.createElement("span");
+    triggerLabel.className = "graph-filter-trigger-label";
+    triggerLabel.textContent = "Filters";
 
-    const collapseBtn = document.createElement("button");
-    collapseBtn.className = "graph-filter-collapse";
-    collapseBtn.type = "button";
-    collapseBtn.setAttribute("aria-expanded", "true");
-    collapseBtn.setAttribute("aria-controls", "graph-filter-body");
-    collapseBtn.title = "Toggle filter panel";
+    trigger.appendChild(triggerIcon);
+    trigger.appendChild(triggerLabel);
 
-    // Simple chevron rendered as inline SVG for visual consistency with the rest of the UI.
-    collapseBtn.innerHTML = `
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" class="graph-filter-chevron">
-            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>`;
+    // ── Popover ───────────────────────────────────────────────────────────────
 
-    const headerLabel = document.createElement("span");
-    headerLabel.className = "graph-filter-label";
-    headerLabel.textContent = "Filters";
+    const popover = document.createElement("div");
+    popover.className = "graph-filter-popover";
+    popover.setAttribute("role", "dialog");
+    popover.setAttribute("aria-label", "Filter options");
 
-    // Active-filter count badge — tells users at a glance how many filters are on.
-    const badge = document.createElement("span");
-    badge.className = "graph-filter-badge";
-    badge.setAttribute("aria-live", "polite");
-    badge.hidden = true;
+    // Popover header
+    const popoverHeader = document.createElement("div");
+    popoverHeader.className = "graph-filter-popover-header";
 
-    header.appendChild(collapseBtn);
-    header.appendChild(headerLabel);
-    header.appendChild(badge);
+    const popoverTitle = document.createElement("span");
+    popoverTitle.className = "graph-filter-popover-title";
+    popoverTitle.textContent = "Filters";
 
-    // ── Filter body ───────────────────────────────────────────────────────────
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "graph-filter-reset";
+    resetBtn.type = "button";
+    resetBtn.textContent = "Reset";
+    resetBtn.addEventListener("click", () => {
+        filterState = defaultFilterState();
+        // Sync checkbox states
+        remotesCheckbox.checked = false;
+        mergesCheckbox.checked = false;
+        stashesCheckbox.checked = false;
+        dropdown.value = "";
+        notifyChange();
+    });
 
-    const body = document.createElement("div");
-    body.className = "graph-filter-body";
-    body.id = "graph-filter-body";
+    popoverHeader.appendChild(popoverTitle);
+    popoverHeader.appendChild(resetBtn);
 
-    // ── Toggle helpers ────────────────────────────────────────────────────────
+    // Popover body — filter controls
+    const popoverBody = document.createElement("div");
+    popoverBody.className = "graph-filter-popover-body";
 
-    /**
-     * Creates a labelled checkbox toggle.
-     *
-     * @param {{ id: string, label: string, checked: boolean, onChange: (checked: boolean) => void }} opts
-     * @returns {HTMLElement}
-     */
+    // Section: visibility filters
+    const visSection = document.createElement("div");
+    visSection.className = "graph-filter-section";
+
+    const visSectionLabel = document.createElement("div");
+    visSectionLabel.className = "graph-filter-section-label";
+    visSectionLabel.textContent = "Visibility";
+    visSection.appendChild(visSectionLabel);
+
     function createToggle({ id, label, checked, onChange: onToggle }) {
         const wrapper = document.createElement("label");
         wrapper.className = "graph-filter-toggle";
@@ -148,9 +142,7 @@ export function createGraphFilters(container, options) {
         checkbox.type = "checkbox";
         checkbox.id = id;
         checkbox.checked = checked;
-        checkbox.addEventListener("change", () => {
-            onToggle(checkbox.checked);
-        });
+        checkbox.addEventListener("change", () => onToggle(checkbox.checked));
 
         const text = document.createElement("span");
         text.textContent = label;
@@ -158,12 +150,10 @@ export function createGraphFilters(container, options) {
         wrapper.appendChild(checkbox);
         wrapper.appendChild(text);
 
-        return wrapper;
+        return { el: wrapper, checkbox };
     }
 
-    // ── Build the three toggles ───────────────────────────────────────────────
-
-    const remotesToggle = createToggle({
+    const remotes = createToggle({
         id: "gf-hide-remotes",
         label: "Hide remote branches",
         checked: filterState.hideRemotes,
@@ -172,8 +162,9 @@ export function createGraphFilters(container, options) {
             notifyChange();
         },
     });
+    const remotesCheckbox = remotes.checkbox;
 
-    const mergesToggle = createToggle({
+    const merges = createToggle({
         id: "gf-hide-merges",
         label: "Hide merge commits",
         checked: filterState.hideMerges,
@@ -182,8 +173,9 @@ export function createGraphFilters(container, options) {
             notifyChange();
         },
     });
+    const mergesCheckbox = merges.checkbox;
 
-    const stashesToggle = createToggle({
+    const stashes = createToggle({
         id: "gf-hide-stashes",
         label: "Hide stash entries",
         checked: filterState.hideStashes,
@@ -192,26 +184,28 @@ export function createGraphFilters(container, options) {
             notifyChange();
         },
     });
+    const stashesCheckbox = stashes.checkbox;
 
-    // ── Branch-focus dropdown ─────────────────────────────────────────────────
+    visSection.appendChild(remotes.el);
+    visSection.appendChild(merges.el);
+    visSection.appendChild(stashes.el);
 
-    const dropdownWrapper = document.createElement("div");
-    dropdownWrapper.className = "graph-filter-dropdown-wrapper";
+    // Section: branch focus
+    const branchSection = document.createElement("div");
+    branchSection.className = "graph-filter-section";
 
-    const dropdownLabel = document.createElement("label");
-    dropdownLabel.htmlFor = "gf-focus-branch";
-    dropdownLabel.className = "graph-filter-dropdown-label";
-    dropdownLabel.textContent = "Focus branch";
+    const branchSectionLabel = document.createElement("div");
+    branchSectionLabel.className = "graph-filter-section-label";
+    branchSectionLabel.textContent = "Branch focus";
 
     const dropdown = document.createElement("select");
     dropdown.id = "gf-focus-branch";
     dropdown.className = "graph-filter-dropdown";
     dropdown.setAttribute("aria-label", "Focus branch — show only reachable commits");
 
-    // Sentinel "none" option.
     const noneOption = document.createElement("option");
     noneOption.value = "";
-    noneOption.textContent = "— All branches —";
+    noneOption.textContent = "All branches";
     dropdown.appendChild(noneOption);
     dropdown.value = filterState.focusBranch;
 
@@ -220,83 +214,97 @@ export function createGraphFilters(container, options) {
         notifyChange();
     });
 
-    dropdownWrapper.appendChild(dropdownLabel);
-    dropdownWrapper.appendChild(dropdown);
+    branchSection.appendChild(branchSectionLabel);
+    branchSection.appendChild(dropdown);
 
-    // ── Assemble body ─────────────────────────────────────────────────────────
+    // Assemble popover
+    popoverBody.appendChild(visSection);
+    popoverBody.appendChild(branchSection);
+    popover.appendChild(popoverHeader);
+    popover.appendChild(popoverBody);
 
-    body.appendChild(remotesToggle);
-    body.appendChild(mergesToggle);
-    body.appendChild(stashesToggle);
-    body.appendChild(dropdownWrapper);
+    // Mount popover as sibling of trigger (positioned absolutely)
+    // We'll wrap both in a container for positioning context
+    const wrapper = document.createElement("div");
+    wrapper.className = "graph-filter-wrapper";
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(popover);
 
-    // ── Collapse behaviour ────────────────────────────────────────────────────
+    // ── Open / close ──────────────────────────────────────────────────────────
 
-    let isCollapsed = false;
+    function openPopover() {
+        isOpen = true;
+        popover.classList.add("is-open");
+        trigger.classList.add("is-active");
+        trigger.setAttribute("aria-expanded", "true");
+        // Listen for outside clicks on next tick (so the current click doesn't close it)
+        requestAnimationFrame(() => {
+            document.addEventListener("pointerdown", onOutsideClick, true);
+            document.addEventListener("keydown", onEscapeKey, true);
+        });
+    }
 
-    collapseBtn.addEventListener("click", () => {
-        isCollapsed = !isCollapsed;
-        body.classList.toggle("is-hidden", isCollapsed);
-        collapseBtn.setAttribute("aria-expanded", String(!isCollapsed));
-        collapseBtn.querySelector(".graph-filter-chevron")?.classList.toggle("is-collapsed", isCollapsed);
-    });
+    function closePopover() {
+        isOpen = false;
+        popover.classList.remove("is-open");
+        trigger.classList.remove("is-active");
+        trigger.setAttribute("aria-expanded", "false");
+        document.removeEventListener("pointerdown", onOutsideClick, true);
+        document.removeEventListener("keydown", onEscapeKey, true);
+    }
 
-    // ── Compose DOM ───────────────────────────────────────────────────────────
-
-    el.appendChild(header);
-    el.appendChild(body);
-
-    // Prepend so the panel sits above the canvas inside the graph root.
-    container.prepend(el);
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * Counts how many filters are currently active and updates the badge.
-     */
-    function updateBadge() {
-        let count = 0;
-        if (filterState.hideRemotes) count++;
-        if (filterState.hideMerges) count++;
-        if (filterState.hideStashes) count++;
-        if (filterState.focusBranch) count++;
-        if (count > 0) {
-            badge.textContent = String(count);
-            badge.hidden = false;
-        } else {
-            badge.hidden = true;
+    function onOutsideClick(e) {
+        if (!wrapper.contains(e.target)) {
+            closePopover();
         }
     }
 
-    /**
-     * Persists current state, updates the badge, and fires the onChange callback.
-     */
+    function onEscapeKey(e) {
+        if (e.key === "Escape") {
+            e.stopPropagation();
+            closePopover();
+            trigger.focus();
+        }
+    }
+
+    trigger.addEventListener("click", () => {
+        if (isOpen) {
+            closePopover();
+        } else {
+            openPopover();
+        }
+    });
+
+    // ── State helpers ─────────────────────────────────────────────────────────
+
+    function updateBadge() {
+        const hasActive =
+            filterState.hideRemotes ||
+            filterState.hideMerges ||
+            filterState.hideStashes ||
+            !!filterState.focusBranch;
+        trigger.classList.toggle("has-active-filters", hasActive);
+        // Show/hide reset button
+        resetBtn.style.display = hasActive ? "" : "none";
+    }
+
     function notifyChange() {
         saveFilterState(filterState);
         updateBadge();
         onChange(filterState);
     }
 
-    // Initialize the badge to reflect any persisted state on load.
     updateBadge();
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    /**
-     * Repopulates the branch dropdown from the live branch map.
-     * Preserves the current selection when the chosen branch still exists.
-     *
-     * @param {Map<string, string>} branches branch-name → commit-hash map.
-     */
     function updateBranches(branches) {
         const previousValue = dropdown.value;
 
-        // Remove all options except the sentinel "none" at index 0.
         while (dropdown.options.length > 1) {
             dropdown.remove(1);
         }
 
-        // Sort branch names for stable display: local branches first, then remotes.
         const sorted = [...branches.keys()].sort((a, b) => {
             const aRemote = a.startsWith("refs/remotes/");
             const bRemote = b.startsWith("refs/remotes/");
@@ -307,30 +315,27 @@ export function createGraphFilters(container, options) {
         for (const name of sorted) {
             const opt = document.createElement("option");
             opt.value = name;
-            // Display a friendlier short form while keeping the full ref as the value.
             opt.textContent = friendlyBranchName(name);
             dropdown.appendChild(opt);
         }
 
-        // Restore selection if it still exists; otherwise clear it.
         if (previousValue && branches.has(previousValue)) {
             dropdown.value = previousValue;
         } else if (previousValue) {
-            // The previously focused branch no longer exists — clear focus silently.
             filterState = { ...filterState, focusBranch: "" };
             dropdown.value = "";
             saveFilterState(filterState);
             updateBadge();
-            // Do not fire onChange here to avoid a spurious re-filter on startup.
         }
     }
 
     function destroy() {
-        el.remove();
+        closePopover();
+        wrapper.remove();
     }
 
     return {
-        el,
+        el: wrapper,
         updateBranches,
         getState: () => ({ ...filterState }),
         destroy,
@@ -339,16 +344,6 @@ export function createGraphFilters(container, options) {
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-/**
- * Converts a full ref name to a short, human-readable form.
- * Examples:
- *   "refs/heads/main"          → "main"
- *   "refs/remotes/origin/main" → "origin/main"
- *   "refs/tags/v1.0"           → "tags/v1.0"
- *
- * @param {string} name Full ref name.
- * @returns {string} Short display name.
- */
 function friendlyBranchName(name) {
     if (name.startsWith("refs/heads/")) return name.slice("refs/heads/".length);
     if (name.startsWith("refs/remotes/")) return name.slice("refs/remotes/".length);

@@ -138,16 +138,21 @@ document.addEventListener("DOMContentLoaded", () => {
         root.insertBefore(canvasToolbar, canvasEl);
     }
 
-    // ── A3: Filter panel ────────────────────────────────────────────────────
-    // Mounted by prepending into root so it sits above the toolbar.
-    // loadFilterState() reads from localStorage; falls back to all-off defaults.
+    // ── A3: Filter popover ─────────────────────────────────────────────────
+    // Filter trigger button lives in the canvas toolbar; popover drops down
+    // from it on click. loadFilterState() reads from localStorage.
 
-    const graphFilters = createGraphFilters(root, {
+    const graphFilters = createGraphFilters({
         initialState: loadFilterState(),
         onChange: (filterState) => {
             graph.setFilterState(filterState);
         },
     });
+    canvasToolbar.insertBefore(graphFilters.el, searchContainer);
+
+    // Push persisted filter state into the graph on startup so the canvas
+    // reflects any filters that were active in the previous session.
+    graph.setFilterState(graphFilters.getState());
 
     const keyboardHelp = createKeyboardHelp();
 
