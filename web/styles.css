@@ -241,70 +241,199 @@ body {
     flex-direction: column;
 }
 
-/* ── Sidebar ── */
+/* ── Activity Bar ── */
 
-.sidebar {
+.activity-bar {
+    width: 48px;
+    min-width: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 8px;
+    gap: 4px;
+    background: var(--surface-color);
+    border-right: 1px solid var(--border-color);
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+.activity-bar-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.activity-bar-icon::before {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: transparent;
+    transition: background-color 0.15s ease;
+}
+
+.activity-bar-icon:hover {
+    color: var(--text-color);
+    background: rgba(208, 215, 222, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+    .activity-bar-icon:hover {
+        background: rgba(48, 54, 61, 0.6);
+    }
+}
+
+.activity-bar-icon.is-active {
+    color: var(--text-color);
+}
+
+.activity-bar-icon.is-active::before {
+    background: var(--node-color);
+}
+
+.activity-bar-icon:focus-visible {
+    outline: 2px solid var(--node-color);
+    outline-offset: -2px;
+}
+
+.activity-bar-tooltip {
+    display: none;
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px var(--node-shadow-color);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.activity-bar-icon:hover .activity-bar-tooltip {
+    display: block;
+}
+
+/* ── Sidebar Panel ── */
+
+.sidebar-panel {
     position: relative;
     display: flex;
     flex-direction: column;
     background: var(--surface-color);
     border-right: 1px solid var(--border-color);
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    width: 0;
+    min-width: 0;
+    z-index: 1;
 }
 
-.sidebar.is-resizing {
+.sidebar-panel.is-resizing {
     transition: none;
 }
 
-.sidebar.is-collapsed {
+.sidebar-panel:not(.is-open) {
     border-right: none;
 }
 
-.sidebar.is-collapsed .sidebar-header,
-.sidebar.is-collapsed .sidebar-content,
-.sidebar.is-collapsed .sidebar-handle {
+.sidebar-panel:not(.is-open) .sidebar-panel-header,
+.sidebar-panel:not(.is-open) .sidebar-panel-content,
+.sidebar-panel:not(.is-open) .sidebar-panel-handle {
     display: none;
 }
 
-.sidebar-header {
+.sidebar-panel-header {
     display: flex;
     align-items: center;
-    padding: 14px 14px;
+    justify-content: space-between;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     background: linear-gradient(135deg, var(--surface-color) 0%, rgba(14, 165, 233, 0.02) 100%);
 }
 
-.sidebar-toggle {
+.sidebar-panel-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.sidebar-panel-close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: var(--text-color);
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.sidebar-toggle:hover {
+.sidebar-panel-close:hover {
     background: rgba(208, 215, 222, 0.32);
+    color: var(--text-color);
 }
 
 @media (prefers-color-scheme: dark) {
-    .sidebar-toggle:hover {
+    .sidebar-panel-close:hover {
         background: rgba(48, 54, 61, 0.8);
     }
 }
 
-.sidebar-content {
+.sidebar-panel-content {
     flex: 1;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+}
+
+.sidebar-panel-tab-content {
+    display: none;
+    flex: 1;
+    overflow: hidden;
+    flex-direction: column;
+}
+
+.sidebar-panel-tab-content.is-active {
+    display: flex;
+}
+
+.sidebar-panel-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 20;
+}
+
+.sidebar-panel-handle:hover,
+.sidebar-panel.is-resizing .sidebar-panel-handle {
+    background: var(--node-color);
+    opacity: 0.5;
 }
 
 /* ── Info Bar ── */
@@ -417,49 +546,6 @@ body {
 .info-bar-value--remote-url {
     font-size: 10px;
     color: var(--text-secondary);
-}
-
-/* ── Sidebar Tabs ── */
-
-.sidebar-tabs {
-    display: flex;
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-}
-
-.sidebar-tab {
-    flex: 1;
-    padding: 10px 12px;
-    font-size: 13px;
-    font-weight: 500;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s ease;
-    position: relative;
-}
-
-.sidebar-tab:hover {
-    color: var(--text-color);
-}
-
-.sidebar-tab.is-active {
-    color: var(--node-color);
-    border-bottom-color: var(--node-color);
-    font-weight: 600;
-}
-
-.sidebar-tab-content {
-    display: none;
-    flex: 1;
-    overflow: hidden;
-}
-
-.sidebar-tab-content.is-active {
-    display: flex;
-    flex-direction: column;
 }
 
 /* ── File Explorer ── */
@@ -638,56 +724,11 @@ body {
     width: 52px;
 }
 
-.sidebar-handle {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 4px;
-    height: 100%;
-    cursor: col-resize;
-    z-index: 20;
-}
-
-.sidebar-handle:hover,
-.sidebar.is-resizing .sidebar-handle {
-    background: var(--node-color);
-    opacity: 0.5;
-}
-
-/* Toggle shown in canvas toolbar when sidebar is collapsed */
-.sidebar-expand {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-color);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-}
-
-.sidebar-expand:hover {
-    background: rgba(14, 165, 233, 0.08);
-    border-color: var(--node-color);
-}
-
-@media (prefers-color-scheme: dark) {
-    .sidebar-expand:hover {
-        background: rgba(48, 54, 61, 0.8);
-    }
-}
-
 /* ── Canvas Toolbar ── */
 
 /*
- * In-flow strip between the filter panel and the canvas. Contains the sidebar
- * expand button (when collapsed), commit search, and graph layout controls.
- * Replaces the former scattered absolute-positioned overlays that caused
- * z-index conflicts and overlapping on narrow viewports.
+ * In-flow strip between the filter panel and the canvas. Contains
+ * commit search and graph layout controls.
  */
 .canvas-toolbar {
     display: flex;

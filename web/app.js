@@ -5,7 +5,6 @@ import { startBackend } from "./backend.js";
 import { createSidebar } from "./sidebar.js";
 import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
-import { createSidebarTabs } from "./sidebarTabs.js";
 import { createFileExplorer } from "./fileExplorer.js";
 import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
@@ -71,9 +70,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    const sidebar = createSidebar();
-    root.parentElement.insertBefore(sidebar.el, root);
-
     const infoBar = createInfoBar();
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
@@ -86,11 +82,12 @@ document.addEventListener("DOMContentLoaded", () => {
     repoTabContent.appendChild(infoBar.el);
     repoTabContent.appendChild(indexView.el);
 
-    const tabs = createSidebarTabs([
-        { name: "repository", label: "Repository", content: repoTabContent },
-        { name: "file-explorer", label: "File Explorer", content: fileExplorer.el },
+    const sidebar = createSidebar([
+        { name: "repository", icon: "", tooltip: "Repository", content: repoTabContent },
+        { name: "file-explorer", icon: "", tooltip: "File Explorer", content: fileExplorer.el },
     ]);
-    sidebar.content.appendChild(tabs.el);
+    root.parentElement.insertBefore(sidebar.activityBar, root);
+    root.parentElement.insertBefore(sidebar.panel, root);
 
     // Track whether the initial delta has been applied at least once so the
     // permalink restore only fires after the graph has commits to navigate to.
@@ -98,8 +95,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const graph = createGraph(root, {
         onCommitTreeClick: (commit) => {
-            // Only update file explorer if it's already the active tab
-            if (tabs.getActiveTab() === "file-explorer") {
+            // Only update file explorer if it's already the active panel
+            if (sidebar.getActivePanel() === "file-explorer") {
                 fileExplorer.openCommit(commit);
             }
         },
@@ -113,13 +110,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // ── Canvas Toolbar ──────────────────────────────────────────────────────
-    // Assembles sidebar-expand, search, and graph controls into a single
-    // in-flow toolbar strip. This prevents the overlapping that occurred when
-    // these elements were all independently absolute-positioned over the canvas.
+    // Assembles search and graph controls into a single in-flow toolbar strip.
 
     const canvasToolbar = document.createElement("div");
     canvasToolbar.className = "canvas-toolbar";
-    canvasToolbar.appendChild(sidebar.expandBtn);
 
     const searchContainer = document.createElement("div");
     searchContainer.className = "search-container";
