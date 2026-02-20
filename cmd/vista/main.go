@@ -16,7 +16,7 @@ import (
 	"github.com/rybkr/gitvista/internal/server"
 )
 
-const version = "1.0.0-dev"
+const version = "1.0.0"
 
 func main() {
 	// Configure structured logging before anything else so that all subsequent
