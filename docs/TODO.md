@@ -1,6 +1,6 @@
 # GitVista Feature Roadmap
 
-> Last updated: 2026-02-19 (Added competitive analysis)
+> Last updated: 2026-02-20 (Status audit: fixed B1/A1/B4/F6/A8 statuses, added infra issues, updated next sprint priorities)
 > Methodology: Three parallel codebase audits covering Graph/Navigation, Diff/Code Understanding, and Infrastructure/Metadata themes. All ideas verified against the actual source files; corrections noted inline.
 > RICE Score = (Reach × Impact × Confidence) / Effort. All metrics on a 1–10 scale where Effort 10 = very high effort.
 
@@ -66,7 +66,7 @@ The following high-RICE roadmap items have been completed and merged to main:
 
 | Priority | ID | Feature | RICE | Status | Commit |
 |----------|----|---------|----|--------|--------|
-| 1 | A1 | **Wire `getAuthorColor` into renderer** | 560 | ✅ SHIPPED | 05b7a91 |
+| 1 | A1 | **Wire `getAuthorColor` into renderer** | 560 | ⚠️ PARTIAL | 05b7a91. Author colors used for merge diamonds and lane mode (`laneColor`), but regular commits in force mode still use `this.palette.node`. `renderNormalCommit()` at `graphRenderer.js:433` uses `node.laneColor \|\| this.palette.node`, not `getAuthorColor()`. |
 | 2 | F1 | **HTTP Timeouts and Graceful Shutdown** | 252 | ✅ SHIPPED | (merged via b63c6e0) |
 | 3 | F3 | **Theme-Pinning Toggle** (light/dark/system) | 243 | ✅ SHIPPED | 311442f |
 | 5 | A4 | **Progressive Commit Detail at Zoom** | 158 | ✅ SHIPPED | 9a1637e |
@@ -76,11 +76,11 @@ The following high-RICE roadmap items have been completed and merged to main:
 | Priority | ID | Feature | RICE | Status | Notes |
 |----------|----|---------|----|--------|-------|
 | 12 | F4 | **LRU Cache Eviction** | 112 | ✅ SHIPPED | Bounded LRU cache in `internal/server/cache.go` replaces unbounded sync.Map. Configurable via `GITVISTA_CACHE_SIZE` env var (default: 500). |
-| 8 | F6 | **Structured Logging** | 135 | ✅ SHIPPED | `log/slog` integration with `GITVISTA_LOG_LEVEL` and `GITVISTA_LOG_FORMAT` env vars. Zero new dependencies. |
+| 8 | F6 | **Structured Logging** | 135 | ✅ SHIPPED (server only) | `log/slog` in `internal/server/`. `internal/gitcore/` still has ~10 `log.Printf` calls in refs.go, objects.go, pack.go that bypass slog/level filtering. |
 | 13 | A2 | **Commit Search and Filtering** | 98 | ✅ SHIPPED | Debounced search bar in `web/search.js`. Searches message, author, email, hash. Opacity-based dimming of non-matching nodes. `/` keyboard shortcut. |
 | 14 | A3 | **Configurable Graph Display Filters** | 98 | ✅ SHIPPED | Filter panel in `web/graphFilters.js`. Hide remote branches, merge commits, stashes. Branch focus selector with BFS reachability. Compound filter predicates with search. State persisted to localStorage. |
 | — | — | **Lane-Based Layout Strategy** | — | ✅ SHIPPED | Dual layout system: force-directed (original) and lane-based DAG layout. Strategy pattern in `web/graph/layout/`. Toolbar buttons for switching. Persisted to localStorage. |
-| 4 | B1 | **Inline Syntax Highlighting in Diff View** | 168 | 🏗️ IN PROGRESS | — |
+| 4 | B1 | **Inline Syntax Highlighting in Diff View** | 168 | ⬜ NOT STARTED | highlight.js is loaded in `fileContentViewer.js` but `diffContentViewer.js` has zero hljs integration — all diff lines render as plain text via `textContent`. |
 
 ### Frontend Design Upgrade (Commit 992bc92)
 **Refined Geometric Modernism** visual overhaul:
@@ -410,14 +410,14 @@ Strategic flags: items with outsized long-term value that may score lower due to
 
 | Priority | ID | Feature | Reach | Impact | Conf | Effort | RICE | Status | Notes |
 |----------|----|---------:|:-----:|:------:|:----:|:------:|:----:|:------:|-------|
-| 1 | A1 | **Wire `getAuthorColor` into renderer** | 8 | 7 | 10 | 1 | **560** | ✅ DONE | `getAuthorColor()` fully written and memoized in `web/utils/colors.js`; never imported. ~10-line change in `graphRenderer.js`. Highest ROI in the entire roadmap. |
+| 1 | A1 | **Wire `getAuthorColor` into renderer** | 8 | 7 | 10 | 1 | **560** | ⚠️ PARTIAL | Used for merge diamonds and lane mode, but `renderNormalCommit()` in force mode uses `node.laneColor \|\| this.palette.node` — not `getAuthorColor()`. |
 | 2 | F1 | **HTTP Timeouts and Graceful Shutdown** | 8 | 7 | 9 | 2 | **252** | ✅ DONE | `Server.Shutdown()` fully implemented and just needs an OS signal handler in `main.go`. Swap `ListenAndServe` for `http.Server{...}`. Correctness fix, not a feature. |
 | 3 | F3 | **Theme-Pinning Toggle** | 9 | 6 | 9 | 2 | **243** | ✅ DONE | CSS custom property system is complete for both themes. Class-based override (`data-theme`) alongside existing media query. Pure frontend, no backend. |
-| 4 | B1 | **Inline Syntax Highlighting in Diff View** | 8 | 7 | 9 | 3 | **168** | 🏗️ WIP | highlight.js already loaded in `fileContentViewer.js`. Extend to `diffContentViewer.js` — CDN dependency already solved. |
+| 4 | B1 | **Inline Syntax Highlighting in Diff View** | 8 | 7 | 9 | 3 | **168** | ⬜ NOT STARTED | highlight.js loaded in `fileContentViewer.js` but `diffContentViewer.js` renders all lines as plain text via `textContent`. Zero hljs integration in diffs. |
 | 5 | A4 | **Progressive Commit Detail at Zoom** | 7 | 5 | 9 | 2 | **158** | ✅ DONE | Zoom threshold pattern exists in `renderCommitLabel`. Author name and date on `node.commit.author`. Zero backend changes. |
 | 6 | B2 | **Rename Detection in Diffs** | 7 | 8 | 8 | 3 | **149** | ✅ DONE | `DiffStatusRenamed`, `DiffEntry.OldPath`, and frontend badge stubs already exist. Backend exact-hash post-processing pass is the only new work. |
-| 7 | B4 | **Working Tree Diff Context Expansion** | 5 | 6 | 9 | 2 | **135** | One-line backend change (`-U{N}` flag to `git diff HEAD`). Frontend expand-context mechanism already works for commit diffs. |
-| 8 | F6 | **Structured Logging** | 5 | 6 | 9 | 2 | **135** | ✅ DONE | `log/slog` stdlib integration. `GITVISTA_LOG_LEVEL` and `GITVISTA_LOG_FORMAT` env vars. |
+| 7 | B4 | **Working Tree Diff Context Expansion** | 5 | 6 | 9 | 2 | **135** | ⬜ NOT STARTED | `handleWorkingTreeDiff()` in handlers.go:436 calls `git diff HEAD --` without `-U{N}`. Does not read `?context=N` param. Frontend expand-context already works for commit diffs. |
+| 8 | F6 | **Structured Logging** | 5 | 6 | 9 | 2 | **135** | ✅ DONE (server) | `log/slog` in `internal/server/`. `internal/gitcore/` still has ~10 `log.Printf` calls that bypass slog. |
 | 9 | A5 | **Export Graph as PNG** | 6 | 5 | 9 | 2 | **135** | `canvas.toDataURL("image/png")` — DPR scaling already correct. Add a download button to the graph toolbar. |
 | 10 | C1 | **Clickable Blame Hash → Graph Navigation** | 7 | 8 | 9 | 4 | **126** | Pure frontend wiring. Expose `navigateToCommit(hash)` from `graphController.js`; call it from `fileExplorer.js` blame column click handler. |
 | 11 | F2 | **Watcher Polling Fallback** | 7 | 8 | 8 | 4 | **112** | Docker bind-mount is a primary deployment target. `GITVISTA_POLL_INTERVAL` env var entirely absent. Debounce constant needs to become a config field. |
@@ -438,7 +438,7 @@ Strategic flags: items with outsized long-term value that may score lower due to
 | 26 | F7 | **Mobile Responsive Layout** | 4 | 6 | 6 | 5 | **29** | No CSS breakpoints exist. Sidebar drawer pattern on narrow viewports. D3 touch zoom needs verification. |
 | 27 | D2 | **Backend Full-Text Search Index** | 5 | 6 | 5 | 8 | **19** | Only needed when A2 (frontend search) proves insufficient. Ship A2 first. |
 | 28 | C3 | **Submodule Awareness** | 3 | 5 | 6 | 6 | **15** | `isSubmodule()` detection exists. `.gitmodules` parsing, endpoint, and explorer UX all new. |
-| 29 | A8 | **Graph Layout Mode Toggle (DAG)** | 5 | 6 | 4 | 8 | **15** | Existing layout is already a time-ordered hybrid. True branch-lane DAG layout is a significant algorithmic problem. **Strategic milestone.** |
+| 29 | A8 | **Graph Layout Mode Toggle (DAG)** | 5 | 6 | 4 | 8 | **15** | ✅ DONE | Shipped as lane-based layout in `web/graph/layout/laneStrategy.js`. Topological column-reuse algorithm with smooth transitions. |
 | 30 | C4 | **Line-Level Blame** | 4 | 7 | 4 | 8 | **14** | `GetLineBlame()` does not exist. Requires new algorithm or `git blame --porcelain` shell-out. Validate feasibility first. **Strategic.** |
 | 31 | A5b | **Export Graph as SVG** | 4 | 5 | 4 | 8 | **10** | No SVG rendering path exists. Would require a parallel renderer. Low priority relative to PNG. |
 | 32 | A9 | **Interactive Rebase Preview** | 3 | 5 | 3 | 9 | **5** | Requires DAG-rewrite simulation and depends on A8. Architecture is read-only by design. Long-horizon. |
@@ -448,7 +448,7 @@ Strategic flags: items with outsized long-term value that may score lower due to
 ## Top Priorities for Next Sprint
 
 ### ✅ Sprint 1 Completed (5 features)
-- A1: Wire `getAuthorColor` into renderer
+- A1: Wire `getAuthorColor` into renderer (**partial** — merge diamonds and lane mode only; force-mode regular commits still use palette.node)
 - F1: HTTP Timeouts and Graceful Shutdown
 - F3: Theme-Pinning Toggle (light/dark/system)
 - A4: Progressive Commit Detail at Zoom Levels
@@ -456,29 +456,40 @@ Strategic flags: items with outsized long-term value that may score lower due to
 
 ### ✅ Sprint 2 Completed (5 features)
 - F4: LRU Cache Eviction (bounded cache with configurable size)
-- F6: Structured Logging (slog with env var configuration)
-- A2: Commit Search and Filtering (debounced search with opacity dimming)
+- F6: Structured Logging (slog in server; gitcore still uses log.Printf)
+- A2: Commit Search and Filtering (debounced search with qualifier syntax, opacity dimming)
 - A3: Configurable Graph Display Filters (hide remotes/merges/stashes, branch focus)
-- Lane-Based Layout Strategy (dual force/lane layout with toolbar switching)
+- A8/Lane-Based Layout Strategy (dual force/lane layout with toolbar switching)
 
 ### 🎨 Frontend Design System Completed
 A comprehensive visual overhaul with Geist typography, vibrant teal accent color (#0ea5e9), refined shadows, improved spacing, and smooth micro-interactions across all UI components.
 
+### Infrastructure Issues (should fix before next feature sprint)
+
+1. **golangci-lint v2 migration**: `.golangci.yml` uses v1 schema but CI resolves to v2.x. `make lint` and CI lint job fail. Config needs full migration.
+2. **Merge dev to main**: `main` is 41+ commits behind `dev`. All shipped features exist only on `dev`.
+3. **`make test` missing `-race`**: Local tests provide weaker guarantees than CI.
+4. **Stale files**: `WORKFLOW.md` is fully stale (all tasks complete). `INTEGRATION_COMPLETE.md` has stale line-number references. `docs/web-dev/` HTML test files have broken relative paths.
+5. **Stale remote branches**: `origin/rybkr/feat/minimap` (3 months), `origin/feature/large-graph` (9 days) should be evaluated for pruning.
+
 ### Next Recommended Items
 
-**1. Inline Syntax Highlighting in Diff View (B1, RICE 168) — IN PROGRESS**
+**1. Finish A1: Author Colors in Force Mode (RICE 560, trivial)**
+In `renderNormalCommit()` at `graphRenderer.js:433`, replace `node.laneColor || this.palette.node` with `getAuthorColor(node.authorEmail)` (or fall back to palette). One-line change to complete the highest-RICE item.
+
+**2. Inline Syntax Highlighting in Diff View (B1, RICE 168) — NOT STARTED**
 Apply highlight.js to diff content in `diffContentViewer.js`. The library is already loaded in `fileContentViewer.js`; just extend the same pattern to diffs. Tokenize each `DiffLine.content` through `hljs.highlight()` per-line or wrap hunks in `<code>` elements. Detect language from file path extension (already done in `fileContentViewer.js`).
 
-**2. Working Tree Diff Context Expansion (B4, RICE 135)**
-In `handleWorkingTreeDiff` (`internal/server/handlers.go`, line 428), read `r.URL.Query().Get("context")`, parse it as an integer (capped at 100, defaulting to 3), and pass `-U{N}` to the `git diff HEAD` subprocess args. The frontend expand-context mechanism requires no changes — it already re-fetches with `?context=` updated.
+**3. Working Tree Diff Context Expansion (B4, RICE 135) — NOT STARTED**
+In `handleWorkingTreeDiff` (`internal/server/handlers.go`, line 436), read `r.URL.Query().Get("context")`, parse it as an integer (capped at 100, defaulting to 3), and pass `-U{N}` to the `git diff HEAD` subprocess args. The frontend expand-context mechanism requires no changes — it already re-fetches with `?context=` updated.
 
-**3. Export Graph as PNG (A5, RICE 135)**
+**4. Export Graph as PNG (A5, RICE 135)**
 `canvas.toDataURL("image/png")` — DPR scaling already correct. Add a download button to the graph toolbar.
 
-**4. Clickable Blame Hash → Graph Navigation (C1, RICE 126)**
+**5. Clickable Blame Hash → Graph Navigation (C1, RICE 126)**
 Pure frontend wiring. Expose `navigateToCommit(hash)` from `graphController.js`; call it from `fileExplorer.js` blame column click handler.
 
-**5. Watcher Polling Fallback (F2, RICE 112)**
+**6. Watcher Polling Fallback (F2, RICE 112)**
 Docker bind-mount is a primary deployment target. `GITVISTA_POLL_INTERVAL` env var entirely absent. Debounce constant needs to become a config field.
 
 ---
@@ -495,7 +506,7 @@ Docker bind-mount is a primary deployment target. `GITVISTA_POLL_INTERVAL` env v
 1. Create an ES module file in `web/`
 2. Import it in `web/app.js` with a relative `./` path
 3. No bundler needed — ES modules load natively
-4. CDN dependencies are `<script>` tags in `web/index.html`, not npm packages
+4. CDN dependencies are ESM `import` statements (D3.js) or lazy `<script>` injection (highlight.js), not npm packages
 
 ### Extending `gitcore` with New Git Object Parsing
 1. Add the parsing function to the appropriate file in `internal/gitcore/`

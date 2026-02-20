@@ -56,7 +56,7 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `refs.go` - Reference loading: loose refs, packed refs, HEAD resolution (supports symbolic ref chains)
 - `objects.go` - Reads loose and packed Git objects (commits, tags, trees), handles zlib decompression
 - `pack.go` - Pack file and index parsing (v2 format), delta object reconstruction
-- `blame.go` - Per-directory blame via BFS commit walk (max 1000 commits), cached by `commitHash:dirPath` in sync.Map
+- `blame.go` - Per-directory blame via BFS commit walk (max 1000 commits); caching is handled at the server layer via LRU cache
 - `diff.go` - Tree diffing (`TreeDiff`) and line-level file diffing (`ComputeFileDiff`); limits: 500 entries, 512KB blobs, 3 context lines. Includes exact-hash rename detection post-processing
 - `types.go` - Core types: `Hash`, `Commit`, `Tag`, `Tree`, `TreeEntry`, `Signature`, `RepositoryDelta`, `DiffEntry`, `CommitDiff`, `FileDiff`, `DiffHunk`, `DiffLine`
 
@@ -68,7 +68,9 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `watcher.go` - Filesystem watcher on `.git/` directory with debouncing; triggers repository reload and broadcasts deltas
 - `broadcast.go` - Non-blocking delta broadcast to WebSocket clients (256-item buffer, drops on overflow)
 - `update.go` - Computes `RepositoryDelta` between old and new repository states
-- `status.go` - Working tree status via `git status --porcelain` (this is the one place the git CLI is used)
+- `status.go` - Working tree status via `git status --porcelain`
+- **Note:** The git CLI is used in two places: `status.go` for `git status --porcelain` and `handlers.go` for `git diff HEAD` (working tree diffs). All other git operations use pure Go parsing.
+- **Note:** `internal/gitcore/` still uses `log.Printf` in ~10 places (refs.go, objects.go, pack.go). The slog migration (F6) only covers `internal/server/`. These calls bypass `GITVISTA_LOG_LEVEL` filtering.
 - `health.go` - Health check endpoint
 - `ratelimit.go` - Per-client rate limiting for API endpoints
 - `validation.go` - Input validation helpers (path traversal prevention, hash validation)
@@ -84,43 +86,46 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `GET /api/tree/blame/{commitHash}?path={dirPath}` - Per-file blame for a directory
 - `GET /api/commit/diff/{commitHash}` - List of files changed in a commit (`CommitDiff` with stats)
 - `GET /api/commit/diff/{commitHash}/file?path={path}` - Line-level unified diff for a specific file (`FileDiff` with hunks)
+- `GET /api/working-tree/diff?path={filePath}` - Working tree diff for a specific file (uses `git diff HEAD`)
 - `GET /api/ws` - WebSocket upgrade for real-time deltas + working tree status
+- `GET /health` - Health check endpoint (returns `{"status": "ok"}`)
 
 ### Frontend (JavaScript)
 
-**`web/`** - Vanilla JS with ES modules, D3.js v7.9.0 loaded from CDN:
-- `app.js` - Entry point: bootstraps graph, sidebar, tabs, theme, search, filters, and backend connection; handles `#<commitHash>` URL fragment for deep-linking to commits
-- `backend.js` - REST fetch and WebSocket connection management
-- `logger.js` - Lightweight structured logger used throughout the frontend
+**`web/`** - Vanilla JS with ES modules, D3.js v7.9.0 loaded via ESM `import` from CDN (in graphController.js, graphState.js, forceStrategy.js):
+- `app.js` - Entry point: bootstraps graph, sidebar, theme, search, filters, and backend connection; handles `#<commitHash>` URL fragment for deep-linking to commits
+- `backend.js` - REST fetch and WebSocket connection management with exponential backoff reconnection (1s initial, 30s max)
+- `logger.js` - Lightweight structured logger with info/warn/error levels and ISO timestamps
 - `graph.js` - Thin wrapper that creates and exposes the graph controller
-- `search.js` - Commit search bar with debounced text filtering across message, author, email, and hash; opacity-based dimming of non-matching nodes
-- `graphFilters.js` - Graph filtering UI: hide remote branches, merge commits, stashes; branch focus selector with compound filter predicates
-- `themeToggle.js` - Three-state theme toggle (light/dark/system) persisted to localStorage
-- `graph/graphController.js` - D3 force simulation, zoom/pan, node dragging, delta application, search/filter integration
-- `graph/rendering/graphRenderer.js` - Canvas-based rendering of commits, branches, links with author-colored nodes
-- `graph/state/graphState.js` - State factory for commits/branches/nodes/links Maps + zoom, search query, filter state, layout mode
-- `graph/layout/layoutManager.js` - Layout orchestration with pluggable strategy pattern
-- `graph/layout/layoutStrategy.js` - Abstract layout strategy interface
-- `graph/layout/forceStrategy.js` - Force-directed layout strategy (original behavior)
-- `graph/layout/laneStrategy.js` - Lane-based DAG layout strategy with parallel branch lanes
-- `graph/constants.js` - Centralized D3 force parameters, UI dimensions, lane layout constants, progressive zoom thresholds
+- `search.js` - Enhanced commit search with dropdown, qualifier suggestions, recent searches (localStorage), debounced input (200ms), result count badge
+- `searchQuery.js` - Pure query parser with qualifiers (`author:`, `hash:`, `after:`, `before:`, `merge:`, `branch:`), relative date shorthand (7d, 2w, 3m, 1y), BFS branch reachability
+- `graphFilters.js` - Filter popover with toggles (hideRemotes, hideMerges, hideStashes), branch focus dropdown with BFS reachability, localStorage persistence, active filter badge count
+- `themeToggle.js` - Three-state cycle toggle (system/light/dark), sets `data-theme` attribute on `<html>`, persisted to localStorage
+- `graph/graphController.js` - Main orchestrator (1225 lines): D3 simulation, zoom/pan, node dragging, delta reconciliation, filter predicate building, commit navigation, ResizeObserver
+- `graph/rendering/graphRenderer.js` - Canvas renderer (822 lines): commit circles, merge diamonds, branch/tag pills, stepped cross-lane arrows, spawn animations, progressive zoom detail (message >= 1.5x, author >= 2.0x, date >= 3.0x), dimmed nodes at 15% opacity
+- `graph/state/graphState.js` - State factory for commits/branches/nodes/links Maps + layoutMode, searchState, filterState, headHash, tags, stashes
+- `graph/layout/layoutManager.js` - Timeline positioning for ForceStrategy: time-based Y sorting, proportional spacing, auto-centering
+- `graph/layout/layoutStrategy.js` - Layout strategy interface documentation (JSDoc-only, no runtime code)
+- `graph/layout/forceStrategy.js` - D3 force simulation with charge/collision/link forces, uses LayoutManager for timeline, node dragging with fx/fy
+- `graph/layout/laneStrategy.js` - Topological column-reuse DAG layout (488 lines): newest-first sort, lane 0 seeded with main/master/trunk, smooth 300ms transition animation, dragging disabled
+- `graph/constants.js` - Centralized D3 force parameters, UI dimensions, lane layout constants (LANE_WIDTH=80, LANE_MARGIN=60), progressive zoom thresholds, 8 lane colors
 - `graph/types.js` - Frontend type documentation (JSDoc shapes) including lane and filter state types
-- `graph/utils/palette.js` - Theme-aware color palette management
-- `graph/utils/time.js` - Date formatting utilities
-- `sidebar.js` - Collapsible, resizable sidebar with localStorage persistence
-- `sidebarTabs.js` - Tab switching for sidebar panels (Repository / File Explorer)
-- `infoBar.js` - Repository info header (branch, commit count, tags, remotes)
-- `fileExplorer.js` - Lazy-loading file browser with keyboard navigation (W3C APG TreeView pattern) and ARIA accessibility
-- `fileIcons.js` - File extension to icon/color mapping for the file explorer
-- `fileContentViewer.js` - File content display panel
-- `diffView.js` - Commit diff view: lists changed files for a commit
-- `diffContentViewer.js` - Line-level unified diff renderer with hunk display
-- `indexView.js` - Working tree status view (staged/modified/untracked sections)
-- `keyboardShortcuts.js` - Global keyboard handler; supports single-key and two-key sequences (e.g. `G→H` to jump to HEAD, `/` to focus search)
-- `keyboardHelp.js` - Keyboard shortcut help overlay
-- `toast.js` - Transient toast notification system
-- `tooltips/` - Commit, branch, and blob tooltip overlays (extend `baseTooltip.js`)
-- `utils/` - Shared utilities: `colors.js` (author color hashing), `format.js`
+- `graph/utils/palette.js` - Reads CSS custom properties, returns GraphPalette with fallback defaults
+- `graph/utils/time.js` - Human-readable relative time strings, timestamp extraction with fallback chain
+- `sidebar.js` - Activity bar (40px icon strip) + collapsible/resizable panel with localStorage persistence; replaced former tab-based `sidebarTabs.js`
+- `infoBar.js` - Collapsible repo metadata section (branch, commit count, branches, tags, remotes, description)
+- `fileExplorer.js` - Full tree browser (923 lines): lazy fetch with cache, blame annotations, W3C APG TreeView keyboard nav, filter input, breadcrumbs, working-tree status indicators, tree/diff toggle
+- `fileIcons.js` - Extension/name-based SVG icon mapping, GitHub Primer-inspired palette, covers 20+ languages/filetypes
+- `fileContentViewer.js` - Blob content display with highlight.js 11.9.0 (lazy CDN load), line numbers, binary/truncation notices
+- `diffView.js` - Commit-level diff: file list with A/M/D/R status badges, stats bar, generation counter for stale response protection
+- `diffContentViewer.js` - Line-level unified diff renderer with dual line number gutters, hunk headers, expand-context buttons, `showFromUrl()` for working-tree diffs
+- `indexView.js` - Working tree status with collapsible staged/modified/untracked sections; clickable files trigger working-tree diff view
+- `keyboardShortcuts.js` - Global keydown handler: `G` then `H` (500ms timeout) to jump to HEAD, `/` for search, `?` for help overlay, `J`/`K` for commit navigation, `Esc` to dismiss; modifier key suppression; typing guard for INPUT/TEXTAREA
+- `keyboardHelp.js` - Modal overlay with shortcut table, self-contained CSS injection, backdrop blur, click-outside dismiss, `role="dialog"` with `aria-modal`
+- `toast.js` - Toast notification queue (max 3 visible), bottom-left positioned, auto-dismiss, ARIA `role="status"`
+- `tooltips/` - Commit and branch tooltip overlays (extend `baseTooltip.js`); commit tooltip includes hash copy, Prev/Next navigation
+- `utils/colors.js` - `getAuthorColor(email)`: djb2 hash to HSL color, memoized in module-level Map
+- `utils/format.js` - `shortenHash()`, `formatRelativeTime()`
 
 ### Data Flow
 
@@ -145,7 +150,21 @@ Tests live alongside source code in `internal/gitcore/` and `internal/server/`. 
 - Table-driven subtests with `t.Run()`
 - Hand-constructed binary data for Git object format tests (no fixture files)
 - Integration tests in `test/integration/` use build tag `integration`; they start a real server on port 18080 against the current repo
-- Server tests cover handlers, validation, rate limiting, status parsing, and LRU cache behavior
+- Server tests cover handlers, validation, rate limiting, status parsing, LRU cache behavior, shutdown lifecycle, and structured logging
+
+**Well-covered areas:** Diff engine (1,191 lines of tests including rename detection), pack file parsing (v1/v2/large offsets/delta application), object parsing, LRU cache (including concurrency), rate limiter, validation, shutdown, status parsing.
+
+**Test gaps:** No unit tests for `refs.go`, `blame.go`, `watcher.go`, `broadcast.go`, `update.go`, or `websocket.go`. Handler tests only cover error cases (invalid method/hash/path), not success paths. `parseUnifiedDiff()` in handlers.go is untested.
+
+## Known Issues
+
+- **golangci-lint config (`.golangci.yml`) uses v1 schema** but CI resolves to v2.x via `version: latest`. The config needs migration to golangci-lint v2 format. `make lint` will fail until fixed.
+- **`make test` lacks `-race` flag**, providing weaker guarantees than CI (`go test -race -timeout 5m ./...`).
+- **`main` branch is significantly behind `dev`**. All Sprint 1/2 features, design overhaul, and lane layout exist only on `dev`.
+- **`internal/gitcore/` logging** uses stdlib `log.Printf` (not slog), bypassing `GITVISTA_LOG_LEVEL` filtering.
+- **No delta recursion depth limit** in `pack.go` `readOffsetDelta()` — deeply chained deltas in malicious pack files could cause stack overflow.
+- **`rateLimiter.Close()` panics on double-call** — no `sync.Once` guard on channel close.
+- **Near-duplicate relative time functions** in `utils/format.js` and `graph/utils/time.js`.
 
 ## Environment Variables
 
