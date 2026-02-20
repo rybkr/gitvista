@@ -5,10 +5,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/rybkr/gitvista"
@@ -32,6 +32,12 @@ func main() {
 
 	flag.Parse()
 
+	portNum, err := strconv.Atoi(*port)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		slog.Error("Invalid port number", "port", *port)
+		os.Exit(1)
+	}
+
 	if *showVersion {
 		fmt.Printf("GitVista %s\n", version)
 		os.Exit(0)
@@ -45,15 +51,15 @@ func main() {
 	// Load repository
 	repo, err := gitcore.NewRepository(*repoPath)
 	if err != nil {
-		// log.Fatalf is used here because slog has no Fatal equivalent; the
-		// standard library log package writes to stderr and calls os.Exit(1).
-		log.Fatalf("Failed to load repository at %s: %v", *repoPath, err)
+		slog.Error("Failed to load repository", "path", *repoPath, "err", err)
+		os.Exit(1)
 	}
 
 	// Get embedded web filesystem
 	webFS, err := gitvista.GetWebFS()
 	if err != nil {
-		log.Fatalf("Failed to load web assets: %v", err)
+		slog.Error("Failed to load web assets", "err", err)
+		os.Exit(1)
 	}
 
 	// Create and start server
@@ -75,7 +81,8 @@ func main() {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			log.Fatalf("Server error: %v", err)
+			slog.Error("Server error", "err", err)
+			os.Exit(1)
 		}
 	case <-ctx.Done():
 		stop() // Reset signal handling so a second signal force-exits.
@@ -123,7 +130,7 @@ func printHelp() {
 	fmt.Println("GitVista - Real-time Git repository visualization")
 	fmt.Printf("Version: %s\n\n", version)
 	fmt.Println("Usage:")
-	fmt.Println("  vista [flags]")
+	fmt.Println("  gitvista [flags]")
 	fmt.Println()
 	fmt.Println("Flags:")
 	fmt.Println("  -repo string")
@@ -145,10 +152,10 @@ func printHelp() {
 	fmt.Println("        Show this help message")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  vista")
-	fmt.Println("  vista -repo /path/to/repo")
-	fmt.Println("  vista -port 3000")
-	fmt.Println("  vista -host localhost -port 9090")
+	fmt.Println("  gitvista")
+	fmt.Println("  gitvista -repo /path/to/repo")
+	fmt.Println("  gitvista -port 3000")
+	fmt.Println("  gitvista -host localhost -port 9090")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
 	fmt.Println("  GITVISTA_REPO         Default repository path")

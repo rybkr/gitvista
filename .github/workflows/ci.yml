@@ -13,9 +13,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.24']
 
     steps:
       - name: Checkout code
@@ -24,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: '1.24'
           cache: true
 
       - name: Download dependencies
@@ -33,21 +30,18 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
-      - name: Run tests
-        run: go test -v -race -timeout 5m ./...
-
       - name: Run tests with coverage
-        if: matrix.go-version == '1.24'
         run: |
           mkdir -p test/cover
-          go test -race -covermode=atomic -coverprofile=test/cover/coverage.out -coverpkg=./internal/... ./...
+          go test -v -race -timeout 5m -covermode=atomic \
+            -coverprofile=test/cover/coverage.out -coverpkg=./internal/... ./...
 
       - name: Upload coverage to Codecov
-        if: matrix.go-version == '1.24'
         uses: codecov/codecov-action@v4
         with:
           file: ./test/cover/coverage.out
           flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
   lint:
@@ -85,18 +79,15 @@ jobs:
 
       - name: Validate JavaScript syntax
         run: |
-          for file in web/*.js web/**/*.js; do
-            if [ -f "$file" ]; then
-              echo "Checking $file..."
-              node --check "$file"
-            fi
+          find web -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            echo "Checking $file..."
+            node --check "$file"
           done
 
       - name: Check for ES module syntax
         run: |
           echo "Checking for common JavaScript issues..."
-          # Check for proper export/import syntax
-          if grep -rn "module.exports\|require(" web/*.js; then
+          if grep -rn "module.exports\|require(" web/ --include='*.js'; then
             echo "Found CommonJS syntax in ES modules"
             exit 1
           fi
@@ -148,9 +139,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
+        uses: securego/gosec@v2.21.4
         with:
-          args: '-no-fail -fmt json -out gosec-report.json ./...'
+          args: '-fmt json -out gosec-report.json ./...'
+
+      - name: Upload gosec report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-report
+          path: gosec-report.json
 
       - name: Run govulncheck
         run: |

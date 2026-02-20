@@ -1,59 +1,59 @@
-version: 2
-
-linters:
-  # Default linters: errcheck, govet, ineffassign, staticcheck, unused
-  enable:
-    - misspell      # Find commonly misspelled English words
-    - revive        # Fast, configurable, extensible, flexible, and beautiful linter for Go
-    - gosec         # Security problems
-    - unconvert     # Remove unnecessary type conversions
-    - unparam       # Find unused function parameters
-    - goconst       # Repeated strings that could be constants
-    - bodyclose     # Check HTTP response body is closed
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: false
-
-  govet:
-    enable:
-      - shadow
-
-  revive:
-    rules:
-      - name: exported
-        disabled: false
-      - name: unexported-return
-        disabled: true
-
-  gosec:
-    excludes:
-      - G304 # File path provided as taint input (we validate paths)
-      - G204 # Subprocess with variable (we use git command intentionally)
-
-  staticcheck:
-    checks: ["all"]
-
-  misspell:
-    locale: US
-
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
-        - goconst
+version: "2"
 
 run:
   timeout: 5m
   tests: true
-  skip-dirs:
-    - vendor
-    - web
-    - test/cover
+
+linters:
+  enable:
+    - misspell
+    - revive
+    - gosec
+    - unconvert
+    - unparam
+    - goconst
+    - bodyclose
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+
+    govet:
+      enable:
+        - shadow
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: unexported-return
+          disabled: true
+
+    gosec:
+      excludes:
+        - G304 # File path provided as taint input (we validate paths)
+        - G204 # Subprocess with variable (we use git command intentionally)
+
+    staticcheck:
+      checks: ["all"]
+
+    misspell:
+      locale: US
+
+  exclusions:
+    paths:
+      - vendor
+      - web
+      - test/cover
+
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - goconst
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
