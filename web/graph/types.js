@@ -35,7 +35,9 @@
  *   type: "commit",
  *   hash: string,
  *   commit?: GraphCommit,
- *   radius?: number
+ *   radius?: number,
+ *   laneIndex?: number,
+ *   laneColor?: string
  * }} GraphNodeCommit
  */
 
@@ -92,5 +94,13 @@
  * @property {GraphNode[]} nodes Collection of nodes rendered on the canvas.
  * @property {Array<{source: string | GraphNode, target: string | GraphNode, kind?: string}>} links Force simulation link definitions.
  * @property {import("d3").ZoomTransform} zoomTransform Current D3 zoom transform.
+ * @property {string} layoutMode Current layout mode: "force" or "lane".
+ * @property {{ query: import("../searchQuery.js").SearchQuery, matcher: ((commit: GraphCommit) => boolean) | null } | null} searchState Parsed search state from searchQuery.js, or null when no search is active.
+ * @property {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} filterState Active structural filter criteria.
+ * @property {((node: GraphNode) => boolean) | null} filterPredicate Compiled filter predicate, or null when no filters active.
+ * @property {Array<{hash: string}>} stashes Stash entries from the latest server delta.
+ * @property {GraphNode | null} hoverNode Node currently under the pointer, or null.
+ * @property {string} headHash Current HEAD commit hash, or "" when unknown.
+ * @property {Map<string, string>} tags Map of tag name to target commit hash.
  */
 

@@ -1,86 +1,210 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 :root {
     color-scheme: light dark;
-    /* GitHub Primer Light Theme */
-    --bg-color: #f6f8fa;
-    --text-color: #1f2328;
-    --text-secondary: #656d76;
+    /* Refined Geometric Light Theme */
+    --bg-color: #f8f9fa;
+    --text-color: #0f1419;
+    --text-secondary: #57606a;
     --surface-color: #ffffff;
-    --border-color: #d0d7de;
-    --node-color: #0969da;
-    --link-color: #d0d7de;
-    --label-text-color: #1f2328;
-    --label-halo-color: rgba(255, 255, 255, 0.92);
-    --node-highlight-color: #0969da;
-    --node-highlight-glow: rgba(9, 105, 218, 0.35);
-    --node-highlight-core: #ddf4ff;
-    --node-highlight-ring: #0969da;
-    --merge-node-color: #1a7f37;
-    --merge-highlight-color: #1a7f37;
-    --merge-highlight-glow: rgba(26, 127, 55, 0.35);
-    --merge-highlight-core: #ddf8e4;
-    --merge-highlight-ring: #1a7f37;
-    --node-shadow-color: rgba(27, 31, 36, 0.12);
-    --branch-node-color: #8250df;
-    --branch-node-border-color: #6639ba;
+    --border-color: #d8dce2;
+    --node-color: #0ea5e9;
+    --link-color: #e5e7eb;
+    --label-text-color: #0f1419;
+    --label-halo-color: rgba(255, 255, 255, 0.95);
+    --node-highlight-color: #0ea5e9;
+    --node-highlight-glow: rgba(14, 165, 233, 0.3);
+    --node-highlight-core: #ecf8ff;
+    --node-highlight-ring: #0ea5e9;
+    --merge-node-color: #059669;
+    --merge-highlight-color: #059669;
+    --merge-highlight-glow: rgba(5, 150, 105, 0.3);
+    --merge-highlight-core: #ecfdf5;
+    --merge-highlight-ring: #059669;
+    --node-shadow-color: rgba(15, 20, 25, 0.08);
+    --branch-node-color: #7c3aed;
+    --branch-node-border-color: #6d28d9;
     --branch-label-text-color: #ffffff;
-    --branch-link-color: #8250df;
+    --branch-link-color: #7c3aed;
     --branch-highlight-color: #a78bfa;
-    --branch-highlight-glow: rgba(167, 139, 250, 0.5);
-    --branch-highlight-core: #f3f0ff;
+    --branch-highlight-glow: rgba(124, 58, 237, 0.3);
+    --branch-highlight-core: #f5f3ff;
     --branch-highlight-ring: #a78bfa;
-    --tree-node-color: #bf8700;
-    --tree-node-border-color: #9a6700;
+    --tree-node-color: #d97706;
+    --tree-node-border-color: #b45309;
     --tree-label-text-color: #ffffff;
-    --tree-link-color: #bf8700;
-    --blob-node-color: #0969da;
-    --blob-node-border-color: #0550ae;
+    --tree-link-color: #d97706;
+    --blob-node-color: #0ea5e9;
+    --blob-node-border-color: #0284c7;
     --blob-label-text-color: #ffffff;
-    --success-color: #1a7f37;
-    --warning-color: #9a6700;
-    --danger-color: #d1242f;
+    --success-color: #059669;
+    --warning-color: #d97706;
+    --danger-color: #dc2626;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        /* GitHub Primer Dark Theme */
-        --bg-color: #0d1117;
-        --text-color: #e6edf3;
-        --text-secondary: #8b949e;
+        /* Refined Geometric Dark Theme */
+        --bg-color: #0f1419;
+        --text-color: #eaeef2;
+        --text-secondary: #8b8f96;
         --surface-color: #161b22;
         --border-color: #30363d;
         --node-color: #58a6ff;
         --link-color: #30363d;
-        --label-text-color: #e6edf3;
-        --label-halo-color: rgba(22, 27, 34, 0.92);
+        --label-text-color: #eaeef2;
+        --label-halo-color: rgba(22, 27, 34, 0.95);
         --node-highlight-color: #58a6ff;
-        --node-highlight-glow: rgba(88, 166, 255, 0.35);
-        --node-highlight-core: #1c2d41;
+        --node-highlight-glow: rgba(88, 166, 255, 0.3);
+        --node-highlight-core: #0d2342;
         --node-highlight-ring: #58a6ff;
         --merge-node-color: #3fb950;
         --merge-highlight-color: #3fb950;
-        --merge-highlight-glow: rgba(63, 185, 80, 0.35);
-        --merge-highlight-core: #1c3d26;
+        --merge-highlight-glow: rgba(63, 185, 80, 0.3);
+        --merge-highlight-core: #0d2817;
         --merge-highlight-ring: #3fb950;
-        --node-shadow-color: rgba(0, 0, 0, 0.4);
-        --branch-node-color: #bc8cff;
-        --branch-node-border-color: #a371f7;
-        --branch-label-text-color: #0d1117;
-        --branch-link-color: #bc8cff;
-        --branch-highlight-color: #d8b4fe;
-        --branch-highlight-glow: rgba(216, 180, 254, 0.5);
-        --branch-highlight-core: #3d2b52;
-        --branch-highlight-ring: #d8b4fe;
-        --tree-node-color: #d29922;
-        --tree-node-border-color: #bb8009;
-        --tree-label-text-color: #0d1117;
-        --tree-link-color: #d29922;
+        --node-shadow-color: rgba(0, 0, 0, 0.5);
+        --branch-node-color: #d8b4fe;
+        --branch-node-border-color: #c084fc;
+        --branch-label-text-color: #1f1f23;
+        --branch-link-color: #d8b4fe;
+        --branch-highlight-color: #e9d5ff;
+        --branch-highlight-glow: rgba(216, 180, 254, 0.3);
+        --branch-highlight-core: #2d1b3d;
+        --branch-highlight-ring: #e9d5ff;
+        --tree-node-color: #fb923c;
+        --tree-node-border-color: #ea580c;
+        --tree-label-text-color: #1f1f23;
+        --tree-link-color: #fb923c;
         --blob-node-color: #58a6ff;
         --blob-node-border-color: #1f6feb;
-        --blob-label-text-color: #0d1117;
+        --blob-label-text-color: #161b22;
         --success-color: #3fb950;
-        --warning-color: #d29922;
+        --warning-color: #fb923c;
         --danger-color: #f85149;
     }
+}
+
+/* Explicit theme overrides — higher specificity beats the @media query */
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg-color: #f8f9fa;
+    --text-color: #0f1419;
+    --text-secondary: #57606a;
+    --surface-color: #ffffff;
+    --border-color: #d8dce2;
+    --node-color: #0ea5e9;
+    --link-color: #e5e7eb;
+    --label-text-color: #0f1419;
+    --label-halo-color: rgba(255, 255, 255, 0.95);
+    --node-highlight-color: #0ea5e9;
+    --node-highlight-glow: rgba(14, 165, 233, 0.3);
+    --node-highlight-core: #ecf8ff;
+    --node-highlight-ring: #0ea5e9;
+    --merge-node-color: #059669;
+    --merge-highlight-color: #059669;
+    --merge-highlight-glow: rgba(5, 150, 105, 0.3);
+    --merge-highlight-core: #ecfdf5;
+    --merge-highlight-ring: #059669;
+    --node-shadow-color: rgba(15, 20, 25, 0.08);
+    --branch-node-color: #7c3aed;
+    --branch-node-border-color: #6d28d9;
+    --branch-label-text-color: #ffffff;
+    --branch-link-color: #7c3aed;
+    --branch-highlight-color: #a78bfa;
+    --branch-highlight-glow: rgba(124, 58, 237, 0.3);
+    --branch-highlight-core: #f5f3ff;
+    --branch-highlight-ring: #a78bfa;
+    --tree-node-color: #d97706;
+    --tree-node-border-color: #b45309;
+    --tree-label-text-color: #ffffff;
+    --tree-link-color: #d97706;
+    --blob-node-color: #0ea5e9;
+    --blob-node-border-color: #0284c7;
+    --blob-label-text-color: #ffffff;
+    --success-color: #059669;
+    --warning-color: #d97706;
+    --danger-color: #dc2626;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-color: #0f1419;
+    --text-color: #eaeef2;
+    --text-secondary: #8b8f96;
+    --surface-color: #161b22;
+    --border-color: #30363d;
+    --node-color: #58a6ff;
+    --link-color: #30363d;
+    --label-text-color: #eaeef2;
+    --label-halo-color: rgba(22, 27, 34, 0.95);
+    --node-highlight-color: #58a6ff;
+    --node-highlight-glow: rgba(88, 166, 255, 0.3);
+    --node-highlight-core: #0d2342;
+    --node-highlight-ring: #58a6ff;
+    --merge-node-color: #3fb950;
+    --merge-highlight-color: #3fb950;
+    --merge-highlight-glow: rgba(63, 185, 80, 0.3);
+    --merge-highlight-core: #0d2817;
+    --merge-highlight-ring: #3fb950;
+    --node-shadow-color: rgba(0, 0, 0, 0.5);
+    --branch-node-color: #d8b4fe;
+    --branch-node-border-color: #c084fc;
+    --branch-label-text-color: #1f1f23;
+    --branch-link-color: #d8b4fe;
+    --branch-highlight-color: #e9d5ff;
+    --branch-highlight-glow: rgba(216, 180, 254, 0.3);
+    --branch-highlight-core: #2d1b3d;
+    --branch-highlight-ring: #e9d5ff;
+    --tree-node-color: #fb923c;
+    --tree-node-border-color: #ea580c;
+    --tree-label-text-color: #1f1f23;
+    --tree-link-color: #fb923c;
+    --blob-node-color: #58a6ff;
+    --blob-node-border-color: #1f6feb;
+    --blob-label-text-color: #161b22;
+    --success-color: #3fb950;
+    --warning-color: #fb923c;
+    --danger-color: #f85149;
+}
+
+/* Theme toggle button — positioned to the left of the connection status dot */
+.theme-toggle {
+    position: fixed;
+    bottom: 12px;
+    right: 40px;
+    z-index: 9999;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
+    color: var(--text-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    box-shadow: 0 2px 8px var(--node-shadow-color);
+    padding: 0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    font-weight: 500;
+}
+
+.theme-toggle:hover {
+    border-color: var(--node-color);
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.2);
+    transform: translateY(-2px);
+}
+
+.theme-toggle:active {
+    transform: translateY(0);
+}
+
+.theme-toggle:focus-visible {
+    outline: 2px solid var(--node-color);
+    outline-offset: 2px;
 }
 
 * {
@@ -90,12 +214,17 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--bg-color);
     color: var(--text-color);
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
     display: flex;
     padding: 0;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
 }
 
 #root {
@@ -106,71 +235,205 @@ body {
     overflow: hidden;
     box-shadow: none;
     position: relative;
+    /* Column flex so the filter panel occupies the header row and the canvas
+       takes all remaining height via flex: 1 on the canvas element. */
+    display: flex;
+    flex-direction: column;
 }
 
-/* ── Sidebar ── */
+/* ── Activity Bar ── */
 
-.sidebar {
+.activity-bar {
+    width: 48px;
+    min-width: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 8px;
+    gap: 4px;
+    background: var(--surface-color);
+    border-right: 1px solid var(--border-color);
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+.activity-bar-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.activity-bar-icon::before {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: transparent;
+    transition: background-color 0.15s ease;
+}
+
+.activity-bar-icon:hover {
+    color: var(--text-color);
+    background: rgba(208, 215, 222, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+    .activity-bar-icon:hover {
+        background: rgba(48, 54, 61, 0.6);
+    }
+}
+
+.activity-bar-icon.is-active {
+    color: var(--text-color);
+}
+
+.activity-bar-icon.is-active::before {
+    background: var(--node-color);
+}
+
+.activity-bar-icon:focus-visible {
+    outline: 2px solid var(--node-color);
+    outline-offset: -2px;
+}
+
+.activity-bar-tooltip {
+    display: none;
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px var(--node-shadow-color);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.activity-bar-icon:hover .activity-bar-tooltip {
+    display: block;
+}
+
+/* ── Sidebar Panel ── */
+
+.sidebar-panel {
     position: relative;
     display: flex;
     flex-direction: column;
     background: var(--surface-color);
     border-right: 1px solid var(--border-color);
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    width: 0;
+    min-width: 0;
+    z-index: 1;
 }
 
-.sidebar.is-resizing {
+.sidebar-panel.is-resizing {
     transition: none;
 }
 
-.sidebar.is-collapsed {
+.sidebar-panel:not(.is-open) {
     border-right: none;
 }
 
-.sidebar.is-collapsed .sidebar-header,
-.sidebar.is-collapsed .sidebar-content,
-.sidebar.is-collapsed .sidebar-handle {
+.sidebar-panel:not(.is-open) .sidebar-panel-header,
+.sidebar-panel:not(.is-open) .sidebar-panel-content,
+.sidebar-panel:not(.is-open) .sidebar-panel-handle {
     display: none;
 }
 
-.sidebar-header {
+.sidebar-panel-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 10px 12px;
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+    background: linear-gradient(135deg, var(--surface-color) 0%, rgba(14, 165, 233, 0.02) 100%);
 }
 
-.sidebar-toggle {
+.sidebar-panel-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.sidebar-panel-close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: var(--text-color);
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.sidebar-toggle:hover {
+.sidebar-panel-close:hover {
     background: rgba(208, 215, 222, 0.32);
+    color: var(--text-color);
 }
 
 @media (prefers-color-scheme: dark) {
-    .sidebar-toggle:hover {
+    .sidebar-panel-close:hover {
         background: rgba(48, 54, 61, 0.8);
     }
 }
 
-.sidebar-content {
+.sidebar-panel-content {
     flex: 1;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+}
+
+.sidebar-panel-tab-content {
+    display: none;
+    flex: 1;
+    overflow: hidden;
+    flex-direction: column;
+}
+
+.sidebar-panel-tab-content.is-active {
+    display: flex;
+}
+
+.sidebar-panel-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 20;
+}
+
+.sidebar-panel-handle:hover,
+.sidebar-panel.is-resizing .sidebar-panel-handle {
+    background: var(--node-color);
+    opacity: 0.5;
 }
 
 /* ── Info Bar ── */
@@ -222,8 +485,10 @@ body {
 .info-bar-title {
     flex: 1;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
     color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
 }
 
 .info-bar-content {
@@ -265,7 +530,7 @@ body {
 }
 
 .info-bar-value {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -281,48 +546,6 @@ body {
 .info-bar-value--remote-url {
     font-size: 10px;
     color: var(--text-secondary);
-}
-
-/* ── Sidebar Tabs ── */
-
-.sidebar-tabs {
-    display: flex;
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-}
-
-.sidebar-tab {
-    flex: 1;
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 500;
-    border: none;
-    background: transparent;
-    color: var(--text-color);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    opacity: 0.6;
-    transition: opacity 0.15s ease;
-}
-
-.sidebar-tab:hover {
-    opacity: 0.8;
-}
-
-.sidebar-tab.is-active {
-    opacity: 1;
-    border-bottom-color: var(--node-color);
-}
-
-.sidebar-tab-content {
-    display: none;
-    flex: 1;
-    overflow: hidden;
-}
-
-.sidebar-tab-content.is-active {
-    display: flex;
-    flex-direction: column;
 }
 
 /* ── File Explorer ── */
@@ -359,13 +582,13 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 8px;
+    padding: 5px 10px;
     font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
     background: transparent;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s ease;
     flex-shrink: 0;
@@ -373,13 +596,13 @@ body {
 }
 
 .file-explorer-toggle:hover {
-    background: rgba(148, 163, 184, 0.08);
+    background: rgba(14, 165, 233, 0.08);
     border-color: var(--node-color);
     color: var(--node-color);
 }
 
 .file-explorer-toggle:active {
-    background: rgba(148, 163, 184, 0.14);
+    background: rgba(14, 165, 233, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -426,20 +649,22 @@ body {
 .explorer-entry {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
+    gap: 6px;
+    padding: 4px 8px;
     font-size: 12px;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
     margin: 0 4px;
+    transition: all 0.12s ease;
 }
 
 .explorer-entry:hover {
-    background: rgba(148, 163, 184, 0.10);
+    background: rgba(14, 165, 233, 0.08);
 }
 
 .explorer-entry.is-selected {
-    background: rgba(148, 163, 184, 0.18);
+    background: rgba(14, 165, 233, 0.12);
+    color: var(--node-color);
 }
 
 .explorer-chevron {
@@ -499,122 +724,379 @@ body {
     width: 52px;
 }
 
-.sidebar-handle {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 4px;
-    height: 100%;
-    cursor: col-resize;
-    z-index: 20;
-}
+/* ── Canvas Toolbar ── */
 
-.sidebar-handle:hover,
-.sidebar.is-resizing .sidebar-handle {
-    background: var(--node-color);
-    opacity: 0.5;
-}
-
-/* Floating toggle shown when sidebar is collapsed */
-.sidebar-expand {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    z-index: 25;
-    display: inline-flex;
+/*
+ * In-flow strip between the filter panel and the canvas. Contains
+ * commit search and graph layout controls.
+ */
+.canvas-toolbar {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    transition: background-color 0.15s ease;
-}
-
-.sidebar-expand:hover {
-    background: rgba(208, 215, 222, 0.32);
-}
-
-@media (prefers-color-scheme: dark) {
-    .sidebar-expand:hover {
-        background: rgba(48, 54, 61, 0.8);
-    }
+    gap: 8px;
+    padding: 4px 12px;
+    background: var(--bg-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
 canvas {
+    /* flex: 1 so the canvas fills all space not consumed by the toolbar.
+       min-height: 0 prevents flex children from overflowing the container. */
+    flex: 1;
     width: 100%;
-    height: 100%;
+    min-height: 0;
     display: block;
     background: var(--surface-color);
     touch-action: none;
 }
 
-.graph-controls {
-    position: absolute;
-    top: 16px;
-    right: 16px;
+/* ── Search Bar ── */
+
+.search-container {
+    flex: 1;
+    min-width: 0;
+    max-width: 300px;
+    /* Transition is defined here so the width animates in both directions
+       (expanding on focus, contracting on blur). */
+    transition: max-width 0.2s ease;
+}
+
+/*
+ * Outer wrapper providing the relative positioning context for the dropdown.
+ * It spans 100% of .search-container and does not clip overflow, so the
+ * dropdown can appear below the toolbar strip.
+ */
+.commit-search-positioner {
+    position: relative;
+    width: 100%;
+}
+
+.commit-search {
     display: flex;
-    gap: 0;
-    padding: 0;
-    border-radius: 6px;
+    align-items: center;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    box-shadow: 0 3px 6px rgba(140, 149, 159, 0.15);
-    z-index: 10;
+    border-radius: 10px;
+    /* overflow:hidden removed — the dropdown positions outside the wrapper */
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, max-width 0.2s ease;
+    width: 100%;
+    position: relative; /* needed for absolute-positioned icon and clear button */
+}
+
+.commit-search:focus-within,
+.commit-search.is-focused {
+    border-color: var(--node-color);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
 }
 
 @media (prefers-color-scheme: dark) {
-    .graph-controls {
-        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+    .commit-search:focus-within,
+    .commit-search.is-focused {
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.18);
     }
+}
+
+/* Magnifier icon — positioned to the left of the input text. */
+.commit-search-icon {
+    position: absolute;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+.commit-search-input {
+    flex: 1;
+    min-width: 0;
+    /* Left padding makes room for the absolutely-positioned magnifier icon.
+       Right padding is kept small since the result count and clear button
+       are flex siblings that follow the input in the row. */
+    padding: 8px 4px 8px 30px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text-color);
+    outline: none;
+    /* Remove browser-native search decorations (Webkit cancel button, IE clear).
+       Our custom clear button replaces them for cross-browser consistency. */
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.commit-search-input::-webkit-search-cancel-button,
+.commit-search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.commit-search-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+/*
+ * Result count badge — shown inline between the input and clear button when a
+ * search is active.  Uses monospace so digit widths stay stable as count changes.
+ */
+.commit-search-result-count {
+    display: none;
+    align-items: center;
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    padding: 0 6px 0 4px;
+    pointer-events: none;
+}
+
+/* Zero-results warning: highlight in warning color */
+.commit-search-result-count.is-empty {
+    color: var(--warning-color);
+}
+
+/* Clear (×) button — hidden until the input has content. */
+.commit-search-clear {
+    display: none; /* toggled via JS */
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-right: 5px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.commit-search-clear:hover {
+    color: var(--text-color);
+    background: rgba(14, 165, 233, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-clear:hover {
+        background: rgba(88, 166, 255, 0.1);
+    }
+}
+
+.commit-search-clear:focus-visible {
+    box-shadow: 0 0 0 2px var(--node-color);
+    border-radius: 4px;
+    outline: none;
+}
+
+/* ── Search Expand on Focus ── */
+
+/*
+ * When the search container (and hence positioner) gains focus-within, the
+ * parent .search-container's max-width expands from 300px to 480px.
+ * We do this on the container rather than the wrapper so the positioner
+ * naturally widens with it.
+ */
+.search-container:focus-within {
+    max-width: 480px;
+    transition: max-width 0.2s ease;
+}
+
+/* ── Search Dropdown ── */
+
+/*
+ * The dropdown is position:absolute relative to .commit-search-positioner,
+ * dropping below the search bar.  z-index matches the filter popover (50).
+ */
+.commit-search-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px var(--node-shadow-color), 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    /* Constrain height so the dropdown doesn't cover the entire canvas */
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-dropdown {
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+}
+
+/* Section header within the dropdown */
+.commit-search-dropdown-section {
+    padding: 4px 0;
+}
+
+.commit-search-dropdown-section + .commit-search-dropdown-section {
+    border-top: 1px solid var(--border-color);
+}
+
+.commit-search-dropdown-heading {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+/* ── Qualifier Suggestion Row ── */
+
+.commit-search-suggestion {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.commit-search-suggestion:hover,
+.commit-search-suggestion:focus {
+    background: rgba(14, 165, 233, 0.07);
+    outline: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-suggestion:hover,
+    .commit-search-suggestion:focus {
+        background: rgba(88, 166, 255, 0.09);
+    }
+}
+
+.commit-search-suggestion-keyword {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--node-color);
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 110px;
+}
+
+.commit-search-suggestion-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Recent Search Row ── */
+
+.commit-search-recent {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.commit-search-recent:hover,
+.commit-search-recent:focus {
+    background: rgba(14, 165, 233, 0.07);
+    outline: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-search-recent:hover,
+    .commit-search-recent:focus {
+        background: rgba(88, 166, 255, 0.09);
+    }
+}
+
+.commit-search-recent-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.commit-search-recent-text {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.graph-controls {
+    display: flex;
+    gap: 0;
+    padding: 0;
+    border-radius: 10px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-left: auto;
 }
 
 .graph-controls button {
     border: none;
     border-right: 1px solid var(--border-color);
     border-radius: 0;
-    padding: 6px 12px;
+    padding: 8px 14px;
     font-size: 13px;
     font-weight: 500;
     background: transparent;
-    color: var(--text-color);
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: background-color 0.1s ease;
+    transition: all 0.15s ease;
+    position: relative;
 }
 
 .graph-controls button:first-child {
-    border-top-left-radius: 6px;
-    border-bottom-left-radius: 6px;
+    border-top-left-radius: 10px;
+    border-bottom-left-radius: 10px;
 }
 
 .graph-controls button:last-child {
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
+    border-top-right-radius: 10px;
+    border-bottom-right-radius: 10px;
     border-right: none;
 }
 
 .graph-controls button:hover {
-    background: rgba(208, 215, 222, 0.32);
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--text-color);
 }
 
 @media (prefers-color-scheme: dark) {
     .graph-controls button:hover {
-        background: rgba(48, 54, 61, 0.8);
+        background: rgba(88, 166, 255, 0.1);
     }
 }
 
 .graph-controls button.is-active {
     background: var(--node-color);
     color: #ffffff;
+    font-weight: 600;
 }
 
 .graph-controls button.is-active:hover {
     background: var(--node-color);
-    opacity: 0.9;
+    opacity: 0.95;
 }
 
 .graph-controls button:focus-visible {
@@ -624,22 +1106,32 @@ canvas {
     position: relative;
 }
 
+.graph-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.graph-controls button:disabled:hover {
+    background: var(--surface-color);
+}
+
 .commit-tooltip {
     position: fixed;
     pointer-events: none;
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
-    padding: 12px 14px;
-    max-width: min(360px, 70vw);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px var(--node-shadow-color);
+    padding: 14px 16px;
+    max-width: min(380px, 70vw);
     display: none;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     z-index: 15;
     opacity: 0;
-    transition: opacity 0.12s ease;
+    transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(8px);
 }
 
 /* Navigation row appended to the commit tooltip.
@@ -658,21 +1150,22 @@ canvas {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 8px;
+    padding: 5px 10px;
     font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
     background: transparent;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
+    transition: all 0.15s ease;
     font-family: inherit;
 }
 
 .commit-tooltip-nav-btn:hover {
-    background: rgba(208, 215, 222, 0.32);
-    color: var(--text-color);
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--node-color);
+    border-color: var(--node-color);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -706,31 +1199,39 @@ canvas {
 }
 
 .commit-tooltip-hash {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
-    font-size: 12px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px;
     font-weight: 600;
-    background: rgba(208, 215, 222, 0.48);
+    background: rgba(14, 165, 233, 0.12);
     border-radius: 6px;
-    padding: 4px 6px;
+    padding: 6px 8px;
     width: max-content;
+    color: var(--node-color);
+    letter-spacing: 0.5px;
 }
 
 @media (prefers-color-scheme: dark) {
     .commit-tooltip-hash {
-        background: rgba(48, 54, 61, 0.8);
+        background: rgba(88, 166, 255, 0.15);
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .commit-tooltip {
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
     }
 }
 
 .commit-tooltip-meta {
     white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     color: var(--text-secondary);
 }
 
 .commit-tooltip-message {
     margin: 0;
     white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-color);
@@ -742,16 +1243,17 @@ canvas {
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
-    padding: 10px 14px;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px var(--node-shadow-color);
+    padding: 12px 14px;
     min-width: 160px;
     display: none;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     z-index: 15;
     opacity: 0;
-    transition: opacity 0.14s ease;
+    transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(8px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -798,7 +1300,7 @@ canvas {
 }
 
 .branch-tooltip-target {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
     letter-spacing: 0.04em;
     color: var(--text-secondary);
@@ -819,16 +1321,17 @@ canvas {
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
-    padding: 10px 14px;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px var(--node-shadow-color);
+    padding: 12px 14px;
     min-width: 160px;
     display: none;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     z-index: 15;
     opacity: 0;
-    transition: opacity 0.14s ease;
+    transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(8px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -876,14 +1379,14 @@ canvas {
 }
 
 .blob-tooltip-hash {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
     letter-spacing: 0.04em;
     color: var(--text-secondary);
 }
 
 .blob-tooltip-mode {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 11px;
     color: var(--text-secondary);
 }
@@ -916,7 +1419,7 @@ canvas {
     align-items: center;
     gap: 6px;
     width: 100%;
-    padding: 6px 4px;
+    padding: 8px 6px;
     border: none;
     border-radius: 6px;
     background: transparent;
@@ -925,11 +1428,12 @@ canvas {
     font-weight: 500;
     cursor: pointer;
     text-align: left;
-    transition: background-color 0.15s ease;
+    transition: all 0.15s ease;
 }
 
 .index-section-header:hover {
-    background: rgba(208, 215, 222, 0.32);
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--node-color);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1007,14 +1511,15 @@ canvas {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 3px 4px 3px 26px;
+    padding: 4px 6px 4px 26px;
     border-radius: 4px;
     font-size: 12px;
-    transition: background-color 0.1s ease;
+    transition: all 0.12s ease;
 }
 
 .index-file:hover {
-    background: rgba(208, 215, 222, 0.24);
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--node-color);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1024,7 +1529,7 @@ canvas {
 }
 
 .index-file-code {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-weight: 600;
     font-size: 11px;
     width: 14px;
@@ -1034,7 +1539,7 @@ canvas {
 }
 
 .index-file-path {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
     white-space: nowrap;
     overflow: hidden;
@@ -1151,29 +1656,30 @@ canvas {
 }
 
 .file-breadcrumb {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
-    padding: 3px 6px;
+    padding: 4px 8px;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     background: transparent;
-    color: var(--text-color);
+    color: var(--node-color);
     cursor: pointer;
-    transition: background-color 0.1s ease;
+    transition: all 0.12s ease;
+    font-weight: 500;
 }
 
 .file-breadcrumb:hover {
-    background: rgba(208, 215, 222, 0.32);
+    background: rgba(14, 165, 233, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
     .file-breadcrumb:hover {
-        background: rgba(48, 54, 61, 0.6);
+        background: rgba(88, 166, 255, 0.12);
     }
 }
 
 .file-breadcrumb-current {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
     padding: 3px 6px;
     color: var(--text-color);
@@ -1197,14 +1703,15 @@ canvas {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 8px;
+    padding: 7px 8px;
     border-radius: 6px;
     cursor: pointer;
-    transition: background-color 0.1s ease;
+    transition: all 0.12s ease;
 }
 
 .file-tree-entry:hover {
-    background: rgba(208, 215, 222, 0.32);
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--node-color);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1223,7 +1730,7 @@ canvas {
 }
 
 .file-tree-name {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 13px;
     color: var(--text-color);
     white-space: nowrap;
@@ -1251,20 +1758,23 @@ canvas {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
-    margin: 8px 12px 0;
+    padding: 7px 12px;
+    margin: 10px 12px 0;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--surface-color);
-    color: var(--text-color);
+    color: var(--text-secondary);
     font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: all 0.15s ease;
     align-self: flex-start;
 }
 
 .file-content-back:hover {
-    background: rgba(208, 215, 222, 0.32);
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--node-color);
+    border-color: var(--node-color);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1287,7 +1797,7 @@ canvas {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-color);
@@ -1303,7 +1813,7 @@ canvas {
     overflow-y: auto;
     overflow-x: auto;
     background: var(--surface-color);
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
     line-height: 1.5;
 }
@@ -1432,19 +1942,20 @@ canvas {
 
 .file-explorer-filter input {
     width: 100%;
-    padding: 3px 24px 3px 24px;
+    padding: 4px 24px 4px 24px;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 6px;
     background: var(--surface-color);
     color: var(--text-color);
     font-size: 11px;
     font-family: inherit;
     outline: none;
-    transition: border-color 0.15s ease;
+    transition: all 0.15s ease;
 }
 
 .file-explorer-filter input:focus {
     border-color: var(--node-color);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
 }
 
 .file-explorer-filter input::placeholder {
@@ -1642,20 +2153,23 @@ canvas {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
-    margin: 8px 12px 0;
+    padding: 7px 12px;
+    margin: 10px 12px 0;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--surface-color);
-    color: var(--text-color);
+    color: var(--text-secondary);
     font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: all 0.15s ease;
     align-self: flex-start;
 }
 
 .diff-content-back:hover {
-    background: rgba(208, 215, 222, 0.32);
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--node-color);
+    border-color: var(--node-color);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1681,7 +2195,7 @@ canvas {
     width: 20px;
     height: 20px;
     border-radius: 4px;
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 11px;
     font-weight: 700;
     flex-shrink: 0;
@@ -1743,7 +2257,7 @@ canvas {
 }
 
 .diff-file-path {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-color);
@@ -1761,7 +2275,7 @@ canvas {
 }
 
 .diff-hunks {
-    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 12px;
     line-height: 1.5;
 }
@@ -2021,20 +2535,21 @@ canvas {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 16px;
+    padding: 10px 16px;
     cursor: pointer;
     border-bottom: 1px solid var(--border-color);
-    transition: background 0.1s ease;
+    transition: all 0.12s ease;
 }
 
 .diff-file-item:hover {
-    background: var(--bg-color);
+    background: rgba(14, 165, 233, 0.05);
 }
 
 .diff-file-item.is-selected {
-    background: rgba(9, 105, 218, 0.08);
+    background: rgba(14, 165, 233, 0.1);
     border-left: 3px solid var(--node-color);
     padding-left: 13px;
+    font-weight: 500;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -2146,12 +2661,12 @@ canvas {
 }
 
 .diff-loading-spinner {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     border: 3px solid var(--border-color);
     border-top-color: var(--node-color);
     border-radius: 50%;
-    animation: diff-spin 0.8s linear infinite;
+    animation: diff-spin 0.9s cubic-bezier(0.4, 0.0, 0.6, 1.0) infinite;
 }
 
 @keyframes diff-spin {
@@ -2219,4 +2734,273 @@ canvas {
 .diff-error-hint {
     font-size: 13px;
     color: var(--text-secondary);
+}
+
+/* ── Graph Filter Popover ── */
+
+.graph-filter-wrapper {
+    position: relative;
+    flex-shrink: 0;
+}
+
+/* Trigger button — sits in the canvas toolbar */
+.graph-filter-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.graph-filter-trigger:hover {
+    color: var(--text-color);
+    border-color: var(--text-secondary);
+    background: rgba(208, 215, 222, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+    .graph-filter-trigger:hover {
+        background: rgba(48, 54, 61, 0.5);
+    }
+}
+
+.graph-filter-trigger.is-active {
+    color: var(--node-color);
+    border-color: var(--node-color);
+    background: rgba(14, 165, 233, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+    .graph-filter-trigger.is-active {
+        background: rgba(88, 166, 255, 0.08);
+    }
+}
+
+.graph-filter-trigger.has-active-filters {
+    color: var(--node-color);
+    border-color: var(--node-color);
+}
+
+/* Small dot indicator when filters are active */
+.graph-filter-trigger.has-active-filters .graph-filter-trigger-icon::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--node-color);
+}
+
+.graph-filter-trigger:focus-visible {
+    outline: 2px solid var(--node-color);
+    outline-offset: 2px;
+}
+
+.graph-filter-trigger-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.graph-filter-trigger-label {
+    line-height: 1;
+}
+
+/* Popover panel — drops below the trigger */
+.graph-filter-popover {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 50;
+    min-width: 240px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px var(--node-shadow-color), 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+    .graph-filter-popover {
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+}
+
+.graph-filter-popover.is-open {
+    display: block;
+}
+
+/* Popover header */
+.graph-filter-popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.graph-filter-popover-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-color);
+    letter-spacing: 0.02em;
+}
+
+.graph-filter-reset {
+    font-size: 11px;
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--node-color);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background-color 0.12s ease;
+}
+
+.graph-filter-reset:hover {
+    background: rgba(14, 165, 233, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+    .graph-filter-reset:hover {
+        background: rgba(88, 166, 255, 0.12);
+    }
+}
+
+/* Popover body */
+.graph-filter-popover-body {
+    padding: 8px 0;
+}
+
+/* Section within popover */
+.graph-filter-section {
+    padding: 4px 14px 8px;
+}
+
+.graph-filter-section + .graph-filter-section {
+    border-top: 1px solid var(--border-color);
+    padding-top: 8px;
+}
+
+.graph-filter-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+/* Checkbox toggle */
+.graph-filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-color);
+    cursor: pointer;
+    user-select: none;
+    padding: 5px 0;
+    white-space: nowrap;
+    transition: color 0.1s ease;
+}
+
+.graph-filter-toggle:hover {
+    color: var(--node-color);
+}
+
+.graph-filter-toggle input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-color);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.graph-filter-toggle input[type="checkbox"]:checked {
+    background: var(--node-color);
+    border-color: var(--node-color);
+}
+
+.graph-filter-toggle input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 0;
+    width: 5px;
+    height: 9px;
+    border: 2px solid #ffffff;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+}
+
+.graph-filter-toggle input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--node-color);
+    outline-offset: 2px;
+}
+
+.graph-filter-toggle:hover input[type="checkbox"]:not(:checked) {
+    border-color: var(--node-color);
+}
+
+/* Branch dropdown */
+.graph-filter-dropdown {
+    width: 100%;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 6px 28px 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b949e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.graph-filter-dropdown:hover {
+    border-color: var(--node-color);
+}
+
+.graph-filter-dropdown:focus {
+    border-color: var(--node-color);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+    .graph-filter-dropdown {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b8f96' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+    }
+
+    .graph-filter-dropdown:focus {
+        box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.15);
+    }
 }

@@ -1,16 +1,26 @@
-const DEFAULT_WIDTH = 320;
-const MIN_WIDTH = 180;
-const COLLAPSED_WIDTH = 0;
+const DEFAULT_WIDTH = 280;
+const MIN_WIDTH = 200;
 const STORAGE_KEY = "gitvista-sidebar";
 
 function loadState() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) return JSON.parse(raw);
+        if (!raw) return { activePanel: null, panelWidth: DEFAULT_WIDTH };
+        const parsed = JSON.parse(raw);
+        // Migrate from old { width, collapsed } format
+        if ("collapsed" in parsed && !("activePanel" in parsed)) {
+            return {
+                activePanel: parsed.collapsed ? null : "repository",
+                panelWidth: parsed.width ?? DEFAULT_WIDTH,
+            };
+        }
+        return {
+            activePanel: parsed.activePanel ?? null,
+            panelWidth: parsed.panelWidth ?? DEFAULT_WIDTH,
+        };
     } catch {
-        // ignore
+        return { activePanel: null, panelWidth: DEFAULT_WIDTH };
     }
-    return { width: DEFAULT_WIDTH, collapsed: false };
 }
 
 function saveState(state) {
@@ -21,70 +31,135 @@ function saveState(state) {
     }
 }
 
-const HAMBURGER_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path d="M2 3h12M2 8h12M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+const ICONS = {
+    repository: `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9zm10.5-1h-8a1 1 0 00-1 1v6.708A2.486 2.486 0 014.5 9h8V1.5zm-8 11a1 1 0 100-2 1 1 0 000 2z"/>
+    </svg>`,
+    "file-explorer": `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5a.25.25 0 01-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75zM1.5 2.75a.25.25 0 01.25-.25H5c.09 0 .176.04.232.107l.953 1.269c.381.508.97.806 1.596.806h6.469a.25.25 0 01.25.25v8.5a.25.25 0 01-.25.25H1.75a.25.25 0 01-.25-.25V2.75z"/>
+    </svg>`,
+};
+
+const CHEVRON_LEFT = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 12L6 8l4-4"/>
 </svg>`;
 
-export function createSidebar() {
+export function createSidebar(panels) {
     const saved = loadState();
-    let width = saved.width ?? DEFAULT_WIDTH;
-    let collapsed = saved.collapsed ?? false;
+    let activePanel = saved.activePanel;
+    let panelWidth = saved.panelWidth;
 
-    // Main sidebar element
-    const el = document.createElement("aside");
-    el.className = "sidebar";
+    // ── Activity Bar ──
+    const activityBar = document.createElement("div");
+    activityBar.className = "activity-bar";
 
-    const header = document.createElement("div");
-    header.className = "sidebar-header";
+    const iconButtons = new Map();
 
-    const toggleBtn = document.createElement("button");
-    toggleBtn.className = "sidebar-toggle";
-    toggleBtn.setAttribute("aria-label", "Collapse sidebar");
-    toggleBtn.innerHTML = HAMBURGER_SVG;
-    header.appendChild(toggleBtn);
+    for (const p of panels) {
+        const btn = document.createElement("button");
+        btn.className = "activity-bar-icon";
+        btn.setAttribute("aria-label", p.tooltip);
+        btn.setAttribute("data-panel", p.name);
+        btn.innerHTML = ICONS[p.name] || p.icon || "";
 
-    const content = document.createElement("div");
-    content.className = "sidebar-content";
+        const tip = document.createElement("span");
+        tip.className = "activity-bar-tooltip";
+        tip.textContent = p.tooltip;
+        btn.appendChild(tip);
 
-    const handle = document.createElement("div");
-    handle.className = "sidebar-handle";
+        btn.addEventListener("click", () => {
+            if (activePanel === p.name) {
+                closePanel();
+            } else {
+                showPanel(p.name);
+            }
+        });
 
-    el.appendChild(header);
-    el.appendChild(content);
-    el.appendChild(handle);
-
-    // Floating expand button (lives outside sidebar, inside #root)
-    const expandBtn = document.createElement("button");
-    expandBtn.className = "sidebar-expand";
-    expandBtn.setAttribute("aria-label", "Expand sidebar");
-    expandBtn.innerHTML = HAMBURGER_SVG;
-
-    function applyWidth() {
-        if (collapsed) {
-            el.classList.add("is-collapsed");
-            el.style.width = `${COLLAPSED_WIDTH}px`;
-            el.style.minWidth = `${COLLAPSED_WIDTH}px`;
-            expandBtn.style.display = "inline-flex";
-        } else {
-            el.classList.remove("is-collapsed");
-            el.style.width = `${width}px`;
-            el.style.minWidth = `${MIN_WIDTH}px`;
-            expandBtn.style.display = "none";
-        }
-        saveState({ width, collapsed });
+        activityBar.appendChild(btn);
+        iconButtons.set(p.name, btn);
     }
 
-    toggleBtn.addEventListener("click", () => {
-        collapsed = true;
-        applyWidth();
-    });
+    // ── Sidebar Panel ──
+    const panel = document.createElement("div");
+    panel.className = "sidebar-panel";
 
-    expandBtn.addEventListener("click", () => {
-        collapsed = false;
-        applyWidth();
-    });
+    const panelHeader = document.createElement("div");
+    panelHeader.className = "sidebar-panel-header";
 
-    // Resize via drag handle
+    const panelTitle = document.createElement("span");
+    panelTitle.className = "sidebar-panel-title";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "sidebar-panel-close";
+    closeBtn.setAttribute("aria-label", "Close panel");
+    closeBtn.innerHTML = CHEVRON_LEFT;
+    closeBtn.addEventListener("click", () => closePanel());
+
+    panelHeader.appendChild(panelTitle);
+    panelHeader.appendChild(closeBtn);
+
+    const panelContent = document.createElement("div");
+    panelContent.className = "sidebar-panel-content";
+
+    // Add all content elements to the panel (hidden by default via CSS)
+    const contentElements = new Map();
+    for (const p of panels) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "sidebar-panel-tab-content";
+        wrapper.setAttribute("data-panel", p.name);
+        wrapper.appendChild(p.content);
+        panelContent.appendChild(wrapper);
+        contentElements.set(p.name, wrapper);
+    }
+
+    const handle = document.createElement("div");
+    handle.className = "sidebar-panel-handle";
+
+    panel.appendChild(panelHeader);
+    panel.appendChild(panelContent);
+    panel.appendChild(handle);
+
+    // ── State management ──
+
+    function applyState() {
+        // Update icon highlights
+        for (const [name, btn] of iconButtons) {
+            btn.classList.toggle("is-active", name === activePanel);
+        }
+        // Update content visibility
+        for (const [name, el] of contentElements) {
+            el.classList.toggle("is-active", name === activePanel);
+        }
+
+        if (activePanel) {
+            panel.classList.add("is-open");
+            panel.style.width = `${panelWidth}px`;
+            const p = panels.find((p) => p.name === activePanel);
+            panelTitle.textContent = p ? p.tooltip : "";
+        } else {
+            panel.classList.remove("is-open");
+            panel.style.width = "0px";
+        }
+
+        saveState({ activePanel, panelWidth });
+    }
+
+    function showPanel(name) {
+        if (!iconButtons.has(name)) return;
+        activePanel = name;
+        applyState();
+    }
+
+    function closePanel() {
+        activePanel = null;
+        applyState();
+    }
+
+    function getActivePanel() {
+        return activePanel;
+    }
+
+    // ── Resize handling ──
     let dragging = false;
     let startX = 0;
     let startWidth = 0;
@@ -92,9 +167,10 @@ export function createSidebar() {
     const onPointerMove = (e) => {
         if (!dragging) return;
         const delta = e.clientX - startX;
-        const maxWidth = Math.floor(window.innerWidth * 0.5);
-        width = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth + delta));
-        el.style.width = `${width}px`;
+        const activityBarWidth = 48;
+        const maxWidth = Math.floor((window.innerWidth - activityBarWidth) * 0.5);
+        panelWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth + delta));
+        panel.style.width = `${panelWidth}px`;
     };
 
     const onPointerUp = () => {
@@ -102,26 +178,34 @@ export function createSidebar() {
         dragging = false;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        el.classList.remove("is-resizing");
-        saveState({ width, collapsed });
+        panel.classList.remove("is-resizing");
+        saveState({ activePanel, panelWidth });
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", onPointerUp);
     };
 
     handle.addEventListener("pointerdown", (e) => {
-        if (collapsed) return;
+        if (!activePanel) return;
         e.preventDefault();
         dragging = true;
         startX = e.clientX;
-        startWidth = width;
+        startWidth = panelWidth;
         document.body.style.cursor = "col-resize";
         document.body.style.userSelect = "none";
-        el.classList.add("is-resizing");
+        panel.classList.add("is-resizing");
         window.addEventListener("pointermove", onPointerMove);
         window.addEventListener("pointerup", onPointerUp);
     });
 
-    applyWidth();
+    handle.addEventListener("dblclick", () => {
+        if (!activePanel) return;
+        panelWidth = DEFAULT_WIDTH;
+        panel.style.width = `${panelWidth}px`;
+        saveState({ activePanel, panelWidth });
+    });
 
-    return { el, expandBtn, content };
+    // ── Initialize ──
+    applyState();
+
+    return { activityBar, panel, showPanel, closePanel, getActivePanel };
 }

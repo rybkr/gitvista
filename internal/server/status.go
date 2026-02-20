@@ -5,21 +5,18 @@ import (
 	"strings"
 )
 
-// FileStatus represents the status of a single file in the working tree.
 type FileStatus struct {
 	Path       string `json:"path"`
 	StatusCode string `json:"statusCode"`
 }
 
-// WorkingTreeStatus groups files by their working tree state.
 type WorkingTreeStatus struct {
 	Staged    []FileStatus `json:"staged"`
 	Modified  []FileStatus `json:"modified"`
 	Untracked []FileStatus `json:"untracked"`
 }
 
-// getWorkingTreeStatus runs git status --porcelain in the given working directory
-// and returns categorized file statuses. Returns nil if git is unavailable or fails.
+// getWorkingTreeStatus returns nil if git is unavailable or the command fails.
 func getWorkingTreeStatus(workDir string) *WorkingTreeStatus {
 	cmd := exec.Command("git", "status", "--porcelain")
 	cmd.Dir = workDir
@@ -32,9 +29,8 @@ func getWorkingTreeStatus(workDir string) *WorkingTreeStatus {
 	return parsePorcelainStatus(string(out))
 }
 
-// parsePorcelainStatus parses the output of git status --porcelain into categorized statuses.
-// Porcelain format: XY PATH (or XY ORIG -> PATH for renames)
-// X = index status, Y = worktree status
+// parsePorcelainStatus parses "git status --porcelain" output.
+// Format: XY PATH where X = index status, Y = worktree status.
 func parsePorcelainStatus(output string) *WorkingTreeStatus {
 	status := &WorkingTreeStatus{
 		Staged:    []FileStatus{},
@@ -48,18 +44,16 @@ func parsePorcelainStatus(output string) *WorkingTreeStatus {
 			continue
 		}
 
-		x := line[0] // index status
-		y := line[1] // worktree status
+		x := line[0]
+		y := line[1]
 		path := line[3:]
 
-		// Handle renames: "R  old -> new"
 		if x == 'R' || y == 'R' {
 			if idx := strings.Index(path, " -> "); idx >= 0 {
 				path = path[idx+4:]
 			}
 		}
 
-		// Untracked files
 		if x == '?' && y == '?' {
 			status.Untracked = append(status.Untracked, FileStatus{
 				Path:       path,

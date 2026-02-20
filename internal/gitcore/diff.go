@@ -16,13 +16,24 @@ const (
 )
 
 // TreeDiff recursively compares two trees and returns a flat list of changed files.
-// oldTreeHash can be empty (zero hash) for root commits (no parent tree).
-// prefix is used for recursion to build full paths (initially empty string).
+// oldTreeHash can be empty for root commits. prefix builds full paths during recursion.
 // Returns an error if the number of entries exceeds maxDiffEntries.
+// Rename detection is applied once after the full recursive traversal so that
+// cross-directory renames (the common case) are correctly identified.
 func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([]DiffEntry, error) {
+	entries, err := treeDiffRecursive(repo, oldTreeHash, newTreeHash, prefix)
+	if err != nil {
+		return nil, err
+	}
+	return detectRenames(entries), nil
+}
+
+// treeDiffRecursive is the internal implementation of TreeDiff. It recurses into
+// sub-trees and collects raw added/deleted/modified entries without rename detection.
+// Rename detection is deferred to TreeDiff so it operates on the complete flat list.
+func treeDiffRecursive(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([]DiffEntry, error) {
 	entries := make([]DiffEntry, 0)
 
-	// Handle nil old tree (root commit case)
 	var oldTree *Tree
 	if oldTreeHash != "" {
 		var err error
@@ -32,13 +43,15 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 		}
 	}
 
-	// Get new tree
-	newTree, err := repo.GetTree(newTreeHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get new tree %s: %w", newTreeHash, err)
+	var newTree *Tree
+	if newTreeHash != "" {
+		var err error
+		newTree, err = repo.GetTree(newTreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get new tree %s: %w", newTreeHash, err)
+		}
 	}
 
-	// Build maps of name -> TreeEntry for efficient lookup
 	oldEntries := make(map[string]TreeEntry)
 	if oldTree != nil {
 		for _, entry := range oldTree.Entries {
@@ -47,11 +60,12 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 	}
 
 	newEntries := make(map[string]TreeEntry)
-	for _, entry := range newTree.Entries {
-		newEntries[entry.Name] = entry
+	if newTree != nil {
+		for _, entry := range newTree.Entries {
+			newEntries[entry.Name] = entry
+		}
 	}
 
-	// Track all unique names
 	allNames := make(map[string]bool)
 	for name := range oldEntries {
 		allNames[name] = true
@@ -60,7 +74,6 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 		allNames[name] = true
 	}
 
-	// Process each entry
 	for name := range allNames {
 		oldEntry, existsInOld := oldEntries[name]
 		newEntry, existsInNew := newEntries[name]
@@ -70,138 +83,185 @@ func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([
 			path = prefix + "/" + name
 		}
 
-		// Check entry count limit
 		if len(entries) >= maxDiffEntries {
 			return nil, fmt.Errorf("diff too large: exceeded maximum of %d entries", maxDiffEntries)
 		}
 
 		switch {
 		case !existsInOld && existsInNew:
-			// Added entry
 			if isTreeEntry(newEntry) {
-				// Recursively add all files in the new tree
-				subEntries, err := TreeDiff(repo, "", newEntry.ID, path)
+				subEntries, err := treeDiffRecursive(repo, "", newEntry.ID, path)
 				if err != nil {
 					return nil, err
 				}
 				entries = append(entries, subEntries...)
 			} else {
-				// Added file
-				isBinary := isSubmodule(newEntry)
 				entries = append(entries, DiffEntry{
 					Path:     path,
 					Status:   DiffStatusAdded,
 					NewHash:  newEntry.ID,
-					IsBinary: isBinary,
+					IsBinary: isSubmodule(newEntry),
 					NewMode:  newEntry.Mode,
 				})
 			}
 
 		case existsInOld && !existsInNew:
-			// Deleted entry
 			if isTreeEntry(oldEntry) {
-				// Recursively delete all files in the old tree
-				subEntries, err := TreeDiff(repo, oldEntry.ID, "", path)
+				subEntries, err := treeDiffRecursive(repo, oldEntry.ID, "", path)
 				if err != nil {
 					return nil, err
 				}
 				entries = append(entries, subEntries...)
 			} else {
-				// Deleted file
-				isBinary := isSubmodule(oldEntry)
 				entries = append(entries, DiffEntry{
 					Path:     path,
 					Status:   DiffStatusDeleted,
 					OldHash:  oldEntry.ID,
-					IsBinary: isBinary,
+					IsBinary: isSubmodule(oldEntry),
 					OldMode:  oldEntry.Mode,
 				})
 			}
 
 		case existsInOld && existsInNew:
-			// Entry exists in both - check if modified
 			if oldEntry.ID != newEntry.ID {
-				// Different hash - either modified file or changed tree
 				if isTreeEntry(oldEntry) && isTreeEntry(newEntry) {
-					// Both are trees - recurse
-					subEntries, err := TreeDiff(repo, oldEntry.ID, newEntry.ID, path)
+					subEntries, err := treeDiffRecursive(repo, oldEntry.ID, newEntry.ID, path)
 					if err != nil {
 						return nil, err
 					}
 					entries = append(entries, subEntries...)
 				} else if isTreeEntry(oldEntry) || isTreeEntry(newEntry) {
-					// Type changed (file <-> directory)
-					// Delete old, add new
+					// Type changed (file <-> directory): emit delete + add
 					if isTreeEntry(oldEntry) {
-						subEntries, err := TreeDiff(repo, oldEntry.ID, "", path)
+						subEntries, err := treeDiffRecursive(repo, oldEntry.ID, "", path)
 						if err != nil {
 							return nil, err
 						}
 						entries = append(entries, subEntries...)
 					} else {
-						isBinary := isSubmodule(oldEntry)
 						entries = append(entries, DiffEntry{
 							Path:     path,
 							Status:   DiffStatusDeleted,
 							OldHash:  oldEntry.ID,
-							IsBinary: isBinary,
+							IsBinary: isSubmodule(oldEntry),
 							OldMode:  oldEntry.Mode,
 						})
 					}
 					if isTreeEntry(newEntry) {
-						subEntries, err := TreeDiff(repo, "", newEntry.ID, path)
+						subEntries, err := treeDiffRecursive(repo, "", newEntry.ID, path)
 						if err != nil {
 							return nil, err
 						}
 						entries = append(entries, subEntries...)
 					} else {
-						isBinary := isSubmodule(newEntry)
 						entries = append(entries, DiffEntry{
 							Path:     path,
 							Status:   DiffStatusAdded,
 							NewHash:  newEntry.ID,
-							IsBinary: isBinary,
+							IsBinary: isSubmodule(newEntry),
 							NewMode:  newEntry.Mode,
 						})
 					}
 				} else {
-					// Both are files - modified
-					isBinary := isSubmodule(oldEntry) || isSubmodule(newEntry)
 					entries = append(entries, DiffEntry{
 						Path:     path,
 						Status:   DiffStatusModified,
 						OldHash:  oldEntry.ID,
 						NewHash:  newEntry.ID,
-						IsBinary: isBinary,
+						IsBinary: isSubmodule(oldEntry) || isSubmodule(newEntry),
 						OldMode:  oldEntry.Mode,
 						NewMode:  newEntry.Mode,
 					})
 				}
 			}
-			// If hashes are the same, no change - skip
 		}
 	}
 
 	return entries, nil
 }
 
+// detectRenames post-processes diff entries to identify file renames.
+// A rename is detected when a deleted file and an added file share the same
+// blob hash (exact content match). Content-identical renames are common after
+// refactors (e.g., moving a file to a new package without editing it).
+// Files with different content are left as separate delete+add entries.
+//
+// Multiple deleted files sharing the same blob hash (e.g., duplicated config
+// files) are each tracked independently so they can be paired correctly with
+// any matching added files.
+func detectRenames(entries []DiffEntry) []DiffEntry {
+	type deletedInfo struct {
+		index int
+		path  string
+		mode  string
+	}
 
-// isTreeEntry checks if a TreeEntry represents a directory.
+	// Use a slice per hash so that multiple deleted files with identical
+	// content are all tracked and can be paired without non-determinism.
+	deletedByHash := make(map[Hash][]deletedInfo)
+	for i, entry := range entries {
+		if entry.Status == DiffStatusDeleted && entry.OldHash != "" {
+			deletedByHash[entry.OldHash] = append(deletedByHash[entry.OldHash], deletedInfo{
+				index: i,
+				path:  entry.Path,
+				mode:  entry.OldMode,
+			})
+		}
+	}
+
+	if len(deletedByHash) == 0 {
+		return entries
+	}
+
+	// Track consumed positions in each candidate slice to handle many-to-many
+	// cases without revisiting already-paired deletes.
+	consumed := make(map[Hash]int)
+	matched := make(map[int]bool)
+
+	for i := range entries {
+		if entries[i].Status != DiffStatusAdded || entries[i].NewHash == "" {
+			continue
+		}
+		candidates := deletedByHash[entries[i].NewHash]
+		idx := consumed[entries[i].NewHash]
+		if idx >= len(candidates) {
+			continue
+		}
+		info := candidates[idx]
+		consumed[entries[i].NewHash] = idx + 1
+
+		// Promote this added entry to a rename.
+		entries[i].Status = DiffStatusRenamed
+		entries[i].OldPath = info.path
+		entries[i].OldHash = entries[i].NewHash
+		entries[i].OldMode = info.mode
+		matched[info.index] = true
+	}
+
+	// Remove the matched deleted entries, preserving all other entries in order.
+	if len(matched) == 0 {
+		return entries
+	}
+	result := make([]DiffEntry, 0, len(entries)-len(matched))
+	for i, entry := range entries {
+		if !matched[i] {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
 func isTreeEntry(entry TreeEntry) bool {
 	return entry.Type == "tree" || entry.Mode == "040000" || entry.Mode == "40000"
 }
 
-// isSubmodule checks if a TreeEntry represents a submodule (mode 160000).
 func isSubmodule(entry TreeEntry) bool {
 	return entry.Mode == "160000"
 }
 
-// ComputeFileDiff computes the line-level unified diff between two blobs.
-// oldBlobHash can be empty for added files, newBlobHash can be empty for deleted files.
-// contextLines controls how many unchanged lines to include around each change;
-// pass DefaultContextLines for standard unified diff output.
-// Returns a FileDiff struct with hunks containing line-level changes.
-// Files larger than maxBlobSize are marked as truncated.
+// ComputeFileDiff computes a line-level unified diff between two blobs.
+// Empty hash for oldBlobHash means added file; empty newBlobHash means deleted.
+// Files exceeding maxBlobSize are returned with Truncated=true.
 func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path string, contextLines int) (*FileDiff, error) {
 	result := &FileDiff{
 		Path:    path,
@@ -210,7 +270,6 @@ func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path strin
 		Hunks:   make([]DiffHunk, 0),
 	}
 
-	// Read old blob (empty if added file)
 	var oldContent []byte
 	if oldBlobHash != "" {
 		var err error
@@ -220,7 +279,6 @@ func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path strin
 		}
 	}
 
-	// Read new blob (empty if deleted file)
 	var newContent []byte
 	if newBlobHash != "" {
 		var err error
@@ -230,31 +288,24 @@ func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path strin
 		}
 	}
 
-	// Check size limits
 	if len(oldContent) > maxBlobSize || len(newContent) > maxBlobSize {
 		result.Truncated = true
 		return result, nil
 	}
 
-	// Check if binary
 	if isBinaryContent(oldContent) || isBinaryContent(newContent) {
 		result.IsBinary = true
 		return result, nil
 	}
 
-	// Split into lines
 	oldLines := splitLines(oldContent)
 	newLines := splitLines(newContent)
-
-	// Compute diff using Myers algorithm with caller-specified context depth
-	hunks := myersDiff(oldLines, newLines, contextLines)
-	result.Hunks = hunks
+	result.Hunks = myersDiff(oldLines, newLines, contextLines)
 
 	return result, nil
 }
 
-// isBinaryContent detects if content appears to be binary.
-// Uses the same heuristic as Git: checks first 8KB for null bytes.
+// isBinaryContent uses Git's heuristic: checks first 8KB for null bytes.
 func isBinaryContent(data []byte) bool {
 	limit := len(data)
 	if limit > 8192 {
@@ -263,15 +314,13 @@ func isBinaryContent(data []byte) bool {
 	return bytes.IndexByte(data[:limit], 0) != -1
 }
 
-// splitLines splits content into lines, preserving empty lines.
+// splitLines splits on newlines, removing a trailing empty element if content ends with \n.
 func splitLines(content []byte) []string {
 	if len(content) == 0 {
 		return []string{}
 	}
 
 	lines := strings.Split(string(content), "\n")
-
-	// Remove trailing empty line if content doesn't end with newline
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
@@ -279,28 +328,20 @@ func splitLines(content []byte) []string {
 	return lines
 }
 
-// myersDiff implements the Myers diff algorithm to compute line-level diffs.
-// Returns a list of hunks with context lines.
-// See: "An O(ND) Difference Algorithm and Its Variations" by Eugene W. Myers.
+// myersDiff implements Myers' O(ND) diff algorithm, returning hunks with context lines.
 func myersDiff(oldLines, newLines []string, context int) []DiffHunk {
-	// Handle edge cases
 	if len(oldLines) == 0 && len(newLines) == 0 {
 		return []DiffHunk{}
 	}
 
-	// Compute the shortest edit script using Myers algorithm
 	edits := computeEdits(oldLines, newLines)
-
-	// If no changes, return empty hunks
 	if len(edits) == 0 {
 		return []DiffHunk{}
 	}
 
-	// Convert edits to hunks with context
 	return buildHunks(oldLines, newLines, edits, context)
 }
 
-// editType represents the type of edit operation.
 type editType int
 
 const (

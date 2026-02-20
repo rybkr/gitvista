@@ -20,9 +20,8 @@ const (
 	objectTypeTag    = "tag"
 )
 
-// loadObjects loads all Git objects into the object store.
-// It traverses all references and their histories.
-// It assumes that all references have already been loaded.
+// loadObjects traverses all refs and loads reachable commits and tags.
+// Must be called after loadRefs.
 func (r *Repository) loadObjects() {
 	visited := make(map[Hash]bool)
 	for _, ref := range r.refs {
@@ -30,8 +29,6 @@ func (r *Repository) loadObjects() {
 	}
 }
 
-// traverseObjects recursively loads all objects beginning from the provided reference,
-// using the visited map to avoid processing the same object multiple times.
 func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
 	if visited[ref] {
 		return
@@ -40,7 +37,6 @@ func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
 
 	object, err := r.readObject(ref)
 	if err != nil {
-		// Log the error but continue with other potentially valid objects.
 		log.Printf("error traversing object: %v", err)
 		return
 	}
@@ -57,15 +53,13 @@ func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
 		r.tags = append(r.tags, tag)
 		r.traverseObjects(tag.Object, visited)
 	default:
-		// Unrecognized type, log the error but continue on.
 		log.Printf("unsupported object type: %d", object.Type())
 	}
 }
 
-// readObject parses an object from its hash.
-// It first attempts to read from loose objects, then falls back to pack files.
+// readObject reads and parses a Git object (loose first, then packed).
 // Parse errors from loose objects are returned immediately rather than silently
-// falling through to the pack search — a corrupt loose object should fail loudly.
+// falling through to the pack search -- a corrupt loose object should fail loudly.
 func (r *Repository) readObject(id Hash) (Object, error) {
 	header, content, err := r.readLooseObjectRaw(id)
 	if err == nil {
@@ -90,7 +84,7 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 	return nil, fmt.Errorf("object not found: %s", id)
 }
 
-// readObjectData reads any object, loose or packed, and returns raw data.
+// readObjectData returns raw bytes and type byte for any object (loose or packed).
 func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 	header, content, err := r.readLooseObjectRaw(id)
 	if err == nil {
@@ -111,8 +105,8 @@ func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 }
 
 // readFromPackFile opens a pack file, seeks to offset, and reads a pack object.
-// Scoping the open+defer+close to this function prevents file descriptor leaks
-// when this is called inside a loop (defer runs at function return, not loop end).
+// Scoped to its own function so defer closes the file after each call,
+// preventing fd leaks when called in a loop.
 func (r *Repository) readFromPackFile(packPath string, offset int64) ([]byte, byte, error) {
 	//nolint:gosec // G304: Pack file paths are controlled by git repository structure
 	file, err := os.Open(packPath)
@@ -131,8 +125,7 @@ func (r *Repository) readFromPackFile(packPath string, offset int64) ([]byte, by
 	return readPackObject(file, r.readObjectData)
 }
 
-// readLooseObjectRaw reads a loose object from disk and returns its header and content.
-// This is the common implementation used by both readLooseObject and readLooseObjectData.
+// readLooseObjectRaw reads and decompresses a loose object, returning its header and content.
 func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte, err error) {
 	objectPath := filepath.Join(r.gitDir, "objects", string(id)[:2], string(id)[2:])
 
@@ -161,8 +154,6 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 	return header, content, nil
 }
 
-// objectTypeFromHeader converts a Git object header string to its pack object type byte.
-// Uses the same numeric constants as the pack format (packObjectCommit, etc.).
 func objectTypeFromHeader(header string) (byte, error) {
 	parts := strings.SplitN(header, " ", 2)
 	if len(parts) != 2 {
@@ -183,7 +174,6 @@ func objectTypeFromHeader(header string) (byte, error) {
 	}
 }
 
-// readPackedObject reads an object from a pack file at the given offset and parses it.
 func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (Object, error) {
 	objectData, objectType, err := r.readFromPackFile(packPath, offset)
 	if err != nil {
@@ -202,7 +192,6 @@ func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (O
 	}
 }
 
-// parseCommitBody parses the body of a commit object into a Commit struct.
 func parseCommitBody(body []byte, id Hash) (*Commit, error) {
 	commit := &Commit{ID: id}
 	scanner := bufio.NewScanner(bytes.NewReader(body))
@@ -256,7 +245,6 @@ func parseCommitBody(body []byte, id Hash) (*Commit, error) {
 	return commit, nil
 }
 
-// parseTagBody parses the body of a tag object into a Tag struct.
 func parseTagBody(body []byte, id Hash) (*Tag, error) {
 	tag := &Tag{ID: id}
 	scanner := bufio.NewScanner(bytes.NewReader(body))
@@ -302,7 +290,7 @@ func parseTagBody(body []byte, id Hash) (*Tag, error) {
 	return tag, nil
 }
 
-// parseTreeBody parses the body of a tree object into a Tree struct.
+// parseTreeBody parses the binary tree format: repeated (mode SP name NUL hash[20]) entries.
 func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 	tree := &Tree{
 		ID:      id,
@@ -350,10 +338,6 @@ func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 			return nil, fmt.Errorf("invalid hash in tree entry: %w", err)
 		}
 
-		// Determine type based on mode:
-		//  - 100644/100755 = blob (file)
-		//  - 040000 = tree (directory)
-		//  - 120000/160000 = commit (submodule)
 		var entryType string
 		if strings.HasPrefix(mode, "100") {
 			entryType = "blob"
@@ -378,8 +362,6 @@ func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 // Objects larger than this are rejected to prevent zip-bomb style attacks.
 const maxDecompressedSize = 256 * 1024 * 1024 // 256MB
 
-// readCompressedData reads and decompresses zlib-compressed data from the given reader.
-// Returns an error if the decompressed output exceeds maxDecompressedSize.
 func readCompressedData(r io.Reader) ([]byte, error) {
 	zr, err := zlib.NewReader(r)
 	if err != nil {

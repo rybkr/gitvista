@@ -17,10 +17,16 @@ export function createGraphState() {
 		nodes: [],
 		links: [],
 		zoomTransform: d3.zoomIdentity,
+		layoutMode: "force", // Current layout mode: "force" or "lane"
+		// Structured search state produced by searchQuery.js.
+		// null means no active search; object contains { query, matcher }.
+		searchState: null,
+		filterState: { hideRemotes: false, hideMerges: false, hideStashes: false, focusBranch: "" },
+		filterPredicate: null, // Derived: compiled from searchState + filterState; not serializable
+		stashes: [],
+		hoverNode: null,
 		headHash: "",
-		tags: new Map(),      // tag name -> commit hash
-		stashes: [],          // StashEntry[]
-		hoverNode: null,      // node under the pointer (no click required)
+		tags: new Map(),
 	};
 }
 
@@ -33,4 +39,3 @@ export function createGraphState() {
 export function setZoomTransform(state, transform) {
 	state.zoomTransform = transform;
 }
-

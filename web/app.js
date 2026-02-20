@@ -1,31 +1,30 @@
 import { logger } from "./logger.js";
+import { initThemeToggle } from "./themeToggle.js";
 import { createGraph } from "./graph.js";
 import { startBackend } from "./backend.js";
 import { createSidebar } from "./sidebar.js";
 import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
-import { createSidebarTabs } from "./sidebarTabs.js";
 import { createFileExplorer } from "./fileExplorer.js";
 import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
+import { createSearch } from "./search.js";
+import { createGraphFilters, loadFilterState } from "./graphFilters.js";
 
-// A valid Git commit hash is exactly 40 hex characters.
 const HASH_RE = /^[0-9a-f]{40}$/i;
 
-/**
- * Reads the current URL fragment and returns a commit hash when one is
- * present, or null when the fragment is absent or not a valid hash.
- *
- * @returns {string | null}
- */
+/** Extracts a commit hash from the URL fragment, or returns null. */
 function getHashFromUrl() {
-    const fragment = location.hash.slice(1); // strip the leading #
+    const fragment = location.hash.slice(1);
     return HASH_RE.test(fragment) ? fragment : null;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     logger.info("Bootstrapping frontend");
+
+    // Apply persisted theme preference immediately before any rendering occurs.
+    initThemeToggle();
 
     const root = document.querySelector("#root");
     if (!root) {
@@ -33,7 +32,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
-    // Connection status dot — fixed bottom-right corner
     const statusDot = document.createElement("div");
     statusDot.title = "Connecting...";
     statusDot.style.cssText = `
@@ -72,16 +70,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Left sidebar with tabs
-    const sidebar = createSidebar();
-    root.parentElement.insertBefore(sidebar.el, root);
-    root.appendChild(sidebar.expandBtn);
-
     const infoBar = createInfoBar();
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
 
-    // Create wrapper for repository tab (info bar + working tree status)
     const repoTabContent = document.createElement("div");
     repoTabContent.style.display = "flex";
     repoTabContent.style.flexDirection = "column";
@@ -90,11 +82,12 @@ document.addEventListener("DOMContentLoaded", () => {
     repoTabContent.appendChild(infoBar.el);
     repoTabContent.appendChild(indexView.el);
 
-    const tabs = createSidebarTabs([
-        { name: "repository", label: "Repository", content: repoTabContent },
-        { name: "file-explorer", label: "File Explorer", content: fileExplorer.el },
+    const sidebar = createSidebar([
+        { name: "repository", icon: "", tooltip: "Repository", content: repoTabContent },
+        { name: "file-explorer", icon: "", tooltip: "File Explorer", content: fileExplorer.el },
     ]);
-    sidebar.content.appendChild(tabs.el);
+    root.parentElement.insertBefore(sidebar.activityBar, root);
+    root.parentElement.insertBefore(sidebar.panel, root);
 
     // Track whether the initial delta has been applied at least once so the
     // permalink restore only fires after the graph has commits to navigate to.
@@ -102,58 +95,86 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const graph = createGraph(root, {
         onCommitTreeClick: (commit) => {
-            // Only update file explorer if it's already the active tab
-            if (tabs.getActiveTab() === "file-explorer") {
+            // Only update file explorer if it's already the active panel
+            if (sidebar.getActivePanel() === "file-explorer") {
                 fileExplorer.openCommit(commit);
             }
         },
-        // Feature 3: Permalink — mirror the selected commit hash into the URL fragment.
         onCommitSelect: (hash) => {
             if (hash) {
                 history.replaceState(null, "", "#" + hash);
             } else {
-                // Selection cleared: remove the fragment without adding a history entry.
                 history.replaceState(null, "", location.pathname);
             }
         },
     });
 
-    // Feature 1b: Create the keyboard help overlay (hidden by default).
-    const keyboardHelp = createKeyboardHelp();
+    // ── Canvas Toolbar ──────────────────────────────────────────────────────
+    // Assembles search and graph controls into a single in-flow toolbar strip.
 
-    // Feature 1a: Register all keyboard shortcuts and wire them to graph actions.
-    createKeyboardShortcuts({
-        // G→H: center the viewport on the current HEAD commit.
-        onJumpToHead: () => {
-            graph.centerOnCommit(graph.getHeadHash());
-        },
-        // /: focus the file-explorer filter input when it is visible.
-        onFocusSearch: () => {
-            const filterInput = document.querySelector(".file-explorer-filter input");
-            if (filterInput) {
-                filterInput.focus();
-                filterInput.select();
-            }
-        },
-        // ?: toggle the keyboard shortcut help overlay.
-        onToggleHelp: () => {
-            keyboardHelp.toggle();
-        },
-        // Escape: dismiss the help overlay (the graph handles its own tooltip dismissal).
-        onDismiss: () => {
-            keyboardHelp.hide();
-        },
-        // J: navigate to the next (newer) commit.
-        onNavigateNext: () => {
-            graph.navigateCommits("next");
-        },
-        // K: navigate to the previous (older) commit.
-        onNavigatePrev: () => {
-            graph.navigateCommits("prev");
+    const canvasToolbar = document.createElement("div");
+    canvasToolbar.className = "canvas-toolbar";
+
+    const searchContainer = document.createElement("div");
+    searchContainer.className = "search-container";
+    canvasToolbar.appendChild(searchContainer);
+
+    const search = createSearch(searchContainer, {
+        getBranches: () => graph.getBranches(),
+        getCommits: () => graph.getCommits(),
+        getCommitCount: () => graph.getCommitCount(),
+        onSearch: ({ searchState }) => {
+            graph.setSearchState(searchState ?? null);
         },
     });
 
-    // Track branch/repo name for toast messages and document title
+    // Move graph controls (created by graphController) into the toolbar.
+    const graphControlsEl = root.querySelector(".graph-controls");
+    if (graphControlsEl) {
+        canvasToolbar.appendChild(graphControlsEl);
+    }
+
+    // Insert toolbar before the canvas so it sits between filter panel and canvas.
+    const canvasEl = root.querySelector("canvas");
+    if (canvasEl) {
+        root.insertBefore(canvasToolbar, canvasEl);
+    }
+
+    // ── A3: Filter popover ─────────────────────────────────────────────────
+    // Filter trigger button lives in the canvas toolbar; popover drops down
+    // from it on click. loadFilterState() reads from localStorage.
+
+    const graphFilters = createGraphFilters({
+        initialState: loadFilterState(),
+        onChange: (filterState) => {
+            graph.setFilterState(filterState);
+        },
+    });
+    canvasToolbar.insertBefore(graphFilters.el, searchContainer);
+
+    // Push persisted filter state into the graph on startup so the canvas
+    // reflects any filters that were active in the previous session.
+    graph.setFilterState(graphFilters.getState());
+
+    const keyboardHelp = createKeyboardHelp();
+
+    createKeyboardShortcuts({
+        onJumpToHead: () => graph.centerOnCommit(graph.getHeadHash()),
+        // "/" focuses the commit search bar (not the file explorer filter).
+        onFocusSearch: () => {
+            search.focus();
+        },
+        onToggleHelp: () => keyboardHelp.toggle(),
+        onDismiss: () => {
+            keyboardHelp.hide();
+            // Clear the search when the user presses Escape — consistent with
+            // how filter overlays typically behave in developer tooling.
+            search.clear();
+        },
+        onNavigateNext: () => graph.navigateCommits("next"),
+        onNavigatePrev: () => graph.navigateCommits("prev"),
+    });
+
     let currentBranchName = "";
     let repoName = "";
 
@@ -172,6 +193,11 @@ document.addEventListener("DOMContentLoaded", () => {
         onConnectionStateChange: setConnectionState,
         onDelta: (delta) => {
             graph.applyDelta(delta);
+
+            // Keep the branch dropdown current whenever the branch map changes.
+            // We call this on every delta because even commit-only deltas can
+            // change which branches exist when combined with branch deletions.
+            graphFilters.updateBranches(graph.getBranches());
 
             // Toast when new commits arrive (skip the initial bulk load by
             // gating on having a known branch name).

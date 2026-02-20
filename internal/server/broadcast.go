@@ -2,26 +2,21 @@
 package server
 
 import (
-	"github.com/gorilla/websocket"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
-// Broadcast channel configuration constants.
-const (
-	broadcastChannelSize = 256
-)
+const broadcastChannelSize = 256
 
-// handleBroadcast receives messages from broadcast channel and sends to all clients.
-// It runs as goroutine for entire server lifetime.
 func (s *Server) handleBroadcast() {
 	defer s.wg.Done()
 
 	for {
 		select {
 		case <-s.ctx.Done():
-			log.Println("Broadcast handler exiting")
+			s.logger.Debug("Broadcast handler exiting")
 			return
 
 		case message := <-s.broadcast:
@@ -30,14 +25,10 @@ func (s *Server) handleBroadcast() {
 	}
 }
 
-// sendToAllClients broadcasts message to all connected WebSocket clients.
-// Each client's write mutex is held during the write to prevent concurrent
-// writes from clientWritePump's ping goroutine.
 func (s *Server) sendToAllClients(message UpdateMessage) {
 	var failedClients []*websocket.Conn
 
-	// Snapshot the client map under read lock, then release before doing I/O.
-	// This prevents holding the read lock during slow network writes.
+	// Snapshot under read lock; release before I/O to avoid blocking on slow writes.
 	s.clientsMu.RLock()
 	snapshot := make(map[*websocket.Conn]*sync.Mutex, len(s.clients))
 	for conn, mu := range s.clients {
@@ -55,38 +46,40 @@ func (s *Server) sendToAllClients(message UpdateMessage) {
 		mu.Unlock()
 
 		if err1 != nil {
-			log.Printf("%s Failed to set write deadline: %v", logError, err1)
+			s.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err1)
 			failedClients = append(failedClients, conn)
 		} else if err2 != nil {
-			log.Printf("%s Broadcast failed to %s: %v", logError, conn.RemoteAddr(), err2)
+			s.logger.Error("Broadcast failed", "addr", conn.RemoteAddr(), "err", err2)
 			failedClients = append(failedClients, conn)
 		}
 	}
 
-	// Remove failed clients (write lock needed)
 	if len(failedClients) > 0 {
 		s.clientsMu.Lock()
 		for _, conn := range failedClients {
 			delete(s.clients, conn)
 			if err := conn.Close(); err != nil {
-				log.Printf("%s Failed to close client connection: %v", logError, err)
+				s.logger.Error("Failed to close client connection", "err", err)
 			}
 		}
 		remainingClients := len(s.clients)
 		s.clientsMu.Unlock()
 
-		log.Printf("%s Removed %d failed clients. Total clients: %d", logInfo,
-			len(failedClients), remainingClients)
+		s.logger.Info("Removed failed clients",
+			"removed", len(failedClients),
+			"remaining", remainingClients,
+		)
 	}
 }
 
-// broadcastUpdate queues message for broadcast to all clients.
-// Non-blocking: drops message if channel is full.
+// broadcastUpdate queues a message for broadcast. Non-blocking: drops the message
+// if the channel is full.
 func (s *Server) broadcastUpdate(message UpdateMessage) {
 	select {
 	case s.broadcast <- message:
-		// Message queued successfully
 	default:
-		log.Println("WARNING: Broadcast channel full, dropping message. Clients may be slow.")
+		// Warn at the Warn level rather than Info — a dropped broadcast means
+		// clients may miss an update and will need to reconnect for consistency.
+		s.logger.Warn("Broadcast channel full, dropping message; clients may be slow")
 	}
 }

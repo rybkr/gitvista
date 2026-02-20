@@ -13,7 +13,7 @@ help:
 
 ## test: Run all unit tests
 test:
-	$(GOTEST) -v ./...
+	$(GOTEST) -v -race -timeout 5m ./...
 
 ## ci: Run all CI checks (tests, lint, integration tests, build)
 ci: test lint integration build
@@ -34,4 +34,8 @@ build:
 ## clean: Clean build artifacts
 clean:
 	$(GOCLEAN)
-	rm -f gitvista
+	rm -f gitvista vista
+
+## cloc: Count lines of code
+cloc:
+	cloc .

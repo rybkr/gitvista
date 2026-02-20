@@ -1,19 +1,15 @@
 package server
 
 import (
-	"github.com/fsnotify/fsnotify"
-	"log"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
-const (
-	debounceTime = 100 * time.Millisecond
-)
+const debounceTime = 100 * time.Millisecond
 
-// startWatcher initializes filesystem monitoring for the Git repository.
-// It watches the .git/ directory for changes and triggers updates.
 func (s *Server) startWatcher() error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -24,20 +20,17 @@ func (s *Server) startWatcher() error {
 		return err
 	}
 
-	s.wg.Add(1)
 	go s.watchLoop(watcher)
 
-	log.Printf("%s Watching Git repository for changes", logInfo)
+	s.logger.Info("Watching Git repository for changes", "gitDir", s.repo.GitDir())
 	return nil
 }
 
-// watchLoop checks the .git/ folder for updates and updates the repository when one occurs.
-// It uses a debounce timer to avoid flooding the system with updates.
 func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 	defer s.wg.Done()
 	defer func() {
 		if err := watcher.Close(); err != nil {
-			log.Printf("failed to close watcher: %v", err)
+			s.logger.Error("Failed to close watcher", "err", err)
 		}
 	}()
 
@@ -56,7 +49,9 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 				continue
 			}
 
-			log.Printf("%s Change detected: %s", logInfo, filepath.Base(event.Name))
+			// Log at Debug to avoid flooding logs on active repos; operators
+			// who need per-file visibility can enable GITVISTA_LOG_LEVEL=debug.
+			s.logger.Debug("Change detected", "file", filepath.Base(event.Name))
 
 			if debounceTimer != nil {
 				debounceTimer.Stop()
@@ -69,13 +64,11 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 			if !ok {
 				return
 			}
-			log.Printf("%s Watcher error: %v", logError, err)
+			s.logger.Error("Watcher error", "err", err)
 		}
 	}
 }
 
-// shouldIgnoreEvent reports whether a file system event should be ignored for our purposes.
-// For example, a change to an internal log file does not warrant a repository update.
 func shouldIgnoreEvent(event fsnotify.Event) bool {
 	base := filepath.Base(event.Name)
 	path := event.Name

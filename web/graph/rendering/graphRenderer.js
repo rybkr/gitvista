@@ -26,10 +26,15 @@ import {
     COMMIT_MESSAGE_ZOOM_THRESHOLD,
     COMMIT_MESSAGE_MAX_CHARS,
     COMMIT_MESSAGE_FONT,
+    COMMIT_AUTHOR_ZOOM_THRESHOLD,
+    COMMIT_DATE_ZOOM_THRESHOLD,
+    COMMIT_DETAIL_FONT,
     HOVER_GLOW_EXTRA_RADIUS,
     HOVER_GLOW_OPACITY,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
+import { getAuthorColor } from "../../utils/colors.js";
+import { relativeTime } from "../utils/time.js";
 
 /**
  * Renders graph nodes and links to a 2D canvas context.
@@ -130,8 +135,16 @@ export class GraphRenderer {
                 continue;
             }
 
+            // Dim links whose commit endpoints are both dimmed — fades non-matching
+            // sub-graphs without removing them from the force simulation.
+            // Branch links are always rendered at full opacity so branch labels
+            // remain legible during a search.
+            const isDimmedLink = link.kind !== "branch" &&
+                (source.dimmed || target.dimmed);
+            const dimAlpha = isDimmedLink ? 0.15 : 1;
+
             const prevAlpha = this.ctx.globalAlpha;
-            this.ctx.globalAlpha = prevAlpha * warmup;
+            this.ctx.globalAlpha = prevAlpha * warmup * dimAlpha;
             this.renderLink(source, target, link.kind);
             this.ctx.globalAlpha = prevAlpha;
         }
@@ -152,10 +165,11 @@ export class GraphRenderer {
 
     /**
      * Draws a single directional link with an arrowhead.
+     * Supports lane-aware coloring and stepped paths for cross-lane connections.
      *
      * @param {import("../types.js").GraphNode} source Source node.
      * @param {import("../types.js").GraphNode} target Target node.
-     * @param {boolean} isBranch True when the arrow represents a branch link.
+     * @param {string} linkKind Link kind ("branch" or undefined).
      */
     renderLink(source, target, linkKind) {
         const dx = target.x - source.x;
@@ -165,15 +179,30 @@ export class GraphRenderer {
             return;
         }
 
-        const color = linkKind === "branch"
-            ? this.palette.branchLink
-            : this.palette.link;
+        // Determine link color: branch links always use branchLink palette,
+        // commit links use lane color if present, otherwise default palette
+        let color;
+        if (linkKind === "branch") {
+            color = this.palette.branchLink;
+        } else {
+            color = source.laneColor || this.palette.link;
+        }
 
         const targetRadius = target.type === "branch"
             ? BRANCH_NODE_RADIUS
             : NODE_RADIUS;
 
-        this.renderArrow(source, target, dx, dy, distance, targetRadius, color);
+        // Check if this is a cross-lane connection (lane mode only)
+        const isCrossLane =
+            source.laneIndex !== undefined &&
+            target.laneIndex !== undefined &&
+            source.laneIndex !== target.laneIndex;
+
+        if (isCrossLane) {
+            this.renderSteppedArrow(source, target, targetRadius, color);
+        } else {
+            this.renderArrow(source, target, dx, dy, distance, targetRadius, color);
+        }
     }
 
     /**
@@ -208,6 +237,50 @@ export class GraphRenderer {
         this.ctx.save();
         this.ctx.translate(arrowTipX, arrowTipY);
         this.ctx.rotate(Math.atan2(dy, dx));
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, 0);
+        this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
+        this.ctx.lineTo(-ARROW_LENGTH, -ARROW_WIDTH / 2);
+        this.ctx.closePath();
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a stepped path for cross-lane connections with an arrowhead.
+     * The path consists of three segments:
+     * 1. Vertical line from source downward
+     * 2. Horizontal line across lanes
+     * 3. Vertical line to target with arrowhead
+     *
+     * For octopus merges (multiple parents), stagger the midpoint Y to avoid overlap.
+     *
+     * @param {import("../types.js").GraphNode} source Source node.
+     * @param {import("../types.js").GraphNode} target Target node.
+     * @param {number} targetRadius Radius of the target node for arrow placement.
+     * @param {string} color Stroke and fill color for the arrow.
+     */
+    renderSteppedArrow(source, target, targetRadius, color) {
+        // Calculate midpoint Y with stagger for octopus merges
+        // Use hash of source position to deterministically stagger multiple parents
+        const stagger = ((source.x * 17 + source.y * 13) % 20) - 10;
+        const midY = (source.y + target.y) / 2 + stagger;
+
+        // Draw the stepped path
+        this.ctx.strokeStyle = color;
+        this.ctx.beginPath();
+        this.ctx.moveTo(source.x, source.y);
+        this.ctx.lineTo(source.x, midY); // Vertical down from source
+        this.ctx.lineTo(target.x, midY); // Horizontal across lanes
+        this.ctx.lineTo(target.x, target.y - targetRadius - ARROW_LENGTH); // Vertical to near target
+        this.ctx.stroke();
+
+        // Draw arrowhead pointing down at target
+        const arrowTipY = target.y - targetRadius;
+        this.ctx.save();
+        this.ctx.translate(target.x, arrowTipY);
+        this.ctx.rotate(Math.PI / 2); // Point downward
         this.ctx.beginPath();
         this.ctx.moveTo(0, 0);
         this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
@@ -267,6 +340,10 @@ export class GraphRenderer {
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
         const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
+        // node.dimmed is set by applyDimmingFromPredicate() in graphController
+        // when a search/filter is active. We reduce alpha to 15% so non-matching
+        // commits recede without being removed from the D3 simulation.
+        const isDimmed = node.dimmed === true;
 
         const baseRadius = isMerge ? MERGE_NODE_RADIUS : NODE_RADIUS;
         const highlightRadius = isMerge
@@ -292,8 +369,12 @@ export class GraphRenderer {
         const radiusScale = 0.55 + 0.45 * spawnAlpha;
         const drawRadius = node.radius * radiusScale;
 
+        // Compound alpha: context alpha × spawn fade-in × dimming multiplier.
+        // Dimmed nodes are drawn at 15% — visible enough to preserve graph
+        // topology without competing with full-opacity matching commits.
         const previousAlpha = this.ctx.globalAlpha;
-        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
+        const dimMultiplier = isDimmed ? 0.15 : 1;
+        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01) * dimMultiplier;
         if (isHighlighted) {
             if (isMerge) {
                 this.renderHighlightedMerge(node, drawRadius);
@@ -309,8 +390,9 @@ export class GraphRenderer {
         }
         this.ctx.globalAlpha = previousAlpha;
 
-        // Hover glow ring — drawn at full alpha, after the node fill.
-        if (isHovered && !isHighlighted) {
+        // Hover glow ring — suppressed for dimmed nodes so the glow doesn't
+        // punch through the 15% alpha and confuse the user.
+        if (isHovered && !isHighlighted && !isDimmed) {
             this.ctx.save();
             this.ctx.globalAlpha = previousAlpha * HOVER_GLOW_OPACITY * spawnAlpha;
             this.ctx.fillStyle = "#ffffff";
@@ -320,10 +402,11 @@ export class GraphRenderer {
             this.ctx.restore();
         }
 
-        // HEAD accent ring — subtle thin ring in the theme's highlight color.
+        // HEAD accent ring — rendered even when dimmed so HEAD is identifiable
+        // during search. Its alpha is scaled by dimMultiplier for consistency.
         if (isHead) {
             this.ctx.save();
-            this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45;
+            this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45 * dimMultiplier;
             this.ctx.lineWidth = 1.5;
             this.ctx.strokeStyle = this.palette.nodeHighlight;
             this.ctx.beginPath();
@@ -332,16 +415,22 @@ export class GraphRenderer {
             this.ctx.restore();
         }
 
-        this.renderCommitLabel(node, spawnAlpha, zoomTransform);
+        // Skip label rendering for dimmed nodes — labels at 15% opacity would
+        // clutter the view without adding navigational value.
+        if (!isDimmed) {
+            this.renderCommitLabel(node, spawnAlpha, zoomTransform);
+        }
     }
 
     /**
      * Renders a non-highlighted commit node.
+     * Uses lane color if available (lane mode), otherwise falls back to palette.
      *
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderNormalCommit(node, radius) {
-        this.ctx.fillStyle = this.palette.node;
+        // Use lane color if present (lane layout mode), otherwise use default palette
+        this.ctx.fillStyle = node.laneColor || this.palette.node;
         this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -399,7 +488,10 @@ export class GraphRenderer {
      * @param {number} radius Half-diagonal of the diamond.
      */
     renderNormalMerge(node, radius) {
-        this.ctx.fillStyle = this.palette.mergeNode;
+        const authorEmail = node.commit?.author?.email;
+        this.ctx.fillStyle = authorEmail
+            ? getAuthorColor(authorEmail)
+            : this.palette.mergeNode;
         this.applyShadow();
         this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
@@ -477,7 +569,10 @@ export class GraphRenderer {
         this.ctx.fillStyle = this.palette.labelText;
         this.ctx.fillText(text, labelX, labelY);
 
-        // At high zoom levels, show the first line of the commit message below the hash.
+        // Progressive detail: each tier adds text below the previous, tracking Y with detailY.
+        let detailY = labelY + 14;
+
+        // Tier 1 (zoom >= 1.5): first line of commit message
         if (zoomK >= COMMIT_MESSAGE_ZOOM_THRESHOLD && node.commit.message) {
             const firstLine = node.commit.message.split("\n")[0].trim();
             const truncated = firstLine.length > COMMIT_MESSAGE_MAX_CHARS
@@ -486,7 +581,36 @@ export class GraphRenderer {
             this.ctx.font = COMMIT_MESSAGE_FONT;
             this.ctx.globalAlpha = 0.65 * spawnAlpha;
             this.ctx.fillStyle = this.palette.labelText;
-            this.ctx.fillText(truncated, labelX, labelY + 14);
+            this.ctx.fillText(truncated, labelX, detailY);
+            detailY += 13;
+        }
+
+        // Tier 2 (zoom >= 2.0): author name
+        if (zoomK >= COMMIT_AUTHOR_ZOOM_THRESHOLD && node.commit.author?.name) {
+            this.ctx.font = COMMIT_DETAIL_FONT;
+            this.ctx.lineWidth = 3;
+            this.ctx.lineJoin = "round";
+            this.ctx.strokeStyle = this.palette.labelHalo;
+            this.ctx.globalAlpha = 0.50 * spawnAlpha;
+            this.ctx.strokeText(node.commit.author.name, labelX, detailY);
+            this.ctx.fillStyle = this.palette.labelText;
+            this.ctx.fillText(node.commit.author.name, labelX, detailY);
+            detailY += 12;
+        }
+
+        // Tier 3 (zoom >= 3.0): relative commit date
+        if (zoomK >= COMMIT_DATE_ZOOM_THRESHOLD) {
+            const rel = relativeTime(node.commit.author?.when);
+            if (rel) {
+                this.ctx.font = COMMIT_DETAIL_FONT;
+                this.ctx.lineWidth = 3;
+                this.ctx.lineJoin = "round";
+                this.ctx.strokeStyle = this.palette.labelHalo;
+                this.ctx.globalAlpha = 0.40 * spawnAlpha;
+                this.ctx.strokeText(rel, labelX, detailY);
+                this.ctx.fillStyle = this.palette.labelText;
+                this.ctx.fillText(rel, labelX, detailY);
+            }
         }
 
         this.ctx.restore();

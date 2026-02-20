@@ -6,27 +6,171 @@
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
 import { TooltipManager } from "../tooltips/index.js";
 import {
-    ALPHA_DECAY,
     BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_OFFSET_Y,
     BRANCH_NODE_RADIUS,
-    CHARGE_STRENGTH,
-    COLLISION_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
-    DRAG_ALPHA_TARGET,
-    LINK_DISTANCE,
-    LINK_STRENGTH,
+    LANE_MARGIN,
+    LANE_WIDTH,
     NODE_RADIUS,
-    VELOCITY_DECAY,
     ZOOM_MAX,
     ZOOM_MIN,
-    TREE_ICON_SIZE,
-    TREE_ICON_OFFSET,
 } from "./constants.js";
 import { GraphRenderer } from "./rendering/graphRenderer.js";
-import { LayoutManager } from "./layout/layoutManager.js";
+import { ForceStrategy } from "./layout/forceStrategy.js";
+import { LaneStrategy } from "./layout/laneStrategy.js";
 import { buildPalette } from "./utils/palette.js";
+import { getCommitTimestamp } from "./utils/time.js";
 import { createGraphState, setZoomTransform } from "./state/graphState.js";
+
+// ── A3 Filter helpers ─────────────────────────────────────────────────────────
+//
+// These module-level functions are pure and have no dependency on controller
+// closure state, making them easy to unit-test and reason about in isolation.
+
+/**
+ * Returns true when the given commit node is tracked only by remote-tracking
+ * branches (i.e. every branch pointing at it starts with "refs/remotes/").
+ *
+ * A commit is kept visible if it has at least one local branch pointer OR if no
+ * branch points at it at all (orphaned commits stay visible to keep the graph
+ * connected and navigable).
+ *
+ * @param {import("./types.js").GraphNode} node Commit node being evaluated.
+ * @param {Map<string, string>} branches Live branch map (name → hash).
+ * @returns {boolean} True when the commit is exclusively remote-tracked.
+ */
+function isExclusivelyRemote(node, branches) {
+    if (node.type !== "commit") return false;
+    let hasAnyBranch = false;
+    let hasLocalBranch = false;
+    for (const [name, hash] of branches.entries()) {
+        if (hash !== node.hash) continue;
+        hasAnyBranch = true;
+        if (!name.startsWith("refs/remotes/")) {
+            hasLocalBranch = true;
+            break;
+        }
+    }
+    // If no branch points at this commit, don't hide it — it could be a
+    // reachable ancestor of a visible local branch.
+    return hasAnyBranch && !hasLocalBranch;
+}
+
+/**
+ * Returns true when the given commit node corresponds to a stash entry.
+ * Git stores stashes under refs/stash (a single ref pointing to the most
+ * recent stash commit) or as reflogs under refs/stash@{n}.  We detect stashes
+ * by checking state.stashes first, then falling back to branch-name heuristics.
+ *
+ * @param {import("./types.js").GraphNode} node Commit node being evaluated.
+ * @param {Map<string, string>} branches Live branch map.
+ * @param {Array<{hash: string}>} stashes Live stash list from delta.
+ * @returns {boolean} True when the commit is a stash entry.
+ */
+function isStashCommit(node, branches, stashes) {
+    if (node.type !== "commit") return false;
+    const hash = node.hash;
+    // Check explicit stash list from server delta — most reliable path.
+    if (Array.isArray(stashes)) {
+        for (const stash of stashes) {
+            if (stash?.hash === hash) return true;
+        }
+    }
+    // Fallback: detect via stash branch refs.
+    for (const [name, targetHash] of branches.entries()) {
+        if (targetHash !== hash) continue;
+        if (name === "refs/stash" || name.startsWith("stash@{")) return true;
+    }
+    return false;
+}
+
+/**
+ * Performs a BFS from the tip commit of a focused branch and returns a Set of
+ * all reachable commit hashes.  O(n) in the number of reachable commits;
+ * typically < 1 ms for 1000-commit histories on modern hardware.
+ *
+ * @param {string} branchTipHash Hash the focused branch points at.
+ * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
+ * @returns {Set<string>} Hashes of all commits reachable from the tip (inclusive).
+ */
+function getReachableCommits(branchTipHash, commits) {
+    const reachable = new Set();
+    const queue = [branchTipHash];
+    while (queue.length > 0) {
+        const hash = queue.pop();
+        if (!hash || reachable.has(hash)) continue;
+        reachable.add(hash);
+        const commit = commits.get(hash);
+        if (!commit) continue;
+        for (const parent of commit.parents ?? []) {
+            if (!reachable.has(parent)) {
+                queue.push(parent);
+            }
+        }
+    }
+    return reachable;
+}
+
+/**
+ * Builds a compound predicate that combines the structured search matcher with
+ * the A3 structural filters.  Returns null when no criteria are active, which
+ * lets the dimming pass be skipped entirely on the common (no filter) path.
+ *
+ * AND semantics: a node must pass every active criterion to remain fully
+ * visible.  Failing nodes are dimmed (not removed) so the graph stays
+ * connected and the user can still orient themselves.
+ *
+ * @param {{ query: import("./types.js").SearchQuery, matcher: ((commit: import("./types.js").GraphCommit) => boolean) | null } | null} searchState Structured search state from search.js.
+ * @param {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} filterState
+ * @param {Map<string, string>} branches Live branch map.
+ * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
+ * @param {Array<{hash: string}>} stashes Live stash list from delta.
+ * @returns {((node: import("./types.js").GraphNode) => boolean) | null}
+ */
+function buildFilterPredicate(searchState, filterState, branches, commits, stashes) {
+    // The matcher is null when the query is empty (parseSearchQuery sets isEmpty).
+    const matcher = searchState?.matcher ?? null;
+    const hasSearch = matcher !== null;
+    const { hideRemotes, hideMerges, hideStashes, focusBranch } = filterState;
+    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch;
+
+    // Short-circuit: nothing active → caller skips the dimming loop entirely.
+    if (!hasSearch && !hasAnyFilter) return null;
+
+    // Pre-compute the reachable set once via BFS (not per-node).
+    let reachableSet = null;
+    if (focusBranch) {
+        const tipHash = branches.get(focusBranch);
+        reachableSet = tipHash ? getReachableCommits(tipHash, commits) : new Set();
+    }
+
+    return (node) => {
+        // Branch label nodes: only apply the remote-ref filter; all other
+        // filters operate on commit data which branch nodes don't carry.
+        if (node.type === "branch") {
+            if (hideRemotes && node.branch?.startsWith("refs/remotes/")) return false;
+            return true;
+        }
+
+        // ── A2: structured search matcher ─────────────────────────────────────
+        // Delegates all field matching (text, author, hash, date, merge, branch)
+        // to the compiled predicate from searchQuery.js.
+        if (hasSearch) {
+            const commit = node.commit;
+            if (!commit) return false;
+            if (!matcher(commit)) return false;
+        }
+
+        // ── A3: structural filters ────────────────────────────────────────────
+        if (hideRemotes && isExclusivelyRemote(node, branches)) return false;
+        if (hideMerges && (node.commit?.parents?.length ?? 0) > 1) return false;
+        if (hideStashes && isStashCommit(node, branches, stashes)) return false;
+        if (reachableSet !== null && !reachableSet.has(node.hash)) return false;
+
+        return true;
+    };
+}
 
 /**
  * Creates and initializes the graph controller instance.
@@ -48,8 +192,6 @@ const jitter = (range) => (Math.random() - 0.5) * range;
 
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d", { alpha: false });
-    canvas.factor = window.devicePixelRatio || 1;
     rootElement.appendChild(canvas);
 
     const state = createGraphState();
@@ -59,45 +201,28 @@ export function createGraphController(rootElement, options = {}) {
     let dragState = null;
     let isDraggingNode = false;
     const pointerHandlers = {};
-    let initialLayoutComplete = false;
 
     let viewportWidth = 0;
     let viewportHeight = 0;
 
-    // rAF handle for render batching — ensures at most one canvas draw per frame
-    // regardless of how many render() callers fire (simulation tick, zoom, hover, etc.)
+    let selectedHash = null;
+    let sortedCommitCache = null;
     let rafId = null;
 
-    // Hash of the HEAD commit. Kept in sync with state.headHash — both must be
-    // updated together. state.headHash drives canvas rendering; headHash drives
-    // the HEAD button and keyboard shortcut (G→H).
-    let headHash = null;
-    // Hash of the commit node currently selected/highlighted, or null.
-    let selectedHash = null;
-    // Sorted commit node cache — invalidated whenever the graph structure changes.
-    let sortedCommitCache = null;
-
-    const simulation = d3
-        .forceSimulation(nodes)
-        .velocityDecay(VELOCITY_DECAY)
-        .alphaDecay(ALPHA_DECAY)
-        .force("charge", d3.forceManyBody().strength(CHARGE_STRENGTH))
-        .force("collision", d3.forceCollide().radius(COLLISION_RADIUS))
-        .force(
-            "link",
-            d3
-                .forceLink(links)
-                .id((d) => d.id ?? d.hash)
-                .distance(LINK_DISTANCE)
-                .strength(LINK_STRENGTH),
-        )
-        .on("tick", tick);
-
-    const layoutManager = new LayoutManager(
-        simulation,
+    // Create both layout strategies
+    const forceStrategy = new ForceStrategy({
         viewportWidth,
         viewportHeight,
-    );
+        onTick: tick,
+    });
+    const laneStrategy = new LaneStrategy();
+
+    // Restore layout mode from localStorage, default to "force"
+    const STORAGE_KEY_LAYOUT_MODE = "gitvista-layout-mode";
+    const savedMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
+    const initialMode = savedMode === "lane" ? "lane" : "force";
+    let layoutStrategy = initialMode === "lane" ? laneStrategy : forceStrategy;
+    state.layoutMode = initialMode;
 
     const zoom = d3
         .zoom()
@@ -105,7 +230,7 @@ export function createGraphController(rootElement, options = {}) {
         .scaleExtent([ZOOM_MIN, ZOOM_MAX])
         .on("zoom", (event) => {
             if (event.sourceEvent) {
-                layoutManager.disableAutoCenter();
+                layoutStrategy.disableAutoCenter();
             }
             zoomTransform = event.transform;
             setZoomTransform(state, zoomTransform);
@@ -114,18 +239,31 @@ export function createGraphController(rootElement, options = {}) {
 
     canvas.style.cursor = "default";
 
+    // Build controls toolbar with mode toggle and rebalance
     const controls = document.createElement("div");
     controls.className = "graph-controls";
 
+    const forceBtn = document.createElement("button");
+    forceBtn.textContent = "Force";
+    forceBtn.setAttribute("aria-label", "Switch to force-directed layout");
+    if (initialMode === "force") {
+        forceBtn.classList.add("is-active");
+    }
+
+    const laneBtn = document.createElement("button");
+    laneBtn.textContent = "Lanes";
+    laneBtn.setAttribute("aria-label", "Switch to lane-based layout");
+    if (initialMode === "lane") {
+        laneBtn.classList.add("is-active");
+    }
+
     const rebalanceBtn = document.createElement("button");
     rebalanceBtn.textContent = "Rebalance";
-    rebalanceBtn.addEventListener("click", () => {
-        for (const node of nodes) {
-            node.fx = null;
-            node.fy = null;
-        }
-        simulation.alpha(0.8).restart();
-    });
+    rebalanceBtn.setAttribute("aria-label", "Rebalance force-directed layout");
+    rebalanceBtn.disabled = !layoutStrategy.supportsRebalance;
+
+    controls.appendChild(forceBtn);
+    controls.appendChild(laneBtn);
     controls.appendChild(rebalanceBtn);
 
     // "Jump to HEAD" button — centers the view on the current HEAD commit.
@@ -133,18 +271,66 @@ export function createGraphController(rootElement, options = {}) {
     headBtn.textContent = "\u2302 HEAD";
     headBtn.title = "Jump to HEAD commit (G then H)";
     headBtn.addEventListener("click", () => {
-        centerOnCommit(headHash);
+        centerOnCommit(state.headHash || null);
     });
     controls.appendChild(headBtn);
 
     rootElement.appendChild(controls);
 
-    // Pass navigateCommits into TooltipManager so the CommitTooltip's Prev/Next
-    // buttons can drive navigation without a circular reference to the controller.
-    // navigateCommits is declared later in this scope; JS closures make this safe.
-    const tooltipManager = new TooltipManager(canvas, {
-        navigate: (direction) => navigateCommits(direction),
+    /**
+     * Switch between force-directed and lane-based layout modes.
+     *
+     * @param {"force" | "lane"} newMode The layout mode to switch to.
+     */
+    const switchLayout = (newMode) => {
+        if (state.layoutMode === newMode) {
+            return; // Already in this mode
+        }
+
+        // Deactivate current strategy
+        layoutStrategy.deactivate();
+
+        // Switch to new strategy
+        if (newMode === "lane") {
+            layoutStrategy = laneStrategy;
+        } else {
+            layoutStrategy = forceStrategy;
+        }
+
+        // Update state and localStorage
+        state.layoutMode = newMode;
+        localStorage.setItem(STORAGE_KEY_LAYOUT_MODE, newMode);
+
+        // Update button active states
+        if (newMode === "force") {
+            forceBtn.classList.add("is-active");
+            laneBtn.classList.remove("is-active");
+        } else {
+            laneBtn.classList.add("is-active");
+            forceBtn.classList.remove("is-active");
+        }
+
+        // Enable/disable rebalance button based on strategy support
+        rebalanceBtn.disabled = !layoutStrategy.supportsRebalance;
+
+        // Activate new strategy with current graph state
+        const viewport = { width: viewportWidth, height: viewportHeight };
+        layoutStrategy.activate(nodes, links, commits, branches, viewport);
+
+        // Force immediate reposition
+        updateGraph();
+    };
+
+    // Wire button click handlers
+    forceBtn.addEventListener("click", () => switchLayout("force"));
+    laneBtn.addEventListener("click", () => switchLayout("lane"));
+    rebalanceBtn.addEventListener("click", () => {
+        if (layoutStrategy.supportsRebalance) {
+            layoutStrategy.rebalance();
+        }
     });
+
+    const tooltipManager = new TooltipManager(canvas);
     const renderer = new GraphRenderer(canvas, buildPalette(canvas));
 
     const updateTooltipPosition = () => {
@@ -195,45 +381,11 @@ export function createGraphController(rootElement, options = {}) {
         return bestNode;
     };
 
-    /**
-     * Hit-tests whether the given graph coordinates land within a commit node's tree icon.
-     * Returns the commit node if the icon is clicked, null otherwise.
-     *
-     * @param {number} x Graph X coordinate.
-     * @param {number} y Graph Y coordinate.
-     * @returns {import("./types.js").GraphNodeCommit | null} Commit node if tree icon clicked.
-     */
-    const findTreeIconAt = (x, y) => {
-        for (const node of nodes) {
-            if (node.type !== "commit" || !node.commit?.tree) {
-                continue;
-            }
-
-            const iconSize = TREE_ICON_SIZE;
-            const offsetX = node.radius + TREE_ICON_OFFSET;
-            const offsetY = -(node.radius + TREE_ICON_OFFSET);
-            const iconX = node.x + offsetX;
-            const iconY = node.y + offsetY;
-
-            // Check if click is within the folder icon bounds (with some padding for easier clicking)
-            const padding = 2;
-            if (
-                x >= iconX - padding &&
-                x <= iconX + iconSize + padding &&
-                y >= iconY - iconSize * 0.2 - padding &&
-                y <= iconY + iconSize * 0.6 + padding
-            ) {
-                return node;
-            }
-        }
-        return null;
-    };
-
     const centerOnLatestCommit = () => {
-        const latest = layoutManager.findLatestCommit(nodes);
-        if (latest) {
+        const target = layoutStrategy.findCenterTarget(nodes);
+        if (target) {
             // d3.select(canvas).call(...) translates view to center on target coordinates.
-            d3.select(canvas).call(zoom.translateTo, latest.x, latest.y);
+            d3.select(canvas).call(zoom.translateTo, target.x, target.y);
         }
     };
 
@@ -248,7 +400,7 @@ export function createGraphController(rootElement, options = {}) {
         if (hash) {
             const target = nodes.find((n) => n.type === "commit" && n.hash === hash);
             if (target) {
-                layoutManager.disableAutoCenter();
+                layoutStrategy.disableAutoCenter();
                 d3.select(canvas).call(zoom.translateTo, target.x, target.y);
                 return;
             }
@@ -285,20 +437,13 @@ export function createGraphController(rootElement, options = {}) {
      */
     const navigateCommits = (direction) => {
         if (!sortedCommitCache) {
-            // Build and cache a newest-first sorted list of commit nodes.
-            // Mirroring layoutManager.sortCommitsByTime() — logic identical to
-            // getCommitTimestamp() in graph/utils/time.js.
             sortedCommitCache = nodes
                 .filter((n) => n.type === "commit")
                 .sort((a, b) => {
-                    const aTime = new Date(
-                        a.commit?.committer?.when ?? a.commit?.author?.when ?? 0
-                    ).getTime();
-                    const bTime = new Date(
-                        b.commit?.committer?.when ?? b.commit?.author?.when ?? 0
-                    ).getTime();
+                    const aTime = getCommitTimestamp(a.commit);
+                    const bTime = getCommitTimestamp(b.commit);
                     if (aTime === bTime) return a.hash.localeCompare(b.hash);
-                    return bTime - aTime; // newest first
+                    return bTime - aTime;
                 });
         }
 
@@ -312,8 +457,8 @@ export function createGraphController(rootElement, options = {}) {
 
         if (currentIndex === -1) {
             // Nothing selected: start from HEAD (or the first node when HEAD is absent).
-            const headIndex = headHash
-                ? commitNodes.findIndex((n) => n.hash === headHash)
+            const headIndex = state.headHash
+                ? commitNodes.findIndex((n) => n.hash === state.headHash)
                 : -1;
             currentIndex = headIndex !== -1 ? headIndex : 0;
             selectAndCenterCommit(commitNodes[currentIndex].hash);
@@ -339,10 +484,9 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         const current = dragState;
-        current.node.fx = null;
-        current.node.fy = null;
-        current.node.vx = 0;
-        current.node.vy = 0;
+
+        // Delegate to layout strategy for drag end handling
+        layoutStrategy.handleDragEnd(current.node);
 
         if (canvas.releasePointerCapture) {
             try {
@@ -354,7 +498,6 @@ export function createGraphController(rootElement, options = {}) {
 
         dragState = null;
         isDraggingNode = false;
-        simulation.alphaTarget(0);
     };
 
     const handlePointerDown = (event) => {
@@ -371,7 +514,7 @@ export function createGraphController(rootElement, options = {}) {
             return;
         }
 
-        layoutManager.disableAutoCenter();
+        layoutStrategy.disableAutoCenter();
 
         // Show/hide tooltip for selection feedback
         const currentTarget = tooltipManager.getTargetData();
@@ -406,10 +549,8 @@ export function createGraphController(rootElement, options = {}) {
             dragged: false,
         };
 
-        targetNode.fx = x;
-        targetNode.fy = y;
-        targetNode.vx = 0;
-        targetNode.vy = 0;
+        // Delegate initial drag position to layout strategy
+        layoutStrategy.handleDrag(targetNode, x, y);
 
         try {
             canvas.setPointerCapture(event.pointerId);
@@ -428,12 +569,6 @@ export function createGraphController(rootElement, options = {}) {
         if (dragState && event.pointerId === dragState.pointerId) {
             event.preventDefault();
             const { x, y } = toGraphCoordinates(event);
-            dragState.node.fx = x;
-            dragState.node.fy = y;
-            dragState.node.vx = 0;
-            dragState.node.vy = 0;
-            dragState.node.x = x;
-            dragState.node.y = y;
 
             if (!dragState.dragged) {
                 const distance = Math.hypot(
@@ -447,9 +582,12 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (dragState.dragged) {
-                simulation.alphaTarget(DRAG_ALPHA_TARGET).restart();
+                // Delegate drag handling to layout strategy
+                const needsRender = layoutStrategy.handleDrag(dragState.node, x, y);
+                if (needsRender) {
+                    render();
+                }
             }
-            render();
             return;
         }
 
@@ -483,11 +621,14 @@ export function createGraphController(rootElement, options = {}) {
     d3.select(canvas).call(zoom).on("dblclick.zoom", null);
 
     const resize = () => {
-        const parent = canvas.parentElement;
-        const cssWidth =
-            (parent?.clientWidth ?? window.innerWidth) || window.innerWidth;
-        const cssHeight =
-            (parent?.clientHeight ?? window.innerHeight) || window.innerHeight;
+        // Read the canvas's own flex-computed size (not the parent's) to avoid
+        // a feedback loop: #root is a column flex container whose height is
+        // determined by body's cross-axis stretch.  Reading parent.clientHeight
+        // and writing it back as canvas.style.height would make #root grow on
+        // every call.  Fall back to window dimensions on the very first call
+        // before the browser has completed layout.
+        const cssWidth = canvas.clientWidth || window.innerWidth;
+        const cssHeight = canvas.clientHeight || window.innerHeight;
         const dpr = window.devicePixelRatio || 1;
 
         // Guard against invalid dimensions that would put canvas in error state
@@ -507,12 +648,13 @@ export function createGraphController(rootElement, options = {}) {
         viewportWidth = cssWidth;
         viewportHeight = cssHeight;
 
+        // Set the drawing buffer size (high-DPI).  Do NOT set
+        // canvas.style.width/height — the CSS rules (flex: 1; width: 100%)
+        // handle display sizing and must not be overridden by inline styles.
         canvas.width = physicalWidth;
         canvas.height = physicalHeight;
-        canvas.style.width = `${cssWidth}px`;
-        canvas.style.height = `${cssHeight}px`;
 
-        layoutManager.updateViewport(cssWidth, cssHeight);
+        layoutStrategy.updateViewport(cssWidth, cssHeight);
         render();
     };
 
@@ -666,41 +808,37 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     /**
-     * Applies reconciled nodes and links to the D3 simulation and handles layout logic.
-     * Manages initial layout, auto-centering, and simulation restart behavior.
-     *
-     * @param {boolean} structureChanged Whether any nodes or links were added/removed/changed.
-     * @param {boolean} initialComplete Whether the initial layout has been completed.
-     * @param {boolean} commitStructureChanged Whether commit nodes changed.
-     * @param {import("./types.js").GraphNode[]} allNodes Combined commit + branch nodes.
-     * @param {Array} allLinks Combined commit + branch links.
-     * @param {Array<{branchNode: import("./types.js").GraphNode, targetNode: import("./types.js").GraphNode}>} branchAlignments Pairs for positioning.
+     * Rebuilds the compound filter predicate from the current searchQuery and
+     * filterState stored on state, then applies dimming to all current nodes.
+     * Call this whenever either field changes.
      */
-    function applySimulationUpdate(
-        structureChanged,
-        initialComplete,
-        commitStructureChanged,
-        allNodes,
-        allLinks,
-        branchAlignments,
-    ) {
-        const hasCommits = allNodes.some((node) => node.type === "commit");
+    function rebuildAndApplyPredicate() {
+        applyDimmingFromPredicate();
+        render();
+    }
 
-        if (!initialComplete && hasCommits) {
-            layoutManager.applyTimelineLayout(allNodes);
-            snapBranchesToTargets(branchAlignments);
-            layoutManager.requestAutoCenter();
-            centerOnLatestCommit();
-            initialLayoutComplete = true;
-            layoutManager.restartSimulation(1.0);
-        } else {
-            snapBranchesToTargets(branchAlignments);
-            if (commitStructureChanged) {
-                layoutManager.requestAutoCenter();
-            }
+    /**
+     * Iterates all nodes and sets node.dimmed according to the active compound
+     * predicate (A2 search + A3 structural filters).  When no criteria are active,
+     * buildFilterPredicate returns null and all nodes are un-dimmed without looping.
+     *
+     * This is called after every delta so that branch/commit data inside the
+     * predicate closure is always current (the BFS reachable set rebuilds here).
+     */
+    function applyDimmingFromPredicate() {
+        // Rebuild predicate so it captures the latest branches/commits/stashes.
+        state.filterPredicate = buildFilterPredicate(
+            state.searchState,
+            state.filterState,
+            branches,
+            commits,
+            state.stashes,
+        );
+        const predicate = state.filterPredicate;
+        for (const node of nodes) {
+            // null predicate = no active filter → show everything at full opacity.
+            node.dimmed = predicate !== null ? !predicate(node) : false;
         }
-
-        layoutManager.boostSimulation(structureChanged);
     }
 
     /**
@@ -757,8 +895,13 @@ export function createGraphController(rootElement, options = {}) {
             hideTooltip();
         }
 
-        simulation.nodes(nodes);
-        simulation.force("link").links(links);
+        // Snap branch nodes to their target commits before updating layout strategy
+        snapBranchesToTargets(branchReconciliation.alignments);
+
+        // Apply the active compound predicate (A2 search + A3 filters) to set
+        // node.dimmed.  This runs after reconciliation so newly-created nodes are
+        // included, and rebuilds the predicate so BFS data is never stale.
+        applyDimmingFromPredicate();
 
         const linkStructureChanged = previousLinkCount !== allLinks.length;
         const structureChanged =
@@ -766,14 +909,20 @@ export function createGraphController(rootElement, options = {}) {
             branchReconciliation.changed ||
             linkStructureChanged;
 
-        applySimulationUpdate(
+        // Delegate layout updates to the strategy
+        layoutStrategy.updateGraph(
+            nodes,
+            links,
+            commits,
+            branches,
+            { width: viewportWidth, height: viewportHeight },
             structureChanged,
-            initialLayoutComplete,
-            commitReconciliation.changed,
-            allNodes,
-            allLinks,
-            branchReconciliation.alignments,
         );
+
+        // Center on latest commit if auto-centering is requested
+        if (layoutStrategy.shouldAutoCenter()) {
+            centerOnLatestCommit();
+        }
     }
 
     function createCommitNode(hash, anchorNode) {
@@ -809,6 +958,9 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function snapBranchesToTargets(pairs) {
+        // Track per-commit branch count for stacking in lane mode
+        const perCommitCount = new Map();
+
         for (const pair of pairs) {
             if (!pair) continue;
             const { branchNode, targetNode } = pair;
@@ -816,11 +968,29 @@ export function createGraphController(rootElement, options = {}) {
                 continue;
             }
 
-            const baseX = targetNode.x ?? 0;
-            const baseY = targetNode.y ?? 0;
+            if (state.layoutMode === "lane") {
+                // In lane mode, position branches based on lane structure, not current commit position
+                const laneIndex = targetNode.laneIndex ?? 0;
+                const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
 
-            branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
-            branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
+                // Stack multiple branches on the same commit vertically
+                const key = targetNode.hash ?? laneIndex;
+                const index = perCommitCount.get(key) || 0;
+                perCommitCount.set(key, index + 1);
+
+                // Position branch above its commit (negative Y offset), stacked if multiple
+                const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
+                branchNode.x = laneX - BRANCH_NODE_OFFSET_X;
+                branchNode.y = (targetNode.y ?? 0) - BRANCH_NODE_OFFSET_Y * 4 - stackOffset;
+            } else {
+                // Force mode: small jitter is fine since simulation will settle
+                const baseX = targetNode.x ?? 0;
+                const baseY = targetNode.y ?? 0;
+                const jitter = (range) => (Math.random() - 0.5) * range;
+                branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
+                branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
+            }
+
             branchNode.vx = 0;
             branchNode.vy = 0;
         }
@@ -872,9 +1042,9 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function tick() {
-        if (layoutManager.shouldAutoCenter()) {
+        // Auto-centering is handled in updateGraph now
+        if (layoutStrategy.shouldAutoCenter()) {
             centerOnLatestCommit();
-            layoutManager.checkAutoCenterStop(simulation.alpha());
         }
         render();
     }
@@ -891,7 +1061,9 @@ export function createGraphController(rootElement, options = {}) {
         window.removeEventListener("resize", resize);
         resizeObserver?.disconnect();
         d3.select(canvas).on(".zoom", null);
-        simulation.stop();
+        // Deactivate both strategies to clean up resources
+        forceStrategy.deactivate();
+        laneStrategy.deactivate();
         removeThemeWatcher?.();
         releaseDrag();
         canvas.removeEventListener("pointerdown", pointerHandlers.down);
@@ -935,10 +1107,7 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         // Sync HEAD, tags, and stashes from every delta.
-        // Keep headHash (used by the HEAD button) and state.headHash (used by the
-        // renderer) in lockstep so they never refer to different commits.
         if (delta.headHash) {
-            headHash = delta.headHash;
             state.headHash = delta.headHash;
         }
         if (delta.tags) {
@@ -950,6 +1119,15 @@ export function createGraphController(rootElement, options = {}) {
 
         updateGraph();
     }
+
+    // Activate the layout strategy with initial empty state
+    layoutStrategy.activate(
+        nodes,
+        links,
+        commits,
+        branches,
+        { width: viewportWidth, height: viewportHeight },
+    );
 
     return {
         applyDelta,
@@ -975,7 +1153,7 @@ export function createGraphController(rootElement, options = {}) {
          */
         selectAndCenter: selectAndCenterCommit,
         /** Returns the current HEAD hash or null when unknown. */
-        getHeadHash: () => headHash,
+        getHeadHash: () => state.headHash || null,
         /**
          * Updates the tracked HEAD commit hash.
          * Called by app.js from the onHead WebSocket callback so the HEAD button
@@ -984,8 +1162,64 @@ export function createGraphController(rootElement, options = {}) {
          * @param {string | null} hash Current HEAD commit hash.
          */
         setHeadHash: (hash) => {
-            headHash = hash || null;
             state.headHash = hash || "";
         },
+        /**
+         * Updates the active structured search state and immediately re-applies
+         * the compound filter predicate (A2 search + A3 structural filters).
+         * Pass null to clear the search while keeping other filters active.
+         *
+         * The searchState object is produced by search.js from searchQuery.js
+         * and carries both the parsed query and the compiled matcher function.
+         *
+         * @param {{ query: import("./types.js").SearchQuery, matcher: ((commit: import("./types.js").GraphCommit) => boolean) | null } | null} searchState
+         */
+        setSearchState: (searchState) => {
+            state.searchState = searchState ?? null;
+            rebuildAndApplyPredicate();
+        },
+        /**
+         * Returns the number of commit nodes currently NOT dimmed (i.e. passing
+         * all active search and structural filters).  Used by the search UI to
+         * display "N / M" result counts.
+         *
+         * @returns {{ matching: number, total: number }}
+         */
+        getCommitCount: () => {
+            let total = 0;
+            let matching = 0;
+            for (const node of nodes) {
+                if (node.type !== "commit") continue;
+                total++;
+                if (!node.dimmed) matching++;
+            }
+            return { matching, total };
+        },
+        /**
+         * Updates the A3 structural filter state and immediately re-applies the
+         * compound predicate.  Called by graphFilters.js onChange callback.
+         *
+         * @param {{ hideRemotes: boolean, hideMerges: boolean, hideStashes: boolean, focusBranch: string }} filterState
+         */
+        setFilterState: (filterState) => {
+            state.filterState = { ...filterState };
+            rebuildAndApplyPredicate();
+        },
+        /**
+         * Returns the live branches Map so the filter panel can populate its
+         * branch-focus dropdown with current branch names without going through
+         * a full delta cycle.
+         *
+         * @returns {Map<string, string>} branch-name → commit-hash map.
+         */
+        getBranches: () => branches,
+        /**
+         * Provides access to the live commits Map for external components such
+         * as the search component that need to scan commit data without going
+         * through the full applyDelta pathway.
+         *
+         * @returns {Map<string, import("./types.js").GraphCommit>}
+         */
+        getCommits: () => commits,
     };
 }

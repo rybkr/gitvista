@@ -4,26 +4,20 @@ import (
 	"strings"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"log"
 )
 
-// updateRepository reloads repository state and broadcasts changes to clients
-// Called by filesystem watcher when Git operations are detected
+// updateRepository reloads repository state and broadcasts changes to clients.
 func (s *Server) updateRepository() {
-	log.Println("Updating repository...")
+	s.logger.Debug("Updating repository")
 
 	s.cacheMu.RLock()
 	oldRepo := s.cached.repo
-	s.cacheMu.RUnlock()
-
-	// Read GitDir under the read lock to avoid a data race with concurrent updates.
-	s.cacheMu.RLock()
-	gitDir := s.cached.repo.GitDir()
+	gitDir := oldRepo.GitDir()
 	s.cacheMu.RUnlock()
 
 	newRepo, err := gitcore.NewRepository(gitDir)
 	if err != nil {
-		log.Printf("ERROR: Failed to reload repository: %v", err)
+		s.logger.Error("Failed to reload repository", "err", err)
 		return
 	}
 
@@ -31,7 +25,6 @@ func (s *Server) updateRepository() {
 	if oldRepo != nil {
 		delta = newRepo.Diff(oldRepo)
 	} else {
-		// First update: treat everything as new
 		delta = newRepo.Diff(&gitcore.Repository{})
 	}
 
@@ -41,39 +34,25 @@ func (s *Server) updateRepository() {
 
 	status := getWorkingTreeStatus(newRepo.WorkDir())
 
-	// Check if HEAD changed (detached state, branch switch, or commit)
 	var headInfo *HeadInfo
-	if oldRepo != nil {
-		oldHead := oldRepo.Head()
-		oldRef := oldRepo.HeadRef()
-		oldDetached := oldRepo.HeadDetached()
-
-		newHead := newRepo.Head()
-		newRef := newRepo.HeadRef()
-		newDetached := newRepo.HeadDetached()
-
-		if oldHead != newHead || oldRef != newRef || oldDetached != newDetached {
-			headInfo = buildHeadInfo(newRepo)
-		}
-	} else {
-		// First update: always send HEAD info
+	headChanged := oldRepo == nil ||
+		oldRepo.Head() != newRepo.Head() ||
+		oldRepo.HeadRef() != newRepo.HeadRef() ||
+		oldRepo.HeadDetached() != newRepo.HeadDetached()
+	if headChanged {
 		headInfo = buildHeadInfo(newRepo)
 	}
 
 	if !delta.IsEmpty() || status != nil || headInfo != nil {
 		s.broadcastUpdate(UpdateMessage{Delta: delta, Status: status, Head: headInfo})
 	} else {
-		log.Println("No changes detected")
+		s.logger.Debug("No changes detected after repository reload")
 	}
 }
 
-// buildHeadInfo constructs a HeadInfo struct from the current repository state.
 func buildHeadInfo(repo *gitcore.Repository) *HeadInfo {
-	head := repo.Head()
 	headRef := repo.HeadRef()
-	isDetached := repo.HeadDetached()
 
-	// Extract branch name from ref
 	branchName := ""
 	if headRef != "" {
 		if name, ok := strings.CutPrefix(headRef, "refs/heads/"); ok {
@@ -81,7 +60,6 @@ func buildHeadInfo(repo *gitcore.Repository) *HeadInfo {
 		}
 	}
 
-	// Get tag names and select recent tags (up to 5)
 	tagNames := repo.TagNames()
 	recentTags := tagNames
 	if len(tagNames) > 5 {
@@ -89,10 +67,10 @@ func buildHeadInfo(repo *gitcore.Repository) *HeadInfo {
 	}
 
 	return &HeadInfo{
-		Hash:        string(head),
+		Hash:        string(repo.Head()),
 		Ref:         headRef,
 		BranchName:  branchName,
-		IsDetached:  isDetached,
+		IsDetached:  repo.HeadDetached(),
 		CommitCount: len(repo.Commits()),
 		BranchCount: len(repo.Branches()),
 		TagCount:    len(tagNames),
