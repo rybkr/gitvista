@@ -7,7 +7,21 @@
  *
  * Expand-context: "↕ Expand context" buttons appear between hunks where hidden
  * lines exist. Each click re-fetches the diff with context increased by 5 lines.
+ *
+ * Syntax highlighting:
+ *   highlight.js is loaded eagerly at module init time via the shared hljs.js
+ *   loader so it is almost always already resolved by the time show() is called.
+ *   Each diff line has its +/-/space prefix stripped, the remainder is passed
+ *   to hljs.highlight(), and the prefix is re-prepended as a plain text node so
+ *   the token parser never sees it.  Falls back to plain textContent if hljs
+ *   fails to load or throws for an unrecognised language.
  */
+
+import { loadHighlightJs, getLanguageFromPath } from "./hljs.js";
+
+// Kick off CDN loading immediately so the script is ready before the first
+// show() call.  This is a module-level side effect that is intentional.
+const hljsReady = loadHighlightJs();
 
 const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -62,8 +76,12 @@ export function createDiffContentViewer() {
 
     /**
      * Render a single diff line with dual line number gutters.
+     *
+     * @param {Object}      line     - Line object from the API
+     * @param {object|null} hljs     - Resolved hljs object, or null if unavailable
+     * @param {string|null} language - hljs language name derived from the file path
      */
-    function renderLine(line) {
+    function renderLine(line, hljs, language) {
         const lineEl = document.createElement("div");
 
         // Determine line type class
@@ -89,10 +107,55 @@ export function createDiffContentViewer() {
         newNum.textContent = line.newLine ? String(line.newLine) : "";
         lineEl.appendChild(newNum);
 
-        // Line content
+        // Line content with optional syntax highlighting
         const content = document.createElement("span");
         content.className = "line-content";
-        content.textContent = line.content;
+
+        // The raw line from the API starts with a single +, -, or space prefix
+        // character that indicates the diff operation.  We must NOT pass this
+        // character to hljs — it would confuse the parser for most languages
+        // (e.g. a leading + is valid in some syntaxes but not others, and the
+        // space prefix would shift indentation on context lines).  Instead we
+        // strip the prefix, highlight the bare source text, then re-attach the
+        // prefix as a separate plain text node so it retains its own styling.
+        const rawContent = line.content ?? "";
+        const prefix     = rawContent.length > 0 ? rawContent[0] : "";
+        const source     = rawContent.length > 1 ? rawContent.slice(1) : "";
+
+        let highlighted = false;
+
+        if (hljs && language && source.length > 0) {
+            try {
+                const result = hljs.highlight(source, {
+                    language,
+                    ignoreIllegals: true, // Don't throw on tokens outside the grammar
+                });
+
+                // Prefix node — kept outside the highlighted span so it is never
+                // touched by the hljs CSS classes
+                const prefixNode = document.createElement("span");
+                prefixNode.className = "diff-prefix";
+                prefixNode.textContent = prefix;
+                content.appendChild(prefixNode);
+
+                // Highlighted source — innerHTML is safe here because the HTML
+                // comes from hljs itself, not from user-controlled input
+                const codeNode = document.createElement("span");
+                codeNode.className = "diff-source";
+                codeNode.innerHTML = result.value;
+                content.appendChild(codeNode);
+
+                highlighted = true;
+            } catch {
+                // Fall through to plain-text path below
+            }
+        }
+
+        if (!highlighted) {
+            // Graceful fallback: render as plain text, no XSS risk
+            content.textContent = rawContent;
+        }
+
         lineEl.appendChild(content);
 
         return lineEl;
@@ -100,8 +163,12 @@ export function createDiffContentViewer() {
 
     /**
      * Render a complete hunk with header and lines.
+     *
+     * @param {Object}      hunk     - Hunk object from the API
+     * @param {object|null} hljs     - Resolved hljs object, or null if unavailable
+     * @param {string|null} language - hljs language name
      */
-    function renderHunk(hunk) {
+    function renderHunk(hunk, hljs, language) {
         const hunkEl = document.createElement("div");
         hunkEl.className = "diff-hunk";
 
@@ -110,7 +177,7 @@ export function createDiffContentViewer() {
 
         // All lines in the hunk
         for (const line of hunk.lines) {
-            hunkEl.appendChild(renderLine(line));
+            hunkEl.appendChild(renderLine(line, hljs, language));
         }
 
         return hunkEl;
@@ -178,6 +245,11 @@ export function createDiffContentViewer() {
     /**
      * Display a FileDiff object.
      *
+     * This function is async so it can await hljsReady without blocking the
+     * initial render.  In practice hljsReady resolves almost instantly after
+     * the first call because the module-level loadHighlightJs() kicks off the
+     * CDN request before show() is ever invoked.
+     *
      * @param {Object} fileDiff - The file diff object from the API
      * @param {string} fileDiff.path - File path
      * @param {string} fileDiff.status - File status (added/modified/deleted)
@@ -185,7 +257,12 @@ export function createDiffContentViewer() {
      * @param {Array} fileDiff.hunks - Array of diff hunks
      * @param {boolean} fileDiff.truncated - Whether diff was truncated
      */
-    function show(fileDiff) {
+    async function show(fileDiff) {
+        // Resolve hljs — already in-flight from module init, so this almost
+        // never waits more than a few milliseconds on a warm page.
+        const hljs     = await hljsReady;
+        const language = getLanguageFromPath(fileDiff.path);
+
         el.style.display = "flex";
         el.innerHTML = "";
 
@@ -260,7 +337,7 @@ export function createDiffContentViewer() {
                     }
                 }
 
-                hunksContainer.appendChild(renderHunk(hunk));
+                hunksContainer.appendChild(renderHunk(hunk, hljs, language));
             }
 
             body.appendChild(hunksContainer);

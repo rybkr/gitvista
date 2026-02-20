@@ -2401,6 +2401,43 @@ canvas {
     }
 }
 
+/* ── Syntax highlighting inside diff lines ── */
+
+/*
+ * .diff-prefix: the +/-/space character at the start of each diff line.
+ * Displayed in a fixed-width span so it never gets syntax-tokenised.
+ */
+.diff-prefix {
+    display: inline;
+    /* Inherit the monospace font from the parent .line-content */
+    user-select: none;
+    /* Slightly dimmed so the operator character doesn't compete with code */
+    opacity: 0.6;
+}
+
+/*
+ * .diff-source: the container for the hljs-highlighted code fragment.
+ * Inline so it flows naturally after the prefix span.
+ */
+.diff-source {
+    display: inline;
+}
+
+/*
+ * Reduce hljs token intensity inside diff lines.
+ *
+ * In a unified diff the diff status (green/red background) is the primary
+ * visual signal.  Syntax colors are secondary, so we pull them back slightly.
+ * Using opacity rather than desaturation preserves readability while ensuring
+ * the diff background tint always reads through.
+ *
+ * The attribute selector [class^="hljs-"] matches all hljs token spans
+ * regardless of which theme is active.
+ */
+.diff-line .line-content [class^="hljs-"] {
+    opacity: 0.88;
+}
+
 /* File notices */
 .diff-file-notice {
     padding: 12px 12px;

@@ -7,36 +7,11 @@
  */
 
 import { getFileIcon } from "./fileIcons.js";
+import { loadHighlightJs } from "./hljs.js";
 
 const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
-
-const HLJS_CSS = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css";
-const HLJS_JS  = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js";
-
-let hljsPromise = null;
-
-function loadHighlightJs() {
-    if (hljsPromise) return hljsPromise;
-    hljsPromise = new Promise((resolve) => {
-        // Inject CSS once
-        if (!document.querySelector(`link[href="${HLJS_CSS}"]`)) {
-            const link = document.createElement("link");
-            link.rel = "stylesheet";
-            link.href = HLJS_CSS;
-            document.head.appendChild(link);
-        }
-        // Already loaded
-        if (window.hljs) { resolve(window.hljs); return; }
-        const script = document.createElement("script");
-        script.src = HLJS_JS;
-        script.onload = () => resolve(window.hljs);
-        script.onerror = () => resolve(null); // Fail gracefully
-        document.head.appendChild(script);
-    });
-    return hljsPromise;
-}
 
 export function createFileContentViewer() {
     const el = document.createElement("div");

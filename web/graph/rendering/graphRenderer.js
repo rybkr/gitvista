@@ -429,8 +429,10 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderNormalCommit(node, radius) {
-        // Use lane color if present (lane layout mode), otherwise use default palette
-        this.ctx.fillStyle = node.laneColor || this.palette.node;
+        // Lane mode: use lane color. Force mode: use author-derived color.
+        const authorEmail = node.commit?.author?.email;
+        this.ctx.fillStyle = node.laneColor
+            || (authorEmail ? getAuthorColor(authorEmail) : this.palette.node);
         this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
