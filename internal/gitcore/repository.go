@@ -8,6 +8,8 @@ import (
 	"sync"
 )
 
+// Repository represents a Git repository, providing access to its commits,
+// branches, tags, and other metadata.
 type Repository struct {
 	gitDir  string
 	workDir string
@@ -56,10 +58,16 @@ func NewRepository(path string) (*Repository, error) {
 	return repo, nil
 }
 
-func (r *Repository) Name() string    { return filepath.Base(r.workDir) }
-func (r *Repository) GitDir() string   { return r.gitDir }
-func (r *Repository) WorkDir() string  { return r.workDir }
+// Name returns the base name of the repository's working directory.
+func (r *Repository) Name() string { return filepath.Base(r.workDir) }
 
+// GitDir returns the path to the repository's .git directory.
+func (r *Repository) GitDir() string { return r.gitDir }
+
+// WorkDir returns the path to the repository's working directory.
+func (r *Repository) WorkDir() string { return r.workDir }
+
+// Commits returns a map of all commits in the repository keyed by their hash.
 func (r *Repository) Commits() map[Hash]*Commit {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -70,6 +78,7 @@ func (r *Repository) Commits() map[Hash]*Commit {
 	return result
 }
 
+// Branches returns a map of branch names to their tip commit hashes.
 func (r *Repository) Branches() map[string]Hash {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -82,6 +91,7 @@ func (r *Repository) Branches() map[string]Hash {
 	return result
 }
 
+// Head returns the hash of the current HEAD commit.
 func (r *Repository) Head() Hash {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -95,6 +105,7 @@ func (r *Repository) HeadRef() string {
 	return r.headRef
 }
 
+// HeadDetached reports whether the repository is in a detached HEAD state.
 func (r *Repository) HeadDetached() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -131,6 +142,7 @@ func (r *Repository) Remotes() map[string]string {
 	return parseRemotesFromConfig(string(content))
 }
 
+// TagNames returns a list of all tag names in the repository.
 func (r *Repository) TagNames() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -169,12 +181,14 @@ func (r *Repository) Tags() map[string]string {
 	return result
 }
 
+// Stashes returns all stash entries in the repository.
 func (r *Repository) Stashes() []StashEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.stashes
 }
 
+// GetTree retrieves a Tree object by its hash.
 func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	object, err := r.readObject(treeHash)
 	if err != nil {
@@ -189,6 +203,7 @@ func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 	return tree, nil
 }
 
+// GetBlob retrieves raw blob data by its hash.
 func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 	objectData, objectType, err := r.readObjectData(blobHash)
 	if err != nil {
@@ -339,6 +354,8 @@ func handleGitFile(gitFilePath string, workDir string) (string, string, error) {
 	return gitDir, workDir, nil
 }
 
+// validateGitDirectory checks that gitDir exists, is a directory, and contains
+// the expected Git internals (objects, refs, HEAD).
 func validateGitDirectory(gitDir string) error {
 	info, err := os.Stat(gitDir)
 	if err != nil {
@@ -359,6 +376,8 @@ func validateGitDirectory(gitDir string) error {
 	return nil
 }
 
+// parseRemotesFromConfig parses a Git config file and returns a map of remote
+// names to their URLs, with credentials stripped.
 func parseRemotesFromConfig(config string) map[string]string {
 	remotes := make(map[string]string)
 	var currentRemote string
@@ -390,6 +409,8 @@ func parseRemotesFromConfig(config string) map[string]string {
 	return remotes
 }
 
+// stripCredentials removes embedded credentials from HTTP/HTTPS URLs,
+// returning the URL with only the host and path portions intact.
 func stripCredentials(url string) string {
 	for _, scheme := range []string{"https://", "http://"} {
 		if strings.HasPrefix(url, scheme) && strings.Contains(url, "@") {

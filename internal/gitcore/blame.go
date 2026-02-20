@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// BlameEntry represents the commit, message, author, and time of a change to be blamed.
 type BlameEntry struct {
 	CommitHash    Hash      `json:"commitHash"`
 	CommitMessage string    `json:"commitMessage"`

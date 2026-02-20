@@ -252,7 +252,7 @@ func detectRenames(entries []DiffEntry) []DiffEntry {
 }
 
 func isTreeEntry(entry TreeEntry) bool {
-	return entry.Type == "tree" || entry.Mode == "040000" || entry.Mode == "40000"
+	return entry.Type == objectTypeTree || entry.Mode == "040000" || entry.Mode == "40000"
 }
 
 func isSubmodule(entry TreeEntry) bool {
@@ -636,10 +636,10 @@ func buildHunks(oldLines, newLines []string, edits []edit, context int) []DiffHu
 // finalizeHunk computes the OldLines and NewLines counts for a hunk.
 func finalizeHunk(hunk *DiffHunk) {
 	for _, line := range hunk.Lines {
-		if line.Type == "context" || line.Type == "deletion" {
+		if line.Type == LineTypeContext || line.Type == LineTypeDeletion {
 			hunk.OldLines++
 		}
-		if line.Type == "context" || line.Type == "addition" {
+		if line.Type == LineTypeContext || line.Type == LineTypeAddition {
 			hunk.NewLines++
 		}
 	}

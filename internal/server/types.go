@@ -13,14 +13,14 @@ type UpdateMessage struct {
 
 // HeadInfo contains information about the current HEAD state.
 type HeadInfo struct {
-	Hash         string `json:"hash"`
-	Ref          string `json:"ref"`
-	BranchName   string `json:"branchName"`
-	IsDetached   bool   `json:"isDetached"`
-	CommitCount  int    `json:"commitCount"`
-	BranchCount  int    `json:"branchCount"`
-	TagCount     int    `json:"tagCount"`
-	Description  string `json:"description"`
-	Remotes      map[string]string `json:"remotes"`
-	RecentTags   []string `json:"recentTags"`
+	Hash        string            `json:"hash"`
+	Ref         string            `json:"ref"`
+	BranchName  string            `json:"branchName"`
+	IsDetached  bool              `json:"isDetached"`
+	CommitCount int               `json:"commitCount"`
+	BranchCount int               `json:"branchCount"`
+	TagCount    int               `json:"tagCount"`
+	Description string            `json:"description"`
+	Remotes     map[string]string `json:"remotes"`
+	RecentTags  []string          `json:"recentTags"`
 }

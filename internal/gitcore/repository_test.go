@@ -38,7 +38,7 @@ func TestRepositoryDiff(t *testing.T) {
 	newRepo := &Repository{
 		commits: []*Commit{commit1, commit2, commit3},
 		refs: map[string]Hash{
-			"refs/heads/main":   commit3.ID,
+			"refs/heads/main":    commit3.ID,
 			"refs/heads/develop": commit2.ID,
 		},
 	}
@@ -319,7 +319,7 @@ func TestParseRemotesFromConfig(t *testing.T) {
 			},
 		},
 		{
-			name:   "no remotes",
+			name: "no remotes",
 			config: `[core]
 	repositoryformatversion = 0`,
 			want: map[string]string{},

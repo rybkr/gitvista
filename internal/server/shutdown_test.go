@@ -45,14 +45,14 @@ func TestShutdown_BeforeStart(t *testing.T) {
 }
 
 // TestShutdown_CancelsContext verifies that after Shutdown() the server's internal
-// context is cancelled, so goroutines that select on ctx.Done() will be unblocked.
+// context is canceled, so goroutines that select on ctx.Done() will be unblocked.
 func TestShutdown_CancelsContext(t *testing.T) {
 	s := newTestServer(t)
 
 	// Context must be live before shutdown.
 	select {
 	case <-s.ctx.Done():
-		t.Fatal("context was already cancelled before Shutdown()")
+		t.Fatal("context was already canceled before Shutdown()")
 	default:
 	}
 
@@ -62,7 +62,7 @@ func TestShutdown_CancelsContext(t *testing.T) {
 	case <-s.ctx.Done():
 		// expected
 	case <-time.After(time.Second):
-		t.Fatal("context was not cancelled after Shutdown()")
+		t.Fatal("context was not canceled after Shutdown()")
 	}
 }
 
@@ -107,14 +107,14 @@ func TestShutdown_EmptyClientsMap(t *testing.T) {
 
 // TestShutdown_WaitGroupReachesZero verifies that the internal WaitGroup finishes
 // after Shutdown() completes. This ensures that the handleBroadcast goroutine
-// (which calls wg.Done()) exits cleanly when the context is cancelled.
+// (which calls wg.Done()) exits cleanly when the context is canceled.
 func TestShutdown_WaitGroupReachesZero(t *testing.T) {
 	s := newTestServer(t)
 
 	// Prime the WaitGroup as Start() does for handleBroadcast.
 	s.wg.Add(1)
 	go func() {
-		// Simulate handleBroadcast: block until context is cancelled, then exit.
+		// Simulate handleBroadcast: block until context is canceled, then exit.
 		<-s.ctx.Done()
 		s.wg.Done()
 	}()

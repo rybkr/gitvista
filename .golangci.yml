@@ -1,11 +1,14 @@
 version: "2"
 
 run:
-  timeout: 5m
+  timeout: 60s
   tests: true
 
 linters:
   enable:
+    - errcheck
+    - govet
+    - staticcheck
     - misspell
     - revive
     - gosec
@@ -13,6 +16,10 @@ linters:
     - unparam
     - goconst
     - bodyclose
+    - noctx
+    - nilerr
+    - testifylint
+    - godot
 
   settings:
     errcheck:
@@ -27,8 +34,10 @@ linters:
       rules:
         - name: exported
           disabled: false
+          severity: warning
         - name: unexported-return
           disabled: true
+          severity: warning
 
     gosec:
       excludes:

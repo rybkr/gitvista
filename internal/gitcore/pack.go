@@ -86,14 +86,14 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 		return nil, err
 	}
 	defer func() {
-		if err := file.Close(); err != nil {
-			log.Printf("failed to close pack index file: %v", err)
+		if _err := file.Close(); _err != nil {
+			log.Printf("failed to close pack index file: %v", _err)
 		}
 	}()
 
 	var header [4]byte
-	if _, err := io.ReadFull(file, header[:]); err != nil {
-		return nil, fmt.Errorf("failed to read index header: %w", err)
+	if _, _err := io.ReadFull(file, header[:]); _err != nil {
+		return nil, fmt.Errorf("failed to read index header: %w", _err)
 	}
 
 	packPath := strings.Replace(idxPath, ".idx", ".pack", 1)
@@ -102,8 +102,8 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 	if header[0] == packIndexV2Magic0 && header[1] == packIndexV2Magic1 && header[2] == packIndexV2Magic2 && header[3] == packIndexV2Magic3 {
 		idx, err = loadPackIndexV2(file, packPath)
 	} else {
-		if _, err := file.Seek(0, io.SeekStart); err != nil {
-			return nil, fmt.Errorf("failed to seek to beginning: %w", err)
+		if _, _err := file.Seek(0, io.SeekStart); _err != nil {
+			return nil, fmt.Errorf("failed to seek to beginning: %w", _err)
 		}
 		idx, err = loadPackIndexV1(file, packPath)
 	}
@@ -319,15 +319,15 @@ func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResol
 	}
 
 	basePos := objStart - offset
-	if _, err := rs.Seek(basePos, io.SeekStart); err != nil {
-		return nil, 0, fmt.Errorf("failed to seek to base object at %d: %w", basePos, err)
+	if _, _err := rs.Seek(basePos, io.SeekStart); _err != nil {
+		return nil, 0, fmt.Errorf("failed to seek to base object at %d: %w", basePos, _err)
 	}
 	baseData, baseType, err := readPackObject(rs, resolve)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read base object at %d (type %d): %w", basePos, baseType, err)
 	}
-	if _, err := rs.Seek(afterDelta, io.SeekStart); err != nil {
-		return nil, 0, err
+	if _, _err := rs.Seek(afterDelta, io.SeekStart); _err != nil {
+		return nil, 0, _err
 	}
 
 	result, err := applyDelta(baseData, deltaData)
@@ -400,7 +400,7 @@ func applyDelta(base []byte, delta []byte) ([]byte, error) {
 			return nil, err
 		}
 
-			if cmd[0]&0x80 != 0 {
+		if cmd[0]&0x80 != 0 {
 			// Copy from base object
 			var offset, size int64
 

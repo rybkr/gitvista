@@ -135,8 +135,8 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 		return "", nil, err
 	}
 	defer func() {
-		if err := file.Close(); err != nil {
-			log.Printf("failed to close loose object file: %v", err)
+		if _err := file.Close(); _err != nil {
+			log.Printf("failed to close loose object file: %v", _err)
 		}
 	}()
 

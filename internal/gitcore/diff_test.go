@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// Helper to create a test repository with synthetic objects
-func setupTestRepo(t *testing.T) (*Repository, string) {
+// setupTestRepo is a helper to create a test repository with synthetic objects.
+func setupTestRepo(t *testing.T) *Repository {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -31,17 +31,17 @@ func setupTestRepo(t *testing.T) (*Repository, string) {
 	}
 
 	repo := &Repository{
-		gitDir:       gitDir,
-		workDir:      tmpDir,
-		packIndices:  make([]*PackIndex, 0),
-		refs:         make(map[string]Hash),
-		commits:      make([]*Commit, 0),
+		gitDir:      gitDir,
+		workDir:     tmpDir,
+		packIndices: make([]*PackIndex, 0),
+		refs:        make(map[string]Hash),
+		commits:     make([]*Commit, 0),
 	}
 
-	return repo, gitDir
+	return repo
 }
 
-// Helper to create a loose blob object
+// createBlob is a helper to create a loose blob object.
 func createBlob(t *testing.T, repo *Repository, content []byte) Hash {
 	t.Helper()
 
@@ -77,7 +77,7 @@ func createBlob(t *testing.T, repo *Repository, content []byte) Hash {
 	return hashObj
 }
 
-// Helper to create a tree object
+// createTree is a helper to create a tree object.
 func createTree(t *testing.T, repo *Repository, entries []TreeEntry) Hash {
 	t.Helper()
 
@@ -132,7 +132,7 @@ func createTree(t *testing.T, repo *Repository, entries []TreeEntry) Hash {
 	return hashObj
 }
 
-// Simple SHA-1 sum for testing (not cryptographically secure, just for unique hashes)
+// sha1Sum returns a simple SHA-1 sum for testing (not cryptographically secure, just for unique hashes).
 func sha1Sum(data []byte) []byte {
 	// Simplified hash - mix all bytes to create unique hash
 	hash := make([]byte, 20)
@@ -153,7 +153,7 @@ func sha1Sum(data []byte) []byte {
 }
 
 func TestTreeDiff_AddedFile(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create blobs
 	fileContent := []byte("Hello, World!")
@@ -195,7 +195,7 @@ func TestTreeDiff_AddedFile(t *testing.T) {
 }
 
 func TestTreeDiff_DeletedFile(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create blobs
 	fileContent := []byte("Hello, World!")
@@ -237,7 +237,7 @@ func TestTreeDiff_DeletedFile(t *testing.T) {
 }
 
 func TestTreeDiff_ModifiedFile(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create blobs
 	oldContent := []byte("Hello, World!")
@@ -292,7 +292,7 @@ func TestTreeDiff_ModifiedFile(t *testing.T) {
 }
 
 func TestTreeDiff_RootCommit(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create blob
 	fileContent := []byte("Initial commit")
@@ -328,7 +328,7 @@ func TestTreeDiff_RootCommit(t *testing.T) {
 }
 
 func TestTreeDiff_NestedDirectories(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create blobs
 	file1 := createBlob(t, repo, []byte("file1"))
@@ -391,7 +391,7 @@ func TestTreeDiff_NestedDirectories(t *testing.T) {
 }
 
 func TestTreeDiff_ExactRenameDetection(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Same content moved to a new path => should be detected as rename
 	content := []byte("package main\n\nfunc hello() {}\n")
@@ -427,7 +427,7 @@ func TestTreeDiff_ExactRenameDetection(t *testing.T) {
 }
 
 func TestTreeDiff_ModifiedRenameNotDetected(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Different content => different hashes => NOT detected as rename
 	oldBlob := createBlob(t, repo, []byte("version 1\n"))
@@ -473,7 +473,7 @@ func TestDetectRenames_NoDeletedEntries(t *testing.T) {
 }
 
 func TestTreeDiff_Submodule(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create submodule entry (mode 160000)
 	submoduleHash := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -508,7 +508,7 @@ func TestTreeDiff_Submodule(t *testing.T) {
 }
 
 func TestComputeFileDiff_AddedFile(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create new blob
 	newContent := []byte("line 1\nline 2\nline 3\n")
@@ -548,7 +548,7 @@ func TestComputeFileDiff_AddedFile(t *testing.T) {
 }
 
 func TestComputeFileDiff_DeletedFile(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create old blob
 	oldContent := []byte("line 1\nline 2\nline 3\n")
@@ -583,7 +583,7 @@ func TestComputeFileDiff_DeletedFile(t *testing.T) {
 }
 
 func TestComputeFileDiff_ModifiedLines(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create blobs
 	oldContent := []byte("line 1\nline 2\nline 3\n")
@@ -626,7 +626,7 @@ func TestComputeFileDiff_ModifiedLines(t *testing.T) {
 }
 
 func TestComputeFileDiff_BinaryFile(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create binary content (with null bytes)
 	binaryContent := []byte{0x00, 0x01, 0x02, 0xFF, 0xFE}
@@ -648,7 +648,7 @@ func TestComputeFileDiff_BinaryFile(t *testing.T) {
 }
 
 func TestComputeFileDiff_LargeFile(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	// Create large content (> 512KB)
 	largeContent := bytes.Repeat([]byte("x"), 600*1024)
@@ -1054,7 +1054,7 @@ func TestDetectRenames_DuplicateHashNotDoubleClaimed(t *testing.T) {
 // detectRenames directly) with two files renamed in the same commit so we can
 // confirm the integration path from tree comparison through rename detection.
 func TestTreeDiff_MultipleRenames(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	contentA := []byte("package api\n\nfunc HandlerA() {}\n")
 	contentB := []byte("package api\n\nfunc HandlerB() {}\n")
@@ -1101,7 +1101,7 @@ func TestTreeDiff_MultipleRenames(t *testing.T) {
 // the rename spans a directory boundary and can only be detected if
 // detectRenames runs on the complete flat list — not per-directory.
 func TestTreeDiff_CrossDirectoryRename(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	content := []byte("package util\n\nfunc Helper() {}\n")
 	blobHash := createBlob(t, repo, content)
@@ -1145,7 +1145,7 @@ func TestTreeDiff_CrossDirectoryRename(t *testing.T) {
 // mixed case: one file renamed, one file deleted with no matching add. This
 // validates that the pipeline does not accidentally absorb unmatched deletes.
 func TestTreeDiff_RenameAndDeletion(t *testing.T) {
-	repo, _ := setupTestRepo(t)
+	repo := setupTestRepo(t)
 
 	renamedContent := []byte("// renamed file\n")
 	deletedContent := []byte("// this file is gone\n")

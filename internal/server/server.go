@@ -14,6 +14,7 @@ import (
 	"github.com/rybkr/gitvista/internal/gitcore"
 )
 
+// Server contains all behavior for the GitVista application server.
 type Server struct {
 	repo        *gitcore.Repository
 	addr        string
@@ -21,7 +22,7 @@ type Server struct {
 	rateLimiter *rateLimiter
 	httpServer  *http.Server
 	// logger is the structured logger for this server instance. It is
-	// initialised from slog.Default() in NewServer so that the global handler
+	// initialized from slog.Default() in NewServer so that the global handler
 	// configured in main.go (format, level) is inherited automatically, while
 	// still being injectable in tests via a null-writer handler.
 	logger *slog.Logger
@@ -131,6 +132,7 @@ func (s *Server) Start() error {
 	return err
 }
 
+// Shutdown is used to gracefully shut down a Server.
 func (s *Server) Shutdown() {
 	s.logger.Info("Server shutting down")
 

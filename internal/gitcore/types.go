@@ -26,6 +26,7 @@ func NewHash(s string) (Hash, error) {
 	return Hash(s), nil
 }
 
+// NewHashFromBytes creates a Hash from a 20-byte array.
 func NewHashFromBytes(b [20]byte) (Hash, error) {
 	return NewHash(hex.EncodeToString(b[:]))
 }
@@ -55,6 +56,7 @@ const (
 	TagObject    ObjectType = 4
 )
 
+// StrToObjectType converts a string representation of an object type to an ObjectType.
 func StrToObjectType(s string) ObjectType {
 	switch s {
 	case objectTypeCommit:
@@ -68,6 +70,7 @@ func StrToObjectType(s string) ObjectType {
 	}
 }
 
+// Commit represents a Git commit object.
 type Commit struct {
 	ID        Hash      `json:"hash"`
 	Tree      Hash      `json:"tree"`
@@ -77,10 +80,12 @@ type Commit struct {
 	Message   string    `json:"message"`
 }
 
+// Type returns the ObjectType for a Commit.
 func (c *Commit) Type() ObjectType {
 	return CommitObject
 }
 
+// Tag represents a Git tag object.
 type Tag struct {
 	ID      Hash       `json:"hash"`
 	Object  Hash       `json:"object"`
@@ -90,10 +95,12 @@ type Tag struct {
 	Message string     `json:"message"`
 }
 
+// Type returns the ObjectType for a Tag.
 func (t *Tag) Type() ObjectType {
 	return TagObject
 }
 
+// TreeEntry represents a single entry within a Git tree object.
 type TreeEntry struct {
 	ID   Hash   `json:"hash"`
 	Name string `json:"name"`
@@ -101,15 +108,18 @@ type TreeEntry struct {
 	Type string `json:"type"`
 }
 
+// Tree represents a Git tree object containing a list of entries.
 type Tree struct {
 	ID      Hash        `json:"hash"`
 	Entries []TreeEntry `json:"entries"`
 }
 
+// Type returns the ObjectType for a Tree.
 func (t *Tree) Type() ObjectType {
 	return TreeObject
 }
 
+// Signature represents the author or committer of a Git commit.
 type Signature struct {
 	Name  string    `json:"name"`
 	Email string    `json:"email"`
@@ -158,15 +168,23 @@ type PackIndex struct {
 	offsets    map[Hash]int64
 }
 
+// FindObject looks up the byte offset of an object by its hash.
 func (p *PackIndex) FindObject(id Hash) (int64, bool) {
 	offset, found := p.offsets[id]
 	return offset, found
 }
 
-func (p *PackIndex) PackFile() string        { return p.packPath }
-func (p *PackIndex) Version() uint32         { return p.version }
-func (p *PackIndex) NumObjects() uint32      { return p.numObjects }
-func (p *PackIndex) Fanout() [256]uint32     { return p.fanout }
+// PackFile returns the path to the pack file associated with this index.
+func (p *PackIndex) PackFile() string { return p.packPath }
+
+// Version returns the pack index format version.
+func (p *PackIndex) Version() uint32 { return p.version }
+
+// NumObjects returns the number of objects stored in the pack file.
+func (p *PackIndex) NumObjects() uint32 { return p.numObjects }
+
+// Fanout returns the 256-entry fanout table used for binary search within the index.
+func (p *PackIndex) Fanout() [256]uint32 { return p.fanout }
 
 // Offsets returns a defensive copy of the offset map.
 func (p *PackIndex) Offsets() map[Hash]int64 {
@@ -177,6 +195,7 @@ func (p *PackIndex) Offsets() map[Hash]int64 {
 	return cp
 }
 
+// StashEntry represents a single Git stash entry with its hash and message.
 type StashEntry struct {
 	Hash    Hash   `json:"hash"`
 	Message string `json:"message"`
@@ -193,10 +212,11 @@ type RepositoryDelta struct {
 
 	// HeadHash, Tags, and Stashes are sent on every delta so the frontend stays in sync.
 	HeadHash string            `json:"headHash"`
-	Tags     map[string]string `json:"tags"`     // tag name -> target commit hash (annotated tags are peeled)
+	Tags     map[string]string `json:"tags"` // tag name -> target commit hash (annotated tags are peeled)
 	Stashes  []StashEntry      `json:"stashes"`
 }
 
+// NewRepositoryDelta creates a RepositoryDelta with all maps and slices initialized.
 func NewRepositoryDelta() *RepositoryDelta {
 	return &RepositoryDelta{
 		AddedBranches:   make(map[string]Hash),
@@ -207,6 +227,7 @@ func NewRepositoryDelta() *RepositoryDelta {
 	}
 }
 
+// IsEmpty reports whether the delta contains no changes.
 func (d *RepositoryDelta) IsEmpty() bool {
 	return len(d.AddedCommits) == 0 &&
 		len(d.DeletedCommits) == 0 &&
@@ -215,6 +236,7 @@ func (d *RepositoryDelta) IsEmpty() bool {
 		len(d.AmendedBranches) == 0
 }
 
+// DiffStatus represents the type of change applied to a file in a diff.
 type DiffStatus int
 
 const (
@@ -224,6 +246,7 @@ const (
 	DiffStatusRenamed
 )
 
+// String returns the string representation of a DiffStatus.
 func (s DiffStatus) String() string {
 	switch s {
 	case DiffStatusAdded:
@@ -239,36 +262,42 @@ func (s DiffStatus) String() string {
 	}
 }
 
+// DiffEntry represents a single file change within a diff, including its path, status, and hashes.
 type DiffEntry struct {
-	Path      string     `json:"path"`
-	OldPath   string     `json:"oldPath,omitempty"`
-	Status    DiffStatus `json:"status"`
-	OldHash   Hash       `json:"oldHash,omitempty"`
-	NewHash   Hash       `json:"newHash,omitempty"`
-	IsBinary  bool       `json:"isBinary"`
-	OldMode   string     `json:"oldMode,omitempty"`
-	NewMode   string     `json:"newMode,omitempty"`
+	Path     string     `json:"path"`
+	OldPath  string     `json:"oldPath,omitempty"`
+	Status   DiffStatus `json:"status"`
+	OldHash  Hash       `json:"oldHash,omitempty"`
+	NewHash  Hash       `json:"newHash,omitempty"`
+	IsBinary bool       `json:"isBinary"`
+	OldMode  string     `json:"oldMode,omitempty"`
+	NewMode  string     `json:"newMode,omitempty"`
 }
 
+// CommitDiff represents the full diff associated with a single commit.
 type CommitDiff struct {
 	CommitHash Hash        `json:"commitHash"`
 	Entries    []DiffEntry `json:"entries"`
 	Stats      DiffStats   `json:"stats"`
 }
 
+// DiffStats describes the number of insertions, deletions, and changed files
+// resulting from a diff operation.
 type DiffStats struct {
 	FilesChanged int `json:"filesChanged"`
 	Insertions   int `json:"insertions"`
 	Deletions    int `json:"deletions"`
 }
 
+// DiffLine represents a single line within a diff hunk, including its type and line numbers.
 type DiffLine struct {
-	Type    string `json:"type"`    // "context", "addition", or "deletion"
+	Type    string `json:"type"` // "context", "addition", or "deletion"
 	Content string `json:"content"`
 	OldLine int    `json:"oldLine"` // 0 for additions
 	NewLine int    `json:"newLine"` // 0 for deletions
 }
 
+// DiffHunk represents a contiguous block of changes within a file diff.
 type DiffHunk struct {
 	OldStart int        `json:"oldStart"`
 	OldLines int        `json:"oldLines"`
@@ -277,6 +306,7 @@ type DiffHunk struct {
 	Lines    []DiffLine `json:"lines"`
 }
 
+// FileDiff represents the complete diff for a single file, including all hunks.
 type FileDiff struct {
 	Path      string     `json:"path"`
 	OldHash   Hash       `json:"oldHash"`
@@ -285,3 +315,12 @@ type FileDiff struct {
 	Truncated bool       `json:"truncated"`
 	Hunks     []DiffHunk `json:"hunks"`
 }
+
+// LineType represents the type of line in a diff.
+type LineType string
+
+const (
+	LineTypeContext  = "context"
+	LineTypeAddition = "addition"
+	LineTypeDeletion = "deletion"
+)

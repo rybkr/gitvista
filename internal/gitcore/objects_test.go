@@ -137,11 +137,11 @@ func TestParseTreeBody(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		mode     string
-		entType  string
-		entName  string
-		hashHex  string
+		name    string
+		mode    string
+		entType string
+		entName string
+		hashHex string
 	}{
 		{"blob", "100644", "blob", "file.txt", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		{"tree", "040000", "tree", "subdir", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},

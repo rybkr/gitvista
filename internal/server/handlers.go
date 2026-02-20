@@ -302,9 +302,9 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 	}
 
 	response := map[string]any{
-		"commitHash": string(commitHash),
+		"commitHash":     string(commitHash),
 		"parentTreeHash": string(parentTreeHash),
-		"entries":    jsonEntries,
+		"entries":        jsonEntries,
 		"stats": map[string]any{
 			"added":        added,
 			"modified":     modified,
@@ -340,7 +340,7 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	// Cap at 100 to prevent excessive response sizes.
 	contextLines := gitcore.DefaultContextLines
 	if raw := r.URL.Query().Get("context"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 100 {
+		if n, _err := strconv.Atoi(raw); _err == nil && n > 0 && n <= 100 {
 			contextLines = n
 		}
 	}
@@ -349,7 +349,7 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	cacheKey := string(commitHash) + ":" + filePath + ":ctx" + strconv.Itoa(contextLines)
 	if cached, ok := s.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(cached); err != nil {
+		if _err := json.NewEncoder(w).Encode(cached); _err != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		}
 		return

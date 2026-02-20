@@ -24,7 +24,7 @@ func TestParsePorcelainStatus(t *testing.T) {
 			name:   "untracked files",
 			output: "?? file1.txt\n?? src/file2.go\n",
 			want: &WorkingTreeStatus{
-				Staged: []FileStatus{},
+				Staged:   []FileStatus{},
 				Modified: []FileStatus{},
 				Untracked: []FileStatus{
 					{Path: "file1.txt", StatusCode: "?"},
@@ -137,7 +137,7 @@ func TestParsePorcelainStatus(t *testing.T) {
 			name:   "trailing newline handling",
 			output: "?? file.txt\n\n",
 			want: &WorkingTreeStatus{
-				Staged: []FileStatus{},
+				Staged:   []FileStatus{},
 				Modified: []FileStatus{},
 				Untracked: []FileStatus{
 					{Path: "file.txt", StatusCode: "?"},

@@ -5,11 +5,13 @@ import (
 	"strings"
 )
 
+// FileStatus represents the stat2-status of a file and its path.
 type FileStatus struct {
 	Path       string `json:"path"`
 	StatusCode string `json:"statusCode"`
 }
 
+// WorkingTreeStatus represents the files that are staged, modified, and untracked.
 type WorkingTreeStatus struct {
 	Staged    []FileStatus `json:"staged"`
 	Modified  []FileStatus `json:"modified"`
