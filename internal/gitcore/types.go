@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -60,6 +61,22 @@ const (
 	// TagObject represents a git tag object.
 	TagObject ObjectType = 4
 )
+
+// String returns the Git object type name (e.g., "commit", "tree", "blob", "tag").
+func (t ObjectType) String() string {
+	switch t {
+	case CommitObject:
+		return objectTypeCommit
+	case TreeObject:
+		return objectTypeTree
+	case BlobObject:
+		return objectTypeBlob
+	case TagObject:
+		return objectTypeTag
+	default:
+		return "unknown"
+	}
+}
 
 // StrToObjectType converts a string representation of an object type to an ObjectType.
 func StrToObjectType(s string) ObjectType {
@@ -152,11 +169,43 @@ func NewSignature(signLine string) (Signature, error) {
 		return Signature{}, fmt.Errorf("invalid signature line: invalid timestamp: %q", signLine)
 	}
 
+	var loc *time.Location
+	if len(timeFields) >= 2 {
+		loc = parseTimezone(timeFields[1])
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
+
 	return Signature{
 		Name:  name,
 		Email: email,
-		When:  time.Unix(unixTime, 0),
+		When:  time.Unix(unixTime, 0).In(loc),
 	}, nil
+}
+
+// parseTimezone parses a Git timezone offset string (e.g., "+0530", "-0800")
+// into a *time.Location. Returns nil if the string is not a valid offset.
+func parseTimezone(tz string) *time.Location {
+	if len(tz) != 5 {
+		return nil
+	}
+	sign := 1
+	if tz[0] == '-' {
+		sign = -1
+	} else if tz[0] != '+' {
+		return nil
+	}
+	hours, err := strconv.Atoi(tz[1:3])
+	if err != nil {
+		return nil
+	}
+	mins, err := strconv.Atoi(tz[3:5])
+	if err != nil {
+		return nil
+	}
+	offset := sign * (hours*3600 + mins*60)
+	return time.FixedZone(tz, offset)
 }
 
 // ObjectResolver retrieves raw object data and type byte by hash.

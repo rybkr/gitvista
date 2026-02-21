@@ -1,6 +1,7 @@
 package gitcore
 
 import (
+	"container/heap"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -221,6 +222,105 @@ func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 	}
 
 	return objectData, nil
+}
+
+// GetCommit looks up a single commit by hash.
+// This performs a linear scan over all commits. For batch lookups, prefer
+// using Commits() to obtain a map and querying that directly.
+func (r *Repository) GetCommit(hash Hash) (*Commit, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, c := range r.commits {
+		if c.ID == hash {
+			return c, nil
+		}
+	}
+	return nil, fmt.Errorf("commit not found: %s", hash)
+}
+
+// GetTag looks up a single tag by hash.
+// This performs a linear scan over all tags.
+func (r *Repository) GetTag(hash Hash) (*Tag, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, t := range r.tags {
+		if t.ID == hash {
+			return t, nil
+		}
+	}
+	return nil, fmt.Errorf("tag not found: %s", hash)
+}
+
+// GetObjectInfo returns the object type name and size in bytes for any object.
+func (r *Repository) GetObjectInfo(hash Hash) (string, int, error) {
+	data, typeByte, err := r.readObjectData(hash)
+	if err != nil {
+		return "", 0, err
+	}
+	return ObjectType(typeByte).String(), len(data), nil
+}
+
+// commitHeap is a max-heap of commits sorted by committer date (newest first).
+type commitHeap []*Commit
+
+func (h commitHeap) Len() int           { return len(h) }
+func (h commitHeap) Less(i, j int) bool { return h[i].Committer.When.After(h[j].Committer.When) }
+func (h commitHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *commitHeap) Push(x any)        { *h = append(*h, x.(*Commit)) }
+func (h *commitHeap) Pop() any {
+	old := *h
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = nil
+	*h = old[:n-1]
+	return item
+}
+
+// CommitLog walks from HEAD through parents in reverse chronological order.
+// If maxCount <= 0 all reachable commits are returned.
+func (r *Repository) CommitLog(maxCount int) []*Commit {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if r.head == "" {
+		return nil
+	}
+
+	commitMap := make(map[Hash]*Commit, len(r.commits))
+	for _, c := range r.commits {
+		commitMap[c.ID] = c
+	}
+
+	headCommit, ok := commitMap[r.head]
+	if !ok {
+		return nil
+	}
+
+	visited := make(map[Hash]bool)
+	h := &commitHeap{}
+	heap.Init(h)
+	heap.Push(h, headCommit)
+	visited[headCommit.ID] = true
+
+	var result []*Commit
+	for h.Len() > 0 {
+		if maxCount > 0 && len(result) >= maxCount {
+			break
+		}
+		c := heap.Pop(h).(*Commit)
+		result = append(result, c)
+
+		for _, parentHash := range c.Parents {
+			if visited[parentHash] {
+				continue
+			}
+			visited[parentHash] = true
+			if parent, found := commitMap[parentHash]; found {
+				heap.Push(h, parent)
+			}
+		}
+	}
+	return result
 }
 
 // resolveTreeAtPath walks from rootTreeHash through a slash-separated dirPath

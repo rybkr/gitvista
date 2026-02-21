@@ -1,5 +1,6 @@
 # Build artifacts
 gitvista
+gitvista-cli
 vista
 *.exe
 *.out

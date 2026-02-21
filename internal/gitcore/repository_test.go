@@ -2,6 +2,7 @@ package gitcore
 
 import (
 	"testing"
+	"time"
 )
 
 func TestRepositoryDiff(t *testing.T) {
@@ -391,4 +392,173 @@ func TestStripCredentials(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewSignature_Timezone(t *testing.T) {
+	tests := []struct {
+		name           string
+		line           string
+		wantName       string
+		wantTZ         string
+		wantOffsetSecs int
+	}{
+		{
+			name:           "positive offset",
+			line:           "John Doe <john@example.com> 1234567890 +0530",
+			wantName:       "John Doe",
+			wantTZ:         "+0530",
+			wantOffsetSecs: 5*3600 + 30*60,
+		},
+		{
+			name:           "negative offset",
+			line:           "Jane Doe <jane@example.com> 1234567890 -0800",
+			wantName:       "Jane Doe",
+			wantTZ:         "-0800",
+			wantOffsetSecs: -8 * 3600,
+		},
+		{
+			name:           "UTC offset",
+			line:           "Test User <test@example.com> 1234567890 +0000",
+			wantName:       "Test User",
+			wantTZ:         "+0000",
+			wantOffsetSecs: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sig, err := NewSignature(tt.line)
+			if err != nil {
+				t.Fatalf("NewSignature() error: %v", err)
+			}
+			if sig.Name != tt.wantName {
+				t.Errorf("Name = %q, want %q", sig.Name, tt.wantName)
+			}
+			zoneName, offset := sig.When.Zone()
+			if offset != tt.wantOffsetSecs {
+				t.Errorf("timezone offset = %d, want %d", offset, tt.wantOffsetSecs)
+			}
+			if zoneName != tt.wantTZ {
+				t.Errorf("timezone name = %q, want %q", zoneName, tt.wantTZ)
+			}
+		})
+	}
+}
+
+func TestRepository_GetCommit(t *testing.T) {
+	hash1 := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hash2 := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	repo := &Repository{
+		commits: []*Commit{
+			{ID: hash1, Message: "first"},
+			{ID: hash2, Message: "second"},
+		},
+	}
+
+	t.Run("found", func(t *testing.T) {
+		c, err := repo.GetCommit(hash1)
+		if err != nil {
+			t.Fatalf("GetCommit() error: %v", err)
+		}
+		if c.Message != "first" {
+			t.Errorf("Message = %q, want %q", c.Message, "first")
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		_, err := repo.GetCommit(Hash("cccccccccccccccccccccccccccccccccccccccc"))
+		if err == nil {
+			t.Fatal("GetCommit() expected error for missing commit")
+		}
+	})
+}
+
+func TestRepository_GetTag(t *testing.T) {
+	hash1 := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+	repo := &Repository{
+		tags: []*Tag{
+			{ID: hash1, Name: "v1.0"},
+		},
+	}
+
+	t.Run("found", func(t *testing.T) {
+		tag, err := repo.GetTag(hash1)
+		if err != nil {
+			t.Fatalf("GetTag() error: %v", err)
+		}
+		if tag.Name != "v1.0" {
+			t.Errorf("Name = %q, want %q", tag.Name, "v1.0")
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		_, err := repo.GetTag(Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
+		if err == nil {
+			t.Fatal("GetTag() expected error for missing tag")
+		}
+	})
+}
+
+func TestRepository_CommitLog(t *testing.T) {
+	now := time.Now()
+
+	commit1 := &Commit{
+		ID:        Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Parents:   []Hash{},
+		Committer: Signature{When: now.Add(-2 * time.Hour)},
+		Message:   "first",
+	}
+	commit2 := &Commit{
+		ID:        Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		Parents:   []Hash{commit1.ID},
+		Committer: Signature{When: now.Add(-1 * time.Hour)},
+		Message:   "second",
+	}
+	commit3 := &Commit{
+		ID:        Hash("cccccccccccccccccccccccccccccccccccccccc"),
+		Parents:   []Hash{commit2.ID},
+		Committer: Signature{When: now},
+		Message:   "third",
+	}
+
+	repo := &Repository{
+		head:    commit3.ID,
+		commits: []*Commit{commit1, commit2, commit3},
+	}
+
+	t.Run("all commits", func(t *testing.T) {
+		log := repo.CommitLog(0)
+		if len(log) != 3 {
+			t.Fatalf("CommitLog(0) returned %d commits, want 3", len(log))
+		}
+		if log[0].ID != commit3.ID {
+			t.Errorf("first commit = %s, want %s", log[0].ID, commit3.ID)
+		}
+		if log[1].ID != commit2.ID {
+			t.Errorf("second commit = %s, want %s", log[1].ID, commit2.ID)
+		}
+		if log[2].ID != commit1.ID {
+			t.Errorf("third commit = %s, want %s", log[2].ID, commit1.ID)
+		}
+	})
+
+	t.Run("limited count", func(t *testing.T) {
+		log := repo.CommitLog(2)
+		if len(log) != 2 {
+			t.Fatalf("CommitLog(2) returned %d commits, want 2", len(log))
+		}
+		if log[0].ID != commit3.ID {
+			t.Errorf("first commit = %s, want %s", log[0].ID, commit3.ID)
+		}
+	})
+
+	t.Run("empty head", func(t *testing.T) {
+		emptyRepo := &Repository{}
+		log := emptyRepo.CommitLog(0)
+		if log != nil {
+			t.Errorf("CommitLog() on empty repo = %v, want nil", log)
+		}
+	})
 }

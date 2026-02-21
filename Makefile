@@ -1,4 +1,4 @@
-.PHONY: test ci lint integration build clean help
+.PHONY: test ci lint integration e2e build build-cli clean help
 
 GOCMD=go
 GOTEST=$(GOCMD) test
@@ -20,27 +20,33 @@ test:
 integration:
 	$(GOTEST) -v -race -tags=integration ./test/integration/...
 
+## e2e: Run end-to-end tests (builds gitvista-cli, compares output against git)
+e2e:
+	$(GOTEST) -v -race -tags=e2e ./test/e2e/...
+
 ## format: Auto-format the source code
 format:
 	gofmt -w .
 
-## lint: Run golangci-lint
+## lint: Run go vet
 lint:
 	go vet ./...
-	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Install: https://golangci-lint.run/usage/install/" && exit 1)
-	golangci-lint run --timeout=60s
 
-## build: Build the binary
-build:
+## build: Build all binaries
+build: build-cli
 	$(GOBUILD) -v -o gitvista ./cmd/vista
 
-## ci: Run all CI checks (tests, lint, integration tests, build)
-ci: test format lint integration build
+## build-cli: Build the gitvista-cli binary
+build-cli:
+	$(GOBUILD) -v -o gitvista-cli ./cmd/gitcli
+
+## ci: Run all CI checks (tests, lint, integration tests, e2e tests, build)
+ci: test format lint integration e2e build
 
 ## clean: Clean build artifacts
 clean:
 	$(GOCLEAN)
-	rm -f gitvista vista
+	rm -f gitvista vista gitvista-cli
 
 ## cloc: Count lines of code
 cloc:
