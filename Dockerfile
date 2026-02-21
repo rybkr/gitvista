@@ -13,12 +13,15 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gitvista ./cmd/vista
 # Runtime stage
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata git
 
 COPY --from=build /gitvista /usr/local/bin/gitvista
 
 # Default repo path — mount or clone a repo here
 RUN mkdir -p /repo
+
+# Data directory for managed/cloned repos
+RUN mkdir -p /data/repos
 WORKDIR /repo
 
 EXPOSE 8080

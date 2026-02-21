@@ -1,9 +1,76 @@
 package gitcore
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestFindGitDirectory_BareRepo(t *testing.T) {
+	bareDir := t.TempDir()
+
+	// Create bare repo structure: objects/, refs/, HEAD
+	for _, dir := range []string{"objects", "refs"} {
+		if err := os.MkdirAll(filepath.Join(bareDir, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(bareDir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	gitDir, workDir, err := findGitDirectory(bareDir)
+	if err != nil {
+		t.Fatalf("findGitDirectory() error: %v", err)
+	}
+	if gitDir != bareDir {
+		t.Errorf("gitDir = %q, want %q", gitDir, bareDir)
+	}
+	if workDir != bareDir {
+		t.Errorf("workDir = %q, want %q (bare repo: gitDir == workDir)", workDir, bareDir)
+	}
+}
+
+func TestFindGitDirectory_NonBareNotMisidentified(t *testing.T) {
+	workDir := t.TempDir()
+	dotGit := filepath.Join(workDir, ".git")
+
+	// Create normal repo structure with .git/
+	for _, dir := range []string{"objects", "refs"} {
+		if err := os.MkdirAll(filepath.Join(dotGit, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dotGit, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	gitDir, gotWorkDir, err := findGitDirectory(workDir)
+	if err != nil {
+		t.Fatalf("findGitDirectory() error: %v", err)
+	}
+	if gitDir != dotGit {
+		t.Errorf("gitDir = %q, want %q", gitDir, dotGit)
+	}
+	if gotWorkDir != workDir {
+		t.Errorf("workDir = %q, want %q", gotWorkDir, workDir)
+	}
+}
+
+func TestIsBareRepository_MissingComponent(t *testing.T) {
+	// Create directory with objects/ and refs/ but no HEAD
+	dir := t.TempDir()
+	for _, sub := range []string{"objects", "refs"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if isBareRepository(dir) {
+		t.Error("isBareRepository() = true, want false (HEAD is missing)")
+	}
+}
 
 func TestRepositoryDiff(t *testing.T) {
 	commit1 := &Commit{
