@@ -1,28 +1,23 @@
-app = "gitvista"
-primary_region = "iad"
+# fly.toml app configuration file generated for gitvista on 2026-02-21T19:49:53Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'gitvista'
+primary_region = 'ams'
 
 [build]
-
-[env]
-  GITVISTA_REPO = "/repo"
-  GITVISTA_HOST = "0.0.0.0"
-  GITVISTA_PORT = "8080"
-  GITVISTA_LOG_LEVEL = "info"
-  GITVISTA_LOG_FORMAT = "json"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
-
-  [http_service.concurrency]
-    type = "connections"
-    hard_limit = 100
-    soft_limit = 80
+  processes = ['app']
 
 [[vm]]
-  memory = "256mb"
-  cpu_kind = "shared"
+  memory = '1gb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 256
