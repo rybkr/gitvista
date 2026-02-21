@@ -2,27 +2,130 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     branches: [main]
 
+# Only allow one CI run per PR at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+  # Required for security scanning result uploads
+  security-events: write
+  # Required for coverage reporting
+  checks: write
 
 jobs:
-  test:
-    name: Test
+  # Format check - validates Go formatting
+  format:
+    name: Format Check
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
         with:
           go-version: '1.26'
           cache: true
+          cache-dependency-path: go.sum
+
+      - name: Check formatting with gofmt
+        run: |
+          # Get list of Go files that differ from gofmt
+          UNFORMATTED=$(gofmt -l . | grep -v vendor | grep -v web || true)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following files are not formatted correctly:"
+            echo "$UNFORMATTED"
+            echo "Run 'gofmt -w .' to fix"
+            exit 1
+          fi
+          echo "All files properly formatted"
+
+  # Vet - runs go vet static analysis
+  vet:
+    name: Vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+
+      - name: Set up Go
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run go vet
+        run: go vet ./...
+
+  # Lint - runs golangci-lint with configured linters
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+
+      - name: Set up Go
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@3cfe3a4abbb849e10058ce4af15d205b6da42481  # v4.0.0
+        with:
+          version: latest
+          # Only report issues on new code in PRs
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
+          # Use config from repo
+          args: --config=.golangci.yml
+          # Disable caching to ensure fresh results
+          skip-cache: false
+          # Set timeout for large repos
+          timeout: 10m
+
+  # Security - runs govulncheck for known vulnerabilities
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+
+      - name: Set up Go
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run govulncheck
+        run: |
+          go install github.com/golang/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  # Test - runs unit tests with coverage
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+
+      - name: Set up Go
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Download dependencies
         run: go mod download
@@ -33,99 +136,217 @@ jobs:
       - name: Run tests with coverage
         run: |
           mkdir -p test/cover
-          go test -v -race -timeout 5m -covermode=atomic \
-            -coverprofile=test/cover/coverage.out -coverpkg=./internal/... ./...
+          go test -v -race -timeout 5m \
+            -covermode=atomic \
+            -coverprofile=test/cover/coverage.out \
+            -coverpkg=./internal/... ./...
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@c6dd60cd0da8dd1733b47123f8eaf1e4aa91ce72  # v4.1.1
         with:
           file: ./test/cover/coverage.out
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+          verbose: true
 
-  lint:
-    name: Lint
+  # Integration tests
+  integration:
+    name: Integration Tests
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        with:
+          fetch-depth: 0  # Needed for git history in integration tests
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
         with:
           go-version: '1.26'
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Run go vet
-        run: go vet ./...
+      - name: Run integration tests
+        run: go test -v -race -tags=integration -timeout 5m ./test/integration/...
 
+  # E2E tests
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        with:
+          fetch-depth: 0  # Needed for git history in e2e tests
+
+      - name: Set up Go
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run e2e tests
+        run: go test -v -race -tags=e2e -timeout 5m ./test/e2e/...
+
+  # Validate JavaScript
   validate-js:
     name: Validate JavaScript
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@b1df06e7b46502112debaa37c6c0b59ac1d32929  # v4.0.1
         with:
           node-version: '20'
 
       - name: Validate JavaScript syntax
         run: |
+          echo "Validating JavaScript syntax..."
           find web -name '*.js' -print0 | while IFS= read -r -d '' file; do
             echo "Checking $file..."
-            node --check "$file"
+            if ! node --check "$file"; then
+              echo "Syntax error in $file"
+              exit 1
+            fi
           done
+          echo "All JavaScript files valid"
 
       - name: Check for ES module syntax
         run: |
-          echo "Checking for common JavaScript issues..."
-          if grep -rn "module.exports\|require(" web/ --include='*.js'; then
-            echo "Found CommonJS syntax in ES modules"
+          echo "Checking for CommonJS in ES modules..."
+          if grep -rn "module.exports\|require(" web/ --include='*.js' | grep -v "// @allow-commonjs"; then
+            echo "Found CommonJS syntax in ES modules - use // @allow-commonjs if intentional"
             exit 1
           fi
-          echo "JavaScript validation passed"
+          echo "JavaScript module syntax validated"
 
+  # Build - builds both binaries
   build:
     name: Build
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
         with:
           go-version: '1.26'
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Build binary
+      - name: Build main binary
         run: go build -v -o gitvista ./cmd/vista
 
-      - name: Verify binary
-        run: ./gitvista -h || ./gitvista --help || echo "Binary built successfully"
+      - name: Build CLI binary
+        run: go build -v -o gitvista-cli ./cmd/gitcli
 
-  integration:
-    name: Integration Tests
+      - name: Verify binaries
+        run: |
+          echo "Checking main binary..."
+          file gitvista
+          ./gitvista -h || ./gitvista --help || echo "Binary built successfully"
+          echo "Checking CLI binary..."
+          file gitvista-cli
+
+  # Docker build - verifies Docker image builds without errors
+  docker-build:
+    name: Docker Build
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec8ab88f2d47728aeda23275  # v3.0.0
+
+      - name: Build Docker image
+        uses: docker/build-push-action@0565240e2d7ff142d61b0ee1a3eb0957708f7d81  # v5.0.0
         with:
-          fetch-depth: 0
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: gitvista:test
+
+  # Dependency check - ensures no vulnerable dependencies
+  dependencies:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
         with:
           go-version: '1.26'
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Run integration tests
-        run: go test -v -race -tags=integration ./test/integration/...
+      - name: Check for outdated dependencies
+        run: |
+          echo "Checking Go module dependencies..."
+          go mod tidy -check || (echo "Run 'go mod tidy' to update dependencies"; exit 1)
+          go mod download
+          go mod verify
 
+  # Status check - a final job that requires all other jobs to pass
+  # Use this in branch protection rules as the required check
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [format, vet, lint, security, test, integration, e2e, validate-js, build, docker-build, dependencies]
+    steps:
+      - name: Check CI status
+        run: |
+          if [ "${{ needs.format.result }}" != "success" ]; then
+            echo "Format check failed"
+            exit 1
+          fi
+          if [ "${{ needs.vet.result }}" != "success" ]; then
+            echo "Vet check failed"
+            exit 1
+          fi
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "Lint check failed"
+            exit 1
+          fi
+          if [ "${{ needs.security.result }}" != "success" ]; then
+            echo "Security check failed"
+            exit 1
+          fi
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Test check failed"
+            exit 1
+          fi
+          if [ "${{ needs.integration.result }}" != "success" ]; then
+            echo "Integration test check failed"
+            exit 1
+          fi
+          if [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "E2E test check failed"
+            exit 1
+          fi
+          if [ "${{ needs.validate-js.result }}" != "success" ]; then
+            echo "JavaScript validation failed"
+            exit 1
+          fi
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "Build check failed"
+            exit 1
+          fi
+          if [ "${{ needs.docker-build.result }}" != "success" ]; then
+            echo "Docker build check failed"
+            exit 1
+          fi
+          if [ "${{ needs.dependencies.result }}" != "success" ]; then
+            echo "Dependency check failed"
+            exit 1
+          fi
+          echo "All CI checks passed!"

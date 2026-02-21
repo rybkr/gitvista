@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"strings"
 )
 
 type contextKey int
@@ -31,30 +30,3 @@ func withLocalSession(session *RepoSession, next http.HandlerFunc) http.HandlerF
 	}
 }
 
-// withRepoSession extracts a repo ID from the URL path (e.g. /api/repos/{id}/...)
-// and looks up or creates the corresponding session.
-func (s *Server) withRepoSession(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// URL pattern: /api/repos/{id}/...
-		// After stripping "/api/repos/" we get "{id}/..."
-		path := strings.TrimPrefix(r.URL.Path, "/api/repos/")
-		if path == r.URL.Path || path == "" {
-			http.Error(w, "Missing repo ID", http.StatusBadRequest)
-			return
-		}
-
-		id := path
-		if idx := strings.Index(path, "/"); idx >= 0 {
-			id = path[:idx]
-		}
-
-		session, err := s.getOrCreateSession(id)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-
-		ctx := withSessionCtx(r.Context(), session)
-		next(w, r.WithContext(ctx))
-	}
-}

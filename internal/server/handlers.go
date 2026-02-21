@@ -49,7 +49,9 @@ func (s *Server) extractHashParam(w http.ResponseWriter, r *http.Request, prefix
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"mode": s.modeString()})
+	if err := json.NewEncoder(w).Encode(map[string]string{"mode": s.modeString()}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {

@@ -15,11 +15,13 @@ import (
 	"github.com/rybkr/gitvista/internal/repomanager"
 )
 
-// ServerMode distinguishes between local and SaaS operation.
-type ServerMode int
+// Mode distinguishes between local and SaaS operation.
+type Mode int
 
 const (
-	ModeLocal ServerMode = iota
+	// ModeLocal serves a single local Git repository.
+	ModeLocal Mode = iota
+	// ModeSaaS serves multiple cloned repositories via the repo manager.
 	ModeSaaS
 )
 
@@ -31,7 +33,7 @@ type Server struct {
 	httpServer  *http.Server
 	logger      *slog.Logger
 
-	mode          ServerMode
+	mode          Mode
 	localSession  *RepoSession             // non-nil in local mode
 	sessionsMu    sync.RWMutex             // guards sessions map
 	sessions      map[string]*RepoSession  // non-nil in SaaS mode
@@ -112,21 +114,6 @@ func readCacheSize() int {
 		}
 	}
 	return cacheSize
-}
-
-// getSession returns the session for the given ID, or nil if not found.
-func (s *Server) getSession(id string) *RepoSession {
-	if s.mode == ModeLocal {
-		if s.localSession != nil && s.localSession.id == id {
-			return s.localSession
-		}
-		return nil
-	}
-
-	s.sessionsMu.RLock()
-	session := s.sessions[id]
-	s.sessionsMu.RUnlock()
-	return session
 }
 
 // getOrCreateSession returns an existing session or lazily creates one when a

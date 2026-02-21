@@ -163,6 +163,7 @@ func (r *Repository) loadStashes() error {
 			Hash:    hash,
 			Message: "stash@{0}",
 		})
+		return nil
 	}
 	defer func() {
 		if err := file.Close(); err != nil {

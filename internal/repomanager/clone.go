@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// sshShorthandRe matches SSH shorthand like git@github.com:user/repo.git
+// sshShorthandRe matches SSH shorthand like git@github.com:user/repo.git.
 var sshShorthandRe = regexp.MustCompile(`^([^@]+)@([^:]+):(.+)$`)
 
 // normalizeURL canonicalizes a Git remote URL for deduplication.

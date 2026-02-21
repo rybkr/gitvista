@@ -1,7 +1,6 @@
 package repomanager
 
 import (
-	"fmt"
 	"os"
 	"time"
 
@@ -119,6 +118,6 @@ func (rm *RepoManager) evictInactive() {
 
 		delete(rm.repos, id)
 		rm.logger.Info("evicted inactive repo", "id", id,
-			"inactive_for", fmt.Sprintf("%s", now.Sub(managed.LastAccess)))
+			"inactive_for", now.Sub(managed.LastAccess).String())
 	}
 }

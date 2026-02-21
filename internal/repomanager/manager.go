@@ -1,3 +1,5 @@
+// Package repomanager handles lifecycle management of cloned Git repositories,
+// including cloning, periodic fetching, session tracking, and eviction.
 package repomanager
 
 import (
@@ -16,9 +18,13 @@ import (
 type RepoState int
 
 const (
+	// StatePending indicates the repo is queued for cloning.
 	StatePending RepoState = iota
+	// StateCloning indicates the repo is currently being cloned.
 	StateCloning
+	// StateReady indicates the repo has been cloned and is available.
 	StateReady
+	// StateError indicates a failure during cloning or fetching.
 	StateError
 )
 
@@ -120,7 +126,7 @@ type RepoManager struct {
 func New(cfg Config) (*RepoManager, error) {
 	cfg.defaults()
 
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create data directory %s: %w", cfg.DataDir, err)
 	}
 
@@ -184,15 +190,13 @@ func (rm *RepoManager) AddRepo(rawURL string) (string, error) {
 		if existing.State == StateError {
 			existing.State = StatePending
 			existing.Error = ""
-			existing.mu.Unlock()
 			select {
 			case rm.cloneQueue <- existing:
 			default:
-				existing.mu.Lock()
 				existing.State = StateError
 				existing.Error = "clone queue full"
-				existing.mu.Unlock()
 			}
+			existing.mu.Unlock()
 			return id, nil
 		}
 		existing.mu.Unlock()

@@ -99,11 +99,11 @@ func TestAddRepo_MaxRepos(t *testing.T) {
 	}
 	defer rm.Close()
 
-	if _, err := rm.AddRepo("https://github.com/user/repo1"); err != nil {
-		t.Fatalf("AddRepo 1 error: %v", err)
+	if _, addErr := rm.AddRepo("https://github.com/user/repo1"); addErr != nil {
+		t.Fatalf("AddRepo 1 error: %v", addErr)
 	}
-	if _, err := rm.AddRepo("https://github.com/user/repo2"); err != nil {
-		t.Fatalf("AddRepo 2 error: %v", err)
+	if _, addErr := rm.AddRepo("https://github.com/user/repo2"); addErr != nil {
+		t.Fatalf("AddRepo 2 error: %v", addErr)
 	}
 
 	_, err = rm.AddRepo("https://github.com/user/repo3")
@@ -205,8 +205,8 @@ func TestRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := rm.Remove(id); err != nil {
-		t.Fatalf("Remove() error: %v", err)
+	if rmErr := rm.Remove(id); rmErr != nil {
+		t.Fatalf("Remove() error: %v", rmErr)
 	}
 
 	_, err = rm.GetRepo(id)
@@ -214,7 +214,7 @@ func TestRemove(t *testing.T) {
 		t.Error("GetRepo() should fail after Remove()")
 	}
 
-	if err := rm.Remove(id); err == nil {
+	if rmErr := rm.Remove(id); rmErr == nil {
 		t.Error("Remove() should fail for already-removed repo")
 	}
 }

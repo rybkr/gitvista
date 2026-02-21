@@ -1,0 +1,108 @@
+# Lefthook configuration for pre-commit hooks
+# Fast, language-agnostic framework for Git hooks
+# Install with: lefthook install
+# Run manually with: lefthook run pre-commit
+
+version: 2
+
+# Global settings for all hooks
+global:
+  # Only run on changed files, not the entire repo
+  env:
+    # Set working directory context
+    GOFLAGS: "-v"
+
+# Pre-commit hook - runs before each commit
+pre-commit:
+  # Stage changed files for cleanup after hook runs
+  follow: true
+
+  parallel: false
+
+  commands:
+    # Go formatting check - must pass or commit is blocked
+    gofmt:
+      glob: "*.go"
+      exclude: "^(vendor/|web/)"
+      run: gofmt -w {staged_files} && git add {staged_files}
+      description: "Format Go code with gofmt"
+
+    # Import formatting - organize and clean imports
+    goimports:
+      glob: "*.go"
+      exclude: "^(vendor/|web/)"
+      run: |
+        # Check if goimports is installed
+        if ! command -v goimports &> /dev/null; then
+          echo "goimports not found. Install with: go install github.com/golang/tools/cmd/goimports@latest"
+          exit 0
+        fi
+        goimports -w {staged_files} && git add {staged_files}
+      description: "Organize and format Go imports"
+      stage_fixed: true
+
+    # Go vet static analysis
+    govet:
+      glob: "*.go"
+      exclude: "^(vendor/|web/)"
+      run: go vet ./...
+      description: "Run go vet for static analysis"
+
+    # Basic Go linting with staticcheck (must be fast)
+    staticcheck:
+      glob: "*.go"
+      exclude: "^(vendor/|web/)"
+      run: |
+        # Check if staticcheck is installed
+        if ! command -v staticcheck &> /dev/null; then
+          echo "staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@latest"
+          exit 0
+        fi
+        staticcheck -checks=all ./...
+      description: "Run staticcheck for static analysis"
+
+    # Security check with gosec
+    gosec:
+      glob: "*.go"
+      exclude: "^(vendor/|test/|web/)"
+      run: |
+        # Check if gosec is installed
+        if ! command -v gosec &> /dev/null; then
+          echo "gosec not found. Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"
+          exit 0
+        fi
+        gosec -quiet -no-fail ./internal/...
+      description: "Check Go code for security issues"
+
+    # JavaScript syntax validation
+    js-syntax:
+      glob: "web/**/*.js"
+      run: |
+        # Validate JavaScript syntax without running code
+        for file in {staged_files}; do
+          if ! node --check "$file" 2>/dev/null; then
+            echo "Syntax error in $file"
+            exit 1
+          fi
+        done
+      description: "Validate JavaScript syntax"
+
+    # JavaScript CommonJS check
+    js-commonjs:
+      glob: "web/**/*.js"
+      run: |
+        # Check for CommonJS patterns that shouldn't be in ES modules
+        if grep -n "module.exports\|require(" {staged_files} 2>/dev/null | grep -v "// @allow-commonjs"; then
+          echo "Found CommonJS syntax in ES module - use // @allow-commonjs comment if intentional"
+          exit 1
+        fi
+      description: "Ensure ES module syntax"
+
+# Pre-push hook - runs before pushing to remote (optional, informational)
+# Uncomment to enable additional checks before push
+# pre-push:
+#   commands:
+#     check-tests:
+#       run: make test
+#       description: "Run test suite before push"
+#       stage_fixed: false

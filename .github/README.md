@@ -1,148 +1,287 @@
-# CI/CD Configuration
+# CI/CD and Pre-commit Configuration
 
-This directory contains GitHub Actions workflows for continuous integration and deployment.
+This directory contains GitHub Actions workflows and pre-commit hook configuration for continuous integration, security, and development automation.
 
-## Workflows
+## Quick Links
 
-### ci.yml - Main CI Pipeline
+- **For Developers:** See [DEVELOPMENT.md](../../DEVELOPMENT.md) for local setup
+- **For Branch Protection:** See [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md) for main branch rules
+- **For Infrastructure:** This document
 
-Runs on every push to `main` and on all pull requests.
+## Overview
 
-**Jobs:**
+The GitVista project uses:
 
-1. **Test** (Matrix: Go 1.21, 1.22, 1.23)
-   - Runs all unit tests with race detection
-   - Generates coverage reports
-   - Uploads coverage to Codecov (Go 1.23 only)
-   - Timeout: 5 minutes
+1. **Lefthook** - Fast pre-commit framework for local checks before committing
+2. **GitHub Actions CI/CD** - Automated testing, building, and security scanning
+3. **Branch Protection Rules** - Enforce quality gates on main branch
 
-2. **Lint**
-   - Runs golangci-lint with comprehensive checks
-   - Configuration in `/.golangci.yml`
-   - Checks: errcheck, gosec, staticcheck, govet, revive, and more
-   - Timeout: 5 minutes
+## Pre-commit Hooks (Lefthook)
 
-3. **Validate JavaScript**
-   - Syntax validation for all `.js` files in `web/`
-   - Checks for CommonJS/ES module mixing
-   - Ensures ES6+ module syntax
+### What Runs Locally
 
-4. **Build**
-   - Compiles the `gitvista` binary
-   - Verifies build succeeds on Ubuntu
+When you make a commit, lefthook automatically runs checks to catch issues before they reach GitHub:
 
-5. **Integration Tests**
-   - End-to-end server tests
-   - HTTP/WebSocket communication
-   - Rate limiting validation
-   - Security checks (path traversal)
-   - Requires: Build tag `integration`
+**File: `lefthook.yml`**
 
-6. **Security**
-   - gosec: Static security analysis
-   - govulncheck: Known vulnerability scanning
-   - Non-blocking (informational)
+| Check | Files | Time | Auto-fix |
+|-------|-------|------|----------|
+| gofmt | `*.go` | < 1s | ✅ Yes |
+| goimports | `*.go` | < 2s | ✅ Yes |
+| go vet | `*.go` | < 1s | ❌ No |
+| staticcheck | `*.go` | < 5s | ❌ No |
+| gosec | `internal/**/*.go` | < 2s | ❌ No |
+| js-syntax | `web/**/*.js` | < 1s | ❌ No |
+| js-commonjs | `web/**/*.js` | < 1s | ❌ No |
 
-## Badges
+**Total time:** ~10 seconds (fast enough not to interrupt workflow)
 
-Add these to your main README.md:
+### Installation
 
-```markdown
-![CI](https://github.com/rybkr/gitvista/workflows/CI/badge.svg)
-[![codecov](https://codecov.io/gh/rybkr/gitvista/branch/main/graph/badge.svg)](https://codecov.io/gh/rybkr/gitvista)
-```
-
-## Local Validation
-
-Run the same checks locally before pushing:
+See [DEVELOPMENT.md](../../DEVELOPMENT.md#quick-start) for setup instructions or run:
 
 ```bash
-# Tests with race detection
-go test -race -timeout 5m ./...
-
-# Linting (requires golangci-lint)
-golangci-lint run --timeout=5m
-
-# JavaScript validation
-for file in web/*.js; do node --check "$file"; done
-
-# Integration tests
-go test -v -tags=integration ./test/integration/...
-
-# Security scanning (requires gosec)
-gosec -no-fail -fmt json -out gosec-report.json ./...
-govulncheck ./...
+make setup-hooks
 ```
 
-## Setup Requirements
+## GitHub Actions CI Workflow
 
-### Codecov Integration
+### File: `workflows/ci.yml`
 
-1. Sign up at [codecov.io](https://codecov.io)
-2. Add your repository
-3. No token needed for public repos
-4. For private repos, add `CODECOV_TOKEN` to GitHub secrets
+Comprehensive CI pipeline that runs on:
+- Every push to `main` and `dev` branches
+- All pull requests to `main`
+- Automatically triggered by GitHub
 
-### golangci-lint
+### Jobs Overview
 
-The workflow uses the official [golangci-lint-action](https://github.com/golangci/golangci-lint-action) which automatically installs the linter.
+All jobs run in parallel for speed (~3-5 minutes total):
 
-Local installation:
+#### 1. **Format Check** (< 10s)
+- Validates all Go code is gofmt-compliant
+- Fails if any file needs formatting
+- **Status:** Required
+
+#### 2. **Vet** (< 30s)
+- Runs `go vet` for suspicious code patterns
+- Detects unused variables, pointer errors, unreachable code
+- **Status:** Required
+
+#### 3. **Lint** (< 2m)
+- Runs golangci-lint with 13+ linters
+- Configured in `/.golangci.yml`
+- Linters: errcheck, staticcheck, gosec, revive, misspell, and more
+- Only reports new issues on PRs (not on main push)
+- **Status:** Required
+
+#### 4. **Security Scan** (< 1m)
+- Runs govulncheck for known CVEs in dependencies
+- Uses Go's official vulnerability database
+- Fails on confirmed exploitable vulnerabilities
+- **Status:** Required
+
+#### 5. **Test** (< 3m)
+- Runs all unit tests with race detector
+- Generates coverage report
+- Uploads coverage to Codecov
+- Coverage badge available in README
+- **Status:** Required
+
+#### 6. **Integration Tests** (< 3m)
+- Runs integration tests with full Git context
+- Tests component interactions
+- Requires `integration` build tag
+- **Status:** Required
+
+#### 7. **E2E Tests** (< 3m)
+- Runs end-to-end tests
+- Tests complete workflows
+- Compares output against git baseline
+- Requires `e2e` build tag
+- **Status:** Required
+
+#### 8. **Validate JavaScript** (< 10s)
+- Node.js syntax validation for all `.js` files
+- Checks for CommonJS/ES module mixing
+- Ensures ES module compliance
+- **Status:** Required
+
+#### 9. **Build** (< 2m)
+- Compiles both binaries (gitvista and gitvista-cli)
+- Verifies no missing imports
+- Ensures clean compilation
+- **Status:** Required
+
+#### 10. **Docker Build** (< 3m)
+- Builds production Docker image
+- Uses multi-stage Dockerfile
+- Caches intermediate layers
+- **Status:** Required
+
+#### 11. **Dependency Check** (< 30s)
+- Verifies `go.mod`/`go.sum` are in sync
+- Ensures no orphaned dependencies
+- Runs `go mod tidy -check`
+- **Status:** Required
+
+#### 12. **CI Status** (instant)
+- Aggregates all job results
+- Master check for branch protection
+- Ensures all checks passed
+- **Status:** Required (master)
+
+### Status Check Details
+
+The **ci-status** job is the master check used in branch protection rules. It verifies that ALL other jobs passed.
+
+Individual checks also appear in branch protection (see [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md)):
+
+```yaml
+# All of these are required to be green
+needs:
+  - format
+  - vet
+  - lint
+  - security
+  - test
+  - integration
+  - e2e
+  - validate-js
+  - build
+  - docker-build
+  - dependencies
+```
+
+## Action Versions
+
+All GitHub Actions are pinned to specific SHAs (not @latest):
+
+```yaml
+- uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+- uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590    # v5.0.0
+```
+
+This prevents:
+- Supply chain attacks via compromised actions
+- Unexpected behavior changes
+- Non-deterministic CI runs
+
+Update actions periodically with Dependabot alerts.
+
+## Local Development
+
+### Install Pre-commit Hooks
 
 ```bash
-# macOS
-brew install golangci-lint
+# Automatic setup
+make setup-hooks
 
-# Linux
-curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
-
-# Or via Go
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# Manual setup
+brew install lefthook  # macOS
+apt install lefthook   # Linux
+lefthook install
 ```
 
-### Security Tools
+### Replicate CI Locally
 
 ```bash
-# Install gosec
-go install github.com/securego/gosec/v2/cmd/gosec@latest
+# Run all CI checks (takes ~5 minutes)
+make ci
 
-# Install govulncheck
-go install golang.org/x/vuln/cmd/govulncheck@latest
+# Run fast checks only
+make dev-check  # format, imports, vet
+
+# Run specific checks
+make test
+make lint
+make integration
+make build
+make docker-build
 ```
 
-## Workflow Customization
+### Make Targets Available
 
-### Change Go Versions
-
-Edit the matrix in `.github/workflows/ci.yml`:
-
-```yaml
-strategy:
-  matrix:
-    go-version: ['1.21', '1.22', '1.23']  # Modify as needed
+```bash
+make help  # List all available targets
 ```
 
-### Adjust Timeouts
+Key targets:
+
+| Target | Purpose |
+|--------|---------|
+| `make setup-hooks` | Install pre-commit hooks |
+| `make dev-check` | Quick format/vet/imports check |
+| `make test` | Unit tests |
+| `make cover` | Tests with coverage |
+| `make cover-html` | Coverage report in browser |
+| `make integration` | Integration tests |
+| `make e2e` | End-to-end tests |
+| `make lint` | Run linters |
+| `make vet` | Static analysis |
+| `make format` | Auto-format code |
+| `make check-imports` | Fix import ordering |
+| `make security` | Security checks |
+| `make build` | Build binaries |
+| `make docker-build` | Build Docker image |
+| `make ci` | Run full CI suite |
+| `make clean` | Clean artifacts |
+
+## Secrets and Access
+
+### Environment Variables
+
+- **CODECOV_TOKEN** - Read-only token for Codecov uploads
+  - Only needed for private repos
+  - Public repos don't require this
+
+### No Credentials Needed
+
+The workflow doesn't require:
+- AWS credentials
+- API keys
+- Database passwords
+- GitHub token (except implicit GITHUB_TOKEN)
+
+### OIDC Federated Access
+
+For future cloud deployments, consider OIDC federation instead of long-lived credentials:
 
 ```yaml
-- name: Run tests
-  run: go test -v -race -timeout 5m ./...  # Change 5m as needed
-```
-
-### Skip Jobs on Certain Paths
-
-```yaml
-on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: arn:aws:iam::ACCOUNT:role/GitHubActionsRole
+    aws-region: us-east-1
 ```
 
 ## Troubleshooting
 
-### Tests Timeout
+### Status Check Not Appearing
+
+1. Wait 5 minutes for GitHub cache
+2. Check workflow file is valid YAML: `yamllint .github/workflows/ci.yml`
+3. Verify job names match branch protection settings exactly
+4. Check Actions tab for workflow errors
+
+### "Branch protection requires 12 checks but only 11 exist"
+
+- A required check failed or hasn't run yet
+- Branch protection config still references old job name
+- Workflow file has a syntax error
+
+**Solution:**
+1. Verify latest workflow run succeeded
+2. Update branch protection rules to match current job names
+3. Check `.github/workflows/ci.yml` syntax
+
+### PR Can't Merge Despite Green Checkmarks
+
+Possible causes:
+1. **"Requires up-to-date branch"** - Rebase: `git pull --rebase origin main`
+2. **"Requires code review"** - Wait for reviewer
+3. **"Requires conversation resolution"** - Reply to all review comments
+4. **"Requires 1 approval"** - Reviewer approved but with "Request changes" flag set
+
+### Test Timeout
 
 Increase timeout in workflow:
 
@@ -152,55 +291,104 @@ Increase timeout in workflow:
   timeout-minutes: 15
 ```
 
-### Linter Fails on Different Go Version
+### Linter Fails Locally but Passes in CI
 
-The linter runs on Go 1.23. If using features from newer versions, update:
+```bash
+# Clear golangci-lint cache
+golangci-lint cache clean
 
-```yaml
-- name: Set up Go
-  uses: actions/setup-go@v5
-  with:
-    go-version: '1.24'  # Update version
+# Run with same config as CI
+golangci-lint run --config=.golangci.yml
+
+# Update linter
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 ```
 
-### Integration Tests Fail in CI
+### Docker Build Fails
 
-Integration tests need a Git repository. The workflow runs from repo root, which works. If issues occur:
+```bash
+# Debug locally
+docker build .
 
-```yaml
-- name: Run integration tests
-  working-directory: ${{ github.workspace }}
-  run: go test -v -race -tags=integration ./test/integration/...
+# Common issues:
+# 1. Base image not available
+# 2. Missing files in COPY
+# 3. RUN command fails in container
+
+# Check Dockerfile
+cat Dockerfile
+
+# Test specific stage
+docker build --target build .
 ```
-
-### Coverage Upload Fails
-
-Codecov upload is non-blocking (`fail_ci_if_error: false`). Check:
-- Repository is added to Codecov
-- For private repos, `CODECOV_TOKEN` is set in secrets
-- Coverage file exists: `test/cover/coverage.out`
 
 ## Performance
 
-Typical run times (on GitHub hosted runners):
+### Typical Execution Times
 
-- Test job: ~30-60 seconds per Go version
-- Lint job: ~45 seconds
-- JavaScript validation: ~10 seconds
-- Build: ~20 seconds
-- Integration tests: ~15 seconds
-- Security scan: ~30 seconds
+Running in parallel on GitHub hosted runners:
 
-**Total pipeline time:** ~2-3 minutes
+| Job | Time |
+|-----|------|
+| Format Check | < 10s |
+| Vet | < 30s |
+| Lint | < 2m |
+| Security | < 1m |
+| Test | < 3m |
+| Integration | < 3m |
+| E2E | < 3m |
+| JavaScript | < 10s |
+| Build | < 2m |
+| Docker | < 3m |
+| Dependencies | < 30s |
+
+**Total (parallel):** ~3-5 minutes ⚡
+
+### Optimization Tips
+
+1. **Cache Go modules** - Already enabled
+2. **Reuse Docker layers** - Already using GitHub Actions cache
+3. **Only run E2E on PRs** - Currently runs on every PR (might optimize later)
+4. **Matrix builds** - Currently single Go version, could add 1.24 if needed
+
+## Branch Protection Rules
+
+See [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md) for detailed setup.
+
+Required settings for main:
+- ✅ Require all CI checks to pass
+- ✅ Require 1 code review
+- ✅ Require branches up-to-date before merge
+- ❌ Don't allow administrators to bypass (optional)
 
 ## Future Enhancements
 
 Potential improvements:
 
-- [ ] Add benchmark regression detection
-- [ ] Deploy to staging environment on main push
-- [ ] Docker image build and publish
-- [ ] Frontend E2E tests with Playwright
-- [ ] Automatic dependency updates with Dependabot
+- [ ] Multi-version Go testing (1.25, 1.26, 1.27)
+- [ ] Benchmark regression detection
+- [ ] Automated dependency updates (Dependabot)
+- [ ] Container registry push (Docker Hub, GHCR)
+- [ ] Automated semantic versioning
+- [ ] SBOM generation
+- [ ] Frontend E2E tests (Playwright)
 - [ ] Code quality metrics (gocyclo, gocognit)
 - [ ] License compliance checking
+- [ ] Automatic changelog generation
+
+## References
+
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- [Lefthook Documentation](https://evilmartians.com/chronicles/lefthook-knock-down-your-git-pre-commit-hook)
+- [Go Testing Best Practices](https://golang.org/doc/effective_go#testing)
+- [golangci-lint Linters](https://golangci-lint.run/usage/linters/)
+- [Codecov Documentation](https://docs.codecov.io/)
+- [GitHub Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+
+## Need Help?
+
+1. Check [DEVELOPMENT.md](../../DEVELOPMENT.md) for local development setup
+2. See [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md) for branch rules
+3. Review workflow file: `.github/workflows/ci.yml`
+4. Check Actions tab in GitHub for failed workflow details
+5. Run `make help` for available targets
