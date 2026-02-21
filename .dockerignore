@@ -2,7 +2,7 @@
 # Build artifacts
 **/gitvista
 **/gitvista-cli
-**/vista
+vista
 **/*.exe
 **/*.out
 
