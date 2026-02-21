@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gitvista ./cmd/vista
 # Runtime stage
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata git
+RUN apk add --no-cache ca-certificates tzdata git openssh-client
 
 COPY --from=build /gitvista /usr/local/bin/gitvista
 
@@ -27,4 +27,4 @@ WORKDIR /repo
 EXPOSE 8080
 
 ENTRYPOINT ["gitvista"]
-CMD ["-repo", "/repo", "-host", "0.0.0.0"]
+CMD ["-host", "0.0.0.0"]
