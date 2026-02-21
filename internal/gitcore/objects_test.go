@@ -113,15 +113,15 @@ func TestParseTreeBody(t *testing.T) {
 	hash3, _ := hex.DecodeString("cccccccccccccccccccccccccccccccccccccccc")
 
 	var body bytes.Buffer
-	// blob entry
+
 	fmt.Fprintf(&body, "100644 file.txt")
 	body.WriteByte(0)
 	body.Write(hash1)
-	// tree entry
+
 	fmt.Fprintf(&body, "040000 subdir")
 	body.WriteByte(0)
 	body.Write(hash2)
-	// submodule entry
+
 	fmt.Fprintf(&body, "160000 vendor")
 	body.WriteByte(0)
 	body.Write(hash3)

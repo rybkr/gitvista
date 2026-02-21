@@ -97,11 +97,7 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		Hunks: make([]DiffHunk, 0),
 	}
 
-	// ------------------------------------------------------------------
-	// 1. Resolve the HEAD blob hash for this file.
-	// ------------------------------------------------------------------
 	headHash := repo.Head()
-
 	var headContent []byte // nil means the file is not in HEAD
 
 	if headHash != "" {
@@ -133,9 +129,6 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		}
 	}
 
-	// ------------------------------------------------------------------
-	// 2. Read the on-disk file content.
-	// ------------------------------------------------------------------
 	diskPath := filepath.Join(repo.WorkDir(), filePath)
 	//nolint:gosec // G304: path sanitized by the server handler before reaching here
 	diskContent, err := os.ReadFile(diskPath)
@@ -152,9 +145,6 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		return result, nil
 	}
 
-	// ------------------------------------------------------------------
-	// 3. Guard: size and binary checks.
-	// ------------------------------------------------------------------
 	if len(headContent) > maxBlobSize || len(diskContent) > maxBlobSize {
 		result.Truncated = true
 		return result, nil
@@ -165,9 +155,6 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		return result, nil
 	}
 
-	// ------------------------------------------------------------------
-	// 4. Run Myers diff on the two text contents.
-	// ------------------------------------------------------------------
 	oldLines := splitLines(headContent)
 	newLines := splitLines(diskContent)
 	result.Hunks = myersDiff(oldLines, newLines, contextLines)

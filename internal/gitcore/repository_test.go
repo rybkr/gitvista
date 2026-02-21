@@ -5,7 +5,6 @@ import (
 )
 
 func TestRepositoryDiff(t *testing.T) {
-	// Create synthetic commits for testing
 	commit1 := &Commit{
 		ID:      Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		Tree:    Hash("1111111111111111111111111111111111111111"),

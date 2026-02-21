@@ -47,10 +47,8 @@ type WorkingTreeStatus struct {
 // .gitignore rules are intentionally not applied; untracked files will therefore
 // include ignored files. This is acceptable for the current use case.
 func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
-	// ------------------------------------------------------------------
 	// Step 1: Build a flat map of all blob paths from the HEAD tree.
 	// An empty HEAD (fresh repository) results in an empty map.
-	// ------------------------------------------------------------------
 	headTree := make(map[string]Hash)
 
 	headHash := repo.Head()
@@ -68,9 +66,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		// treat it as an empty tree — the same as a fresh repository.
 	}
 
-	// ------------------------------------------------------------------
 	// Step 2: Read the index (staging area).
-	// ------------------------------------------------------------------
 	index, err := ReadIndex(repo.GitDir())
 	if err != nil {
 		return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading index: %w", err)
@@ -87,9 +83,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	// when both a staged and an unstaged change apply to the same file.
 	results := make(map[string]*FileStatus)
 
-	// ------------------------------------------------------------------
 	// Step 3: Compare HEAD tree vs index to detect staged changes.
-	// ------------------------------------------------------------------
 	for path, entry := range index.ByPath {
 		headHash, inHead := headTree[path]
 
@@ -121,9 +115,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		}
 	}
 
-	// ------------------------------------------------------------------
 	// Step 4: Compare index vs working directory to detect unstaged changes.
-	// ------------------------------------------------------------------
 	workDir := repo.WorkDir()
 	for path, entry := range index.ByPath {
 		diskPath := filepath.Join(workDir, filepath.FromSlash(path))
@@ -179,16 +171,14 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		}
 	}
 
-	// ------------------------------------------------------------------
 	// Step 5: Walk the working directory to find untracked files.
 	// Files that are in the index are skipped. Only regular files are
 	// reported (directories are not listed as untracked entries, matching
 	// the general convention from `git status`).
-	// ------------------------------------------------------------------
 	walkErr := filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Skip directories we cannot read (e.g., permission denied).
-            return nil //nolint:nilerr
+			return nil //nolint:nilerr
 		}
 
 		// Skip the .git directory entirely — it is not part of the working tree.
@@ -226,9 +216,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		return nil, fmt.Errorf("ComputeWorkingTreeStatus: walking work dir: %w", walkErr)
 	}
 
-	// ------------------------------------------------------------------
 	// Assemble the final result slice from the map.
-	// ------------------------------------------------------------------
 	status := &WorkingTreeStatus{
 		Files: make([]FileStatus, 0, len(results)),
 	}

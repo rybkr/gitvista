@@ -865,9 +865,7 @@ func TestDiffStatus_String(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // B2: rename detection — additional cases not covered by the basic tests
-// ---------------------------------------------------------------------------
 
 // TestDetectRenames_EmptyInput verifies that an empty entry slice is handled
 // without panic and returns an empty (non-nil) slice.

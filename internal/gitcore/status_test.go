@@ -10,10 +10,6 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// hashBlobContent tests
-// ---------------------------------------------------------------------------
-
 // TestHashBlobContent_KnownVectors verifies that hashBlobContent produces the
 // SHA-1 that git would compute for "blob <size>\0<content>". The expected
 // hashes were pre-computed with: echo -n "blob N\0<content>" | sha1sum.
@@ -89,10 +85,6 @@ func computeExpectedBlobHash(content []byte) string {
 	h.Write(content)
 	return hex.EncodeToString(h.Sum(nil))
 }
-
-// ---------------------------------------------------------------------------
-// flattenTree tests
-// ---------------------------------------------------------------------------
 
 // TestFlattenTree_SingleRootBlob verifies that a tree containing one blob at
 // the root level is flattened to a single map entry.
@@ -220,10 +212,6 @@ func TestFlattenTree_DeeplyNested(t *testing.T) {
 		}
 	}
 }
-
-// ---------------------------------------------------------------------------
-// ComputeWorkingTreeStatus tests
-// ---------------------------------------------------------------------------
 
 // statusByPath is a test helper that turns the FileStatus slice into a map
 // keyed by path, making assertions order-independent.
@@ -537,9 +525,6 @@ func TestComputeWorkingTreeStatus_UntrackedFile(t *testing.T) {
 func TestComputeWorkingTreeStatus_FullScenario(t *testing.T) {
 	repo := setupTestRepo(t)
 
-	// -----------------------------------------------------------------
-	// Content for each scenario file.
-	// -----------------------------------------------------------------
 	modOldContent := []byte("original content of modified.go\n")
 	modNewContent := []byte("staged new content of modified.go\n")
 	delContent := []byte("content of deleted.go (staged deletion)\n")
@@ -547,9 +532,6 @@ func TestComputeWorkingTreeStatus_FullScenario(t *testing.T) {
 	unstagedDelContent := []byte("index content of unstaged_del.go\n")
 	addedContent := []byte("brand new file content\n")
 
-	// -----------------------------------------------------------------
-	// Real SHA-1 hashes (used for consistent HEAD-vs-index comparison).
-	// -----------------------------------------------------------------
 	modOldHash := hashBlobContent(modOldContent)
 	modNewHash := hashBlobContent(modNewContent)
 	delHash := hashBlobContent(delContent)
@@ -557,12 +539,10 @@ func TestComputeWorkingTreeStatus_FullScenario(t *testing.T) {
 	unstagedDelHash := hashBlobContent(unstagedDelContent)
 	addedHash := hashBlobContent(addedContent)
 
-	// -----------------------------------------------------------------
 	// HEAD tree: contains modified.go (old), deleted.go, unstaged_mod.go,
 	// unstaged_del.go. It does NOT contain added.go (staged addition).
 	// All IDs are real SHA-1 hashes so flattenTree returns values that
 	// can be compared directly with index hashes.
-	// -----------------------------------------------------------------
 	headTree := createTree(t, repo, []TreeEntry{
 		{ID: modOldHash, Name: "modified.go", Mode: "100644", Type: "blob"},
 		{ID: delHash, Name: "deleted.go", Mode: "100644", Type: "blob"},
@@ -571,14 +551,12 @@ func TestComputeWorkingTreeStatus_FullScenario(t *testing.T) {
 	})
 	wireHeadCommit(repo, headTree)
 
-	// -----------------------------------------------------------------
 	// Index state:
 	//   added.go       → staged addition (not in HEAD)
 	//   modified.go    → staged modification (new hash ≠ HEAD hash)
 	//   deleted.go     → staged deletion (absent from index)
 	//   unstaged_mod.go → no staged change (hash matches HEAD)
 	//   unstaged_del.go → no staged change (hash matches HEAD)
-	// -----------------------------------------------------------------
 	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
 		{path: "added.go", hash: addedHash, fileSize: uint32(len(addedContent))},
 		{path: "modified.go", hash: modNewHash, fileSize: uint32(len(modNewContent))},
@@ -587,7 +565,6 @@ func TestComputeWorkingTreeStatus_FullScenario(t *testing.T) {
 		{path: "unstaged_del.go", hash: unstagedDelHash, fileSize: uint32(len(unstagedDelContent))},
 	})
 
-	// -----------------------------------------------------------------
 	// Working directory:
 	//   added.go       → matches index (no unstaged change)
 	//   modified.go    → matches index (no unstaged change, staged mod only)
@@ -595,7 +572,6 @@ func TestComputeWorkingTreeStatus_FullScenario(t *testing.T) {
 	//   unstaged_mod.go → different content than index → unstaged modification
 	//   unstaged_del.go → not written → absent from disk → unstaged deletion
 	//   untracked.txt  → not in index at all → untracked
-	// -----------------------------------------------------------------
 	writeDiskFile(t, repo, "added.go", addedContent)
 	writeDiskFile(t, repo, "modified.go", modNewContent)
 	// deleted.go intentionally absent from disk (also absent from index)
@@ -759,10 +735,6 @@ func TestComputeWorkingTreeStatus_UntrackedNestedFile(t *testing.T) {
 		t.Errorf("IsUntracked = false, want true")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
 
 // requirePath is a test helper that retrieves a FileStatus by path and fails
 // the test if the path is not present.

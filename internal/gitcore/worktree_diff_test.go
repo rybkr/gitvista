@@ -8,10 +8,6 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// Helpers specific to worktree diff tests
-// ---------------------------------------------------------------------------
-
 // wireHeadCommit creates a synthetic Commit in-memory (no loose object written)
 // and sets repo.head + repo.commits so that repo.Head() and repo.Commits()
 // return consistent data. The tree hash must already exist in the object store.
@@ -46,10 +42,6 @@ func removeDiskFile(t *testing.T, repo *Repository, relPath string) {
 		t.Fatalf("removeDiskFile: %v", err)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// resolveBlobAtPath tests
-// ---------------------------------------------------------------------------
 
 func TestResolveBlobAtPath_RootFile(t *testing.T) {
 	repo := setupTestRepo(t)
@@ -164,10 +156,6 @@ func TestResolveBlobAtPath_EmptyPath(t *testing.T) {
 		t.Fatal("expected error for empty path, got nil")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// ComputeWorkingTreeFileDiff tests
-// ---------------------------------------------------------------------------
 
 // TestComputeWorkingTreeFileDiff_ModifiedFile verifies that when both HEAD and
 // disk versions exist, the diff is computed between them.

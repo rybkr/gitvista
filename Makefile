@@ -14,11 +14,15 @@ help:
 
 ## test: Run all unit tests
 test:
-	$(GOTEST) -v -race -timeout 5m ./...
+	$(GOTEST) -v -race -cover -timeout=60s ./...
 
 ## integration: Run integration tests
 integration:
 	$(GOTEST) -v -race -tags=integration ./test/integration/...
+
+## format: Auto-format the source code
+format:
+	gofmt -w .
 
 ## lint: Run golangci-lint
 lint:
@@ -31,7 +35,7 @@ build:
 	$(GOBUILD) -v -o gitvista ./cmd/vista
 
 ## ci: Run all CI checks (tests, lint, integration tests, build)
-ci: test lint integration build
+ci: test format lint integration build
 
 ## clean: Clean build artifacts
 clean:

@@ -112,9 +112,7 @@ func ReadIndex(gitDir string) (*Index, error) {
 // parseIndex decodes the raw bytes of a .git/index file into an Index.
 // All multi-byte integers are big-endian as per the Git index specification.
 func parseIndex(data []byte) (*Index, error) {
-	// ------------------------------------------------------------------
 	// Header: 4-byte magic + 4-byte version + 4-byte entry count = 12 bytes
-	// ------------------------------------------------------------------
 	const headerSize = 12
 	if len(data) < headerSize {
 		return nil, fmt.Errorf("file too short to contain a valid header (%d bytes)", len(data))
@@ -140,9 +138,7 @@ func parseIndex(data []byte) (*Index, error) {
 		ByPath:  make(map[string]*IndexEntry, numEntries),
 	}
 
-	// ------------------------------------------------------------------
 	// Entries: parse numEntries variable-length records starting at offset 12.
-	// ------------------------------------------------------------------
 	offset := headerSize
 	for i := range numEntries {
 		entry, bytesConsumed, err := parseIndexEntry(data, offset)
@@ -219,9 +215,7 @@ func parseIndexEntry(data []byte, startOffset int) (IndexEntry, int, error) {
 	// Extract the merge stage from flags bits 12-13.
 	entry.Stage = int((entry.Flags & indexFlagStageMask) >> indexFlagStageShift)
 
-	// ------------------------------------------------------------------
 	// Variable-length null-terminated path, starting at byte 62.
-	// ------------------------------------------------------------------
 	pathStart := startOffset + indexFixedEntrySize
 	nullIdx := -1
 	for i := pathStart; i < len(data); i++ {
@@ -236,7 +230,6 @@ func parseIndexEntry(data []byte, startOffset int) (IndexEntry, int, error) {
 
 	entry.Path = string(data[pathStart:nullIdx])
 
-	// ------------------------------------------------------------------
 	// Alignment padding: the total entry length (fixed + path + NUL + padding)
 	// must be a multiple of indexEntryAlignment (8 bytes). The NUL terminator
 	// is 1 byte; at least one NUL must be present, and additional NULs are
@@ -245,8 +238,7 @@ func parseIndexEntry(data []byte, startOffset int) (IndexEntry, int, error) {
 	// Git computes the padded end as:
 	//   padded_end = startOffset + round_up(fixedSize + pathLen + 1, 8)
 	// where pathLen is the number of path bytes (not counting the NUL).
-	// ------------------------------------------------------------------
-	pathLen := nullIdx - pathStart // bytes in the path, not counting the NUL
+	pathLen := nullIdx - pathStart              // bytes in the path, not counting the NUL
 	rawLen := indexFixedEntrySize + pathLen + 1 // +1 for NUL terminator
 	// Round up rawLen to the next multiple of indexEntryAlignment.
 	// Formula: (rawLen + alignment - 1) & ^(alignment - 1)

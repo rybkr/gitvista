@@ -22,47 +22,53 @@ const (
 
 // loadObjects traverses all refs and loads reachable commits and tags.
 // Must be called after loadRefs.
-func (r *Repository) loadObjects() {
+func (r *Repository) loadObjects() error {
 	visited := make(map[Hash]bool)
 	for _, ref := range r.refs {
-		r.traverseObjects(ref, visited)
+		if err := r.traverseObjects(ref, visited); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
+func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) error {
 	if visited[ref] {
-		return
+		return nil
 	}
 	visited[ref] = true
 
 	object, err := r.readObject(ref)
 	if err != nil {
-		log.Printf("error traversing object: %v", err)
-		return
+		return fmt.Errorf("error traversing object: %v", err)
 	}
 
 	switch object.Type() {
 	case CommitObject:
 		commit, ok := object.(*Commit)
 		if !ok {
-			log.Printf("unexpected type for commit object %s", ref)
-			return
+			return fmt.Errorf("unexpected type for commit object %s", ref)
 		}
 		r.commits = append(r.commits, commit)
 		for _, parent := range commit.Parents {
-			r.traverseObjects(parent, visited)
+			if err := r.traverseObjects(parent, visited); err != nil {
+				return err
+			}
 		}
 	case TagObject:
 		tag, ok := object.(*Tag)
 		if !ok {
-			log.Printf("unexpected type for tag object %s", ref)
-			return
+			return fmt.Errorf("unexpected type for tag object %s", ref)
 		}
 		r.tags = append(r.tags, tag)
-		r.traverseObjects(tag.Object, visited)
+		if err := r.traverseObjects(tag.Object, visited); err != nil {
+			return err
+		}
 	default:
-		log.Printf("unsupported object type: %d", object.Type())
+		return fmt.Errorf("unsupported object type: %d", object.Type())
 	}
+
+	return nil
 }
 
 // readObject reads and parses a Git object (loose first, then packed).

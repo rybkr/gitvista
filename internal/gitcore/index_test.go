@@ -9,13 +9,8 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// Binary construction helpers
-// ---------------------------------------------------------------------------
+// "DIRC" magic (4) + version (4, big-endian) + entry count (4, big-endian).
 
-// buildIndexHeader constructs the 12-byte DIRC index file header.
-//
-//	"DIRC" magic (4) + version (4, big-endian) + entry count (4, big-endian)
 func buildIndexHeader(numEntries uint32) []byte {
 	const version uint32 = 2
 	var buf bytes.Buffer
@@ -65,7 +60,6 @@ func buildIndexEntry(path string, hash [20]byte, mode uint32, stage int) []byte 
 		}
 	}
 
-	// 20-byte SHA-1 hash.
 	buf.Write(hash[:])
 
 	// 2-byte flags: bits 12-13 = stage, lower 12 = min(len(path), 0xFFF).
@@ -75,7 +69,6 @@ func buildIndexEntry(path string, hash [20]byte, mode uint32, stage int) []byte 
 		panic(err)
 	}
 
-	// Variable-length null-terminated path.
 	buf.WriteString(path)
 	buf.WriteByte(0)
 
@@ -144,7 +137,6 @@ func writeIndexFile(t *testing.T, gitDir string, data []byte) {
 	}
 }
 
-// zeroHash is a 20-byte all-zeros SHA-1, used as a convenient default hash.
 var zeroHash = [20]byte{}
 
 // knownHash returns a deterministic non-zero hash for use in test assertions.
@@ -153,10 +145,6 @@ var knownHash = [20]byte{
 	0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
 	0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_NonExistentFile
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_NonExistentFile verifies that a gitDir which contains no index
 // file is not treated as an error — it returns an empty (but valid) Index.
@@ -183,10 +171,6 @@ func TestReadIndex_NonExistentFile(t *testing.T) {
 		t.Errorf("ByPath: want 0 entries, got %d", len(idx.ByPath))
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_SingleEntry
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_SingleEntry constructs a minimal but complete v2 index with one
 // entry and verifies that every field is parsed to its expected value.
@@ -273,13 +257,11 @@ func TestReadIndex_SingleEntry(t *testing.T) {
 		t.Errorf("Stage: got %d, want 0", e.Stage)
 	}
 
-	// Verify the hash round-trips correctly through hex encoding.
 	wantHashHex := "0102030405060708090a0b0c0d0e0f1011121314"
 	if string(e.Hash) != wantHashHex {
 		t.Errorf("Hash: got %s, want %s", e.Hash, wantHashHex)
 	}
 
-	// Stage-0 entry must be in ByPath.
 	byPath, ok := idx.ByPath[wantPath]
 	if !ok {
 		t.Fatalf("ByPath missing entry for %q", wantPath)
@@ -288,10 +270,6 @@ func TestReadIndex_SingleEntry(t *testing.T) {
 		t.Errorf("ByPath[%q].Path = %q, want %q", wantPath, byPath.Path, wantPath)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_MultipleEntries
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_MultipleEntries builds a v2 index with three entries and checks
 // that all are parsed and the ByPath map is keyed correctly.
@@ -303,14 +281,13 @@ func TestReadIndex_MultipleEntries(t *testing.T) {
 	entries := []entry{
 		{"Makefile", 0o100644},
 		{"internal/gitcore/index.go", 0o100644},
-		{"web/app.js", 0o100755}, // executable
+		{"web/app.js", 0o100755},
 	}
 
 	gitDir := t.TempDir()
 	var raw bytes.Buffer
 	raw.Write(buildIndexHeader(uint32(len(entries))))
 	for i, e := range entries {
-		// Give each entry a distinct hash so we can tell them apart.
 		var h [20]byte
 		h[0] = byte(i + 1)
 		raw.Write(buildIndexEntry(e.path, h, e.mode, 0))
@@ -342,7 +319,6 @@ func TestReadIndex_MultipleEntries(t *testing.T) {
 				t.Errorf("Stage: got %d, want 0", got.Stage)
 			}
 
-			// Every entry in this test is stage-0, so all must appear in ByPath.
 			if _, ok := idx.ByPath[want.path]; !ok {
 				t.Errorf("ByPath missing %q", want.path)
 			}
@@ -350,17 +326,13 @@ func TestReadIndex_MultipleEntries(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// TestReadIndex_InvalidMagic
-// ---------------------------------------------------------------------------
-
 // TestReadIndex_InvalidMagic verifies that a file whose first 4 bytes are not
 // "DIRC" is rejected with a descriptive error.
 func TestReadIndex_InvalidMagic(t *testing.T) {
 	gitDir := t.TempDir()
 
 	var raw bytes.Buffer
-	raw.WriteString("XXXX") // wrong magic
+	raw.WriteString("XXXX")
 	_ = binary.Write(&raw, binary.BigEndian, uint32(2))
 	_ = binary.Write(&raw, binary.BigEndian, uint32(0))
 	writeIndexFile(t, gitDir, raw.Bytes())
@@ -373,10 +345,6 @@ func TestReadIndex_InvalidMagic(t *testing.T) {
 		t.Errorf("error %q does not mention 'invalid magic'", err.Error())
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_UnsupportedVersion
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_UnsupportedVersion verifies that index versions other than 2
 // (v3 adds skip-worktree flags, v4 uses path compression) are rejected.
@@ -401,10 +369,6 @@ func TestReadIndex_UnsupportedVersion(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_TruncatedHeader
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_TruncatedHeader verifies that a file shorter than the 12-byte
 // header is rejected rather than causing a panic or wrong parse.
@@ -432,10 +396,6 @@ func TestReadIndex_TruncatedHeader(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// TestReadIndex_TruncatedEntry
-// ---------------------------------------------------------------------------
-
 // TestReadIndex_TruncatedEntry verifies that a header claiming 1 entry but
 // providing insufficient bytes for the fixed fields is rejected cleanly.
 func TestReadIndex_TruncatedEntry(t *testing.T) {
@@ -453,10 +413,6 @@ func TestReadIndex_TruncatedEntry(t *testing.T) {
 		t.Fatal("expected error for truncated entry, got nil")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_StageExtraction
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_StageExtraction verifies that merge-conflict stage bits (stored
 // in flags bits 12-13) are decoded correctly.  Stage values 1, 2, and 3
@@ -502,10 +458,6 @@ func TestReadIndex_StageExtraction(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// TestReadIndex_LongPath
-// ---------------------------------------------------------------------------
-
 // TestReadIndex_LongPath verifies that paths longer than 0xFFF (4095) bytes are
 // handled correctly: the flags name-length field is capped at 0xFFF per the Git
 // spec, but the actual path bytes in the entry data are used verbatim.
@@ -538,10 +490,6 @@ func TestReadIndex_LongPath(t *testing.T) {
 		t.Error("ByPath missing long-path entry")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_ByPathOnlyStageZero
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_ByPathOnlyStageZero builds an index that mixes stage-0 and
 // non-zero entries (as would appear during an active merge conflict) and
@@ -588,10 +536,6 @@ func TestReadIndex_ByPathOnlyStageZero(t *testing.T) {
 		t.Errorf("ByPath: got %d entries, want 1", len(idx.ByPath))
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_Alignment
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_Alignment tests paths of varying lengths to exercise the
 // 8-byte alignment padding logic across several boundary conditions.
@@ -655,10 +599,6 @@ func TestReadIndex_Alignment(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// TestReadIndex_MultipleEntriesCorrectOrder
-// ---------------------------------------------------------------------------
-
 // TestReadIndex_MultipleEntriesCorrectOrder verifies that entries are returned
 // in the same order they appear in the binary file, which Git guarantees to be
 // lexicographically sorted by path.
@@ -689,10 +629,6 @@ func TestReadIndex_MultipleEntriesCorrectOrder(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// TestReadIndex_ByPathPointerStability
-// ---------------------------------------------------------------------------
-
 // TestReadIndex_ByPathPointerStability verifies that the pointers stored in
 // ByPath actually point into the Entries slice (not stale copies from before a
 // slice reallocation). This exercises the re-population loop in parseIndex.
@@ -708,7 +644,7 @@ func TestReadIndex_ByPathPointerStability(t *testing.T) {
 	raw.Write(buildIndexHeader(uint32(len(paths))))
 	for i, p := range paths {
 		var h [20]byte
-		h[0] = byte(i + 10) // give each a distinct hash byte
+		h[0] = byte(i + 10)
 		raw.Write(buildIndexEntry(p, h, 0o100644, 0))
 	}
 	writeIndexFile(t, gitDir, raw.Bytes())
@@ -734,10 +670,6 @@ func TestReadIndex_ByPathPointerStability(t *testing.T) {
 		}
 	}
 }
-
-// ---------------------------------------------------------------------------
-// TestReadIndex_ExecutableModeFlag
-// ---------------------------------------------------------------------------
 
 // TestReadIndex_ExecutableModeFlag verifies that the mode field round-trips
 // correctly for executable blobs (0o100755) versus regular files (0o100644).

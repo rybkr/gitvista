@@ -6,9 +6,6 @@ import (
 	"io/fs"
 )
 
-// Embedded web assets from the web/ directory.
-// This allows the binary to run without external files.
-//
 //go:embed all:web
 var embeddedFS embed.FS
 

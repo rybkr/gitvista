@@ -481,4 +481,3 @@ func allDeletions(hunks []gitcore.DiffHunk) bool {
 	}
 	return true
 }
-

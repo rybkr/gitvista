@@ -139,7 +139,7 @@ func (r *Repository) loadHEAD() error {
 }
 
 // loadStashes reads stash entries from the reflog, newest first.
-func (r *Repository) loadStashes() []StashEntry {
+func (r *Repository) loadStashes() error {
 	stashRefPath := filepath.Join(r.gitDir, "refs", "stash")
 	if _, err := os.Stat(stashRefPath); os.IsNotExist(err) {
 		return nil
@@ -159,7 +159,10 @@ func (r *Repository) loadStashes() []StashEntry {
 		if err != nil {
 			return nil
 		}
-		return []StashEntry{{Hash: hash, Message: "stash@{0}"}}
+		r.stashes = append(r.stashes, &StashEntry{
+			Hash:    hash,
+			Message: "stash@{0}",
+		})
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -174,7 +177,6 @@ func (r *Repository) loadStashes() []StashEntry {
 	}
 
 	// Reflog is oldest-first; reverse for newest-first output
-	stashes := make([]StashEntry, 0, len(lines))
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
@@ -188,13 +190,17 @@ func (r *Repository) loadStashes() []StashEntry {
 		if err != nil {
 			continue
 		}
-		msg := fmt.Sprintf("stash@{%d}", len(stashes))
+		msg := fmt.Sprintf("stash@{%d}", len(r.stashes))
 		if tabIdx := strings.Index(line, "\t"); tabIdx >= 0 {
 			msg = strings.TrimSpace(line[tabIdx+1:])
 		}
-		stashes = append(stashes, StashEntry{Hash: hash, Message: msg})
+		r.stashes = append(r.stashes, &StashEntry{
+			Hash:    hash,
+			Message: msg,
+		})
 	}
-	return stashes
+
+	return nil
 }
 
 // resolveRef reads a ref file, following symbolic refs if needed.

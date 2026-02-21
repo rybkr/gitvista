@@ -218,7 +218,7 @@ type RepositoryDelta struct {
 	// HeadHash, Tags, and Stashes are sent on every delta so the frontend stays in sync.
 	HeadHash string            `json:"headHash"`
 	Tags     map[string]string `json:"tags"` // tag name -> target commit hash (annotated tags are peeled)
-	Stashes  []StashEntry      `json:"stashes"`
+	Stashes  []*StashEntry     `json:"stashes"`
 }
 
 // NewRepositoryDelta creates a RepositoryDelta with all maps and slices initialized.
@@ -228,7 +228,7 @@ func NewRepositoryDelta() *RepositoryDelta {
 		AmendedBranches: make(map[string]Hash),
 		DeletedBranches: make(map[string]Hash),
 		Tags:            make(map[string]string),
-		Stashes:         []StashEntry{},
+		Stashes:         make([]*StashEntry, 0),
 	}
 }
 
@@ -245,13 +245,13 @@ func (d *RepositoryDelta) IsEmpty() bool {
 type DiffStatus int
 
 const (
-    // DiffStatusAdded represents a diff addition.
+	// DiffStatusAdded represents a diff addition.
 	DiffStatusAdded DiffStatus = iota
-    // DiffStatusModified represents a diff modification.
+	// DiffStatusModified represents a diff modification.
 	DiffStatusModified
-    // DiffStatusDeleted represents a diff deletion.
+	// DiffStatusDeleted represents a diff deletion.
 	DiffStatusDeleted
-    // DiffStatusRenamed represents a diff renaming.
+	// DiffStatusRenamed represents a diff renaming.
 	DiffStatusRenamed
 )
 
@@ -329,10 +329,10 @@ type FileDiff struct {
 type LineType string
 
 const (
-    // LineTypeContext represents a context line in a diff.
-	LineTypeContext  = "context"
-    // LineTypeAddition represents an added line in a diff.
+	// LineTypeContext represents a context line in a diff.
+	LineTypeContext = "context"
+	// LineTypeAddition represents an added line in a diff.
 	LineTypeAddition = "addition"
-    // LineTypeDeletion represents a deleted line in a diff.
+	// LineTypeDeletion represents a deleted line in a diff.
 	LineTypeDeletion = "deletion"
 )

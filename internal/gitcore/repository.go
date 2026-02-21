@@ -14,11 +14,11 @@ type Repository struct {
 	gitDir  string
 	workDir string
 
-	packIndices []*PackIndex
 	refs        map[string]Hash
 	commits     []*Commit
 	tags        []*Tag
-	stashes     []StashEntry
+	stashes     []*StashEntry
+	packIndices []*PackIndex
 
 	head         Hash
 	headRef      string
@@ -34,16 +34,18 @@ func NewRepository(path string) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	if err := validateGitDirectory(gitDir); err != nil {
 		return nil, err
 	}
 
 	repo := &Repository{
-		gitDir:  gitDir,
-		workDir: workDir,
-		refs:    make(map[string]Hash),
-		commits: make([]*Commit, 0),
+		gitDir:      gitDir,
+		workDir:     workDir,
+		refs:        make(map[string]Hash),
+		commits:     make([]*Commit, 0),
+		tags:        make([]*Tag, 0),
+		stashes:     make([]*StashEntry, 0),
+		packIndices: make([]*PackIndex, 0),
 	}
 
 	if err := repo.loadPackIndices(); err != nil {
@@ -52,8 +54,12 @@ func NewRepository(path string) (*Repository, error) {
 	if err := repo.loadRefs(); err != nil {
 		return nil, fmt.Errorf("failed to load refs: %w", err)
 	}
-	repo.loadObjects()
-	repo.stashes = repo.loadStashes()
+	if err := repo.loadObjects(); err != nil {
+		return nil, fmt.Errorf("failed to load objects: %w", err)
+	}
+	if err := repo.loadStashes(); err != nil {
+		return nil, fmt.Errorf("failed to load stashes: %w", err)
+	}
 
 	return repo, nil
 }
@@ -182,7 +188,7 @@ func (r *Repository) Tags() map[string]string {
 }
 
 // Stashes returns all stash entries in the repository.
-func (r *Repository) Stashes() []StashEntry {
+func (r *Repository) Stashes() []*StashEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.stashes
@@ -288,7 +294,7 @@ func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 	delta.Tags = r.Tags()
 	delta.Stashes = r.Stashes()
 	if delta.Stashes == nil {
-		delta.Stashes = []StashEntry{}
+		delta.Stashes = make([]*StashEntry, 0)
 	}
 
 	return delta
