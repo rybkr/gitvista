@@ -68,8 +68,8 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `watcher.go` - Filesystem watcher on `.git/` directory with debouncing; triggers repository reload and broadcasts deltas
 - `broadcast.go` - Non-blocking delta broadcast to WebSocket clients (256-item buffer, drops on overflow)
 - `update.go` - Computes `RepositoryDelta` between old and new repository states
-- `status.go` - Working tree status via `git status --porcelain`
-- **Note:** The git CLI is used in two places: `status.go` for `git status --porcelain` and `handlers.go` for `git diff HEAD` (working tree diffs). All other git operations use pure Go parsing.
+- `status.go` - Server-layer working tree status translation from pure Go gitcore parsing
+- **Note:** No git CLI is required. All git operations, including working tree status and diffs, use pure Go parsing. See `internal/gitcore/status.go` and `internal/gitcore/worktree_diff.go` for implementation.
 - **Note:** `internal/gitcore/` still uses `log.Printf` in ~10 places (refs.go, objects.go, pack.go). The slog migration (F6) only covers `internal/server/`. These calls bypass `GITVISTA_LOG_LEVEL` filtering.
 - `health.go` - Health check endpoint
 - `ratelimit.go` - Per-client rate limiting for API endpoints
@@ -86,7 +86,7 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `GET /api/tree/blame/{commitHash}?path={dirPath}` - Per-file blame for a directory
 - `GET /api/commit/diff/{commitHash}` - List of files changed in a commit (`CommitDiff` with stats)
 - `GET /api/commit/diff/{commitHash}/file?path={path}` - Line-level unified diff for a specific file (`FileDiff` with hunks)
-- `GET /api/working-tree/diff?path={filePath}` - Working tree diff for a specific file (uses `git diff HEAD`)
+- `GET /api/working-tree/diff?path={filePath}` - Working tree diff for a specific file (pure Go implementation via `ComputeWorkingTreeFileDiff`)
 - `GET /api/ws` - WebSocket upgrade for real-time deltas + working tree status
 - `GET /health` - Health check endpoint (returns `{"status": "ok"}`)
 
@@ -129,7 +129,7 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 
 ### Data Flow
 
-1. Server loads repository from `.git/` directory at startup (pure Go, no git CLI) with structured logging
+1. Server loads repository from `.git/` directory at startup (pure Go parsing: loose objects, pack files, refs, tags, index, working tree status, diffs)
 2. Client connects via WebSocket, receives initial state as `RepositoryDelta`
 3. Filesystem watcher detects `.git/` changes, debounces, reloads repository
 4. Server computes delta between old and new state, broadcasts to all clients

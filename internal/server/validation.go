@@ -11,7 +11,7 @@ import (
 // - Contain ".." components
 // - Start with "/" (absolute paths)
 // - Contain null bytes
-// - Would escape the repository root when cleaned
+// - Would escape the repository root when cleaned.
 func validatePath(path string) error {
 	// Reject empty paths (root is represented as "")
 	// This is actually valid, so we allow it

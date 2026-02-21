@@ -32,7 +32,7 @@ func (s *Server) updateRepository() {
 	s.cached.repo = newRepo
 	s.cacheMu.Unlock()
 
-	status := getWorkingTreeStatus(newRepo.WorkDir())
+	status := getWorkingTreeStatus(newRepo)
 
 	var headInfo *HeadInfo
 	headChanged := oldRepo == nil ||

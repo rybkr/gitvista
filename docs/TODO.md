@@ -214,9 +214,9 @@ A text search input within `diffContentViewer.js` that highlights matching subst
 
 **B4. Working Tree Diff Context Expansion**
 
-The expand-context mechanism in `diffContentViewer.js` (already shipping for commit diffs) does not work for working-tree diffs. `handleWorkingTreeDiff` in `handlers.go` (lines 400–463) shells out to `git diff HEAD --` with no `-U` flag. Adding `?context=N` support and passing `-U{N}` to the subprocess is a one-line backend change. The frontend already re-fetches with an updated `?context=` parameter.
+The expand-context mechanism in `diffContentViewer.js` (already shipping for commit diffs) now works for working-tree diffs. `ComputeWorkingTreeFileDiff` in `internal/gitcore/worktree_diff.go` accepts a `contextLines` parameter that controls the number of unchanged lines included around each hunk. The server handler reads `?context=N` parameter and passes it to the gitcore function.
 
-**User problem solved:** Cannot expand context in working-tree diffs despite the UI control existing.
+**User problem solved:** Cannot expand context in working-tree diffs despite the UI control existing. **[COMPLETED via Phase 3: Pure Working Tree Diff]**
 
 ---
 
@@ -282,7 +282,7 @@ Detect mode `160000` entries in the file explorer (already identified by `isSubm
 
 Per-line blame showing which commit last changed each line, with a toggle in `fileContentViewer.js`.
 
-**Correction from original:** `GetLineBlame()` does not exist anywhere in the codebase. The existing `GetFileBlame()` operates at directory-entry granularity (which file changed), not line granularity. True line-level blame requires a fundamentally different algorithm — repeatedly comparing blob diffs across commit ancestors. Given the no-git-CLI constraint in `internal/gitcore/`, the pragmatic path may be shelling out to `git blame --porcelain` (as `status.go` does for working-tree status), but this is a design decision that needs validation before committing to the pure-Go approach.
+**Correction from original:** `GetLineBlame()` does not exist anywhere in the codebase. The existing `GetFileBlame()` operates at directory-entry granularity (which file changed), not line granularity. True line-level blame requires a fundamentally different algorithm — repeatedly comparing blob diffs across commit ancestors. The project has committed to pure-Go parsing (no git CLI). A custom line-blame algorithm or cached blame computation is the intended path forward.
 
 **User problem solved:** Cannot see who wrote each line of a file — the most common form of blame.
 
@@ -416,7 +416,7 @@ Strategic flags: items with outsized long-term value that may score lower due to
 | 4 | B1 | **Inline Syntax Highlighting in Diff View** | 8 | 7 | 9 | 3 | **168** | ⬜ NOT STARTED | highlight.js loaded in `fileContentViewer.js` but `diffContentViewer.js` renders all lines as plain text via `textContent`. Zero hljs integration in diffs. |
 | 5 | A4 | **Progressive Commit Detail at Zoom** | 7 | 5 | 9 | 2 | **158** | ✅ DONE | Zoom threshold pattern exists in `renderCommitLabel`. Author name and date on `node.commit.author`. Zero backend changes. |
 | 6 | B2 | **Rename Detection in Diffs** | 7 | 8 | 8 | 3 | **149** | ✅ DONE | `DiffStatusRenamed`, `DiffEntry.OldPath`, and frontend badge stubs already exist. Backend exact-hash post-processing pass is the only new work. |
-| 7 | B4 | **Working Tree Diff Context Expansion** | 5 | 6 | 9 | 2 | **135** | ⬜ NOT STARTED | `handleWorkingTreeDiff()` in handlers.go:436 calls `git diff HEAD --` without `-U{N}`. Does not read `?context=N` param. Frontend expand-context already works for commit diffs. |
+| 7 | B4 | **Working Tree Diff Context Expansion** | 5 | 6 | 9 | 2 | **135** | ✅ DONE | Pure Go implementation in `ComputeWorkingTreeFileDiff()` supports context parameter. No git CLI shell-out. |
 | 8 | F6 | **Structured Logging** | 5 | 6 | 9 | 2 | **135** | ✅ DONE (server) | `log/slog` in `internal/server/`. `internal/gitcore/` still has ~10 `log.Printf` calls that bypass slog. |
 | 9 | A5 | **Export Graph as PNG** | 6 | 5 | 9 | 2 | **135** | `canvas.toDataURL("image/png")` — DPR scaling already correct. Add a download button to the graph toolbar. |
 | 10 | C1 | **Clickable Blame Hash → Graph Navigation** | 7 | 8 | 9 | 4 | **126** | Pure frontend wiring. Expose `navigateToCommit(hash)` from `graphController.js`; call it from `fileExplorer.js` blame column click handler. |
@@ -439,7 +439,7 @@ Strategic flags: items with outsized long-term value that may score lower due to
 | 27 | D2 | **Backend Full-Text Search Index** | 5 | 6 | 5 | 8 | **19** | Only needed when A2 (frontend search) proves insufficient. Ship A2 first. |
 | 28 | C3 | **Submodule Awareness** | 3 | 5 | 6 | 6 | **15** | `isSubmodule()` detection exists. `.gitmodules` parsing, endpoint, and explorer UX all new. |
 | 29 | A8 | **Graph Layout Mode Toggle (DAG)** | 5 | 6 | 4 | 8 | **15** | ✅ DONE | Shipped as lane-based layout in `web/graph/layout/laneStrategy.js`. Topological column-reuse algorithm with smooth transitions. |
-| 30 | C4 | **Line-Level Blame** | 4 | 7 | 4 | 8 | **14** | `GetLineBlame()` does not exist. Requires new algorithm or `git blame --porcelain` shell-out. Validate feasibility first. **Strategic.** |
+| 30 | C4 | **Line-Level Blame** | 4 | 7 | 4 | 8 | **14** | `GetLineBlame()` does not exist. Requires new algorithm. Pure-Go implementation planned. **Strategic.** |
 | 31 | A5b | **Export Graph as SVG** | 4 | 5 | 4 | 8 | **10** | No SVG rendering path exists. Would require a parallel renderer. Low priority relative to PNG. |
 | 32 | A9 | **Interactive Rebase Preview** | 3 | 5 | 3 | 9 | **5** | Requires DAG-rewrite simulation and depends on A8. Architecture is read-only by design. Long-horizon. |
 
@@ -480,8 +480,8 @@ In `renderNormalCommit()` at `graphRenderer.js:433`, replace `node.laneColor || 
 **2. Inline Syntax Highlighting in Diff View (B1, RICE 168) — NOT STARTED**
 Apply highlight.js to diff content in `diffContentViewer.js`. The library is already loaded in `fileContentViewer.js`; just extend the same pattern to diffs. Tokenize each `DiffLine.content` through `hljs.highlight()` per-line or wrap hunks in `<code>` elements. Detect language from file path extension (already done in `fileContentViewer.js`).
 
-**3. Working Tree Diff Context Expansion (B4, RICE 135) — NOT STARTED**
-In `handleWorkingTreeDiff` (`internal/server/handlers.go`, line 436), read `r.URL.Query().Get("context")`, parse it as an integer (capped at 100, defaulting to 3), and pass `-U{N}` to the `git diff HEAD` subprocess args. The frontend expand-context mechanism requires no changes — it already re-fetches with `?context=` updated.
+**3. Working Tree Diff Context Expansion (B4, RICE 135) — COMPLETED**
+Pure Go implementation via `ComputeWorkingTreeFileDiff()` in `internal/gitcore/worktree_diff.go` accepts a `contextLines` parameter. The server handler reads `r.URL.Query().Get("context")`, parses it as an integer, and passes it to the gitcore function. No git CLI shell-out required.
 
 **4. Export Graph as PNG (A5, RICE 135)**
 `canvas.toDataURL("image/png")` — DPR scaling already correct. Add a download button to the graph toolbar.

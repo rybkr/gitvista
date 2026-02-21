@@ -74,7 +74,7 @@ internal/server/    HTTP + WebSocket server, caching, rate limiting
 web/                Vanilla JS frontend (ES modules, D3.js, Canvas)
 ```
 
-**Backend**: Go 1.24, two dependencies (`fsnotify`, `gorilla/websocket`). Parses `.git/` directly — loose objects, pack files, refs, tags, blame. Working tree status and diffs use `git status --porcelain` and `git diff HEAD` as the only CLI calls.
+**Backend**: Go 1.24, two dependencies (`fsnotify`, `gorilla/websocket`). Parses `.git/` directly — loose objects, pack files, refs, tags, blame, working tree status, and diffs. No git CLI required for core parsing.
 
 **Frontend**: No build toolchain. ES modules loaded natively by the browser. D3.js v7.9.0 via ESM CDN import. Canvas-based graph rendering with two layout strategies (force-directed and topological lane DAG). highlight.js 11.9.0 for syntax coloring.
 

@@ -43,13 +43,21 @@ func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) {
 
 	switch object.Type() {
 	case CommitObject:
-		commit := object.(*Commit)
+		commit, ok := object.(*Commit)
+		if !ok {
+			log.Printf("unexpected type for commit object %s", ref)
+			return
+		}
 		r.commits = append(r.commits, commit)
 		for _, parent := range commit.Parents {
 			r.traverseObjects(parent, visited)
 		}
 	case TagObject:
-		tag := object.(*Tag)
+		tag, ok := object.(*Tag)
+		if !ok {
+			log.Printf("unexpected type for tag object %s", ref)
+			return
+		}
 		r.tags = append(r.tags, tag)
 		r.traverseObjects(tag.Object, visited)
 	default:

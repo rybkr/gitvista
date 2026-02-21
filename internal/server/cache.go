@@ -56,7 +56,8 @@ func (c *LRUCache[V]) Get(key string) (V, bool) {
 
 	// Promote to front — this is why every Get is a mutex write.
 	c.order.MoveToFront(elem)
-	return elem.Value.(*lruEntry[V]).val, true
+	entry, _ := elem.Value.(*lruEntry[V])
+	return entry.val, true
 }
 
 // Put inserts or updates key with val and moves it to most-recently-used.
@@ -67,7 +68,8 @@ func (c *LRUCache[V]) Put(key string, val V) {
 
 	// Update existing entry in-place to avoid an unnecessary eviction.
 	if elem, ok := c.items[key]; ok {
-		elem.Value.(*lruEntry[V]).val = val
+		existing, _ := elem.Value.(*lruEntry[V])
+		existing.val = val
 		c.order.MoveToFront(elem)
 		return
 	}
@@ -89,7 +91,8 @@ func (c *LRUCache[V]) evictOldest() {
 		return
 	}
 	c.order.Remove(oldest)
-	delete(c.items, oldest.Value.(*lruEntry[V]).key)
+	evicted, _ := oldest.Value.(*lruEntry[V])
+	delete(c.items, evicted.key)
 }
 
 // Clear removes all entries from the cache.

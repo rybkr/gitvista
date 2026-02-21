@@ -49,11 +49,16 @@ type Object interface {
 type ObjectType int
 
 const (
-	NoneObject   ObjectType = 0
+	// NoneObject represents no git object.
+	NoneObject ObjectType = 0
+	// CommitObject represents a git commit object.
 	CommitObject ObjectType = 1
-	TreeObject   ObjectType = 2
-	BlobObject   ObjectType = 3
-	TagObject    ObjectType = 4
+	// TreeObject represents a git tree object.
+	TreeObject ObjectType = 2
+	// BlobObject represents a git blob object.
+	BlobObject ObjectType = 3
+	// TagObject represents a git tag object.
+	TagObject ObjectType = 4
 )
 
 // StrToObjectType converts a string representation of an object type to an ObjectType.
@@ -240,9 +245,13 @@ func (d *RepositoryDelta) IsEmpty() bool {
 type DiffStatus int
 
 const (
+    // DiffStatusAdded represents a diff addition.
 	DiffStatusAdded DiffStatus = iota
+    // DiffStatusModified represents a diff modification.
 	DiffStatusModified
+    // DiffStatusDeleted represents a diff deletion.
 	DiffStatusDeleted
+    // DiffStatusRenamed represents a diff renaming.
 	DiffStatusRenamed
 )
 
@@ -320,7 +329,10 @@ type FileDiff struct {
 type LineType string
 
 const (
+    // LineTypeContext represents a context line in a diff.
 	LineTypeContext  = "context"
+    // LineTypeAddition represents an added line in a diff.
 	LineTypeAddition = "addition"
+    // LineTypeDeletion represents a deleted line in a diff.
 	LineTypeDeletion = "deletion"
 )

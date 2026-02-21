@@ -186,7 +186,7 @@ func TestLRUCache_DefaultSize(t *testing.T) {
 
 // TestLRUCache_ConcurrentAccess verifies that simultaneous Get and Put calls
 // from multiple goroutines do not race or panic.
-// Run with: go test -race ./internal/server -run TestLRUCache_ConcurrentAccess
+// Run with: go test -race ./internal/server -run TestLRUCache_ConcurrentAccess.
 func TestLRUCache_ConcurrentAccess(t *testing.T) {
 	const (
 		goroutines = 20

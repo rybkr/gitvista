@@ -65,7 +65,7 @@ func (s *Server) sendInitialState(conn *websocket.Conn) {
 
 	message := UpdateMessage{
 		Delta:  repo.Diff(&gitcore.Repository{}),
-		Status: getWorkingTreeStatus(repo.WorkDir()),
+		Status: getWorkingTreeStatus(repo),
 		Head:   buildHeadInfo(repo),
 	}
 

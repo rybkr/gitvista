@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gitvista ./cmd/vista
 # Runtime stage
 FROM alpine:3.21
 
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=build /gitvista /usr/local/bin/gitvista
 

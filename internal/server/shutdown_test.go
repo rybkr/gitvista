@@ -101,7 +101,7 @@ func TestShutdown_EmptyClientsMap(t *testing.T) {
 	defer s.clientsMu.RUnlock()
 
 	if s.clients == nil {
-		t.Error("clients map is nil after Shutdown(); expected an initialised empty map")
+		t.Error("clients map is nil after Shutdown(); expected an initialized empty map")
 	}
 }
 
@@ -168,7 +168,7 @@ func TestNewServer_InitialisesFields(t *testing.T) {
 // NOTE: Reading s.httpServer from a goroutine other than the one that runs Start()
 // is a data race (the field is written without a mutex in server.go). This test
 // therefore does NOT read s.httpServer directly; it instead uses the observable
-// behaviour of the running server (a real HTTP request) as the proxy assertion.
+// behavior of the running server (a real HTTP request) as the proxy assertion.
 // If a future refactor guards httpServer behind a mutex, consider adding a test
 // that checks the exact timeout durations.
 func TestHTTPServer_TimeoutConfiguration(t *testing.T) {
@@ -226,7 +226,7 @@ func httpGetNoKeepalive(url string) (*http.Response, error) {
 // opening and closing a listener.
 func freePort(t *testing.T) string {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("freePort: %v", err)
 	}
