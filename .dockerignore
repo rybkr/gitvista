@@ -1,0 +1,26 @@
+# flyctl launch added from .gitignore
+# Build artifacts
+**/gitvista
+**/gitvista-cli
+**/vista
+**/*.exe
+**/*.out
+
+# Test coverage
+**/coverage.out
+**/test/cover
+**/gosec-report.json
+
+# Editor / OS
+**/.DS_Store
+**/*.swp
+**/*.swo
+**/*~
+
+# Tool caches
+**/.ruff_cache
+
+# flyctl launch added from .ruff_cache/.gitignore
+# Automatically created by ruff.
+.ruff_cache/**/*
+fly.toml
