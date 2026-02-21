@@ -55,6 +55,7 @@ export const TREE_ICON_OFFSET = 2;
 export const LANE_WIDTH = 80; // Pixels between lane centers
 export const LANE_MARGIN = 60; // Left margin for lane 0
 export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
+export const LANE_CORNER_RADIUS = 10; // Rounded corner radius for cross-lane stepped paths
 export const LANE_COLORS = [
     "#0969da", // Blue
     "#8250df", // Purple

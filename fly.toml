@@ -4,25 +4,29 @@ primary_region = "iad"
 [build]
 
 [env]
-  GITVISTA_REPO = "/repo"
+  GITVISTA_DATA_DIR = "/data/repos"
   GITVISTA_HOST = "0.0.0.0"
   GITVISTA_PORT = "8080"
   GITVISTA_LOG_LEVEL = "info"
   GITVISTA_LOG_FORMAT = "json"
 
+[mounts]
+  source = "gitvista_data"
+  destination = "/data"
+
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = false
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [http_service.concurrency]
     type = "connections"
-    hard_limit = 100
-    soft_limit = 80
+    hard_limit = 500
+    soft_limit = 400
 
 [[vm]]
-  memory = "256mb"
+  memory = "1gb"
   cpu_kind = "shared"
-  cpus = 1
+  cpus = 2

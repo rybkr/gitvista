@@ -11,6 +11,7 @@
  * - ARIA: role="tree", role="treeitem", aria-expanded, aria-activedescendant
  */
 
+import { apiUrl } from "./apiBase.js";
 import { createFileContentViewer } from "./fileContentViewer.js";
 import { createDiffView } from "./diffView.js";
 import { createDiffContentViewer } from "./diffContentViewer.js";
@@ -97,7 +98,7 @@ export function createFileExplorer() {
     };
 
     async function fetchTree(treeHash) {
-        const response = await fetch(`/api/tree/${treeHash}`);
+        const response = await fetch(apiUrl(`/tree/${treeHash}`));
         if (!response.ok) {
             throw new Error(`Failed to fetch tree ${treeHash}: ${response.status}`);
         }
@@ -105,7 +106,7 @@ export function createFileExplorer() {
     }
 
     async function fetchBlame(commitHash, dirPath) {
-        const url = `/api/tree/blame/${commitHash}?path=${encodeURIComponent(dirPath)}`;
+        const url = apiUrl(`/tree/blame/${commitHash}?path=${encodeURIComponent(dirPath)}`);
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch blame for ${dirPath}: ${response.status}`);

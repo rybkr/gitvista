@@ -6,6 +6,7 @@
  * Extracted from fileBrowser.js for reuse across different contexts.
  */
 
+import { apiUrl } from "./apiBase.js";
 import { getFileIcon } from "./fileIcons.js";
 import { loadHighlightJs } from "./hljs.js";
 
@@ -21,7 +22,7 @@ export function createFileContentViewer() {
     let onBackCallback = null;
 
     async function fetchBlob(blobHash) {
-        const response = await fetch(`/api/blob/${blobHash}`);
+        const response = await fetch(apiUrl(`/blob/${blobHash}`));
         if (!response.ok) {
             throw new Error(`Failed to fetch blob ${blobHash}: ${response.status}`);
         }

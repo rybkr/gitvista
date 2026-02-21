@@ -31,6 +31,7 @@ import {
     COMMIT_DETAIL_FONT,
     HOVER_GLOW_EXTRA_RADIUS,
     HOVER_GLOW_OPACITY,
+    LANE_CORNER_RADIUS,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 import { getAuthorColor } from "../../utils/colors.js";
@@ -266,14 +267,24 @@ export class GraphRenderer {
         // Use hash of source position to deterministically stagger multiple parents
         const stagger = ((source.x * 17 + source.y * 13) % 20) - 10;
         const midY = (source.y + target.y) / 2 + stagger;
+        const endY = target.y - targetRadius - ARROW_LENGTH;
 
-        // Draw the stepped path
+        // Clamp corner radius so it doesn't exceed half the available
+        // vertical or horizontal span (avoids visual artefacts on tight paths).
+        const maxV = Math.min(
+            Math.abs(midY - source.y),
+            Math.abs(endY - midY),
+        ) / 2;
+        const maxH = Math.abs(target.x - source.x) / 2;
+        const r = Math.max(0, Math.min(LANE_CORNER_RADIUS, maxV, maxH));
+
+        // Draw the stepped path with rounded corners via arcTo
         this.ctx.strokeStyle = color;
         this.ctx.beginPath();
         this.ctx.moveTo(source.x, source.y);
-        this.ctx.lineTo(source.x, midY); // Vertical down from source
-        this.ctx.lineTo(target.x, midY); // Horizontal across lanes
-        this.ctx.lineTo(target.x, target.y - targetRadius - ARROW_LENGTH); // Vertical to near target
+        this.ctx.arcTo(source.x, midY, target.x, midY, r);
+        this.ctx.arcTo(target.x, midY, target.x, endY, r);
+        this.ctx.lineTo(target.x, endY);
         this.ctx.stroke();
 
         // Draw arrowhead pointing down at target

@@ -1,3 +1,4 @@
+import { apiUrl } from "./apiBase.js";
 import { createDiffContentViewer } from "./diffContentViewer.js";
 
 const CHEVRON_SVG = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -142,7 +143,7 @@ export function createIndexView() {
         content.style.display = "none";
 
         const encodedPath = encodeURIComponent(file.path);
-        const url = `/api/working-tree/diff?path=${encodedPath}`;
+        const url = apiUrl(`/working-tree/diff?path=${encodedPath}`);
 
         // showFromUrl handles loading state, fetch, and rendering
         diffViewer.showFromUrl(url);

@@ -3,8 +3,11 @@ package server
 import (
 	"bytes"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/rybkr/gitvista/internal/gitcore"
 )
 
 // TestNewServer_LoggerInitialised verifies that NewServer populates the logger
@@ -27,7 +30,10 @@ func TestNewServer_LoggerInheritsDefault(t *testing.T) {
 	slog.SetDefault(custom)
 	t.Cleanup(func() { slog.SetDefault(original) })
 
-	s := newTestServer(t)
+	// Construct directly (not via newTestServer which overrides the logger).
+	repo := &gitcore.Repository{}
+	webFS := os.DirFS(t.TempDir())
+	s := NewServer(repo, "127.0.0.1:0", webFS)
 
 	// Emit a log line via the server logger and confirm it reaches the buffer.
 	s.logger.Info("test-probe", "key", "value")

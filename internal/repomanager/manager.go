@@ -177,8 +177,26 @@ func (rm *RepoManager) AddRepo(rawURL string) (string, error) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
-	// Deduplication: if this repo already exists, return its ID
-	if _, exists := rm.repos[id]; exists {
+	// Deduplication: if this repo already exists, return its ID.
+	// Allow re-enqueueing repos in error state for retry.
+	if existing, exists := rm.repos[id]; exists {
+		existing.mu.Lock()
+		if existing.State == StateError {
+			existing.State = StatePending
+			existing.Error = ""
+			existing.mu.Unlock()
+			select {
+			case rm.cloneQueue <- existing:
+			default:
+				existing.mu.Lock()
+				existing.State = StateError
+				existing.Error = "clone queue full"
+				existing.mu.Unlock()
+			}
+			return id, nil
+		}
+		existing.mu.Unlock()
+
 		return id, nil
 	}
 
@@ -323,6 +341,11 @@ func (rm *RepoManager) processClone(managed *ManagedRepo) {
 	managed.mu.Unlock()
 
 	rm.logger.Info("cloning repo", "id", managed.ID, "url", repoURL)
+
+	// Remove any stale directory from a previous failed or interrupted clone.
+	if err := os.RemoveAll(diskPath); err != nil {
+		rm.logger.Warn("failed to clean stale directory before clone", "id", managed.ID, "path", diskPath, "error", err)
+	}
 
 	if err := cloneRepo(rm.ctx, repoURL, diskPath, rm.cfg.CloneTimeout); err != nil {
 		managed.mu.Lock()

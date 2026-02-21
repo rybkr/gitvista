@@ -16,13 +16,14 @@ func (s *Server) startWatcher() error {
 		return err
 	}
 
-	if err := watcher.Add(s.repo.GitDir()); err != nil {
+	repo := s.localSession.Repo()
+	if err := watcher.Add(repo.GitDir()); err != nil {
 		return err
 	}
 
 	go s.watchLoop(watcher)
 
-	s.logger.Info("Watching Git repository for changes", "gitDir", s.repo.GitDir())
+	s.logger.Info("Watching Git repository for changes", "gitDir", repo.GitDir())
 	return nil
 }
 
@@ -49,15 +50,13 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 				continue
 			}
 
-			// Log at Debug to avoid flooding logs on active repos; operators
-			// who need per-file visibility can enable GITVISTA_LOG_LEVEL=debug.
 			s.logger.Debug("Change detected", "file", filepath.Base(event.Name))
 
 			if debounceTimer != nil {
 				debounceTimer.Stop()
 			}
 			debounceTimer = time.AfterFunc(debounceTime, func() {
-				s.updateRepository()
+				s.localSession.updateRepository()
 			})
 
 		case err, ok := <-watcher.Errors:
@@ -73,8 +72,6 @@ func shouldIgnoreEvent(event fsnotify.Event) bool {
 	base := filepath.Base(event.Name)
 	path := event.Name
 
-	// Git uses atomic renames for many operations (pack index updates, ref updates).
-	// Rename events must not be ignored or branch/commit changes will be missed.
 	if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
 		return true
 	}

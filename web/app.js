@@ -11,19 +11,30 @@ import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
 import { createSearch } from "./search.js";
 import { createGraphFilters, loadFilterState } from "./graphFilters.js";
+import { setApiBase } from "./apiBase.js";
+import { createRepoLanding } from "./repoLanding.js";
 
-const HASH_RE = /^[0-9a-f]{40}$/i;
+const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
+const REPO_HASH_RE = /^repo\/([^/]+)(?:\/([0-9a-f]{40}))?$/i;
 
-/** Extracts a commit hash from the URL fragment, or returns null. */
-function getHashFromUrl() {
+/** Parses the URL hash. Returns { repoId, commitHash } or null. */
+function parseHash() {
     const fragment = location.hash.slice(1);
-    return HASH_RE.test(fragment) ? fragment : null;
+    if (!fragment) return null;
+
+    // SaaS: #repo/{id} or #repo/{id}/{commitHash}
+    const m = REPO_HASH_RE.exec(fragment);
+    if (m) return { repoId: m[1], commitHash: m[2] || null };
+
+    // Local: #{commitHash}
+    if (COMMIT_HASH_RE.test(fragment)) return { repoId: null, commitHash: fragment };
+
+    return null;
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     logger.info("Bootstrapping frontend");
 
-    // Apply persisted theme preference immediately before any rendering occurs.
     initThemeToggle();
 
     const root = document.querySelector("#root");
@@ -32,7 +43,71 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
+    // ── Detect server mode ───────────────────────────────────────────────
+    let mode = "local";
+    try {
+        const resp = await fetch("/api/config");
+        if (resp.ok) {
+            const config = await resp.json();
+            mode = config.mode || "local";
+        }
+    } catch {
+        // Default to local on failure
+    }
+    logger.info("Server mode", mode);
+
+    if (mode === "local") {
+        bootstrapGraph(root, null);
+    } else {
+        // SaaS mode: check hash for an existing repo selection
+        const parsed = parseHash();
+        if (parsed?.repoId) {
+            setApiBase(`/api/repos/${parsed.repoId}`);
+            bootstrapGraph(root, parsed.repoId);
+        } else {
+            showLanding(root);
+        }
+
+        window.addEventListener("hashchange", () => {
+            const p = parseHash();
+            if (p?.repoId) {
+                setApiBase(`/api/repos/${p.repoId}`);
+                clearRoot(root);
+                bootstrapGraph(root, p.repoId);
+            } else {
+                clearRoot(root);
+                showLanding(root);
+            }
+        });
+    }
+});
+
+/** Removes sidebar elements and empties the root for a fresh view. */
+function clearRoot(root) {
+    const parent = root.parentElement;
+    // Remove sidebar activity bar and panel if present
+    parent.querySelectorAll(".activity-bar, .sidebar-panel").forEach((el) => el.remove());
+    // Remove status dot
+    document.querySelectorAll("[data-gv-status-dot]").forEach((el) => el.remove());
+    root.innerHTML = "";
+}
+
+/** Shows the SaaS landing page. */
+function showLanding(root) {
+    document.title = "GitVista";
+    const landing = createRepoLanding({
+        onRepoSelect: (id) => {
+            landing.destroy();
+            location.hash = `repo/${id}`;
+        },
+    });
+    root.appendChild(landing.el);
+}
+
+/** Bootstraps the graph view (works for both local and SaaS modes). */
+function bootstrapGraph(root, repoId) {
     const statusDot = document.createElement("div");
+    statusDot.setAttribute("data-gv-status-dot", "");
     statusDot.title = "Connecting...";
     statusDot.style.cssText = `
         position: fixed; bottom: 16px; right: 16px;
@@ -79,6 +154,20 @@ document.addEventListener("DOMContentLoaded", () => {
     repoTabContent.style.flexDirection = "column";
     repoTabContent.style.flex = "1";
     repoTabContent.style.overflow = "hidden";
+
+    // In SaaS mode, add a "Back to repos" button at the top of the sidebar
+    if (repoId) {
+        const backBtn = document.createElement("button");
+        backBtn.className = "back-to-repos";
+        backBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg> Back to repos`;
+        backBtn.addEventListener("click", () => {
+            location.hash = "";
+        });
+        repoTabContent.appendChild(backBtn);
+    }
+
     repoTabContent.appendChild(infoBar.el);
     repoTabContent.appendChild(indexView.el);
 
@@ -89,29 +178,34 @@ document.addEventListener("DOMContentLoaded", () => {
     root.parentElement.insertBefore(sidebar.activityBar, root);
     root.parentElement.insertBefore(sidebar.panel, root);
 
-    // Track whether the initial delta has been applied at least once so the
-    // permalink restore only fires after the graph has commits to navigate to.
     let initialDeltaApplied = false;
 
     const graph = createGraph(root, {
         onCommitTreeClick: (commit) => {
-            // Only update file explorer if it's already the active panel
             if (sidebar.getActivePanel() === "file-explorer") {
                 fileExplorer.openCommit(commit);
             }
         },
         onCommitSelect: (hash) => {
-            if (hash) {
-                history.replaceState(null, "", "#" + hash);
+            if (repoId) {
+                // SaaS: preserve repo prefix in hash
+                if (hash) {
+                    history.replaceState(null, "", `#repo/${repoId}/${hash}`);
+                } else {
+                    history.replaceState(null, "", `#repo/${repoId}`);
+                }
             } else {
-                history.replaceState(null, "", location.pathname);
+                // Local mode
+                if (hash) {
+                    history.replaceState(null, "", "#" + hash);
+                } else {
+                    history.replaceState(null, "", location.pathname);
+                }
             }
         },
     });
 
     // ── Canvas Toolbar ──────────────────────────────────────────────────────
-    // Assembles search and graph controls into a single in-flow toolbar strip.
-
     const canvasToolbar = document.createElement("div");
     canvasToolbar.className = "canvas-toolbar";
 
@@ -128,22 +222,17 @@ document.addEventListener("DOMContentLoaded", () => {
         },
     });
 
-    // Move graph controls (created by graphController) into the toolbar.
     const graphControlsEl = root.querySelector(".graph-controls");
     if (graphControlsEl) {
         canvasToolbar.appendChild(graphControlsEl);
     }
 
-    // Insert toolbar before the canvas so it sits between filter panel and canvas.
     const canvasEl = root.querySelector("canvas");
     if (canvasEl) {
         root.insertBefore(canvasToolbar, canvasEl);
     }
 
-    // ── A3: Filter popover ─────────────────────────────────────────────────
-    // Filter trigger button lives in the canvas toolbar; popover drops down
-    // from it on click. loadFilterState() reads from localStorage.
-
+    // ── Filter popover ─────────────────────────────────────────────────
     const graphFilters = createGraphFilters({
         initialState: loadFilterState(),
         onChange: (filterState) => {
@@ -152,23 +241,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     canvasToolbar.insertBefore(graphFilters.el, searchContainer);
 
-    // Push persisted filter state into the graph on startup so the canvas
-    // reflects any filters that were active in the previous session.
     graph.setFilterState(graphFilters.getState());
 
     const keyboardHelp = createKeyboardHelp();
 
     createKeyboardShortcuts({
         onJumpToHead: () => graph.centerOnCommit(graph.getHeadHash()),
-        // "/" focuses the commit search bar (not the file explorer filter).
         onFocusSearch: () => {
             search.focus();
         },
         onToggleHelp: () => keyboardHelp.toggle(),
         onDismiss: () => {
             keyboardHelp.hide();
-            // Clear the search when the user presses Escape — consistent with
-            // how filter overlays typically behave in developer tooling.
             search.clear();
         },
         onNavigateNext: () => graph.navigateCommits("next"),
@@ -188,19 +272,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /** Extract a permalink commit hash for restore. */
+    function getPermalinkHash() {
+        const parsed = parseHash();
+        return parsed?.commitHash || null;
+    }
+
     startBackend({
         logger,
         onConnectionStateChange: setConnectionState,
         onDelta: (delta) => {
             graph.applyDelta(delta);
 
-            // Keep the branch dropdown current whenever the branch map changes.
-            // We call this on every delta because even commit-only deltas can
-            // change which branches exist when combined with branch deletions.
             graphFilters.updateBranches(graph.getBranches());
 
-            // Toast when new commits arrive (skip the initial bulk load by
-            // gating on having a known branch name).
             const addedCount = delta.addedCommits?.length ?? 0;
             if (addedCount > 0 && currentBranchName) {
                 const branchName = (delta.addedBranches && Object.keys(delta.addedBranches).length > 0)
@@ -212,11 +297,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast(label, { duration: 5000 });
             }
 
-            // Permalink restore — after the first delta populates the graph,
-            // check whether the URL contains a commit hash and navigate to it.
             if (!initialDeltaApplied) {
                 initialDeltaApplied = true;
-                const permalinkHash = getHashFromUrl();
+                const permalinkHash = getPermalinkHash();
                 if (permalinkHash) {
                     setTimeout(() => {
                         graph.selectAndCenter(permalinkHash);
@@ -234,8 +317,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 currentBranchName = headInfo.branchName;
                 updateTitle();
             }
-            // Keep the graph controller's HEAD hash in sync so the G→H shortcut
-            // and the HEAD button always navigate to the correct commit.
             graph.setHeadHash(headInfo?.hash ?? null);
         },
         onRepoMetadata: (metadata) => {
@@ -249,4 +330,4 @@ document.addEventListener("DOMContentLoaded", () => {
     }).catch((error) => {
         logger.error("Backend bootstrap failed", error);
     });
-});
+}
