@@ -74,6 +74,9 @@ func (r *Repository) GitDir() string { return r.gitDir }
 // WorkDir returns the path to the repository's working directory.
 func (r *Repository) WorkDir() string { return r.workDir }
 
+// IsBare reports whether the repository is a bare repository.
+func (r *Repository) IsBare() bool { return r.gitDir == r.workDir }
+
 // Commits returns a map of all commits in the repository keyed by their hash.
 func (r *Repository) Commits() map[Hash]*Commit {
 	r.mu.RLock()
@@ -414,6 +417,10 @@ func findGitDirectory(startPath string) (gitDir string, workDir string, err erro
 		}
 	}
 
+	if isBareRepository(absPath) {
+		return absPath, absPath, nil
+	}
+
 	currentPath := absPath
 	for {
 		gitPath := filepath.Join(currentPath, ".git")
@@ -480,6 +487,24 @@ func validateGitDirectory(gitDir string) error {
 	}
 
 	return nil
+}
+
+// isBareRepository checks whether path looks like a bare Git repository.
+// A bare repo is a directory containing objects/, refs/, and HEAD but no .git subdirectory.
+func isBareRepository(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+		return false
+	}
+	for _, required := range []string{"objects", "refs", "HEAD"} {
+		if _, err := os.Stat(filepath.Join(path, required)); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // parseRemotesFromConfig parses a Git config file and returns a map of remote
