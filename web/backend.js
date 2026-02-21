@@ -1,3 +1,5 @@
+import { apiUrl, wsUrl } from "./apiBase.js";
+
 // Reconnection backoff constants
 const RECONNECT_DELAY_INITIAL_MS = 1000;
 const RECONNECT_DELAY_MAX_MS = 30000;
@@ -10,7 +12,7 @@ export async function startBackend({ onDelta, onStatus, onHead, onRepoMetadata, 
 async function loadRepositoryMetadata(logger, onRepoMetadata) {
     logger?.info("Requesting repository metadata");
     try {
-        const response = await fetch("/api/repository");
+        const response = await fetch(apiUrl("/repository"));
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
@@ -23,8 +25,7 @@ async function loadRepositoryMetadata(logger, onRepoMetadata) {
 }
 
 function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const url = `${protocol}://${window.location.host}/api/ws`;
+    const url = wsUrl();
     logger?.info("Opening WebSocket connection", url);
 
     let reconnectDelay = RECONNECT_DELAY_INITIAL_MS;

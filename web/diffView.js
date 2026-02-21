@@ -21,6 +21,8 @@ const STATUS_CONFIG = {
     renamed: { badge: "R", className: "diff-status--renamed" }, // Future enhancement
 };
 
+import { apiUrl } from "./apiBase.js";
+
 export function createDiffView(backend, diffContentViewer) {
     const el = document.createElement("div");
     el.className = "diff-view";
@@ -40,7 +42,7 @@ export function createDiffView(backend, diffContentViewer) {
     };
 
     async function fetchCommitDiff(commitHash) {
-        const response = await fetch(`/api/commit/diff/${commitHash}`);
+        const response = await fetch(apiUrl(`/commit/diff/${commitHash}`));
         if (!response.ok) {
             throw new Error(`Failed to fetch commit diff: ${response.status} ${response.statusText}`);
         }
@@ -48,7 +50,7 @@ export function createDiffView(backend, diffContentViewer) {
     }
 
     async function fetchFileDiff(commitHash, filePath) {
-        const url = `/api/commit/diff/${commitHash}/file?path=${encodeURIComponent(filePath)}`;
+        const url = apiUrl(`/commit/diff/${commitHash}/file?path=${encodeURIComponent(filePath)}`);
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch file diff: ${response.status} ${response.statusText}`);

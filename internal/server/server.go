@@ -31,12 +31,12 @@ type Server struct {
 	httpServer  *http.Server
 	logger      *slog.Logger
 
-	mode         ServerMode
-	localSession *RepoSession                    // non-nil in local mode
-	sessionsMu   sync.RWMutex                    // guards sessions map
-	sessions     map[string]*RepoSession         // non-nil in SaaS mode
-	repoManager  *repomanager.RepoManager        // non-nil in SaaS mode
-	cacheSize    int
+	mode          ServerMode
+	localSession  *RepoSession             // non-nil in local mode
+	sessionsMu    sync.RWMutex             // guards sessions map
+	sessions      map[string]*RepoSession  // non-nil in SaaS mode
+	repoManager   *repomanager.RepoManager // non-nil in SaaS mode
+	cacheSize     int
 	fetchInterval time.Duration
 
 	ctx    context.Context
@@ -205,6 +205,7 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(s.webFS)))
 	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/api/config", s.handleConfig)
 
 	if s.mode == ModeLocal {
 		ls := s.localSession
@@ -224,9 +225,9 @@ func (s *Server) Start() error {
 	}
 
 	s.httpServer = &http.Server{
-		Addr:        s.addr,
-		Handler:     mux,
-		ReadTimeout: 15 * time.Second,
+		Addr:         s.addr,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
 	}
@@ -269,6 +270,8 @@ func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRepoRoutes dispatches /api/repos/{id}/... to the correct handler.
+// It rewrites r.URL.Path from /api/repos/{id}/tree/{hash} to /api/tree/{hash}
+// so that existing handlers (which strip /api/tree/ etc.) work unchanged.
 func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 	// Strip /api/repos/ prefix to get "{id}" or "{id}/..."
 	path := r.URL.Path[len("/api/repos/"):]
@@ -285,25 +288,43 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 		remainder = path[idx:]
 	}
 
+	// Non-session routes: status and delete operate on the repo ID directly.
 	switch {
 	case remainder == "/status" && r.Method == http.MethodGet:
 		s.handleRepoStatus(w, r, id)
+		return
 	case remainder == "" && r.Method == http.MethodDelete:
 		s.handleRemoveRepo(w, r, id)
+		return
+	}
+
+	// Session-scoped routes: resolve the session using the already-extracted
+	// ID, then rewrite the URL path so handlers see the same prefix they
+	// expect in local mode (e.g. /api/tree/{hash}).
+	session, err := s.getOrCreateSession(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	r.URL.Path = "/api" + remainder
+	r = r.WithContext(withSessionCtx(r.Context(), session))
+
+	switch {
 	case remainder == "/repository" && r.Method == http.MethodGet:
-		s.withRepoSession(s.handleRepository).ServeHTTP(w, r)
+		s.handleRepository(w, r)
 	case hasPrefix(remainder, "/tree/blame/"):
-		s.withRepoSession(s.handleTreeBlame).ServeHTTP(w, r)
+		s.handleTreeBlame(w, r)
 	case hasPrefix(remainder, "/tree/"):
-		s.withRepoSession(s.handleTree).ServeHTTP(w, r)
+		s.handleTree(w, r)
 	case hasPrefix(remainder, "/blob/"):
-		s.withRepoSession(s.handleBlob).ServeHTTP(w, r)
+		s.handleBlob(w, r)
 	case hasPrefix(remainder, "/commit/diff/"):
-		s.withRepoSession(s.handleCommitDiff).ServeHTTP(w, r)
+		s.handleCommitDiff(w, r)
 	case remainder == "/working-tree/diff" && r.Method == http.MethodGet:
-		s.withRepoSession(s.handleWorkingTreeDiff).ServeHTTP(w, r)
+		s.handleWorkingTreeDiff(w, r)
 	case remainder == "/ws":
-		s.withRepoSession(s.handleWebSocket).ServeHTTP(w, r)
+		s.handleWebSocket(w, r)
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}

@@ -3041,3 +3041,235 @@ canvas {
         box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.15);
     }
 }
+
+/* ── Repo Landing Page (SaaS mode) ────────────────────────────────────── */
+
+.repo-landing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 80px 24px 40px;
+    min-height: 100vh;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.repo-landing__header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.repo-landing__logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--node-color);
+    margin-bottom: 16px;
+}
+
+.repo-landing__logo svg {
+    width: 28px;
+    height: 28px;
+}
+
+.repo-landing__title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    letter-spacing: -0.5px;
+}
+
+.repo-landing__subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.repo-landing__form {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 520px;
+    margin-bottom: 8px;
+}
+
+.repo-landing__input {
+    flex: 1;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    outline: none;
+    transition: border-color 150ms ease;
+}
+
+.repo-landing__input:focus {
+    border-color: var(--node-color);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
+}
+
+.repo-landing__add-btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    border: none;
+    border-radius: 8px;
+    background: var(--node-color);
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 150ms ease;
+}
+
+.repo-landing__add-btn:hover {
+    opacity: 0.9;
+}
+
+.repo-landing__add-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.repo-landing__error {
+    font-size: 13px;
+    color: var(--danger-color);
+    min-height: 20px;
+    max-width: 520px;
+    width: 100%;
+    text-align: left;
+}
+
+.repo-landing__list {
+    width: 100%;
+    max-width: 520px;
+    margin-top: 16px;
+}
+
+.repo-landing__list-heading {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    margin: 0 0 8px;
+}
+
+.repo-landing__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.repo-landing__item--ready {
+    cursor: pointer;
+}
+
+.repo-landing__item--ready:hover {
+    border-color: var(--node-color);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
+}
+
+.repo-landing__item-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+}
+
+.repo-landing__item-url {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.repo-landing__badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+}
+
+.repo-landing__badge--cloning {
+    background: rgba(217, 119, 6, 0.15);
+    color: var(--warning-color);
+}
+
+.repo-landing__badge--ready {
+    background: rgba(5, 150, 105, 0.15);
+    color: var(--success-color);
+}
+
+.repo-landing__badge--error {
+    background: rgba(220, 38, 38, 0.15);
+    color: var(--danger-color);
+}
+
+.repo-landing__item-error {
+    font-size: 12px;
+    color: var(--danger-color);
+}
+
+.repo-landing__delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.repo-landing__delete-btn:hover {
+    background: rgba(220, 38, 38, 0.1);
+    color: var(--danger-color);
+}
+
+/* Back to repos button (SaaS mode sidebar) */
+.back-to-repos {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 150ms ease, border-color 150ms ease;
+}
+
+.back-to-repos:hover {
+    color: var(--text-color);
+    border-color: var(--text-secondary);
+}

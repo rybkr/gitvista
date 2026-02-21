@@ -47,6 +47,11 @@ func (s *Server) extractHashParam(w http.ResponseWriter, r *http.Request, prefix
 	return hash, repo, session, true
 }
 
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"mode": s.modeString()})
+}
+
 func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 	session := sessionFromCtx(r.Context())
 	if session == nil {
