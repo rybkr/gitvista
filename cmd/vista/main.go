@@ -13,18 +13,18 @@ import (
 
 	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/repomanager"
 	"github.com/rybkr/gitvista/internal/server"
 )
 
 const version = "1.0.0"
 
 func main() {
-	// Configure structured logging before anything else so that all subsequent
-	// log calls — including repository loading errors — use the chosen format.
 	initLogger()
 
 	// CLI flags
-	repoPath := flag.String("repo", getEnv("GITVISTA_REPO", "."), "Path to git repository")
+	repoPath := flag.String("repo", getEnv("GITVISTA_REPO", ""), "Path to git repository (local mode)")
+	dataDir := flag.String("data-dir", getEnv("GITVISTA_DATA_DIR", "/data/repos"), "Data directory for managed repos (SaaS mode)")
 	port := flag.String("port", getEnv("GITVISTA_PORT", "8080"), "Port to listen on")
 	host := flag.String("host", getEnv("GITVISTA_HOST", ""), "Host to bind to (empty = all interfaces)")
 	showVersion := flag.Bool("version", false, "Show version and exit")
@@ -48,13 +48,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Load repository
-	repo, err := gitcore.NewRepository(*repoPath)
-	if err != nil {
-		slog.Error("Failed to load repository", "path", *repoPath, "err", err)
-		os.Exit(1)
-	}
-
 	// Get embedded web filesystem
 	webFS, err := gitvista.GetWebFS()
 	if err != nil {
@@ -62,12 +55,44 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create and start server
 	addr := fmt.Sprintf("%s:%s", *host, *port)
-	serv := server.NewServer(repo, addr, webFS)
 
-	slog.Info("Starting GitVista", "version", version)
-	slog.Info("Repository loaded", "path", *repoPath)
+	var serv interface {
+		Start() error
+		Shutdown()
+	}
+
+	if *repoPath != "" {
+		// LOCAL MODE: load repo, create local server
+		repo, err := gitcore.NewRepository(*repoPath)
+		if err != nil {
+			slog.Error("Failed to load repository", "path", *repoPath, "err", err)
+			os.Exit(1)
+		}
+
+		serv = server.NewLocalServer(repo, addr, webFS)
+
+		slog.Info("Starting GitVista", "version", version, "mode", "local")
+		slog.Info("Repository loaded", "path", *repoPath)
+	} else {
+		// SAAS MODE: create RepoManager, start it, create SaaS server
+		rm, err := repomanager.New(repomanager.Config{DataDir: *dataDir})
+		if err != nil {
+			slog.Error("Failed to create repo manager", "err", err)
+			os.Exit(1)
+		}
+
+		if err := rm.Start(); err != nil {
+			slog.Error("Failed to start repo manager", "err", err)
+			os.Exit(1)
+		}
+
+		serv = server.NewSaaSServer(rm, addr, webFS)
+
+		slog.Info("Starting GitVista", "version", version, "mode", "saas")
+		slog.Info("Data directory", "path", *dataDir)
+	}
+
 	slog.Info("Listening", "addr", "http://"+addr)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -85,17 +110,15 @@ func main() {
 			os.Exit(1)
 		}
 	case <-ctx.Done():
-		stop() // Reset signal handling so a second signal force-exits.
+		stop()
 		serv.Shutdown()
 	}
 }
 
 // initLogger reads GITVISTA_LOG_LEVEL and GITVISTA_LOG_FORMAT from the
 // environment, constructs the appropriate slog.Handler, and installs it as the
-// default logger via slog.SetDefault. All server-package code obtains a logger
-// from slog.Default() so this single call propagates everywhere.
+// default logger via slog.SetDefault.
 func initLogger() {
-	// Determine log level; default to Info.
 	level := slog.LevelInfo
 	switch getEnv("GITVISTA_LOG_LEVEL", "info") {
 	case "debug":
@@ -108,7 +131,6 @@ func initLogger() {
 
 	opts := &slog.HandlerOptions{Level: level}
 
-	// Determine output format; default to text (human-readable).
 	var handler slog.Handler
 	if getEnv("GITVISTA_LOG_FORMAT", "text") == "json" {
 		handler = slog.NewJSONHandler(os.Stderr, opts)
@@ -134,8 +156,12 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Flags:")
 	fmt.Println("  -repo string")
-	fmt.Println("        Path to git repository (default: current directory)")
+	fmt.Println("        Path to git repository (local mode)")
 	fmt.Println("        Environment: GITVISTA_REPO")
+	fmt.Println()
+	fmt.Println("  -data-dir string")
+	fmt.Println("        Data directory for managed repos (SaaS mode, default: /data/repos)")
+	fmt.Println("        Environment: GITVISTA_DATA_DIR")
 	fmt.Println()
 	fmt.Println("  -port string")
 	fmt.Println("        Port to listen on (default: 8080)")
@@ -152,13 +178,15 @@ func printHelp() {
 	fmt.Println("        Show this help message")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  gitvista")
-	fmt.Println("  gitvista -repo /path/to/repo")
+	fmt.Println("  gitvista -repo .              # local mode: current directory")
+	fmt.Println("  gitvista -repo /path/to/repo  # local mode: specific repo")
+	fmt.Println("  gitvista                      # SaaS mode: manage repos via API")
 	fmt.Println("  gitvista -port 3000")
 	fmt.Println("  gitvista -host localhost -port 9090")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
-	fmt.Println("  GITVISTA_REPO         Default repository path")
+	fmt.Println("  GITVISTA_REPO         Repository path (sets local mode)")
+	fmt.Println("  GITVISTA_DATA_DIR     Data directory for SaaS mode")
 	fmt.Println("  GITVISTA_PORT         Default port")
 	fmt.Println("  GITVISTA_HOST         Default host")
 	fmt.Println("  GITVISTA_LOG_LEVEL    Log level: debug, info, warn, error (default: info)")

@@ -11,44 +11,50 @@ import (
 )
 
 // extractHashParam validates the request method, extracts a hex hash from the URL
-// path after the given prefix, and returns the cached repository.
+// path after the given prefix, and returns the cached repository and session.
 // On failure it writes an HTTP error and returns ok=false.
-func (s *Server) extractHashParam(w http.ResponseWriter, r *http.Request, prefix string) (gitcore.Hash, *gitcore.Repository, bool) {
+func (s *Server) extractHashParam(w http.ResponseWriter, r *http.Request, prefix string) (gitcore.Hash, *gitcore.Repository, *RepoSession, bool) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return "", nil, false
+		return "", nil, nil, false
 	}
 
 	path := strings.TrimPrefix(r.URL.Path, prefix)
 	if path == "" || path == r.URL.Path {
 		http.Error(w, "Missing hash in path", http.StatusBadRequest)
-		return "", nil, false
+		return "", nil, nil, false
 	}
 	path = strings.TrimPrefix(path, "/")
 
 	hash, err := gitcore.NewHash(path)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid hash format: %v", err), http.StatusBadRequest)
-		return "", nil, false
+		return "", nil, nil, false
 	}
 
-	s.cacheMu.RLock()
-	repo := s.cached.repo
-	s.cacheMu.RUnlock()
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return "", nil, nil, false
+	}
 
+	repo := session.Repo()
 	if repo == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
-		return "", nil, false
+		return "", nil, nil, false
 	}
 
-	return hash, repo, true
+	return hash, repo, session, true
 }
 
-func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
-	s.cacheMu.RLock()
-	repo := s.cached.repo
-	s.cacheMu.RUnlock()
+func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
 
+	repo := session.Repo()
 	if repo == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -86,7 +92,7 @@ func (s *Server) handleRepository(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
-	treeHash, repo, ok := s.extractHashParam(w, r, "/api/tree/")
+	treeHash, repo, _, ok := s.extractHashParam(w, r, "/api/tree/")
 	if !ok {
 		return
 	}
@@ -104,7 +110,7 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
-	blobHash, repo, ok := s.extractHashParam(w, r, "/api/blob/")
+	blobHash, repo, _, ok := s.extractHashParam(w, r, "/api/blob/")
 	if !ok {
 		return
 	}
@@ -128,9 +134,6 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	if isBinary {
 		response["content"] = ""
 	} else {
-		// Cap content at 512KB to prevent browser from choking on huge files.
-		// Truncate on byte boundary (not string rune boundary) to avoid splitting
-		// UTF-8 multi-byte sequences; then re-validate as a complete UTF-8 string.
 		const maxSize = 512 * 1024
 		if len(content) > maxSize {
 			content = content[:maxSize]
@@ -155,7 +158,7 @@ func isBinaryContent(content []byte) bool {
 }
 
 func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
-	commitHash, repo, ok := s.extractHashParam(w, r, "/api/tree/blame/")
+	commitHash, repo, session, ok := s.extractHashParam(w, r, "/api/tree/blame/")
 	if !ok {
 		return
 	}
@@ -171,7 +174,7 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 
 	cacheKey := string(commitHash) + ":" + dirPath
 
-	blame, ok := s.blameCache.Get(cacheKey)
+	blame, ok := session.blameCache.Get(cacheKey)
 	if !ok {
 		result, err := repo.GetFileBlame(commitHash, dirPath)
 		if err != nil {
@@ -179,7 +182,7 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		blame = result
-		s.blameCache.Put(cacheKey, blame)
+		session.blameCache.Put(cacheKey, blame)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -215,20 +218,23 @@ func (s *Server) handleCommitDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.cacheMu.RLock()
-	repo := s.cached.repo
-	s.cacheMu.RUnlock()
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
 
+	repo := session.Repo()
 	if repo == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
 	}
 
 	if isFileDiff {
-		s.handleFileDiff(w, r, repo, commitHash)
+		s.handleFileDiff(w, r, repo, commitHash, session)
 		return
 	}
-	s.handleCommitDiffList(w, repo, commitHash)
+	s.handleCommitDiffList(w, repo, commitHash, session)
 }
 
 // resolveCommitAndParent looks up a commit and its first parent's tree hash.
@@ -253,9 +259,9 @@ func resolveCommitAndParent(w http.ResponseWriter, repo *gitcore.Repository, com
 	return commit, parentTreeHash, true
 }
 
-func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repository, commitHash gitcore.Hash) {
+func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repository, commitHash gitcore.Hash, session *RepoSession) {
 	cacheKey := string(commitHash)
-	if cached, ok := s.diffCache.Get(cacheKey); ok {
+	if cached, ok := session.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(cached); err != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -313,7 +319,7 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 		},
 	}
 
-	s.diffCache.Put(cacheKey, response)
+	session.diffCache.Put(cacheKey, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -321,7 +327,7 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 	}
 }
 
-func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gitcore.Repository, commitHash gitcore.Hash) {
+func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gitcore.Repository, commitHash gitcore.Hash, session *RepoSession) {
 	filePath := r.URL.Query().Get("path")
 	if filePath == "" {
 		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
@@ -335,8 +341,6 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	}
 	filePath = sanitized
 
-	// Parse context lines parameter; default to 3 when absent or invalid.
-	// Cap at 100 to prevent excessive response sizes.
 	contextLines := gitcore.DefaultContextLines
 	if raw := r.URL.Query().Get("context"); raw != "" {
 		if n, _err := strconv.Atoi(raw); _err == nil && n > 0 && n <= 100 {
@@ -344,9 +348,8 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 		}
 	}
 
-	// Include context count so different depths are cached separately.
 	cacheKey := string(commitHash) + ":" + filePath + ":ctx" + strconv.Itoa(contextLines)
-	if cached, ok := s.diffCache.Get(cacheKey); ok {
+	if cached, ok := session.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if _err := json.NewEncoder(w).Encode(cached); _err != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -394,7 +397,7 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 		"hunks":     fileDiff.Hunks,
 	}
 
-	s.diffCache.Put(cacheKey, response)
+	session.diffCache.Put(cacheKey, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -404,7 +407,6 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 
 // handleWorkingTreeDiff computes the diff between the HEAD version of a file
 // and its current on-disk content using the pure gitcore implementation.
-// It returns a FileDiff-shaped JSON response for the frontend diff viewer.
 func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -424,16 +426,18 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 	}
 	filePath = sanitized
 
-	s.cacheMu.RLock()
-	repo := s.cached.repo
-	s.cacheMu.RUnlock()
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	repo := session.Repo()
 	if repo == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
 	}
 
-	// Use 3 lines of context — the unified-diff convention used everywhere else
-	// in the codebase when a caller doesn't supply an explicit context count.
 	const contextLines = 3
 	fileDiff, err := gitcore.ComputeWorkingTreeFileDiff(repo, filePath, contextLines)
 	if err != nil {
@@ -441,12 +445,6 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Derive a status string from what the diff tells us:
-	//   - OldHash empty means the file was not present in HEAD → new file.
-	//   - Non-empty OldHash but empty NewHash slot (disk file missing) is
-	//     surfaced via all-deletion hunks → treat as deleted.
-	//   - Otherwise the file exists on both sides → modified.
-	// This mirrors the vocabulary used by handleFileDiff / ComputeFileDiff.
 	status := fileStatusModified
 	if fileDiff.OldHash == "" {
 		status = fileStatusAdded
@@ -470,7 +468,6 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 }
 
 // allDeletions reports whether every diff line across all hunks is a deletion.
-// This is used to detect that a file has been removed from disk entirely.
 func allDeletions(hunks []gitcore.DiffHunk) bool {
 	for _, hunk := range hunks {
 		for _, line := range hunk.Lines {

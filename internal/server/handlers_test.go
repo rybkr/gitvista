@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,27 @@ import (
 
 	"github.com/rybkr/gitvista/internal/gitcore"
 )
+
+// newTestSession creates a RepoSession with a zero-value Repository for testing
+// handlers that only need a non-nil repo in the context.
+func newTestSession(repo *gitcore.Repository) *RepoSession {
+	if repo == nil {
+		repo = &gitcore.Repository{}
+	}
+	return NewRepoSession(SessionConfig{
+		ID:          "test",
+		InitialRepo: repo,
+		ReloadFn:    func() (*gitcore.Repository, error) { return repo, nil },
+		Logger:      silentLogger(),
+	})
+}
+
+// requestWithSession creates an HTTP request with a RepoSession in the context.
+func requestWithSession(method, target string, session *RepoSession) *http.Request {
+	req := httptest.NewRequest(method, target, nil)
+	ctx := withSessionCtx(req.Context(), session)
+	return req.WithContext(ctx)
+}
 
 func TestIsBinaryContent(t *testing.T) {
 	tests := []struct {
@@ -63,7 +85,7 @@ func TestIsBinaryContent(t *testing.T) {
 		{
 			name:    "PDF header",
 			content: []byte("%PDF-1.4\n%"),
-			want:    false, // No null bytes in first 8KB
+			want:    false,
 		},
 		{
 			name:    "UTF-8 text with emoji",
@@ -93,20 +115,14 @@ func TestIsBinaryContent(t *testing.T) {
 }
 
 func TestHandleRepository_Success(t *testing.T) {
-	// Create a test repository
 	repo := &gitcore.Repository{}
-	server := &Server{
-		cached: struct {
-			repo *gitcore.Repository
-		}{
-			repo: repo,
-		},
-	}
+	session := newTestSession(repo)
+	s := newTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/repository", nil)
+	req := requestWithSession("GET", "/api/repository", session)
 	w := httptest.NewRecorder()
 
-	server.handleRepository(w, req)
+	s.handleRepository(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
@@ -130,13 +146,27 @@ func TestHandleRepository_Success(t *testing.T) {
 	}
 }
 
+func TestHandleRepository_NoSession(t *testing.T) {
+	s := newTestServer(t)
+
+	// Request without session in context
+	req := httptest.NewRequest("GET", "/api/repository", nil)
+	w := httptest.NewRecorder()
+
+	s.handleRepository(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
 func TestHandleTree_InvalidMethod(t *testing.T) {
-	server := &Server{}
+	s := newTestServer(t)
 
 	req := httptest.NewRequest("POST", "/api/tree/abc123", nil)
 	w := httptest.NewRecorder()
 
-	server.handleTree(w, req)
+	s.handleTree(w, req)
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
@@ -144,7 +174,7 @@ func TestHandleTree_InvalidMethod(t *testing.T) {
 }
 
 func TestHandleTree_MissingHash(t *testing.T) {
-	server := &Server{}
+	s := newTestServer(t)
 
 	tests := []struct {
 		name string
@@ -159,7 +189,7 @@ func TestHandleTree_MissingHash(t *testing.T) {
 			req := httptest.NewRequest("GET", tt.path, nil)
 			w := httptest.NewRecorder()
 
-			server.handleTree(w, req)
+			s.handleTree(w, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -169,13 +199,8 @@ func TestHandleTree_MissingHash(t *testing.T) {
 }
 
 func TestHandleTree_InvalidHash(t *testing.T) {
-	server := &Server{
-		cached: struct {
-			repo *gitcore.Repository
-		}{
-			repo: &gitcore.Repository{},
-		},
-	}
+	session := newTestSession(nil)
+	s := newTestServer(t)
 
 	tests := []struct {
 		name string
@@ -188,10 +213,10 @@ func TestHandleTree_InvalidHash(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/tree/"+tt.hash, nil)
+			req := requestWithSession("GET", "/api/tree/"+tt.hash, session)
 			w := httptest.NewRecorder()
 
-			server.handleTree(w, req)
+			s.handleTree(w, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status code = %d, want %d for hash %q", w.Code, http.StatusBadRequest, tt.hash)
@@ -201,12 +226,12 @@ func TestHandleTree_InvalidHash(t *testing.T) {
 }
 
 func TestHandleBlob_InvalidMethod(t *testing.T) {
-	server := &Server{}
+	s := newTestServer(t)
 
 	req := httptest.NewRequest("POST", "/api/blob/abc123", nil)
 	w := httptest.NewRecorder()
 
-	server.handleBlob(w, req)
+	s.handleBlob(w, req)
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
@@ -214,7 +239,7 @@ func TestHandleBlob_InvalidMethod(t *testing.T) {
 }
 
 func TestHandleBlob_MissingHash(t *testing.T) {
-	server := &Server{}
+	s := newTestServer(t)
 
 	tests := []struct {
 		name string
@@ -229,7 +254,7 @@ func TestHandleBlob_MissingHash(t *testing.T) {
 			req := httptest.NewRequest("GET", tt.path, nil)
 			w := httptest.NewRecorder()
 
-			server.handleBlob(w, req)
+			s.handleBlob(w, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -239,13 +264,8 @@ func TestHandleBlob_MissingHash(t *testing.T) {
 }
 
 func TestHandleBlob_InvalidHash(t *testing.T) {
-	server := &Server{
-		cached: struct {
-			repo *gitcore.Repository
-		}{
-			repo: &gitcore.Repository{},
-		},
-	}
+	session := newTestSession(nil)
+	s := newTestServer(t)
 
 	tests := []struct {
 		name string
@@ -258,10 +278,10 @@ func TestHandleBlob_InvalidHash(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/blob/"+tt.hash, nil)
+			req := requestWithSession("GET", "/api/blob/"+tt.hash, session)
 			w := httptest.NewRecorder()
 
-			server.handleBlob(w, req)
+			s.handleBlob(w, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status code = %d, want %d for hash %q", w.Code, http.StatusBadRequest, tt.hash)
@@ -271,12 +291,12 @@ func TestHandleBlob_InvalidHash(t *testing.T) {
 }
 
 func TestHandleTreeBlame_MissingCommitHash(t *testing.T) {
-	server := &Server{}
+	s := newTestServer(t)
 
 	req := httptest.NewRequest("GET", "/api/tree/blame/?path=src", nil)
 	w := httptest.NewRecorder()
 
-	server.handleTreeBlame(w, req)
+	s.handleTreeBlame(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -284,18 +304,13 @@ func TestHandleTreeBlame_MissingCommitHash(t *testing.T) {
 }
 
 func TestHandleTreeBlame_InvalidCommitHash(t *testing.T) {
-	server := &Server{
-		cached: struct {
-			repo *gitcore.Repository
-		}{
-			repo: &gitcore.Repository{},
-		},
-	}
+	session := newTestSession(nil)
+	s := newTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/tree/blame/invalidhash?path=src", nil)
+	req := requestWithSession("GET", "/api/tree/blame/invalidhash?path=src", session)
 	w := httptest.NewRecorder()
 
-	server.handleTreeBlame(w, req)
+	s.handleTreeBlame(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -303,12 +318,12 @@ func TestHandleTreeBlame_InvalidCommitHash(t *testing.T) {
 }
 
 func TestHandleCommitDiff_InvalidMethod(t *testing.T) {
-	server := &Server{}
+	s := newTestServer(t)
 
 	req := httptest.NewRequest("POST", "/api/commit/diff/abc123", nil)
 	w := httptest.NewRecorder()
 
-	server.handleCommitDiff(w, req)
+	s.handleCommitDiff(w, req)
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
@@ -316,7 +331,7 @@ func TestHandleCommitDiff_InvalidMethod(t *testing.T) {
 }
 
 func TestHandleCommitDiff_MissingHash(t *testing.T) {
-	server := &Server{}
+	s := newTestServer(t)
 
 	tests := []struct {
 		name string
@@ -331,7 +346,7 @@ func TestHandleCommitDiff_MissingHash(t *testing.T) {
 			req := httptest.NewRequest("GET", tt.path, nil)
 			w := httptest.NewRecorder()
 
-			server.handleCommitDiff(w, req)
+			s.handleCommitDiff(w, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -341,13 +356,8 @@ func TestHandleCommitDiff_MissingHash(t *testing.T) {
 }
 
 func TestHandleCommitDiff_InvalidHash(t *testing.T) {
-	server := &Server{
-		cached: struct {
-			repo *gitcore.Repository
-		}{
-			repo: &gitcore.Repository{},
-		},
-	}
+	session := newTestSession(nil)
+	s := newTestServer(t)
 
 	tests := []struct {
 		name string
@@ -360,10 +370,10 @@ func TestHandleCommitDiff_InvalidHash(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/commit/diff/"+tt.hash, nil)
+			req := requestWithSession("GET", "/api/commit/diff/"+tt.hash, session)
 			w := httptest.NewRecorder()
 
-			server.handleCommitDiff(w, req)
+			s.handleCommitDiff(w, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status code = %d, want %d for hash %q", w.Code, http.StatusBadRequest, tt.hash)
@@ -373,20 +383,14 @@ func TestHandleCommitDiff_InvalidHash(t *testing.T) {
 }
 
 func TestHandleCommitDiff_FileDiff_MissingPath(t *testing.T) {
-	server := &Server{
-		cached: struct {
-			repo *gitcore.Repository
-		}{
-			repo: &gitcore.Repository{},
-		},
-	}
+	session := newTestSession(nil)
+	s := newTestServer(t)
 
-	// Valid hash format but missing path parameter
 	validHash := "0123456789abcdef0123456789abcdef01234567"
-	req := httptest.NewRequest("GET", "/api/commit/diff/"+validHash+"/file", nil)
+	req := requestWithSession("GET", "/api/commit/diff/"+validHash+"/file", session)
 	w := httptest.NewRecorder()
 
-	server.handleCommitDiff(w, req)
+	s.handleCommitDiff(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -394,13 +398,8 @@ func TestHandleCommitDiff_FileDiff_MissingPath(t *testing.T) {
 }
 
 func TestHandleCommitDiff_FileDiff_InvalidPath(t *testing.T) {
-	server := &Server{
-		cached: struct {
-			repo *gitcore.Repository
-		}{
-			repo: &gitcore.Repository{},
-		},
-	}
+	session := newTestSession(nil)
+	s := newTestServer(t)
 
 	validHash := "0123456789abcdef0123456789abcdef01234567"
 
@@ -414,14 +413,49 @@ func TestHandleCommitDiff_FileDiff_InvalidPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/commit/diff/"+validHash+"/file?path="+tt.path, nil)
+			req := requestWithSession("GET", "/api/commit/diff/"+validHash+"/file?path="+tt.path, session)
 			w := httptest.NewRecorder()
 
-			server.handleCommitDiff(w, req)
+			s.handleCommitDiff(w, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status code = %d, want %d for path %q", w.Code, http.StatusBadRequest, tt.path)
 			}
 		})
 	}
+}
+
+func TestExtractHashParam_NoSession(t *testing.T) {
+	s := newTestServer(t)
+
+	validHash := "0123456789abcdef0123456789abcdef01234567"
+	req := httptest.NewRequest("GET", "/api/tree/"+validHash, nil)
+	// No session in context
+	w := httptest.NewRecorder()
+
+	_, _, _, ok := s.extractHashParam(w, req, "/api/tree/")
+	if ok {
+		t.Error("extractHashParam returned ok=true without session in context")
+	}
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestSessionFromCtx(t *testing.T) {
+	t.Run("present", func(t *testing.T) {
+		session := newTestSession(nil)
+		ctx := withSessionCtx(context.Background(), session)
+		got := sessionFromCtx(ctx)
+		if got != session {
+			t.Error("sessionFromCtx did not return the expected session")
+		}
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		got := sessionFromCtx(context.Background())
+		if got != nil {
+			t.Error("sessionFromCtx returned non-nil for empty context")
+		}
+	})
 }
