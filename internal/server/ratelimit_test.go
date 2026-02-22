@@ -193,13 +193,51 @@ func TestGetClientIP(t *testing.T) {
 			name:       "ipv6 with port",
 			remoteAddr: "[::1]:54321",
 			headers:    map[string]string{},
-			want:       "[::1]",
+			// net.SplitHostPort strips the brackets; the bare address is returned.
+			want: "::1",
 		},
 		{
 			name:       "no port in remote addr",
 			remoteAddr: "192.168.1.1",
 			headers:    map[string]string{},
 			want:       "192.168.1.1",
+		},
+		// Validation cases: spoofed / invalid header values must be rejected.
+		{
+			name:       "spoofed non-IP string in X-Forwarded-For falls through to RemoteAddr",
+			remoteAddr: "192.168.1.1:54321",
+			headers:    map[string]string{"X-Forwarded-For": "not-an-ip"},
+			want:       "192.168.1.1",
+		},
+		{
+			name:       "empty X-Forwarded-For falls through to RemoteAddr",
+			remoteAddr: "192.168.1.1:54321",
+			headers:    map[string]string{"X-Forwarded-For": ""},
+			want:       "192.168.1.1",
+		},
+		{
+			name:       "valid IPv6 in X-Forwarded-For",
+			remoteAddr: "127.0.0.1:8080",
+			headers:    map[string]string{"X-Forwarded-For": "2001:db8::1"},
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "valid IPv6 in X-Real-IP",
+			remoteAddr: "127.0.0.1:8080",
+			headers:    map[string]string{"X-Real-IP": "2001:db8::1"},
+			want:       "2001:db8::1",
+		},
+		{
+			name:       "invalid X-Real-IP falls through to RemoteAddr",
+			remoteAddr: "192.168.1.1:54321",
+			headers:    map[string]string{"X-Real-IP": "not-an-ip"},
+			want:       "192.168.1.1",
+		},
+		{
+			name:       "IPv6 RemoteAddr with port returns bare address",
+			remoteAddr: "[::1]:12345",
+			headers:    map[string]string{},
+			want:       "::1",
 		},
 	}
 

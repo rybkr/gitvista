@@ -1,7 +1,9 @@
 package server
 
 import (
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -119,31 +121,36 @@ func (rl *rateLimiter) middleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // getClientIP extracts the client IP from the request.
-// Checks X-Forwarded-For and X-Real-IP headers for proxied requests.
+// Checks X-Forwarded-For and X-Real-IP headers for proxied requests,
+// validating each value with net.ParseIP so that arbitrary non-IP strings
+// cannot be used to bypass per-IP rate limiting. Falls through to the next
+// source if a header value is missing or does not parse as a valid IP.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For (may contain multiple IPs)
+	// X-Forwarded-For may contain a comma-separated list of IPs; the first
+	// entry is the original client. Validate before trusting it.
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the list
-		for i := 0; i < len(xff); i++ {
-			if xff[i] == ',' {
-				return xff[:i]
-			}
+		ip := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
+		if net.ParseIP(ip) != nil {
+			return ip
 		}
-		return xff
+		// Invalid value — fall through to next source.
 	}
 
-	// Check X-Real-IP
+	// X-Real-IP should be a single IP; validate it.
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		ip := strings.TrimSpace(xri)
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
+		// Invalid value — fall through to RemoteAddr.
 	}
 
-	// Fall back to RemoteAddr
-	// Strip port if present
-	ip := r.RemoteAddr
-	for i := len(ip) - 1; i >= 0; i-- {
-		if ip[i] == ':' {
-			return ip[:i]
-		}
+	// Use net.SplitHostPort so that IPv6 addresses enclosed in brackets
+	// (e.g. "[::1]:12345") are parsed correctly.
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		// RemoteAddr has no port component; return as-is.
+		return r.RemoteAddr
 	}
-	return ip
+	return host
 }
