@@ -143,8 +143,10 @@ func TestHandleRepository_Success(t *testing.T) {
 	if _, ok := response["name"]; !ok {
 		t.Error("response missing 'name' field")
 	}
-	if _, ok := response["gitDir"]; !ok {
-		t.Error("response missing 'gitDir' field")
+	// gitDir must not be present: exposing filesystem paths to unauthenticated
+	// clients is a security issue (see #73).
+	if _, ok := response["gitDir"]; ok {
+		t.Error("response must not contain 'gitDir' field (path leak)")
 	}
 }
 

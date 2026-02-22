@@ -19,10 +19,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		Status: "ok",
 	}
 
-	// In local mode, include the repo path.
+	// In local mode, include the human-readable repo name (not the filesystem path)
+	// so operational monitoring knows which repo is being served without leaking
+	// internal directory structure to unauthenticated callers.
 	if s.mode == ModeLocal && s.localSession != nil {
 		if repo := s.localSession.Repo(); repo != nil {
-			status.Repo = repo.GitDir()
+			status.Repo = repo.Name()
 		}
 	}
 

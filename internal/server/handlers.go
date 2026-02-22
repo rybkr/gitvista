@@ -80,7 +80,6 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 
 	response := map[string]any{
 		"name":          repo.Name(),
-		"gitDir":        repo.GitDir(),
 		"currentBranch": currentBranch,
 		"headDetached":  repo.HeadDetached(),
 		"headHash":      repo.Head(),
@@ -106,7 +105,10 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 
 	tree, err := repo.GetTree(treeHash)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load tree: %v", err), http.StatusNotFound)
+		// Log the detailed error server-side; return a generic message so internal
+		// paths and object details are not exposed to unauthenticated callers.
+		s.logger.Error("Failed to load tree", "hash", treeHash, "err", err)
+		http.Error(w, "Tree not found", http.StatusNotFound)
 		return
 	}
 
@@ -124,7 +126,10 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 
 	content, err := repo.GetBlob(blobHash)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load blob: %v", err), http.StatusNotFound)
+		// Log the detailed error server-side; return a generic message so internal
+		// paths and object details are not exposed to unauthenticated callers.
+		s.logger.Error("Failed to load blob", "hash", blobHash, "err", err)
+		http.Error(w, "Blob not found", http.StatusNotFound)
 		return
 	}
 
@@ -185,7 +190,10 @@ func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		result, err := repo.GetFileBlame(commitHash, dirPath)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to compute blame: %v", err), http.StatusNotFound)
+			// Log the detailed error server-side; return a generic message so
+			// internal paths and object details are not exposed to unauthenticated callers.
+			s.logger.Error("Failed to compute blame", "hash", commitHash, "path", dirPath, "err", err)
+			http.Error(w, "Blame computation failed", http.StatusNotFound)
 			return
 		}
 		blame = result
@@ -283,7 +291,10 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 
 	entries, err := gitcore.TreeDiff(repo, parentTreeHash, commit.Tree, "")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to compute diff: %v", err), http.StatusInternalServerError)
+		// Log the detailed error server-side; return a generic message so internal
+		// paths and object details are not exposed to unauthenticated callers.
+		s.logger.Error("Failed to compute diff", "commitHash", commitHash, "err", err)
+		http.Error(w, "Diff computation failed", http.StatusInternalServerError)
 		return
 	}
 
@@ -371,7 +382,10 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 
 	entries, err := gitcore.TreeDiff(repo, parentTreeHash, commit.Tree, "")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to compute diff: %v", err), http.StatusInternalServerError)
+		// Log the detailed error server-side; return a generic message so internal
+		// paths and object details are not exposed to unauthenticated callers.
+		s.logger.Error("Failed to compute diff for file diff", "commitHash", commitHash, "err", err)
+		http.Error(w, "File diff computation failed", http.StatusInternalServerError)
 		return
 	}
 
@@ -384,13 +398,18 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	}
 
 	if targetEntry == nil {
-		http.Error(w, fmt.Sprintf("File not found in commit diff: %s", filePath), http.StatusNotFound)
+		// Do not echo the client-supplied path back in the response body.
+		s.logger.Error("File not found in commit diff", "commitHash", commitHash, "path", filePath)
+		http.Error(w, "File diff computation failed", http.StatusNotFound)
 		return
 	}
 
 	fileDiff, err := gitcore.ComputeFileDiff(repo, targetEntry.OldHash, targetEntry.NewHash, filePath, contextLines)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to compute file diff: %v", err), http.StatusInternalServerError)
+		// Log the detailed error server-side; return a generic message so internal
+		// paths and object details are not exposed to unauthenticated callers.
+		s.logger.Error("Failed to compute file diff", "commitHash", commitHash, "path", filePath, "err", err)
+		http.Error(w, "File diff computation failed", http.StatusInternalServerError)
 		return
 	}
 
@@ -448,7 +467,10 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 	const contextLines = 3
 	fileDiff, err := gitcore.ComputeWorkingTreeFileDiff(repo, filePath, contextLines)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to compute working-tree diff: %v", err), http.StatusInternalServerError)
+		// Log the detailed error server-side; return a generic message so internal
+		// paths and object details are not exposed to unauthenticated callers.
+		s.logger.Error("Failed to compute working-tree diff", "path", filePath, "err", err)
+		http.Error(w, "Working tree diff failed", http.StatusInternalServerError)
 		return
 	}
 
