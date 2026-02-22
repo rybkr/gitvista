@@ -25,10 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
@@ -52,10 +52,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
@@ -70,27 +70,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
           cache-dependency-path: go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@3cfe3a4abbb849e10058ce4af15d205b6da42481  # v4.0.0
+        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84  # v6
         with:
           version: latest
           # Only report issues on new code in PRs
           only-new-issues: ${{ github.event_name == 'pull_request' }}
           # Use config from repo
-          args: --config=.golangci.yml
+          args: --config=.golangci.yml --timeout=10m
           # Disable caching to ensure fresh results
           skip-cache: false
-          # Set timeout for large repos
-          timeout: 10m
 
   # Security - runs govulncheck for known vulnerabilities
   security:
@@ -98,10 +96,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
@@ -118,10 +116,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
@@ -142,7 +140,7 @@ jobs:
             -coverpkg=./internal/... ./...
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@c6dd60cd0da8dd1733b47123f8eaf1e4aa91ce72  # v4.1.1
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de  # v5
         with:
           file: ./test/cover/coverage.out
           flags: unittests
@@ -156,12 +154,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0  # Needed for git history in integration tests
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
@@ -176,12 +174,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0  # Needed for git history in e2e tests
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
@@ -196,10 +194,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@b1df06e7b46502112debaa37c6c0b59ac1d32929  # v4.0.1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '20'
 
@@ -230,10 +228,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
@@ -259,13 +257,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec8ab88f2d47728aeda23275  # v3.0.0
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@0565240e2d7ff142d61b0ee1a3eb0957708f7d81  # v5.0.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
         with:
           context: .
           push: false
@@ -279,10 +277,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be0f37341b4dfc8793  # v4.1.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36256577b078e2e2710620cd304ffbb09590  # v5.0.0
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache: true
