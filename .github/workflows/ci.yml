@@ -82,7 +82,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84  # v6
         with:
-          version: latest
+          version: v2.1
           # Only report issues on new code in PRs
           only-new-issues: ${{ github.event_name == 'pull_request' }}
           # Use config from repo
@@ -107,7 +107,7 @@ jobs:
 
       - name: Run govulncheck
         run: |
-          go install github.com/golang/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
   # Test - runs unit tests with coverage
@@ -289,7 +289,7 @@ jobs:
       - name: Check for outdated dependencies
         run: |
           echo "Checking Go module dependencies..."
-          go mod tidy -check || (echo "Run 'go mod tidy' to update dependencies"; exit 1)
+          go mod tidy -diff || (echo "Run 'go mod tidy' to update dependencies"; exit 1)
           go mod download
           go mod verify
 

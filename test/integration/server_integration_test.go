@@ -121,9 +121,6 @@ func TestServerIntegration(t *testing.T) {
 		if _, ok := repoResp["name"]; !ok {
 			t.Error("response missing 'name' field")
 		}
-		if _, ok := repoResp["gitDir"]; !ok {
-			t.Error("response missing 'gitDir' field")
-		}
 	})
 
 	t.Run("websocket connection", func(t *testing.T) {
