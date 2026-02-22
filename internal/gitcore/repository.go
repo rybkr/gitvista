@@ -266,10 +266,22 @@ func (r *Repository) GetObjectInfo(hash Hash) (string, int, error) {
 // commitHeap is a max-heap of commits sorted by committer date (newest first).
 type commitHeap []*Commit
 
-func (h commitHeap) Len() int           { return len(h) }
-func (h commitHeap) Less(i, j int) bool { return h[i].Committer.When.After(h[j].Committer.When) }
-func (h commitHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *commitHeap) Push(x any)        { *h = append(*h, x.(*Commit)) }
+func (h commitHeap) Len() int {
+	return len(h)
+}
+
+func (h commitHeap) Less(i, j int) bool {
+	return h[i].Committer.When.After(h[j].Committer.When)
+}
+
+func (h commitHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+}
+
+func (h *commitHeap) Push(x any) {
+	*h = append(*h, x.(*Commit)) //nolint:errcheck // heap only stores *Commit; assertion always succeeds
+}
+
 func (h *commitHeap) Pop() any {
 	old := *h
 	n := len(old)
@@ -310,7 +322,7 @@ func (r *Repository) CommitLog(maxCount int) []*Commit {
 		if maxCount > 0 && len(result) >= maxCount {
 			break
 		}
-		c := heap.Pop(h).(*Commit)
+		c := heap.Pop(h).(*Commit) //nolint:errcheck // heap only stores *Commit; assertion always succeeds
 		result = append(result, c)
 
 		for _, parentHash := range c.Parents {

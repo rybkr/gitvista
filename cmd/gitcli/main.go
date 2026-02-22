@@ -36,7 +36,7 @@ func main() {
 	case "status":
 		exitCode = runStatus(repo, os.Args[2:])
 	default:
-		fmt.Fprintf(os.Stderr, "gitvista-cli: %q is not a command\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "gitvista-cli: %q is not a command\n", os.Args[1]) //nolint:gosec // G705: CLI stderr, not web; %q quotes safely
 		exitCode = 1
 	}
 	os.Exit(exitCode)

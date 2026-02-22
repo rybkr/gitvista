@@ -30,7 +30,7 @@ func runCatFile(repo *gitcore.Repository, args []string) int {
 	case "-p":
 		return catFilePretty(repo, hash)
 	default:
-		fmt.Fprintf(os.Stderr, "error: unknown flag: %q\n", flag)
+		fmt.Fprintf(os.Stderr, "error: unknown flag: %q\n", flag) //nolint:gosec // G705
 		return 1
 	}
 }
@@ -72,7 +72,7 @@ func catFilePretty(repo *gitcore.Repository, hash gitcore.Hash) int {
 	case "tag":
 		return prettyPrintTag(repo, hash)
 	default:
-		fmt.Fprintf(os.Stderr, "fatal: unknown object type: %q\n", typeName)
+		fmt.Fprintf(os.Stderr, "fatal: unknown object type: %q\n", typeName) //nolint:gosec // G705
 		return 128
 	}
 }

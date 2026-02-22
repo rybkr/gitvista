@@ -25,6 +25,8 @@ func newTestSession(repo *gitcore.Repository) *RepoSession {
 }
 
 // requestWithSession creates an HTTP request with a RepoSession in the context.
+//
+//nolint:unparam
 func requestWithSession(method, target string, session *RepoSession) *http.Request {
 	req := httptest.NewRequest(method, target, nil)
 	ctx := withSessionCtx(req.Context(), session)

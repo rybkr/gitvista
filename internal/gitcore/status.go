@@ -1,7 +1,7 @@
 package gitcore
 
 import (
-	"crypto/sha1" //nolint:gosec // Git uses SHA-1 for blob hashing
+	"crypto/sha1" // #nosec G505 -- Git requires SHA-1 for blob hashing
 	"fmt"
 	"io/fs"
 	"maps"
@@ -140,7 +140,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		// Fast-path: if the file size on disk differs from what the index
 		// recorded, skip hashing and mark as modified immediately.
 		diskSize := info.Size()
-		if uint32(diskSize) != entry.FileSize { //nolint:gosec // diskSize is always non-negative here
+		if uint32(diskSize) != entry.FileSize { // #nosec G115 -- truncation intentional; git index FileSize is uint32, mismatch triggers re-hash below
 			fs, exists := results[path]
 			if !exists {
 				results[path] = &FileStatus{Path: path}
@@ -277,7 +277,7 @@ func hashBlobContent(content []byte) Hash {
 	// Construct the git blob header: "blob <length>\0".
 	header := fmt.Sprintf("blob %d\x00", len(content))
 
-	h := sha1.New() //nolint:gosec // Git uses SHA-1 for blob hashing
+	h := sha1.New() // #nosec G401 -- Git requires SHA-1 for blob object hashing
 	h.Write([]byte(header))
 	h.Write(content)
 

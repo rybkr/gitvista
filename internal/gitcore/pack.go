@@ -218,7 +218,7 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 		offset := offsets[i]
 		if offset&packIndexLargeOffsetFlag != 0 {
 			largeOffsetIdx := offset & packIndexLargeOffsetMask
-			//nolint:gosec // G115: largeOffsets length is bounded by pack index format
+			// #nosec G115 -- largeOffsets length is bounded by pack index format (max 2^31 entries)
 			if largeOffsetIdx >= uint32(len(largeOffsets)) {
 				continue
 			}

@@ -21,7 +21,7 @@ func runLog(repo *gitcore.Repository, args []string) int {
 			i++
 			n, err := strconv.Atoi(args[i])
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: invalid -n value: %q\n", args[i])
+				fmt.Fprintf(os.Stderr, "error: invalid -n value: %q\n", args[i]) //nolint:gosec // G705: CLI stderr, not web; %q quotes safely
 				return 1
 			}
 			maxCount = n
@@ -29,12 +29,12 @@ func runLog(repo *gitcore.Repository, args []string) int {
 			// Handle -n5 style
 			n, err := strconv.Atoi(args[i][2:])
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: invalid -n value: %q\n", args[i][2:])
+				fmt.Fprintf(os.Stderr, "error: invalid -n value: %q\n", args[i][2:]) //nolint:gosec // G705: CLI stderr, not web; %q quotes safely
 				return 1
 			}
 			maxCount = n
 		default:
-			fmt.Fprintf(os.Stderr, "error: unknown option: %q\n", args[i])
+			fmt.Fprintf(os.Stderr, "error: unknown option: %q\n", args[i]) //nolint:gosec // G705: CLI stderr, not web; %q quotes safely
 			return 1
 		}
 	}

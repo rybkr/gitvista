@@ -29,4 +29,3 @@ func withLocalSession(session *RepoSession, next http.HandlerFunc) http.HandlerF
 		next(w, r.WithContext(ctx))
 	}
 }
-

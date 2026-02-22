@@ -3062,21 +3062,11 @@ canvas {
 }
 
 .repo-landing__logo {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 56px;
     height: 56px;
     border-radius: 14px;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--node-color);
+    object-fit: contain;
     margin-bottom: 16px;
-}
-
-.repo-landing__logo svg {
-    width: 28px;
-    height: 28px;
 }
 
 .repo-landing__title {

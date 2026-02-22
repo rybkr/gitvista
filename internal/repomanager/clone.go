@@ -102,6 +102,7 @@ func fetchRepo(ctx context.Context, repoPath string, timeout time.Duration) erro
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	//nolint:gosec // G204: repoPath is a server-controlled bare repo directory, not user input
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "fetch", "--prune", "--quiet")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 

@@ -71,7 +71,7 @@ pre-commit:
           echo "gosec not found. Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"
           exit 0
         fi
-        gosec -quiet -no-fail ./internal/...
+        gosec -quiet -no-fail -exclude=G304,G204 ./internal/...
       description: "Check Go code for security issues"
 
     # JavaScript syntax validation

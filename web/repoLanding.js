@@ -1,12 +1,5 @@
 const STATUS_POLL_INTERVAL = 2000;
 
-const LOGO_SVG = `<svg width="32" height="32" viewBox="0 0 16 16" fill="none">
-    <circle cx="8" cy="4" r="2" fill="currentColor"/>
-    <circle cx="4" cy="12" r="2" fill="currentColor"/>
-    <circle cx="12" cy="12" r="2" fill="currentColor"/>
-    <path d="M8 6v2M6.5 10.5L8 8M9.5 10.5L8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-</svg>`;
-
 const DELETE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
 </svg>`;
@@ -30,9 +23,10 @@ export function createRepoLanding({ onRepoSelect }) {
     const header = document.createElement("div");
     header.className = "repo-landing__header";
 
-    const logo = document.createElement("div");
+    const logo = document.createElement("img");
     logo.className = "repo-landing__logo";
-    logo.innerHTML = LOGO_SVG;
+    logo.src = "/favicon.png";
+    logo.alt = "GitVista";
 
     const title = document.createElement("h1");
     title.className = "repo-landing__title";
