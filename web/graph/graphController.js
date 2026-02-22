@@ -672,22 +672,30 @@ export function createGraphController(rootElement, options = {}) {
 
     resize();
 
+    const refreshPalette = () => {
+        palette = buildPalette(canvas);
+        renderer.updatePalette(palette);
+        render();
+    };
+
     const themeWatcher = window.matchMedia?.("(prefers-color-scheme: dark)");
     if (themeWatcher) {
-        const handler = () => {
-            palette = buildPalette(canvas);
-            renderer.updatePalette(palette);
-            render();
-        };
         if (themeWatcher.addEventListener) {
-            themeWatcher.addEventListener("change", handler);
+            themeWatcher.addEventListener("change", refreshPalette);
             removeThemeWatcher = () =>
-                themeWatcher.removeEventListener("change", handler);
+                themeWatcher.removeEventListener("change", refreshPalette);
         } else if (themeWatcher.addListener) {
-            themeWatcher.addListener(handler);
-            removeThemeWatcher = () => themeWatcher.removeListener(handler);
+            themeWatcher.addListener(refreshPalette);
+            removeThemeWatcher = () => themeWatcher.removeListener(refreshPalette);
         }
     }
+
+    // Also watch for manual theme toggle (data-theme attribute on <html>).
+    const themeAttrObserver = new MutationObserver(refreshPalette);
+    themeAttrObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme"],
+    });
 
     Object.assign(pointerHandlers, {
         down: handlePointerDown,
@@ -1067,6 +1075,7 @@ export function createGraphController(rootElement, options = {}) {
         forceStrategy.deactivate();
         laneStrategy.deactivate();
         removeThemeWatcher?.();
+        themeAttrObserver.disconnect();
         releaseDrag();
         canvas.removeEventListener("pointerdown", pointerHandlers.down);
         canvas.removeEventListener("pointermove", pointerHandlers.move);

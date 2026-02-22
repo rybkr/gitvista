@@ -122,8 +122,8 @@ export class Tooltip {
         if (top + tooltipHeight > vh) {
             top = canvasRect.top + ty - tooltipHeight - Math.abs(offset.y);
         }
-        left = Math.max(4, left);
-        top = Math.max(4, top);
+        left = Math.max(canvasRect.left + 4, left);
+        top = Math.max(canvasRect.top + 4, top);
 
         this.element.style.transform = `translate(${left}px, ${top}px)`;
     }

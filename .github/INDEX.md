@@ -61,8 +61,7 @@ gitvista/
 └── .github/
     ├── workflows/
     │   ├── ci.yml                        ← Main CI pipeline (THIS IS THE KEY FILE)
-    │   ├── release.yml                   ← Release workflow
-    │   └── fly-deploy.yml                ← Deployment workflow
+    │   └── release.yml                   ← Release workflow
     └── ...
 ```
 
