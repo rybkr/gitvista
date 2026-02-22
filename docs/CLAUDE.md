@@ -16,8 +16,11 @@ GITVISTA_REPO=/path/to/repo GITVISTA_PORT=3000 go run ./cmd/vista
 # Run all unit tests
 make test
 
-# Run all CI checks (tests, lint, integration tests, build)
-make ci
+# Run local CI checks (no Docker or network needed)
+make ci-local
+
+# Run all CI checks including Docker build and dep verification
+make ci-remote
 
 # Run integration tests
 make integration

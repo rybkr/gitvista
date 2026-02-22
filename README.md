@@ -101,8 +101,8 @@ make lint
 # Run integration tests (starts a real server)
 make integration
 
-# All CI checks
-make ci
+# All local CI checks (no Docker or network needed)
+make ci-local
 ```
 
 ## License

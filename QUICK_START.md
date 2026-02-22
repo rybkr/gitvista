@@ -54,7 +54,7 @@ make build      # Build binaries
 
 ### Full CI Suite (replicates GitHub)
 ```bash
-make ci         # ~5 minutes - all checks
+make ci-local   # ~5 minutes - all checks (no Docker needed)
 ```
 
 ### View Test Coverage
@@ -73,7 +73,7 @@ make cover-html # Opens coverage report in browser
 | Security scan | `make security` | ~2m |
 | Build app | `make build` | ~30s |
 | Build Docker | `make docker-build` | ~3m |
-| All checks | `make ci` | ~5m |
+| All local checks | `make ci-local` | ~5m |
 | See all targets | `make help` | instant |
 
 ## Pre-commit Hooks
@@ -123,7 +123,7 @@ go test -v -race -timeout 10s -run TestName ./...
 
 Before creating a PR, run:
 ```bash
-make ci  # All checks must pass locally first
+make ci-local  # All checks must pass locally first
 ```
 
 On GitHub:
@@ -254,7 +254,7 @@ go help build
 ### ❌ Pushing without testing
 ```bash
 # Always run locally first
-make ci  # ~5 minutes
+make ci-local  # ~5 minutes
 ```
 
 ### ❌ Skipping pre-commit hooks
@@ -312,10 +312,10 @@ go build -trimpath -ldflags="-s -w" -o gitvista ./cmd/vista
 go test ./internal/git
 
 # Not:
-make ci  # runs everything
+make ci-local  # runs everything (no Docker needed)
 
 # But before pushing:
-make ci  # verify everything passes
+make ci-local  # verify everything passes
 ```
 
 ## Getting Help

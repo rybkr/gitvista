@@ -185,8 +185,11 @@ lefthook install
 ### Replicate CI Locally
 
 ```bash
-# Run all CI checks (takes ~5 minutes)
-make ci
+# Run local CI checks (no Docker or network needed, ~5 minutes)
+make ci-local
+
+# Run full CI suite including Docker build and dep verification
+make ci-remote
 
 # Run fast checks only
 make dev-check  # format, imports, vet
@@ -223,7 +226,8 @@ Key targets:
 | `make security` | Security checks |
 | `make build` | Build binaries |
 | `make docker-build` | Build Docker image |
-| `make ci` | Run full CI suite |
+| `make ci-local` | Run local CI checks |
+| `make ci-remote` | Run full CI suite |
 | `make clean` | Clean artifacts |
 
 ## Secrets and Access

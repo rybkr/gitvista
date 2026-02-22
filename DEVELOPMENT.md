@@ -129,7 +129,7 @@ go test -v -tags=e2e ./test/e2e/...
 #### All Tests
 ```bash
 # Run everything (what CI runs)
-make ci
+make ci-local
 ```
 
 ### Code Quality
@@ -290,7 +290,7 @@ When you push a PR, these checks run automatically:
 Check CI status:
 1. **In your PR:** GitHub shows check status on the PR page
 2. **In Actions tab:** View detailed logs for failed checks
-3. **Locally:** Run `make ci` to replicate CI environment
+3. **Locally:** Run `make ci-local` to replicate CI environment
 
 ### Common CI Failures
 

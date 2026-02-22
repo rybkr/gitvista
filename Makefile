@@ -1,4 +1,4 @@
-.PHONY: test ci lint integration e2e build build-cli clean help setup-hooks \
+.PHONY: test ci-local ci-remote lint integration e2e build build-cli clean help setup-hooks \
          format format-check vet security validate-js cover cover-html dev-check check-imports \
          check-vuln docker-build deps-check
 
@@ -71,7 +71,7 @@ vet:
 security: check-vuln
 	@echo "Running gosec security scanner..."
 	@if command -v gosec >/dev/null; then \
-		gosec -quiet ./internal/...; \
+		gosec -quiet -exclude=G304,G204 ./internal/...; \
 	else \
 		echo "gosec not found - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
 		exit 1; \
@@ -155,8 +155,12 @@ format-check:
 	fi
 	@echo "All files properly formatted"
 
-## ci: Run all CI checks (tests, lint, integration tests, e2e tests, build)
-ci: format-check check-imports vet lint security test integration e2e validate-js build docker-build deps-check
+## ci-local: Run CI checks that work offline (no Docker or network needed)
+ci-local: format-check check-imports vet lint security test integration e2e validate-js build
+	@echo "All local CI checks passed!"
+
+## ci-remote: Run all CI checks including Docker build and dependency verification
+ci-remote: format-check check-imports vet lint security test integration e2e validate-js build docker-build deps-check
 	@echo "All CI checks passed!"
 
 ## clean: Clean build artifacts

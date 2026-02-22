@@ -98,7 +98,7 @@ gitvista/
 ### "CI is failing and I don't know why"
 1. Check: [README.md](README.md#troubleshooting) Troubleshooting section
 2. Or: [DEVELOPMENT.md](../DEVELOPMENT.md#troubleshooting) Troubleshooting section
-3. Run: `make ci` locally to debug
+3. Run: `make ci-local` locally to debug
 
 ### "I want to understand the CI/CD architecture"
 1. Read: [CI-CD-OVERVIEW.md](CI-CD-OVERVIEW.md) (30 min)
@@ -215,7 +215,7 @@ gitvista/
 | Pre-commit hooks | ~10 seconds |
 | `make dev-check` | ~10 seconds |
 | `make test` | ~1 minute |
-| `make ci` | ~5 minutes |
+| `make ci-local` | ~5 minutes |
 
 ### GitHub CI
 
@@ -253,7 +253,8 @@ make lint                 # Linters
 make security             # Security scanning
 
 # Full suite
-make ci                   # Run all checks (replicates GitHub CI)
+make ci-local             # Run all local checks (no Docker needed)
+make ci-remote            # Run all checks (replicates GitHub CI)
 
 # Coverage
 make cover                # Tests with coverage
@@ -392,7 +393,8 @@ For latest changes, check:
 │ make setup-hooks    Install pre-commit hooks    │
 │ make dev-check      Fast local checks           │
 │ make test           Unit tests                  │
-│ make ci             Full CI suite               │
+│ make ci-local      Local CI (no Docker)         │
+│ make ci-remote     Full CI suite               │
 │ make cover-html     Coverage report             │
 │ make help           Show all targets            │
 └─────────────────────────────────────────────────┘
