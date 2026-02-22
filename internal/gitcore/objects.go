@@ -364,7 +364,7 @@ func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 		} else if mode == "120000" || mode == "160000" {
 			entryType = "commit"
 		} else {
-			entryType = "unknown" //nolint:goconst
+			entryType = StatusUnknown
 		}
 
 		tree.Entries = append(tree.Entries, TreeEntry{

@@ -90,10 +90,10 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		var idxStatus string
 		if !inHead {
 			// Path is in the index but not in HEAD → staged addition.
-			idxStatus = "added"
+			idxStatus = StatusAdded
 		} else if headHash != entry.Hash {
 			// Path is in both but hashes differ → staged modification.
-			idxStatus = "modified"
+			idxStatus = StatusModified
 		}
 		// If hashes match, the staged content is identical to HEAD (idxStatus stays "").
 
@@ -110,7 +110,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		if _, inIndex := index.ByPath[path]; !inIndex {
 			results[path] = &FileStatus{
 				Path:        path,
-				IndexStatus: "deleted",
+				IndexStatus: StatusDeleted,
 			}
 		}
 	}
@@ -129,7 +129,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 					results[path] = &FileStatus{Path: path}
 					fs = results[path]
 				}
-				fs.WorkStatus = "deleted"
+				fs.WorkStatus = StatusDeleted
 			} else {
 				// Unexpected stat error (permission denied, etc.) — surface it.
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: stat %s: %w", diskPath, statErr)
@@ -146,7 +146,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 				results[path] = &FileStatus{Path: path}
 				fs = results[path]
 			}
-			fs.WorkStatus = "modified"
+			fs.WorkStatus = StatusModified
 			continue
 		}
 
@@ -167,7 +167,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 				results[path] = &FileStatus{Path: path}
 				fs = results[path]
 			}
-			fs.WorkStatus = "modified"
+			fs.WorkStatus = StatusModified
 		}
 	}
 

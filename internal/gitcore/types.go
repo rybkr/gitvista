@@ -74,7 +74,7 @@ func (t ObjectType) String() string {
 	case TagObject:
 		return objectTypeTag
 	default:
-		return "unknown"
+		return StatusUnknown
 	}
 }
 
@@ -293,6 +293,16 @@ func (d *RepositoryDelta) IsEmpty() bool {
 // DiffStatus represents the type of change applied to a file in a diff.
 type DiffStatus int
 
+// String constants for file change statuses, shared by DiffStatus.String()
+// and FileStatus field values in status.go.
+const (
+	StatusAdded    = "added"
+	StatusModified = "modified"
+	StatusDeleted  = "deleted"
+	StatusRenamed  = "renamed"
+	StatusUnknown  = "unknown"
+)
+
 const (
 	// DiffStatusAdded represents a diff addition.
 	DiffStatusAdded DiffStatus = iota
@@ -308,15 +318,15 @@ const (
 func (s DiffStatus) String() string {
 	switch s {
 	case DiffStatusAdded:
-		return "added"
+		return StatusAdded
 	case DiffStatusModified:
-		return "modified"
+		return StatusModified
 	case DiffStatusDeleted:
-		return "deleted"
+		return StatusDeleted
 	case DiffStatusRenamed:
-		return "renamed"
+		return StatusRenamed
 	default:
-		return "unknown"
+		return StatusUnknown
 	}
 }
 
