@@ -60,7 +60,7 @@ func setupTestRepo(t *testing.T) string {
 	dir := t.TempDir()
 
 	// Initialize repo
-	git(t, dir, "init")
+	git(t, dir, "init", "-b", "main")
 	git(t, dir, "config", "user.name", "Test User")
 	git(t, dir, "config", "user.email", "test@example.com")
 
