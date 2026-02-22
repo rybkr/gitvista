@@ -20,52 +20,56 @@ const (
 	objectTypeTag    = "tag"
 )
 
-// loadObjects traverses all refs and loads reachable commits and tags.
+// loadObjects traverses all refs and loads reachable commits and tags using
+// an iterative stack to avoid stack overflow on repositories with deep linear
+// history (100K+ commits). Semantics are identical to the former recursive
+// implementation: visited map prevents re-processing, and errors propagate
+// immediately. Output ordering may differ (LIFO vs first-parent-first) but
+// consumers use unordered maps or re-sort by date, so this is invisible.
 // Must be called after loadRefs.
 func (r *Repository) loadObjects() error {
 	visited := make(map[Hash]bool)
+
+	// Pre-size the stack to the number of refs to avoid initial allocations.
+	stack := make([]Hash, 0, len(r.refs))
 	for _, ref := range r.refs {
-		if err := r.traverseObjects(ref, visited); err != nil {
-			return err
+		stack = append(stack, ref)
+	}
+
+	for len(stack) > 0 {
+		// Pop from the end to maintain a LIFO traversal order.
+		ref := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if visited[ref] {
+			continue
 		}
-	}
-	return nil
-}
+		visited[ref] = true
 
-func (r *Repository) traverseObjects(ref Hash, visited map[Hash]bool) error {
-	if visited[ref] {
-		return nil
-	}
-	visited[ref] = true
-
-	object, err := r.readObject(ref)
-	if err != nil {
-		return fmt.Errorf("error traversing object: %v", err)
-	}
-
-	switch object.Type() {
-	case CommitObject:
-		commit, ok := object.(*Commit)
-		if !ok {
-			return fmt.Errorf("unexpected type for commit object %s", ref)
+		object, err := r.readObject(ref)
+		if err != nil {
+			return fmt.Errorf("error traversing object: %v", err)
 		}
-		r.commits = append(r.commits, commit)
-		for _, parent := range commit.Parents {
-			if err := r.traverseObjects(parent, visited); err != nil {
-				return err
+
+		switch object.Type() {
+		case CommitObject:
+			commit, ok := object.(*Commit)
+			if !ok {
+				return fmt.Errorf("unexpected type for commit object %s", ref)
 			}
+			r.commits = append(r.commits, commit)
+			// Push all parent hashes onto the stack for subsequent processing.
+			stack = append(stack, commit.Parents...)
+		case TagObject:
+			tag, ok := object.(*Tag)
+			if !ok {
+				return fmt.Errorf("unexpected type for tag object %s", ref)
+			}
+			r.tags = append(r.tags, tag)
+			stack = append(stack, tag.Object)
+		default:
+			return fmt.Errorf("unsupported object type: %d", object.Type())
 		}
-	case TagObject:
-		tag, ok := object.(*Tag)
-		if !ok {
-			return fmt.Errorf("unexpected type for tag object %s", ref)
-		}
-		r.tags = append(r.tags, tag)
-		if err := r.traverseObjects(tag.Object, visited); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unsupported object type: %d", object.Type())
 	}
 
 	return nil
