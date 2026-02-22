@@ -3,7 +3,7 @@
  * Wires together state, D3 simulation, rendering, tooltips, and interactions.
  */
 
-import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
+import { select, zoom as d3Zoom } from "/vendor/d3-minimal.js";
 import { TooltipManager } from "../tooltips/index.js";
 import {
     BRANCH_NODE_OFFSET_X,
@@ -224,8 +224,7 @@ export function createGraphController(rootElement, options = {}) {
     let layoutStrategy = initialMode === "lane" ? laneStrategy : forceStrategy;
     state.layoutMode = initialMode;
 
-    const zoom = d3
-        .zoom()
+    const zoom = d3Zoom()
         .filter((event) => !isDraggingNode || event.type === "wheel")
         .scaleExtent([ZOOM_MIN, ZOOM_MAX])
         .on("zoom", (event) => {
@@ -384,8 +383,8 @@ export function createGraphController(rootElement, options = {}) {
     const centerOnLatestCommit = () => {
         const target = layoutStrategy.findCenterTarget(nodes);
         if (target) {
-            // d3.select(canvas).call(...) translates view to center on target coordinates.
-            d3.select(canvas).call(zoom.translateTo, target.x, target.y);
+            // select(canvas).call(...) translates view to center on target coordinates.
+            select(canvas).call(zoom.translateTo, target.x, target.y);
         }
     };
 
@@ -401,7 +400,7 @@ export function createGraphController(rootElement, options = {}) {
             const target = nodes.find((n) => n.type === "commit" && n.hash === hash);
             if (target) {
                 layoutStrategy.disableAutoCenter();
-                d3.select(canvas).call(zoom.translateTo, target.x, target.y);
+                select(canvas).call(zoom.translateTo, target.x, target.y);
                 return;
             }
         }
@@ -477,6 +476,9 @@ export function createGraphController(rootElement, options = {}) {
 
         selectAndCenterCommit(commitNodes[nextIndex].hash);
     };
+
+    // Wire Prev/Next buttons now that navigateCommits is defined.
+    tooltipManager.tooltips.commit.setNavigate(navigateCommits);
 
     const releaseDrag = () => {
         if (!dragState) {
@@ -618,7 +620,7 @@ export function createGraphController(rootElement, options = {}) {
     let palette = buildPalette(canvas);
     let removeThemeWatcher = null;
 
-    d3.select(canvas).call(zoom).on("dblclick.zoom", null);
+    select(canvas).call(zoom).on("dblclick.zoom", null);
 
     const resize = () => {
         // Read the canvas's own flex-computed size (not the parent's) to avoid
@@ -1060,7 +1062,7 @@ export function createGraphController(rootElement, options = {}) {
         }
         window.removeEventListener("resize", resize);
         resizeObserver?.disconnect();
-        d3.select(canvas).on(".zoom", null);
+        select(canvas).on(".zoom", null);
         // Deactivate both strategies to clean up resources
         forceStrategy.deactivate();
         laneStrategy.deactivate();

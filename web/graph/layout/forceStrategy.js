@@ -8,7 +8,7 @@
  * chronological commit ordering.
  */
 
-import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
+import { forceSimulation, forceManyBody, forceCollide, forceLink } from "/vendor/d3-minimal.js";
 import {
 	ALPHA_DECAY,
 	CHARGE_STRENGTH,
@@ -80,16 +80,14 @@ export class ForceStrategy {
 		}
 
 		// Create D3 force simulation
-		this.simulation = d3
-			.forceSimulation(this.nodes)
+		this.simulation = forceSimulation(this.nodes)
 			.velocityDecay(VELOCITY_DECAY)
 			.alphaDecay(ALPHA_DECAY)
-			.force("charge", d3.forceManyBody().strength(CHARGE_STRENGTH))
-			.force("collision", d3.forceCollide().radius(COLLISION_RADIUS))
+			.force("charge", forceManyBody().strength(CHARGE_STRENGTH))
+			.force("collision", forceCollide().radius(COLLISION_RADIUS))
 			.force(
 				"link",
-				d3
-					.forceLink(this.links)
+				forceLink(this.links)
 					.id((d) => d.id ?? d.hash)
 					.distance(LINK_DISTANCE)
 					.strength(LINK_STRENGTH),

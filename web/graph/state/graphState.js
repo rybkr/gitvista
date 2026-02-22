@@ -3,7 +3,7 @@
  * Provides a central definition for shared state across controller modules.
  */
 
-import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
+import { zoomIdentity } from "/vendor/d3-minimal.js";
 
 /**
  * Creates the default graph state container.
@@ -16,7 +16,7 @@ export function createGraphState() {
 		branches: new Map(),
 		nodes: [],
 		links: [],
-		zoomTransform: d3.zoomIdentity,
+		zoomTransform: zoomIdentity,
 		layoutMode: "force", // Current layout mode: "force" or "lane"
 		// Structured search state produced by searchQuery.js.
 		// null means no active search; object contains { query, matcher }.
