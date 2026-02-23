@@ -30,7 +30,6 @@ const (
 	//   file_size   4
 	//   sha1       20
 	//   flags       2
-	//   ----------
 	//   total      62
 	indexFixedEntrySize = 62
 

@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,8 +24,19 @@ func (s *Server) startWatcher() error {
 	}
 
 	repo := s.localSession.Repo()
-	if err := watcher.Add(repo.GitDir()); err != nil {
+	gitDir := repo.GitDir()
+	if err := watcher.Add(gitDir); err != nil {
 		return err
+	}
+
+	// fsnotify does not recurse into subdirectories. We must explicitly
+	// watch refs/heads, refs/tags, and refs/remotes so that branch and tag
+	// creation/deletion events (which touch files inside those dirs) are
+	// picked up. walkAndWatch also handles hierarchical branch names
+	// (e.g., refs/heads/feature/login) by walking the entire subtree.
+	for _, sub := range []string{"refs/heads", "refs/tags", "refs/remotes"} {
+		dir := filepath.Join(gitDir, sub)
+		walkAndWatch(watcher, dir, s.logger)
 	}
 
 	s.wg.Add(1)
@@ -31,8 +44,32 @@ func (s *Server) startWatcher() error {
 
 	go s.watchLoop(watcher)
 
-	s.logger.Info("Watching Git repository for changes", "gitDir", repo.GitDir())
+	s.logger.Info("Watching Git repository for changes", "gitDir", gitDir)
 	return nil
+}
+
+// walkAndWatch adds fsnotify watches to dir and all its subdirectories.
+// Missing directories are silently skipped.
+func walkAndWatch(watcher *fsnotify.Watcher, dir string, logger *slog.Logger) {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	err = filepath.Walk(dir, func(path string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return nil //nolint:nilerr // skip unreadable entries
+		}
+		if fi.IsDir() {
+			if addErr := watcher.Add(path); addErr != nil {
+				logger.Warn("Failed to watch directory", "dir", path, "err", addErr)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Warn("Failed to walk refs directory", "dir", dir, "err", err)
+	}
 }
 
 // statusPollLoop periodically recomputes working tree status and broadcasts
@@ -95,7 +132,7 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 				continue
 			}
 
-			s.logger.Debug("Change detected", "file", filepath.Base(event.Name))
+			s.logger.Debug("Change detected", "file", filepath.Base(event.Name), "op", event.Op.String())
 
 			if debounceTimer != nil {
 				debounceTimer.Stop()
@@ -117,7 +154,9 @@ func shouldIgnoreEvent(event fsnotify.Event) bool {
 	base := filepath.Base(event.Name)
 	path := event.Name
 
-	if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
+	// Accept Write, Create, Remove, and Rename events. Remove is critical
+	// for detecting branch/tag deletion (the ref file is deleted from disk).
+	if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
 		return true
 	}
 	if strings.HasSuffix(base, ".lock") {
