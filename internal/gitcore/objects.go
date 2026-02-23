@@ -72,6 +72,12 @@ func (r *Repository) loadObjects() error {
 		}
 	}
 
+	// Build the commit lookup map once; the Repository is immutable after construction.
+	r.commitMap = make(map[Hash]*Commit, len(r.commits))
+	for _, c := range r.commits {
+		r.commitMap[c.ID] = c
+	}
+
 	return nil
 }
 

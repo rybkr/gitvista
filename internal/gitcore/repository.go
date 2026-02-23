@@ -17,6 +17,7 @@ type Repository struct {
 
 	refs        map[string]Hash
 	commits     []*Commit
+	commitMap   map[Hash]*Commit
 	tags        []*Tag
 	stashes     []*StashEntry
 	packIndices []*PackIndex
@@ -78,14 +79,31 @@ func (r *Repository) WorkDir() string { return r.workDir }
 func (r *Repository) IsBare() bool { return r.gitDir == r.workDir }
 
 // Commits returns a map of all commits in the repository keyed by their hash.
+// The returned map is built once during construction and must not be modified.
 func (r *Repository) Commits() map[Hash]*Commit {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	result := make(map[Hash]*Commit, len(r.commits))
-	for _, commit := range r.commits {
-		result[commit.ID] = commit
+	return r.commitsMap()
+}
+
+// commitsMap returns the cached commit map, building it on demand if nil.
+// Caller must hold at least r.mu.RLock().
+func (r *Repository) commitsMap() map[Hash]*Commit {
+	if r.commitMap != nil {
+		return r.commitMap
 	}
-	return result
+	m := make(map[Hash]*Commit, len(r.commits))
+	for _, c := range r.commits {
+		m[c.ID] = c
+	}
+	return m
+}
+
+// CommitCount returns the number of commits without building a map.
+func (r *Repository) CommitCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.commits)
 }
 
 // Branches returns a map of branch names to their tip commit hashes.
@@ -227,16 +245,12 @@ func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
 	return objectData, nil
 }
 
-// GetCommit looks up a single commit by hash.
-// This performs a linear scan over all commits. For batch lookups, prefer
-// using Commits() to obtain a map and querying that directly.
+// GetCommit looks up a single commit by hash using the cached commit map.
 func (r *Repository) GetCommit(hash Hash) (*Commit, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, c := range r.commits {
-		if c.ID == hash {
-			return c, nil
-		}
+	if c, ok := r.commitsMap()[hash]; ok {
+		return c, nil
 	}
 	return nil, fmt.Errorf("commit not found: %s", hash)
 }
@@ -301,12 +315,8 @@ func (r *Repository) CommitLog(maxCount int) []*Commit {
 		return nil
 	}
 
-	commitMap := make(map[Hash]*Commit, len(r.commits))
-	for _, c := range r.commits {
-		commitMap[c.ID] = c
-	}
-
-	headCommit, ok := commitMap[r.head]
+	cm := r.commitsMap()
+	headCommit, ok := cm[r.head]
 	if !ok {
 		return nil
 	}
@@ -330,7 +340,7 @@ func (r *Repository) CommitLog(maxCount int) []*Commit {
 				continue
 			}
 			visited[parentHash] = true
-			if parent, found := commitMap[parentHash]; found {
+			if parent, found := cm[parentHash]; found {
 				heap.Push(h, parent)
 			}
 		}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/flate"
 	"net/http"
 	"time"
 
@@ -19,6 +20,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(_ *http.Request) bool {
 		return true
 	},
+	EnableCompression: true,
 }
 
 // handleWebSocket upgrades the connection and delegates client management to
@@ -36,6 +38,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	conn.EnableWriteCompression(true)
+	conn.SetCompressionLevel(flate.BestSpeed)
 	conn.SetReadLimit(maxMessageSize)
 	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
 		s.logger.Error("Failed to set read deadline", "addr", conn.RemoteAddr(), "err", err)

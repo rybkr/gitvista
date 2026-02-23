@@ -29,7 +29,7 @@ func buildHeadInfo(repo *gitcore.Repository) *HeadInfo {
 		Ref:         headRef,
 		BranchName:  branchName,
 		IsDetached:  repo.HeadDetached(),
-		CommitCount: len(repo.Commits()),
+		CommitCount: repo.CommitCount(),
 		BranchCount: len(repo.Branches()),
 		TagCount:    len(tagNames),
 		Description: repo.Description(),

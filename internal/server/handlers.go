@@ -83,7 +83,7 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 		"currentBranch": currentBranch,
 		"headDetached":  repo.HeadDetached(),
 		"headHash":      repo.Head(),
-		"commitCount":   len(repo.Commits()),
+		"commitCount":   repo.CommitCount(),
 		"branchCount":   len(branches),
 		"tagCount":      len(tagNames),
 		"tags":          tagNames,

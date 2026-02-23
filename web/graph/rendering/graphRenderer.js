@@ -121,9 +121,21 @@ export class GraphRenderer {
     renderLinks(links, nodes) {
         this.ctx.lineWidth = LINK_THICKNESS;
 
+        // Build a hash-to-node lookup map once per frame: O(n) instead of
+        // O(n) per link endpoint via the previous linear scan.
+        const nodeMap = new Map();
+        for (const node of nodes) {
+            if (node.hash) nodeMap.set(node.hash, node);
+            if (node.branch) nodeMap.set(node.branch, node);
+        }
+
         for (const link of links) {
-            const source = this.resolveNode(link.source, nodes);
-            const target = this.resolveNode(link.target, nodes);
+            const source = typeof link.source === "object"
+                ? link.source
+                : nodeMap.get(link.source);
+            const target = typeof link.target === "object"
+                ? link.target
+                : nodeMap.get(link.target);
             if (!source || !target) continue;
 
             const warmup =
@@ -149,19 +161,6 @@ export class GraphRenderer {
             this.renderLink(source, target, link.kind);
             this.ctx.globalAlpha = prevAlpha;
         }
-    }
-
-    /**
-     * Resolves a link endpoint from a node or hash identifier.
-     *
-     * @param {string | import("../types.js").GraphNode} nodeOrHash Node instance or commit hash.
-     * @param {import("../types.js").GraphNode[]} nodes Node collection for lookups.
-     * @returns {import("../types.js").GraphNode | undefined} Matching node when found.
-     */
-    resolveNode(nodeOrHash, nodes) {
-        return typeof nodeOrHash === "object"
-            ? nodeOrHash
-            : nodes.find((n) => n.hash === nodeOrHash);
     }
 
     /**
