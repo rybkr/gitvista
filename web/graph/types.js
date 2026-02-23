@@ -50,7 +50,15 @@
  */
 
 /**
- * @typedef {GraphNodeCommit | GraphNodeBranch} GraphNode
+ * @typedef {GraphNodeBase & {
+ *   type: "tag",
+ *   tag: string,
+ *   targetHash: string | null
+ * }} GraphNodeTag
+ */
+
+/**
+ * @typedef {GraphNodeCommit | GraphNodeBranch | GraphNodeTag} GraphNode
  */
 
 /**
@@ -85,6 +93,7 @@
  * @property {string} blobNode Blob node fill color.
  * @property {string} blobNodeBorder Blob node border color.
  * @property {string} blobLabelText Blob label text color.
+ * @property {string} tagLink Tag link color.
  */
 
 /**

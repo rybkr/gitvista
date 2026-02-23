@@ -13,6 +13,9 @@ import {
     LANE_MARGIN,
     LANE_WIDTH,
     NODE_RADIUS,
+    TAG_NODE_OFFSET_X,
+    TAG_NODE_OFFSET_Y,
+    TAG_NODE_RADIUS,
     ZOOM_MAX,
     ZOOM_MIN,
 } from "./constants.js";
@@ -150,6 +153,11 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
         // filters operate on commit data which branch nodes don't carry.
         if (node.type === "branch") {
             if (hideRemotes && node.branch?.startsWith("refs/remotes/")) return false;
+            return true;
+        }
+
+        // Tag nodes always pass — they have no commit data to filter on.
+        if (node.type === "tag") {
             return true;
         }
 
@@ -353,6 +361,7 @@ export function createGraphController(rootElement, options = {}) {
 
     const PICK_RADIUS_COMMIT = NODE_RADIUS + 4;
     const PICK_RADIUS_BRANCH = BRANCH_NODE_RADIUS + 6;
+    const PICK_RADIUS_TAG = TAG_NODE_RADIUS + 6;
 
     const findNodeAt = (x, y, type) => {
         let bestNode = null;
@@ -368,6 +377,8 @@ export function createGraphController(rootElement, options = {}) {
             let radius;
             if (node.type === "branch") {
                 radius = PICK_RADIUS_BRANCH;
+            } else if (node.type === "tag") {
+                radius = PICK_RADIUS_TAG;
             } else {
                 radius = PICK_RADIUS_COMMIT;
             }
@@ -818,6 +829,56 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     /**
+     * Reconciles tag nodes by comparing existing nodes against current tags.
+     * Creates new nodes for added tags, updates targets, and prepares alignment data.
+     *
+     * @param {Map<string, import("./types.js").GraphNode>} existingNodes Map of tagName -> existing tag nodes.
+     * @param {Map<string, string>} tags Current tags from state (name -> target hash).
+     * @param {Map<string, import("./types.js").GraphNode>} commitNodeByHash Map of hash -> commit node.
+     * @returns {{nodes: import("./types.js").GraphNode[], links: Array, alignments: Array, changed: boolean}}
+     */
+    function reconcileTagNodes(existingNodes, tags, commitNodeByHash) {
+        const nextNodes = [];
+        const tagLinks = [];
+        const alignments = [];
+        let changed = existingNodes.size !== tags.size;
+
+        for (const [tagName, targetHash] of tags.entries()) {
+            const targetNode = commitNodeByHash.get(targetHash);
+            if (!targetNode) {
+                continue;
+            }
+
+            let tagNode = existingNodes.get(tagName);
+            const isNewNode = !tagNode;
+            if (!tagNode) {
+                tagNode = createTagNode(tagName, targetNode);
+            }
+
+            const previousHash = tagNode.targetHash;
+            tagNode.type = "tag";
+            tagNode.tag = tagName;
+            tagNode.targetHash = targetHash;
+            if (isNewNode) {
+                tagNode.spawnPhase = 0;
+                changed = true;
+            } else if (previousHash !== targetHash) {
+                changed = true;
+            }
+
+            nextNodes.push(tagNode);
+            tagLinks.push({
+                source: tagNode,
+                target: targetNode,
+                kind: "tag",
+            });
+            alignments.push({ tagNode, targetNode });
+        }
+
+        return { nodes: nextNodes, links: tagLinks, alignments, changed };
+    }
+
+    /**
      * Rebuilds the compound filter predicate from the current searchQuery and
      * filterState stored on state, then applies dimming to all current nodes.
      * Call this whenever either field changes.
@@ -859,10 +920,13 @@ export function createGraphController(rootElement, options = {}) {
         sortedCommitCache = null; // Invalidate on every structural update
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
+        const existingTagNodes = new Map();
 
         for (const node of nodes) {
             if (node.type === "branch" && node.branch) {
                 existingBranchNodes.set(node.branch, node);
+            } else if (node.type === "tag" && node.tag) {
+                existingTagNodes.set(node.tag, node);
             } else if (node.type === "commit" && node.hash) {
                 existingCommitNodes.set(node.hash, node);
             }
@@ -886,12 +950,22 @@ export function createGraphController(rootElement, options = {}) {
             branches,
             commitNodeByHash,
         );
+        const tagReconciliation = reconcileTagNodes(
+            existingTagNodes,
+            state.tags,
+            commitNodeByHash,
+        );
 
         const allNodes = [
             ...commitReconciliation.nodes,
             ...branchReconciliation.nodes,
+            ...tagReconciliation.nodes,
         ];
-        const allLinks = [...commitLinks, ...branchReconciliation.links];
+        const allLinks = [
+            ...commitLinks,
+            ...branchReconciliation.links,
+            ...tagReconciliation.links,
+        ];
 
         nodes.splice(0, nodes.length, ...allNodes);
         links.splice(0, links.length, ...allLinks);
@@ -905,8 +979,9 @@ export function createGraphController(rootElement, options = {}) {
             hideTooltip();
         }
 
-        // Snap branch nodes to their target commits before updating layout strategy
+        // Snap branch and tag nodes to their target commits before updating layout strategy
         snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
 
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after reconciliation so newly-created nodes are
@@ -917,6 +992,7 @@ export function createGraphController(rootElement, options = {}) {
         const structureChanged =
             commitReconciliation.changed ||
             branchReconciliation.changed ||
+            tagReconciliation.changed ||
             linkStructureChanged;
 
         // Delegate layout updates to the strategy
@@ -1033,6 +1109,71 @@ export function createGraphController(rootElement, options = {}) {
         };
     }
 
+    function createTagNode(tagName, targetNode) {
+        if (targetNode) {
+            return {
+                type: "tag",
+                tag: tagName,
+                targetHash: targetNode.hash ?? null,
+                x: (targetNode.x ?? 0) + TAG_NODE_OFFSET_X + jitter(4),
+                y: (targetNode.y ?? 0) + jitter(TAG_NODE_OFFSET_Y),
+                vx: 0,
+                vy: 0,
+            };
+        }
+
+        const baseX = (viewportWidth || canvas.width) / 2;
+        const baseY = (viewportHeight || canvas.height) / 2;
+
+        return {
+            type: "tag",
+            tag: tagName,
+            targetHash: null,
+            x: baseX + TAG_NODE_OFFSET_X + jitter(6),
+            y: baseY + jitter(TAG_NODE_OFFSET_Y),
+            vx: 0,
+            vy: 0,
+        };
+    }
+
+    function snapTagsToTargets(pairs) {
+        // Track per-commit tag count for stacking in lane mode
+        const perCommitCount = new Map();
+
+        for (const pair of pairs) {
+            if (!pair) continue;
+            const { tagNode, targetNode } = pair;
+            if (!tagNode || !targetNode) {
+                continue;
+            }
+
+            if (state.layoutMode === "lane") {
+                // In lane mode, position tags to the RIGHT of the commit lane
+                const laneIndex = targetNode.laneIndex ?? 0;
+                const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
+
+                // Stack multiple tags on the same commit vertically
+                const key = targetNode.hash ?? laneIndex;
+                const index = perCommitCount.get(key) || 0;
+                perCommitCount.set(key, index + 1);
+
+                const stackOffset = index * (TAG_NODE_RADIUS * 2.5 + 2);
+                tagNode.x = laneX + TAG_NODE_OFFSET_X;
+                tagNode.y = (targetNode.y ?? 0) - TAG_NODE_OFFSET_Y * 4 - stackOffset;
+            } else {
+                // Force mode: small jitter offset from target commit
+                const baseX = targetNode.x ?? 0;
+                const baseY = targetNode.y ?? 0;
+                const j = (range) => (Math.random() - 0.5) * range;
+                tagNode.x = baseX + TAG_NODE_OFFSET_X + j(2);
+                tagNode.y = baseY + j(TAG_NODE_OFFSET_Y);
+            }
+
+            tagNode.vx = 0;
+            tagNode.vy = 0;
+        }
+    }
+
     function render() {
         if (rafId !== null) return;
         rafId = requestAnimationFrame(() => {
@@ -1046,7 +1187,6 @@ export function createGraphController(rootElement, options = {}) {
                 tooltipManager,
                 headHash: state.headHash,
                 hoverNode: state.hoverNode,
-                tags: state.tags,
             });
         });
     }

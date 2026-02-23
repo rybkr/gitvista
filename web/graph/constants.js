@@ -70,6 +70,9 @@ export const LANE_COLORS = [
 // Tag node styling
 export const TAG_NODE_COLOR = "#ffd33d";
 export const TAG_NODE_BORDER_COLOR = "#9a6700";
+export const TAG_NODE_OFFSET_X = 28;
+export const TAG_NODE_OFFSET_Y = 6;
+export const TAG_NODE_RADIUS = 18;
 
 // Progressive detail: commit message, author, and date zoom thresholds
 export const COMMIT_MESSAGE_ZOOM_THRESHOLD = 1.5;

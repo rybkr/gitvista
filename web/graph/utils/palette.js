@@ -55,5 +55,6 @@ export function buildPalette(element) {
         blobNode: read("--blob-node-color", "#0969da"),
         blobNodeBorder: read("--blob-node-border-color", "#0550ae"),
         blobLabelText: read("--blob-label-text-color", "#ffffff"),
+        tagLink: read("--tag-link-color", "#9a6700"),
     };
 }

@@ -23,6 +23,7 @@ import {
     TREE_ICON_OFFSET,
     TAG_NODE_COLOR,
     TAG_NODE_BORDER_COLOR,
+    TAG_NODE_RADIUS,
     COMMIT_MESSAGE_ZOOM_THRESHOLD,
     COMMIT_MESSAGE_MAX_CHARS,
     COMMIT_MESSAGE_FONT,
@@ -62,13 +63,11 @@ export class GraphRenderer {
         const highlightKey = state.tooltipManager?.getHighlightKey();
         const headHash = state.headHash ?? "";
         const hoverNode = state.hoverNode ?? null;
-        const tags = state.tags ?? new Map();
-
         this.clear(viewportWidth, viewportHeight);
         this.setupTransform(zoomTransform);
 
         this.renderLinks(links, nodes);
-        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags);
+        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode);
 
         this.ctx.restore();
     }
@@ -127,6 +126,7 @@ export class GraphRenderer {
         for (const node of nodes) {
             if (node.hash) nodeMap.set(node.hash, node);
             if (node.branch) nodeMap.set(node.branch, node);
+            if (node.tag) nodeMap.set(node.tag, node);
         }
 
         for (const link of links) {
@@ -150,9 +150,9 @@ export class GraphRenderer {
 
             // Dim links whose commit endpoints are both dimmed — fades non-matching
             // sub-graphs without removing them from the force simulation.
-            // Branch links are always rendered at full opacity so branch labels
+            // Branch and tag links are always rendered at full opacity so labels
             // remain legible during a search.
-            const isDimmedLink = link.kind !== "branch" &&
+            const isDimmedLink = link.kind !== "branch" && link.kind !== "tag" &&
                 (source.dimmed || target.dimmed);
             const dimAlpha = isDimmedLink ? 0.15 : 1;
 
@@ -179,18 +179,25 @@ export class GraphRenderer {
             return;
         }
 
-        // Determine link color: branch links always use branchLink palette,
+        // Determine link color: branch/tag links use their palette color,
         // commit links use lane color if present, otherwise default palette
         let color;
         if (linkKind === "branch") {
             color = this.palette.branchLink;
+        } else if (linkKind === "tag") {
+            color = this.palette.tagLink;
         } else {
             color = source.laneColor || this.palette.link;
         }
 
-        const targetRadius = target.type === "branch"
-            ? BRANCH_NODE_RADIUS
-            : NODE_RADIUS;
+        let targetRadius;
+        if (target.type === "branch") {
+            targetRadius = BRANCH_NODE_RADIUS;
+        } else if (target.type === "tag") {
+            targetRadius = TAG_NODE_RADIUS;
+        } else {
+            targetRadius = NODE_RADIUS;
+        }
 
         // Check if this is a cross-lane connection (lane mode only)
         const isCrossLane =
@@ -307,20 +314,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags) {
-        // Build a reverse map: commit hash -> array of tag names pointing at it.
-        const tagsByCommit = new Map();
-        if (tags) {
-            for (const [tagName, commitHash] of tags) {
-                const existing = tagsByCommit.get(commitHash);
-                if (existing) {
-                    existing.push(tagName);
-                } else {
-                    tagsByCommit.set(commitHash, [tagName]);
-                }
-            }
-        }
-
+    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode) {
         for (const node of nodes) {
             if (node.type === "commit") {
                 this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode);
@@ -331,10 +325,9 @@ export class GraphRenderer {
                 this.renderBranchNode(node, highlightKey);
             }
         }
-        // Render tag pills after branch nodes so they appear on top.
         for (const node of nodes) {
-            if (node.type === "commit" && tagsByCommit.has(node.hash)) {
-                this.renderTagPills(node, tagsByCommit.get(node.hash));
+            if (node.type === "tag") {
+                this.renderTagNode(node, highlightKey);
             }
         }
     }
@@ -724,45 +717,62 @@ export class GraphRenderer {
 
 
     /**
-     * Renders tag name pills for a commit node, stacked below any branch pills.
-     * Tags use an amber color to distinguish them from blue/purple branch pills.
+     * Renders a tag node pill with text, mirroring renderBranchNode.
      *
-     * @param {import("../types.js").GraphNodeCommit} node Commit node that has tags.
-     * @param {string[]} tagNames Array of tag names pointing at this commit.
+     * @param {import("../types.js").GraphNodeTag} node Tag node to paint.
+     * @param {string|null} highlightKey Current highlight identifier.
      */
-    renderTagPills(node, tagNames) {
-        if (!tagNames?.length) return;
+    renderTagNode(node, highlightKey) {
+        const text = `⌂ ${node.tag ?? ""}`;
+
+        const spawnProgress =
+            typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
+        const easedSpawn =
+            spawnProgress * spawnProgress * (3 - 2 * spawnProgress);
+        const nextSpawn =
+            spawnProgress < 1 ? Math.min(1, spawnProgress + 0.12) : 1;
+        if (nextSpawn >= 1) {
+            delete node.spawnPhase;
+        } else {
+            node.spawnPhase = nextSpawn;
+        }
+        const spawnAlpha = Math.max(0, Math.min(1, easedSpawn));
+        const scale = 0.7 + 0.3 * spawnAlpha;
 
         this.ctx.save();
+        const previousAlpha = this.ctx.globalAlpha;
+        this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01);
+        this.ctx.translate(node.x, node.y);
+        this.ctx.scale(scale, scale);
+        this.ctx.translate(-node.x, -node.y);
         this.ctx.font = LABEL_FONT;
         this.ctx.textBaseline = "middle";
         this.ctx.textAlign = "center";
 
-        // Stack tag pills above the node (offset up by BRANCH_NODE_RADIUS intervals).
-        const PILL_STEP = 22;
-        for (let i = 0; i < tagNames.length; i++) {
-            const text = `⌂ ${tagNames[i]}`;
-            const metrics = this.ctx.measureText(text);
-            const textHeight = metrics.actualBoundingBoxAscent ?? 9;
-            const width = metrics.width + BRANCH_NODE_PADDING_X * 2;
-            const height = textHeight + BRANCH_NODE_PADDING_Y * 2;
-            // Position above the node, above where branch pills sit.
-            const px = node.x - (BRANCH_NODE_PADDING_X * 4 + metrics.width / 2);
-            const py = node.y - (BRANCH_NODE_RADIUS + PILL_STEP * (i + 1));
+        const metrics = this.ctx.measureText(text);
+        const textHeight = metrics.actualBoundingBoxAscent ?? 9;
+        const width = metrics.width + BRANCH_NODE_PADDING_X * 2;
+        const height = textHeight + BRANCH_NODE_PADDING_Y * 2;
 
-            this.drawRoundedRect(px - width / 2, py - height / 2, width, height, BRANCH_NODE_CORNER_RADIUS);
-            this.ctx.fillStyle = TAG_NODE_COLOR;
-            this.applyShadow();
-            this.ctx.fill();
-            this.clearShadow();
-            this.ctx.lineWidth = 1.5;
-            this.ctx.strokeStyle = TAG_NODE_BORDER_COLOR;
-            this.ctx.stroke();
+        this.drawRoundedRect(
+            node.x - width / 2,
+            node.y - height / 2,
+            width,
+            height,
+            BRANCH_NODE_CORNER_RADIUS,
+        );
 
-            this.ctx.fillStyle = "#1a1a1a";
-            this.ctx.fillText(text, px, py);
-        }
+        this.ctx.fillStyle = TAG_NODE_COLOR;
+        this.applyShadow();
+        this.ctx.fill();
+        this.clearShadow();
+        this.ctx.lineWidth = 1.5 / scale;
+        this.ctx.strokeStyle = TAG_NODE_BORDER_COLOR;
+        this.ctx.stroke();
 
+        this.ctx.fillStyle = "#1a1a1a";
+        this.ctx.fillText(text, node.x, node.y);
+        this.ctx.globalAlpha = previousAlpha;
         this.ctx.restore();
     }
 
