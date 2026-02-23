@@ -135,41 +135,52 @@ export class GraphRenderer {
             const pad = LANE_VERTICAL_STEP / 2;
             const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
 
-            // Draw a separate background strip per contiguous segment
-            this.ctx.save();
-            this.ctx.globalAlpha = 0.06;
-            this.ctx.fillStyle = lane.color;
+            // Draw background strip and label per segment
             for (const seg of segments) {
                 const stripTop = Math.max(topY, seg.minY - pad);
                 const stripBottom = Math.min(bottomY, seg.maxY + pad);
                 if (stripTop >= stripBottom) continue;
-                this.ctx.fillRect(cx - halfW, stripTop, halfW * 2, stripBottom - stripTop);
-            }
-            this.ctx.restore();
 
-            // Draw branch name header — pinned to top of visible area but
-            // clamped within the lane's overall vertical extent
-            if (lane.branchName) {
-                const labelTop = lane.minY - pad;
-                const labelBottom = lane.maxY + pad - 24 / k;
-                const headerY = Math.max(labelTop, Math.min(topY + 18 / k, labelBottom));
+                // Background — rounded ends where the segment isn't clipped
                 this.ctx.save();
-                this.ctx.font = LANE_HEADER_FONT;
-                this.ctx.textAlign = "center";
-                this.ctx.textBaseline = "top";
-
-                // Halo for readability
-                this.ctx.lineWidth = 3;
-                this.ctx.lineJoin = "round";
-                this.ctx.strokeStyle = this.palette.labelHalo;
-                this.ctx.globalAlpha = 0.9;
-                this.ctx.strokeText(lane.branchName, cx, headerY);
-
-                // Text
-                this.ctx.globalAlpha = 0.75;
+                this.ctx.globalAlpha = 0.06;
                 this.ctx.fillStyle = lane.color;
-                this.ctx.fillText(lane.branchName, cx, headerY);
+                const rTop = stripTop <= topY ? 0 : halfW;
+                const rBottom = stripBottom >= bottomY ? 0 : halfW;
+                this.ctx.beginPath();
+                this.ctx.roundRect(
+                    cx - halfW, stripTop,
+                    halfW * 2, stripBottom - stripTop,
+                    [rTop, rTop, rBottom, rBottom],
+                );
+                this.ctx.fill();
                 this.ctx.restore();
+
+                // Branch name label — pinned to top of visible area but
+                // clamped within this segment's vertical extent
+                const segName = seg.branchName || "";
+                if (segName) {
+                    const labelTop = seg.minY - pad;
+                    const labelBottom = seg.maxY + pad - 24 / k;
+                    const headerY = Math.max(labelTop, Math.min(topY + 18 / k, labelBottom));
+                    this.ctx.save();
+                    this.ctx.font = LANE_HEADER_FONT;
+                    this.ctx.textAlign = "center";
+                    this.ctx.textBaseline = "top";
+
+                    // Halo for readability
+                    this.ctx.lineWidth = 3;
+                    this.ctx.lineJoin = "round";
+                    this.ctx.strokeStyle = this.palette.labelHalo;
+                    this.ctx.globalAlpha = 0.9;
+                    this.ctx.strokeText(segName, cx, headerY);
+
+                    // Text
+                    this.ctx.globalAlpha = 0.75;
+                    this.ctx.fillStyle = lane.color;
+                    this.ctx.fillText(segName, cx, headerY);
+                    this.ctx.restore();
+                }
             }
         }
     }

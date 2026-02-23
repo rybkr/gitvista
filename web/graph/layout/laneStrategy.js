@@ -547,7 +547,7 @@ export class LaneStrategy {
 					}
 				}
 
-				segments.push({ minY, maxY });
+				segments.push({ minY, maxY, hashes: groupSet, branchName: "" });
 			}
 			segments.sort((a, b) => a.minY - b.minY);
 
@@ -562,13 +562,13 @@ export class LaneStrategy {
 			});
 		}
 
-		// Map branch tips to lanes for naming
+		// Map branch tips to the specific segment they belong to
 		if (branches) {
 			for (const [branchName, targetHash] of branches.entries()) {
 				const laneIndex = this.commitToLane.get(targetHash);
 				if (laneIndex === undefined) continue;
 				const info = laneData.get(laneIndex);
-				if (!info || info.branchName) continue; // First branch wins
+				if (!info) continue;
 
 				// Strip refs/heads/ and refs/remotes/ prefixes for display
 				let displayName = branchName;
@@ -577,7 +577,23 @@ export class LaneStrategy {
 				} else if (displayName.startsWith("refs/remotes/")) {
 					displayName = displayName.slice("refs/remotes/".length);
 				}
-				info.branchName = displayName;
+
+				// Find the segment containing this branch tip
+				const seg = info.segments.find(s => s.hashes.has(targetHash));
+				if (seg && !seg.branchName) {
+					seg.branchName = displayName;
+				}
+				// Also set lane-level name for the first branch (header fallback)
+				if (!info.branchName) {
+					info.branchName = displayName;
+				}
+			}
+		}
+
+		// Clean up hashes from segments before exposing (not needed by renderer)
+		for (const info of laneData.values()) {
+			for (const seg of info.segments) {
+				delete seg.hashes;
 			}
 		}
 
