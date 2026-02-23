@@ -17,6 +17,7 @@ import {
 	LANE_VERTICAL_STEP,
 	LANE_TRANSITION_DURATION,
 	LANE_COLORS,
+	LANE_HEADER_HEIGHT,
 	TIMELINE_PADDING,
 	TIMELINE_MARGIN,
 } from "../constants.js";
@@ -54,6 +55,18 @@ export class LaneStrategy {
 
 		/** @type {Array<{index: number, color: string, branchName: string, minY: number, maxY: number}>} */
 		this._laneInfo = [];
+
+		/** @type {Array<number>} Permutation mapping logical lane index → display position */
+		this.laneOrder = [];
+
+		/** @type {Map<string, Object>|null} Cached commits map for swap recomputation */
+		this._commits = null;
+
+		/** @type {Map<string, string>|null} Cached branches map for swap recomputation */
+		this._branches = null;
+
+		/** @type {Array<string>} Branch name owning each logical lane (index → name) */
+		this._laneOwners = [];
 	}
 
 	/**
@@ -75,6 +88,8 @@ export class LaneStrategy {
 	 */
 	activate(nodes, links, commits, branches, viewport) {
 		this.nodes = nodes; // Store reference for cleanup in deactivate()
+		this._commits = commits;
+		this._branches = branches;
 		this.viewportHeight = viewport.height || 800;
 
 		// Compute lane assignments
@@ -108,6 +123,10 @@ export class LaneStrategy {
 		this.commitToLane.clear();
 		this.transitionStartPositions.clear();
 		this.transitionTargetPositions.clear();
+		this.laneOrder = [];
+		this._commits = null;
+		this._branches = null;
+		this._laneOwners = [];
 
 		// Clear lane-specific properties from shared node objects
 		if (this.nodes) {
@@ -130,6 +149,8 @@ export class LaneStrategy {
 	 * @param {Object} viewport Current viewport state
 	 */
 	updateGraph(nodes, links, commits, branches, viewport) {
+		this._commits = commits;
+		this._branches = branches;
 		this.viewportHeight = viewport.height || 800;
 
 		// Recompute lane assignments
@@ -257,8 +278,9 @@ export class LaneStrategy {
 		const sortedBranches = this._prioritizeBranches(branches);
 		const commitOwner = new Map(); // hash → lane index
 		let nextLane = 0;
+		const newLaneOwners = [];
 
-		for (const [, tipHash] of sortedBranches) {
+		for (const [branchName, tipHash] of sortedBranches) {
 			let current = tipHash;
 			const chain = [];
 
@@ -272,6 +294,7 @@ export class LaneStrategy {
 			if (chain.length === 0) continue;
 
 			const lane = nextLane++;
+			newLaneOwners.push(branchName);
 			for (const hash of chain) {
 				commitOwner.set(hash, lane);
 				this.commitToLane.set(hash, lane);
@@ -361,6 +384,60 @@ export class LaneStrategy {
 			node.laneIndex = laneIndex;
 			node.laneColor = LANE_COLORS[laneIndex % LANE_COLORS.length];
 		}
+
+		// Rebuild display order permutation, preserving user's drag reordering
+		const maxLane = Math.max(0, ...Array.from(this.commitToLane.values()));
+		const newLength = maxLane + 1;
+
+		// Pad newLaneOwners for Phase-2 lanes (no named branch owner)
+		while (newLaneOwners.length < newLength) {
+			newLaneOwners.push("");
+		}
+
+		const prevOwners = this._laneOwners;
+		const prevOrder = this.laneOrder;
+
+		if (prevOwners.length === 0 || prevOrder.length === 0) {
+			// First activation — identity permutation
+			this.laneOrder = Array.from({ length: newLength }, (_, i) => i);
+		} else {
+			// Map old branch names to their previous display positions
+			const branchToOldDisplay = new Map();
+			for (let i = 0; i < prevOwners.length; i++) {
+				if (prevOwners[i] && i < prevOrder.length) {
+					branchToOldDisplay.set(prevOwners[i], prevOrder[i]);
+				}
+			}
+
+			const newOrder = new Array(newLength);
+			const usedPositions = new Set();
+
+			// First pass: assign known branches their old display positions
+			for (let i = 0; i < newLength; i++) {
+				const branch = newLaneOwners[i];
+				if (branch && branchToOldDisplay.has(branch)) {
+					const oldDisplay = branchToOldDisplay.get(branch);
+					if (oldDisplay < newLength && !usedPositions.has(oldDisplay)) {
+						newOrder[i] = oldDisplay;
+						usedPositions.add(oldDisplay);
+					}
+				}
+			}
+
+			// Second pass: fill remaining lanes with unused display positions
+			let nextFree = 0;
+			for (let i = 0; i < newLength; i++) {
+				if (newOrder[i] !== undefined) continue;
+				while (usedPositions.has(nextFree)) nextFree++;
+				newOrder[i] = nextFree;
+				usedPositions.add(nextFree);
+				nextFree++;
+			}
+
+			this.laneOrder = newOrder;
+		}
+
+		this._laneOwners = newLaneOwners;
 	}
 
 	/**
@@ -376,6 +453,15 @@ export class LaneStrategy {
 		}
 		activeLanes.push(null);
 		return activeLanes.length - 1;
+	}
+
+	/**
+	 * Maps a logical lane index to its current display position.
+	 * @param {number} logicalIndex Logical lane index from commitToLane.
+	 * @returns {number} Display position index.
+	 */
+	getDisplayIndex(logicalIndex) {
+		return this.laneOrder[logicalIndex] ?? logicalIndex;
 	}
 
 	/**
@@ -426,6 +512,76 @@ export class LaneStrategy {
 	 */
 	getLaneInfo() {
 		return this._laneInfo;
+	}
+
+	/**
+	 * Returns the display lane index at a given X coordinate in graph space.
+	 * @param {number} graphX X coordinate in graph space.
+	 * @returns {number} Display lane index (may be out of range — caller must clamp).
+	 */
+	findLaneAtX(graphX) {
+		return Math.round((graphX - LANE_MARGIN) / LANE_WIDTH);
+	}
+
+	/**
+	 * Hit-tests a graph-space point against all lane header bar rectangles.
+	 * Returns an object with the display lane index and the segment's commit
+	 * hashes, or null if the point isn't inside any header.
+	 * @param {number} graphX X coordinate in graph space.
+	 * @param {number} graphY Y coordinate in graph space.
+	 * @returns {{displayLane: number, segmentHashes: Set<string>}|null}
+	 */
+	findLaneHeaderAt(graphX, graphY) {
+		const pad = LANE_VERTICAL_STEP / 2;
+		const halfW = LANE_WIDTH / 2 - 4;
+
+		for (const lane of this._laneInfo) {
+			const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+			if (graphX < cx - halfW || graphX > cx + halfW) continue;
+
+			const segments = lane.segments ?? [];
+			for (const seg of segments) {
+				const barY = seg.minY - pad;
+				if (graphY >= barY && graphY <= barY + LANE_HEADER_HEIGHT) {
+					return { displayLane: lane.index, segmentHashes: seg.hashes };
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Swaps two entire display columns.
+	 * Only the display positions in laneOrder are exchanged — logical lane
+	 * assignments and colors stay the same, so no overlaps can occur.
+	 * @param {Set<string>} segmentHashes Commit hashes used to identify the source column.
+	 * @param {number} targetDisplay Target display column index.
+	 */
+	moveSegment(segmentHashes, targetDisplay) {
+		// Determine the source logical lane from one of the dragged commits
+		const sampleHash = segmentHashes.values().next().value;
+		const sourceLogical = this.commitToLane.get(sampleHash);
+		if (sourceLogical === undefined) return;
+
+		// Find the logical lane that currently maps to the target display position
+		let targetLogical = -1;
+		for (let i = 0; i < this.laneOrder.length; i++) {
+			if (this.laneOrder[i] === targetDisplay) {
+				targetLogical = i;
+				break;
+			}
+		}
+		if (targetLogical === -1 || targetLogical === sourceLogical) return;
+
+		// Swap display positions — all segments in each column move together
+		const tmp = this.laneOrder[sourceLogical];
+		this.laneOrder[sourceLogical] = this.laneOrder[targetLogical];
+		this.laneOrder[targetLogical] = tmp;
+
+		// Recompute positions and lane info
+		this.computeTargetPositions(this.nodes, this._commits);
+		this._buildLaneInfo(this.nodes, this._branches, this._commits);
+		this.applyTargetPositions(this.nodes);
 	}
 
 	/**
@@ -553,7 +709,7 @@ export class LaneStrategy {
 
 			const allY = [...lc.yByHash.values()];
 			laneData.set(laneIndex, {
-				index: laneIndex,
+				index: this.getDisplayIndex(laneIndex),
 				color: LANE_COLORS[laneIndex % LANE_COLORS.length],
 				branchName: "",
 				segments,
@@ -587,13 +743,6 @@ export class LaneStrategy {
 				if (!info.branchName) {
 					info.branchName = displayName;
 				}
-			}
-		}
-
-		// Clean up hashes from segments before exposing (not needed by renderer)
-		for (const info of laneData.values()) {
-			for (const seg of info.segments) {
-				delete seg.hashes;
 			}
 		}
 
@@ -636,7 +785,7 @@ export class LaneStrategy {
 		// Position each commit
 		ordered.forEach((node, index) => {
 			const laneIndex = this.commitToLane.get(node.hash) || 0;
-			const x = LANE_MARGIN + laneIndex * LANE_WIDTH;
+			const x = LANE_MARGIN + this.getDisplayIndex(laneIndex) * LANE_WIDTH;
 			const y = span === 0 ? startY : startY + step * index;
 
 			this.transitionTargetPositions.set(node.hash, { x, y });
