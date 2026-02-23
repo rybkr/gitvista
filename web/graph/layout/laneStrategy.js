@@ -84,7 +84,7 @@ export class LaneStrategy {
 		this.computeTargetPositions(nodes, commits);
 
 		// Build lane info for rendering backgrounds and headers
-		this._buildLaneInfo(nodes, branches);
+		this._buildLaneInfo(nodes, branches, commits);
 
 		// Store current positions as start positions
 		this.transitionStartPositions.clear();
@@ -139,7 +139,7 @@ export class LaneStrategy {
 		this.computeTargetPositions(nodes, commits);
 
 		// Rebuild lane info for rendering
-		this._buildLaneInfo(nodes, branches);
+		this._buildLaneInfo(nodes, branches, commits);
 
 		// Apply positions immediately (no transition for incremental updates)
 		this.applyTargetPositions(nodes);
@@ -431,13 +431,17 @@ export class LaneStrategy {
 	/**
 	 * Builds lane info array from current lane assignments and target positions.
 	 * Maps lanes to branch names by checking which branch tips occupy which lanes.
+	 * Splits lanes into contiguous segments based on parent-child connectivity
+	 * so that merged branches get distinct background strips.
 	 *
 	 * @param {Array<Object>} nodes Array of graph nodes
 	 * @param {Map<string, string>} branches Map of branch name to target hash
+	 * @param {Map<string, Object>} commits Map of commit hash to commit data
 	 */
-	_buildLaneInfo(nodes, branches) {
-		// Collect per-lane data: Y extents and candidate branch names
-		const laneData = new Map();
+	_buildLaneInfo(nodes, branches, commits) {
+		// Collect per-lane commit hashes and Y positions
+		/** @type {Map<number, {hashes: Set<string>, yByHash: Map<string, number>}>} */
+		const laneCommits = new Map();
 
 		for (const node of nodes) {
 			if (node.type !== "commit") continue;
@@ -447,19 +451,70 @@ export class LaneStrategy {
 			const target = this.transitionTargetPositions.get(node.hash);
 			const y = target ? target.y : node.y;
 
-			if (!laneData.has(laneIndex)) {
-				laneData.set(laneIndex, {
-					index: laneIndex,
-					color: LANE_COLORS[laneIndex % LANE_COLORS.length],
-					branchName: "",
-					minY: y,
-					maxY: y,
-				});
-			} else {
-				const info = laneData.get(laneIndex);
-				info.minY = Math.min(info.minY, y);
-				info.maxY = Math.max(info.maxY, y);
+			if (!laneCommits.has(laneIndex)) {
+				laneCommits.set(laneIndex, { hashes: new Set(), yByHash: new Map() });
 			}
+			const lc = laneCommits.get(laneIndex);
+			lc.hashes.add(node.hash);
+			lc.yByHash.set(node.hash, y);
+		}
+
+		// Build segments per lane using parent-child connectivity (union-find)
+		const laneData = new Map();
+
+		for (const [laneIndex, lc] of laneCommits.entries()) {
+			// Union-find for grouping connected commits in this lane
+			const parent = new Map();
+			for (const h of lc.hashes) parent.set(h, h);
+
+			const find = (a) => {
+				while (parent.get(a) !== a) {
+					parent.set(a, parent.get(parent.get(a)));
+					a = parent.get(a);
+				}
+				return a;
+			};
+			const union = (a, b) => {
+				const ra = find(a), rb = find(b);
+				if (ra !== rb) parent.set(ra, rb);
+			};
+
+			// Union commits that are direct parent-child within the same lane
+			for (const hash of lc.hashes) {
+				const commit = commits?.get(hash);
+				if (!commit?.parents) continue;
+				for (const ph of commit.parents) {
+					if (lc.hashes.has(ph)) {
+						union(hash, ph);
+					}
+				}
+			}
+
+			// Group into connected components
+			const groups = new Map();
+			for (const hash of lc.hashes) {
+				const root = find(hash);
+				if (!groups.has(root)) groups.set(root, []);
+				groups.get(root).push(lc.yByHash.get(hash));
+			}
+
+			// Build segments from groups
+			const segments = [];
+			for (const ys of groups.values()) {
+				ys.sort((a, b) => a - b);
+				segments.push({ minY: ys[0], maxY: ys[ys.length - 1] });
+			}
+			segments.sort((a, b) => a.minY - b.minY);
+
+			const allY = [...lc.yByHash.values()];
+			laneData.set(laneIndex, {
+				index: laneIndex,
+				color: LANE_COLORS[laneIndex % LANE_COLORS.length],
+				branchName: "",
+				segments,
+				minY: Math.min(...allY),
+				maxY: Math.max(...allY),
+			});
 		}
 
 		// Map branch tips to lanes for naming

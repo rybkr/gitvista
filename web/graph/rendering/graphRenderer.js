@@ -119,7 +119,7 @@ export class GraphRenderer {
      * Renders semi-transparent vertical background strips and branch name headers
      * for each lane in lane layout mode.
      *
-     * @param {Array<{index: number, color: string, branchName: string, minY: number, maxY: number}>} laneInfo Lane metadata.
+     * @param {Array<{index: number, color: string, branchName: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
      * @param {number} viewportHeight Viewport height in CSS pixels.
      * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
      */
@@ -132,17 +132,27 @@ export class GraphRenderer {
         for (const lane of laneInfo) {
             const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
             const halfW = LANE_WIDTH / 2 - 4;
+            const pad = LANE_VERTICAL_STEP / 2;
+            const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
 
-            // Draw vertical strip
+            // Draw a separate background strip per contiguous segment
             this.ctx.save();
             this.ctx.globalAlpha = 0.06;
             this.ctx.fillStyle = lane.color;
-            this.ctx.fillRect(cx - halfW, topY, halfW * 2, bottomY - topY);
+            for (const seg of segments) {
+                const stripTop = Math.max(topY, seg.minY - pad);
+                const stripBottom = Math.min(bottomY, seg.maxY + pad);
+                if (stripTop >= stripBottom) continue;
+                this.ctx.fillRect(cx - halfW, stripTop, halfW * 2, stripBottom - stripTop);
+            }
             this.ctx.restore();
 
-            // Draw branch name header at top of visible area
+            // Draw branch name header — pinned to top of visible area but
+            // clamped within the lane's overall vertical extent
             if (lane.branchName) {
-                const headerY = topY + 18 / k;
+                const labelTop = lane.minY - pad;
+                const labelBottom = lane.maxY + pad - 24 / k;
+                const headerY = Math.max(labelTop, Math.min(topY + 18 / k, labelBottom));
                 this.ctx.save();
                 this.ctx.font = LANE_HEADER_FONT;
                 this.ctx.textAlign = "center";
