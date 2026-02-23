@@ -1,6 +1,7 @@
 package server
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
@@ -74,6 +75,14 @@ func translateWorkingTreeStatus(wts *gitcore.WorkingTreeStatus) *WorkingTreeStat
 			})
 		}
 	}
+
+	// Sort each category by path for stable ordering across refreshes.
+	sortByPath := func(a, b FileStatus) int {
+		return strings.Compare(a.Path, b.Path)
+	}
+	slices.SortFunc(status.Staged, sortByPath)
+	slices.SortFunc(status.Modified, sortByPath)
+	slices.SortFunc(status.Untracked, sortByPath)
 
 	return status
 }

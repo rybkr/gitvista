@@ -44,8 +44,6 @@ type WorkingTreeStatus struct {
 //  2. Index vs working directory — to identify unstaged modifications and deletions.
 //  3. Working directory walk — to identify untracked files.
 //
-// .gitignore rules are intentionally not applied; untracked files will therefore
-// include ignored files. This is acceptable for the current use case.
 func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	// Step 1: Build a flat map of all blob paths from the HEAD tree.
 	// An empty HEAD (fresh repository) results in an empty map.
@@ -174,7 +172,10 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	// Step 5: Walk the working directory to find untracked files.
 	// Files that are in the index are skipped. Only regular files are
 	// reported (directories are not listed as untracked entries, matching
-	// the general convention from `git status`).
+	// the general convention from `git status`). .gitignore rules are
+	// respected: ignored files and directories are excluded.
+	ignore := loadIgnoreMatcher(workDir)
+
 	walkErr := filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Skip directories we cannot read (e.g., permission denied).
@@ -186,11 +187,6 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			return filepath.SkipDir
 		}
 
-		// We only report files, not directories.
-		if d.IsDir() {
-			return nil
-		}
-
 		// Compute the path relative to the working directory, using forward
 		// slashes so it matches the index path format on all platforms.
 		relPath, relErr := filepath.Rel(workDir, path)
@@ -199,6 +195,24 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			return relErr
 		}
 		relPath = filepath.ToSlash(relPath)
+
+		// When entering a directory, load any .gitignore it contains so
+		// nested ignore rules take effect for all files beneath it.
+		if d.IsDir() {
+			if relPath != "." {
+				// Check if this directory itself is ignored.
+				if ignore.isIgnored(relPath, true) {
+					return filepath.SkipDir
+				}
+				ignore.loadFile(workDir, relPath+"/")
+			}
+			return nil
+		}
+
+		// Skip files matching .gitignore patterns.
+		if ignore.isIgnored(relPath, false) {
+			return nil
+		}
 
 		// If the path is already in the index, it is tracked — not untracked.
 		if _, tracked := indexPaths[relPath]; tracked {
