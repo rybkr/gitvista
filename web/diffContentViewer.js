@@ -107,20 +107,19 @@ export function createDiffContentViewer() {
         newNum.textContent = line.newLine ? String(line.newLine) : "";
         lineEl.appendChild(newNum);
 
+        // Diff prefix column (+/-/space) — rendered as its own flex child
+        // between the line number gutters and the code content.
+        const source = line.content ?? "";
+        const prefixChar = line.type === "addition" ? "+" : line.type === "deletion" ? "-" : " ";
+
+        const prefixNode = document.createElement("span");
+        prefixNode.className = "diff-prefix";
+        prefixNode.textContent = prefixChar;
+        lineEl.appendChild(prefixNode);
+
         // Line content with optional syntax highlighting
         const content = document.createElement("span");
         content.className = "line-content";
-
-        // The raw line from the API starts with a single +, -, or space prefix
-        // character that indicates the diff operation.  We must NOT pass this
-        // character to hljs — it would confuse the parser for most languages
-        // (e.g. a leading + is valid in some syntaxes but not others, and the
-        // space prefix would shift indentation on context lines).  Instead we
-        // strip the prefix, highlight the bare source text, then re-attach the
-        // prefix as a separate plain text node so it retains its own styling.
-        const rawContent = line.content ?? "";
-        const prefix     = rawContent.length > 0 ? rawContent[0] : "";
-        const source     = rawContent.length > 1 ? rawContent.slice(1) : "";
 
         let highlighted = false;
 
@@ -130,13 +129,6 @@ export function createDiffContentViewer() {
                     language,
                     ignoreIllegals: true, // Don't throw on tokens outside the grammar
                 });
-
-                // Prefix node — kept outside the highlighted span so it is never
-                // touched by the hljs CSS classes
-                const prefixNode = document.createElement("span");
-                prefixNode.className = "diff-prefix";
-                prefixNode.textContent = prefix;
-                content.appendChild(prefixNode);
 
                 // Highlighted source — innerHTML is safe here because the HTML
                 // comes from hljs itself, not from user-controlled input
@@ -153,7 +145,7 @@ export function createDiffContentViewer() {
 
         if (!highlighted) {
             // Graceful fallback: render as plain text, no XSS risk
-            content.textContent = rawContent;
+            content.textContent = source;
         }
 
         lineEl.appendChild(content);

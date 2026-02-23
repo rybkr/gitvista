@@ -378,11 +378,6 @@ func computeEdits(oldLines, newLines []string) []edit {
 
 	// Forward search
 	for d := 0; d <= max; d++ {
-		// Save current V array before modifying
-		vCopy := make([]int, len(v))
-		copy(vCopy, v)
-		trace = append(trace, vCopy)
-
 		for k := -d; k <= d; k += 2 {
 			var x int
 			kIdx := k + max
@@ -408,10 +403,19 @@ func computeEdits(oldLines, newLines []string) []edit {
 
 			// Check if we reached the end
 			if x >= n && y >= m {
-				// Backtrack to build edit script
+				// Save V state for this final d before backtracking
+				vCopy := make([]int, len(v))
+				copy(vCopy, v)
+				trace = append(trace, vCopy)
 				return backtrack(oldLines, newLines, trace, d, max)
 			}
 		}
+
+		// Save V array AFTER processing this edit distance so that
+		// trace[d] reflects the state at the end of d, not before it.
+		vCopy := make([]int, len(v))
+		copy(vCopy, v)
+		trace = append(trace, vCopy)
 	}
 
 	// Should not reach here for valid input
@@ -484,24 +488,6 @@ func backtrack(oldLines, newLines []string, trace [][]int, d int, max int) []edi
 	}
 
 	return edits
-}
-
-// appendTrailingContext adds up to context lines after lastChangeIdx to the hunk.
-func appendTrailingContext(hunk *DiffHunk, edits []edit, oldLines []string, lastChangeIdx, context int) {
-	end := lastChangeIdx + context + 1
-	if end > len(edits) {
-		end = len(edits)
-	}
-	for j := lastChangeIdx + 1; j < end; j++ {
-		if edits[j].Type == editKeep {
-			hunk.Lines = append(hunk.Lines, DiffLine{
-				Type:    "context",
-				Content: oldLines[edits[j].OldLine],
-				OldLine: edits[j].OldLine + 1,
-				NewLine: edits[j].NewLine + 1,
-			})
-		}
-	}
 }
 
 // buildHunks converts edits into hunks with context lines.
@@ -580,8 +566,13 @@ func buildHunks(oldLines, newLines []string, edits []edit, context int) []DiffHu
 			case editKeep:
 				// Check if we should close the hunk (too far from last change)
 				if lastChangeIdx >= 0 && i-lastChangeIdx > context*2 {
-					// Add trailing context and close hunk
-					appendTrailingContext(currentHunk, edits, oldLines, lastChangeIdx, context)
+					// Context lines between lastChangeIdx and i were already
+					// added by the else branch on previous iterations.  Trim
+					// to keep only `context` trailing lines after the last change.
+					excess := (i - lastChangeIdx - 1) - context
+					if excess > 0 {
+						currentHunk.Lines = currentHunk.Lines[:len(currentHunk.Lines)-excess]
+					}
 
 					// Finalize hunk
 					finalizeHunk(currentHunk)
@@ -621,10 +612,19 @@ func buildHunks(oldLines, newLines []string, edits []edit, context int) []DiffHu
 		}
 	}
 
-	// Close final hunk with trailing context
+	// Close final hunk — trim trailing context to at most `context` lines.
 	if currentHunk != nil {
-		// Add trailing context
-		appendTrailingContext(currentHunk, edits, oldLines, lastChangeIdx, context)
+		trailingContext := 0
+		for k := len(currentHunk.Lines) - 1; k >= 0; k-- {
+			if currentHunk.Lines[k].Type == LineTypeContext {
+				trailingContext++
+			} else {
+				break
+			}
+		}
+		if trailingContext > context {
+			currentHunk.Lines = currentHunk.Lines[:len(currentHunk.Lines)-(trailingContext-context)]
+		}
 
 		finalizeHunk(currentHunk)
 		hunks = append(hunks, *currentHunk)

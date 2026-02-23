@@ -6,6 +6,7 @@ import { createSidebar } from "./sidebar.js";
 import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
 import { createFileExplorer } from "./fileExplorer.js";
+import { createStagingView } from "./stagingView.js";
 import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
@@ -148,6 +149,7 @@ function bootstrapGraph(root, repoId) {
     const infoBar = createInfoBar();
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
+    const stagingView = createStagingView();
 
     const repoTabContent = document.createElement("div");
     repoTabContent.style.display = "flex";
@@ -174,6 +176,7 @@ function bootstrapGraph(root, repoId) {
     const sidebar = createSidebar([
         { name: "repository", icon: "", tooltip: "Repository", content: repoTabContent },
         { name: "file-explorer", icon: "", tooltip: "File Explorer", content: fileExplorer.el },
+        { name: "three-zones", tooltip: "Three Zones", content: stagingView.el },
     ]);
     root.parentElement.insertBefore(sidebar.activityBar, root);
     root.parentElement.insertBefore(sidebar.panel, root);
@@ -310,6 +313,7 @@ function bootstrapGraph(root, repoId) {
         onStatus: (status) => {
             indexView.update(status);
             fileExplorer.updateWorkingTreeStatus(status);
+            stagingView.update(status);
         },
         onHead: (headInfo) => {
             infoBar.updateHead(headInfo);
