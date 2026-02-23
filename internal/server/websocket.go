@@ -39,7 +39,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conn.EnableWriteCompression(true)
-	conn.SetCompressionLevel(flate.BestSpeed)
+	if err := conn.SetCompressionLevel(flate.BestSpeed); err != nil {
+		s.logger.Error("Failed to set compression level", "err", err)
+	}
 	conn.SetReadLimit(maxMessageSize)
 	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
 		s.logger.Error("Failed to set read deadline", "addr", conn.RemoteAddr(), "err", err)

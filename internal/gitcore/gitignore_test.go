@@ -6,226 +6,6 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// Tests for parseIgnoreLine
-// ---------------------------------------------------------------------------
-
-// TestParseIgnoreLine_BlankLine verifies that a blank line is skipped (ok=false).
-func TestParseIgnoreLine_BlankLine(t *testing.T) {
-	_, ok := parseIgnoreLine("")
-	if ok {
-		t.Error("expected ok=false for blank line, got true")
-	}
-}
-
-// TestParseIgnoreLine_WhitespaceOnlyLine verifies that a line containing only
-// spaces and tabs is treated as blank and skipped.
-func TestParseIgnoreLine_WhitespaceOnlyLine(t *testing.T) {
-	_, ok := parseIgnoreLine("   \t  ")
-	if ok {
-		t.Error("expected ok=false for whitespace-only line, got true")
-	}
-}
-
-// TestParseIgnoreLine_CommentLine verifies that lines starting with '#' are
-// treated as comments and skipped.
-func TestParseIgnoreLine_CommentLine(t *testing.T) {
-	tests := []struct {
-		name string
-		line string
-	}{
-		{"hash at start", "# this is a comment"},
-		{"hash only", "#"},
-		{"hash no space", "#comment"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, ok := parseIgnoreLine(tt.line)
-			if ok {
-				t.Errorf("parseIgnoreLine(%q): expected ok=false for comment, got true", tt.line)
-			}
-		})
-	}
-}
-
-// TestParseIgnoreLine_SimplePattern verifies that a plain filename pattern is
-// parsed with no special flags set.
-func TestParseIgnoreLine_SimplePattern(t *testing.T) {
-	pat, ok := parseIgnoreLine("*.log")
-	if !ok {
-		t.Fatal("expected ok=true for simple pattern")
-	}
-	if pat.pattern != "*.log" {
-		t.Errorf("pattern = %q, want %q", pat.pattern, "*.log")
-	}
-	if pat.negated {
-		t.Error("negated should be false for simple pattern")
-	}
-	if pat.dirOnly {
-		t.Error("dirOnly should be false for simple pattern")
-	}
-	if pat.anchored {
-		t.Error("anchored should be false for pattern without '/'")
-	}
-}
-
-// TestParseIgnoreLine_NegationPrefix verifies that a line starting with '!'
-// produces a negated pattern and strips the '!'.
-func TestParseIgnoreLine_NegationPrefix(t *testing.T) {
-	pat, ok := parseIgnoreLine("!important.log")
-	if !ok {
-		t.Fatal("expected ok=true for negated pattern")
-	}
-	if !pat.negated {
-		t.Error("negated should be true")
-	}
-	if pat.pattern != "important.log" {
-		t.Errorf("pattern = %q, want %q", pat.pattern, "important.log")
-	}
-	if pat.anchored {
-		t.Error("anchored should be false: no '/' in pattern body")
-	}
-}
-
-// TestParseIgnoreLine_NegationWithDirectory verifies that a negated pattern
-// with a trailing slash is both negated and dirOnly.
-func TestParseIgnoreLine_NegationWithDirectory(t *testing.T) {
-	pat, ok := parseIgnoreLine("!vendor/")
-	if !ok {
-		t.Fatal("expected ok=true")
-	}
-	if !pat.negated {
-		t.Error("negated should be true")
-	}
-	if !pat.dirOnly {
-		t.Error("dirOnly should be true (trailing slash)")
-	}
-	if pat.pattern != "vendor" {
-		t.Errorf("pattern = %q, want %q", pat.pattern, "vendor")
-	}
-}
-
-// TestParseIgnoreLine_DirectoryOnly verifies that a trailing '/' sets
-// dirOnly=true and the slash is stripped from the pattern.
-func TestParseIgnoreLine_DirectoryOnly(t *testing.T) {
-	pat, ok := parseIgnoreLine("build/")
-	if !ok {
-		t.Fatal("expected ok=true for directory-only pattern")
-	}
-	if !pat.dirOnly {
-		t.Error("dirOnly should be true")
-	}
-	if pat.pattern != "build" {
-		t.Errorf("pattern = %q, want %q", pat.pattern, "build")
-	}
-	if pat.anchored {
-		t.Error("anchored should be false: no '/' remaining in pattern")
-	}
-}
-
-// TestParseIgnoreLine_LeadingSlash verifies that a leading '/' sets
-// anchored=true and the slash is stripped from the pattern.
-func TestParseIgnoreLine_LeadingSlash(t *testing.T) {
-	pat, ok := parseIgnoreLine("/Makefile")
-	if !ok {
-		t.Fatal("expected ok=true for leading-slash pattern")
-	}
-	if !pat.anchored {
-		t.Error("anchored should be true for leading '/'")
-	}
-	if pat.pattern != "Makefile" {
-		t.Errorf("pattern = %q, want %q", pat.pattern, "Makefile")
-	}
-	if pat.negated {
-		t.Error("negated should be false")
-	}
-	if pat.dirOnly {
-		t.Error("dirOnly should be false")
-	}
-}
-
-// TestParseIgnoreLine_InternalSlash verifies that a pattern containing an
-// internal '/' (not leading) is treated as anchored.
-func TestParseIgnoreLine_InternalSlash(t *testing.T) {
-	pat, ok := parseIgnoreLine("src/generated")
-	if !ok {
-		t.Fatal("expected ok=true for pattern with internal slash")
-	}
-	if !pat.anchored {
-		t.Error("anchored should be true: pattern contains '/'")
-	}
-	if pat.pattern != "src/generated" {
-		t.Errorf("pattern = %q, want %q", pat.pattern, "src/generated")
-	}
-}
-
-// TestParseIgnoreLine_LeadingSlashWithDirectory verifies that a leading '/'
-// combined with a trailing '/' produces anchored=true and dirOnly=true.
-func TestParseIgnoreLine_LeadingSlashWithDirectory(t *testing.T) {
-	pat, ok := parseIgnoreLine("/dist/")
-	if !ok {
-		t.Fatal("expected ok=true")
-	}
-	if !pat.anchored {
-		t.Error("anchored should be true (leading '/')")
-	}
-	if !pat.dirOnly {
-		t.Error("dirOnly should be true (trailing '/')")
-	}
-	if pat.pattern != "dist" {
-		t.Errorf("pattern = %q, want %q", pat.pattern, "dist")
-	}
-}
-
-// TestParseIgnoreLine_TrailingWhitespace verifies that trailing spaces are
-// stripped before parsing (unless escaped, which we do not test here).
-func TestParseIgnoreLine_TrailingWhitespace(t *testing.T) {
-	pat, ok := parseIgnoreLine("*.tmp   ")
-	if !ok {
-		t.Fatal("expected ok=true after stripping trailing whitespace")
-	}
-	if pat.pattern != "*.tmp" {
-		t.Errorf("pattern = %q, want %q (trailing whitespace not stripped)", pat.pattern, "*.tmp")
-	}
-}
-
-// TestParseIgnoreLine_WildcardGlob verifies that common glob wildcards pass
-// through the pattern field unchanged.
-func TestParseIgnoreLine_WildcardGlob(t *testing.T) {
-	tests := []struct {
-		line    string
-		pattern string
-	}{
-		{"*.log", "*.log"},
-		{"[Tt]est*", "[Tt]est*"},
-		{"doc?.txt", "doc?.txt"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.line, func(t *testing.T) {
-			pat, ok := parseIgnoreLine(tt.line)
-			if !ok {
-				t.Fatalf("expected ok=true for %q", tt.line)
-			}
-			if pat.pattern != tt.pattern {
-				t.Errorf("pattern = %q, want %q", pat.pattern, tt.pattern)
-			}
-		})
-	}
-}
-
-// TestParseIgnoreLine_SlashOnlyLineIsInvalid verifies that a bare "/" produces
-// ok=false because the pattern would be empty after stripping the slash.
-func TestParseIgnoreLine_SlashOnlyLineIsInvalid(t *testing.T) {
-	_, ok := parseIgnoreLine("/")
-	if ok {
-		t.Error("expected ok=false for bare '/' (empty pattern after strip)")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Tests for matchPattern
-// ---------------------------------------------------------------------------
-
 // makeRule is a small helper to construct an ignoreRule from its components,
 // reducing boilerplate in matchPattern tests.
 func makeRule(baseDir, pattern string, negated, dirOnly, anchored bool) ignoreRule {
@@ -341,7 +121,7 @@ func TestMatchPattern_DirectoryOnly(t *testing.T) {
 		t.Run(tt.relPath+"/isDir="+boolStr(tt.isDir), func(t *testing.T) {
 			// For dirOnly rules, matchPattern should return true for both
 			// dirs and non-dirs (the enforcement is in isIgnored). We still
-			// document the actual behaviour:
+			// document the actual behavior:
 			got := matchPattern(rule, tt.relPath, tt.isDir)
 			// A non-anchored pattern "build" matches any path named "build".
 			wantMatchPattern := true // matchPattern itself doesn't filter by isDir
@@ -409,10 +189,6 @@ func TestMatchPattern_AnchoredWithSubdirectoryBase(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Tests for ignoreMatcher.isIgnored
-// ---------------------------------------------------------------------------
 
 // TestIsIgnored_SingleNonAnchoredPattern verifies that a plain pattern loaded
 // into an ignoreMatcher ignores files matching by basename at any depth.
@@ -552,10 +328,6 @@ func TestIsIgnored_AnchoredPatternDoesNotMatchNestedPaths(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Integration tests using loadIgnoreMatcher with a real temp directory
-// ---------------------------------------------------------------------------
 
 // writeGitignore writes a .gitignore file at a specific directory path and
 // registers a cleanup via t.TempDir lifecycle (no explicit cleanup needed).
@@ -717,10 +489,6 @@ func TestLoadFile_NonExistentSubdirectoryGitignore(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Table-driven integration tests for parseIgnoreLine field combinations
-// ---------------------------------------------------------------------------
-
 // TestParseIgnoreLine_Table exercises a wide range of input lines and verifies
 // that every combination of flags is decoded correctly.
 func TestParseIgnoreLine_Table(t *testing.T) {
@@ -788,10 +556,6 @@ func TestParseIgnoreLine_Table(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Integration test: ComputeWorkingTreeStatus respects .gitignore
-// ---------------------------------------------------------------------------
 
 // TestComputeWorkingTreeStatus_GitignoreExcludesUntrackedFiles verifies that
 // files matched by a root .gitignore are NOT reported as untracked by
@@ -993,10 +757,6 @@ func TestComputeWorkingTreeStatus_GitignoreTrackedFileNotFiltered(t *testing.T) 
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Additional edge-case tests
-// ---------------------------------------------------------------------------
-
 // TestMatchPattern_PatternNotUnderBaseDir verifies that a rule loaded from a
 // subdirectory .gitignore returns false immediately when the path does not
 // start with the base directory prefix.
@@ -1061,10 +821,6 @@ func TestParseIgnoreLine_PatternPreservesGlob(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Tests for ** (double-star) glob patterns
-// ---------------------------------------------------------------------------
 
 // TestMatchGlob_DoubleStar verifies that matchGlob handles ** patterns
 // correctly: matching zero or more path components.
