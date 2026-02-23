@@ -763,14 +763,49 @@ export class LaneStrategy {
 		const commitNodes = nodes.filter((n) => n.type === "commit");
 		if (commitNodes.length === 0) return;
 
-		// Sort commits chronologically (newest first)
+		// Topological sort with chronological tiebreaker (no backward arrows).
+		// Depth 0 = branch tips (no children in graph), higher = further from tips.
+		const commitHashes = new Set(commitNodes.map(n => n.hash));
+		const childCount = new Map();
+		for (const hash of commitHashes) childCount.set(hash, 0);
+		for (const hash of commitHashes) {
+			const commit = commits.get(hash);
+			for (const ph of commit?.parents ?? []) {
+				if (commitHashes.has(ph)) {
+					childCount.set(ph, childCount.get(ph) + 1);
+				}
+			}
+		}
+
+		const depth = new Map();
+		const queue = [];
+		for (const [hash, count] of childCount) {
+			if (count === 0) {
+				depth.set(hash, 0);
+				queue.push(hash);
+			}
+		}
+		while (queue.length > 0) {
+			const hash = queue.shift();
+			const d = depth.get(hash);
+			const commit = commits.get(hash);
+			for (const ph of commit?.parents ?? []) {
+				if (!commitHashes.has(ph)) continue;
+				depth.set(ph, Math.max(depth.get(ph) ?? 0, d + 1));
+				const remaining = childCount.get(ph) - 1;
+				childCount.set(ph, remaining);
+				if (remaining === 0) queue.push(ph);
+			}
+		}
+
 		const ordered = [...commitNodes].sort((a, b) => {
+			const da = depth.get(a.hash) ?? 0;
+			const db = depth.get(b.hash) ?? 0;
+			if (da !== db) return da - db;
 			const aTime = getCommitTimestamp(commits.get(a.hash));
 			const bTime = getCommitTimestamp(commits.get(b.hash));
-			if (aTime === bTime) {
-				return a.hash.localeCompare(b.hash);
-			}
-			return bTime - aTime; // Reversed: newer commits first
+			if (aTime === bTime) return a.hash.localeCompare(b.hash);
+			return bTime - aTime;
 		});
 
 		// Calculate vertical spacing
