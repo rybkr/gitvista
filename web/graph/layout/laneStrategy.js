@@ -669,6 +669,7 @@ export class LaneStrategy {
 					if (y < minY) minY = y;
 					if (y > maxY) maxY = y;
 				}
+				const coreMinY = minY, coreMaxY = maxY;
 				const groupSet = new Set(groupHashes);
 
 				// Extend to fork point: find cross-lane parents of this
@@ -703,9 +704,23 @@ export class LaneStrategy {
 					}
 				}
 
-				segments.push({ minY, maxY, hashes: groupSet, branchName: "" });
+				segments.push({ minY, maxY, coreMinY, coreMaxY, hashes: groupSet, branchName: "" });
 			}
 			segments.sort((a, b) => a.minY - b.minY);
+
+			// Prevent adjacent segment backgrounds from overlapping.
+			// Rendered backgrounds extend by pad above/below the raw range,
+			// so clip extensions at the midpoint between core ranges.
+			const pad = LANE_VERTICAL_STEP / 2;
+			for (let i = 0; i < segments.length - 1; i++) {
+				const cur = segments[i];
+				const next = segments[i + 1];
+				if (cur.maxY + pad > next.minY - pad) {
+					const mid = (cur.coreMaxY + next.coreMinY) / 2;
+					cur.maxY = Math.max(cur.coreMaxY, mid - pad);
+					next.minY = Math.min(next.coreMinY, mid + pad);
+				}
+			}
 
 			const allY = [...lc.yByHash.values()];
 			laneData.set(laneIndex, {
@@ -763,49 +778,54 @@ export class LaneStrategy {
 		const commitNodes = nodes.filter((n) => n.type === "commit");
 		if (commitNodes.length === 0) return;
 
-		// Topological sort with chronological tiebreaker (no backward arrows).
-		// Depth 0 = branch tips (no children in graph), higher = further from tips.
+		// Chronological sort with topological correction.
+		// Start with each commit's real timestamp, then bump any child whose
+		// timestamp would place it below a parent (effective_time = max of own
+		// timestamp and all parents' effective_times + 1).  Unrelated commits
+		// on disjoint branches keep their natural timestamps — no zipper effect.
 		const commitHashes = new Set(commitNodes.map(n => n.hash));
-		const childCount = new Map();
-		for (const hash of commitHashes) childCount.set(hash, 0);
+
+		const childrenOf = new Map();
+		const parentCount = new Map();
+		for (const hash of commitHashes) {
+			childrenOf.set(hash, []);
+			parentCount.set(hash, 0);
+		}
 		for (const hash of commitHashes) {
 			const commit = commits.get(hash);
 			for (const ph of commit?.parents ?? []) {
 				if (commitHashes.has(ph)) {
-					childCount.set(ph, childCount.get(ph) + 1);
+					childrenOf.get(ph).push(hash);
+					parentCount.set(hash, parentCount.get(hash) + 1);
 				}
 			}
 		}
 
-		const depth = new Map();
+		// Initialize effective timestamps, then propagate via Kahn's from roots
+		const effectiveTime = new Map();
 		const queue = [];
-		for (const [hash, count] of childCount) {
-			if (count === 0) {
-				depth.set(hash, 0);
-				queue.push(hash);
-			}
+		for (const hash of commitHashes) {
+			effectiveTime.set(hash, getCommitTimestamp(commits.get(hash)));
+		}
+		for (const [hash, count] of parentCount) {
+			if (count === 0) queue.push(hash);
 		}
 		while (queue.length > 0) {
 			const hash = queue.shift();
-			const d = depth.get(hash);
-			const commit = commits.get(hash);
-			for (const ph of commit?.parents ?? []) {
-				if (!commitHashes.has(ph)) continue;
-				depth.set(ph, Math.max(depth.get(ph) ?? 0, d + 1));
-				const remaining = childCount.get(ph) - 1;
-				childCount.set(ph, remaining);
-				if (remaining === 0) queue.push(ph);
+			const parentET = effectiveTime.get(hash);
+			for (const ch of childrenOf.get(hash)) {
+				effectiveTime.set(ch, Math.max(effectiveTime.get(ch), parentET + 1));
+				const remaining = parentCount.get(ch) - 1;
+				parentCount.set(ch, remaining);
+				if (remaining === 0) queue.push(ch);
 			}
 		}
 
 		const ordered = [...commitNodes].sort((a, b) => {
-			const da = depth.get(a.hash) ?? 0;
-			const db = depth.get(b.hash) ?? 0;
-			if (da !== db) return da - db;
-			const aTime = getCommitTimestamp(commits.get(a.hash));
-			const bTime = getCommitTimestamp(commits.get(b.hash));
-			if (aTime === bTime) return a.hash.localeCompare(b.hash);
-			return bTime - aTime;
+			const ea = effectiveTime.get(a.hash) ?? 0;
+			const eb = effectiveTime.get(b.hash) ?? 0;
+			if (ea !== eb) return eb - ea;
+			return a.hash.localeCompare(b.hash);
 		});
 
 		// Calculate vertical spacing
