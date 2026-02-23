@@ -992,10 +992,6 @@ export function createGraphController(rootElement, options = {}) {
             hideTooltip();
         }
 
-        // Snap branch and tag nodes to their target commits before updating layout strategy
-        snapBranchesToTargets(branchReconciliation.alignments);
-        snapTagsToTargets(tagReconciliation.alignments);
-
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after reconciliation so newly-created nodes are
         // included, and rebuilds the predicate so BFS data is never stale.
@@ -1017,6 +1013,10 @@ export function createGraphController(rootElement, options = {}) {
             { width: viewportWidth, height: viewportHeight },
             structureChanged,
         );
+
+        // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
+        snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
 
         // Center on latest commit if auto-centering is requested
         if (layoutStrategy.shouldAutoCenter()) {
@@ -1068,7 +1068,7 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, position branches based on lane structure, not current commit position
+                // In lane mode, center branch pill on the lane and place above the commit
                 const laneIndex = targetNode.laneIndex ?? 0;
                 const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
 
@@ -1077,10 +1077,10 @@ export function createGraphController(rootElement, options = {}) {
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                // Position branch above its commit (negative Y offset), stacked if multiple
+                // Center X on lane, position Y directly above commit with stacking
                 const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
-                branchNode.x = laneX - BRANCH_NODE_OFFSET_X;
-                branchNode.y = (targetNode.y ?? 0) - BRANCH_NODE_OFFSET_Y * 4 - stackOffset;
+                branchNode.x = laneX;
+                branchNode.y = targetNode.y - BRANCH_NODE_RADIUS - 8 - stackOffset;
             } else {
                 // Force mode: small jitter is fine since simulation will settle
                 const baseX = targetNode.x ?? 0;
@@ -1161,7 +1161,7 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, position tags to the RIGHT of the commit lane
+                // In lane mode, center tag pill on the lane and place below the commit
                 const laneIndex = targetNode.laneIndex ?? 0;
                 const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
 
@@ -1171,8 +1171,8 @@ export function createGraphController(rootElement, options = {}) {
                 perCommitCount.set(key, index + 1);
 
                 const stackOffset = index * (TAG_NODE_RADIUS * 2.5 + 2);
-                tagNode.x = laneX + TAG_NODE_OFFSET_X;
-                tagNode.y = (targetNode.y ?? 0) - TAG_NODE_OFFSET_Y * 4 - stackOffset;
+                tagNode.x = laneX;
+                tagNode.y = targetNode.y + TAG_NODE_RADIUS + 8 + stackOffset;
             } else {
                 // Force mode: small jitter offset from target commit
                 const baseX = targetNode.x ?? 0;
