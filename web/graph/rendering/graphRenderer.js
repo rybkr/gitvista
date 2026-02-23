@@ -37,6 +37,7 @@ import {
     LANE_WIDTH,
     LANE_MARGIN,
     LANE_HEADER_FONT,
+    LANE_HEADER_HEIGHT,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 import { getAuthorColor } from "../../utils/colors.js";
@@ -81,6 +82,10 @@ export class GraphRenderer {
         this.renderLinks(links, nodes);
         const layoutMode = state.layoutMode ?? "force";
         this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode);
+
+        if (laneInfo.length > 0) {
+            this.renderLaneHeaders(laneInfo);
+        }
 
         this.ctx.restore();
     }
@@ -141,45 +146,102 @@ export class GraphRenderer {
                 const stripBottom = Math.min(bottomY, seg.maxY + pad);
                 if (stripTop >= stripBottom) continue;
 
-                // Background — rounded ends where the segment isn't clipped
+                // Background — squared top (header bar sits above), rounded bottom
                 this.ctx.save();
                 this.ctx.globalAlpha = 0.06;
                 this.ctx.fillStyle = lane.color;
-                const rTop = stripTop <= topY ? 0 : halfW;
-                const rBottom = stripBottom >= bottomY ? 0 : halfW;
+                const rBottom = stripBottom >= bottomY ? 0 : 12;
                 this.ctx.beginPath();
                 this.ctx.roundRect(
                     cx - halfW, stripTop,
                     halfW * 2, stripBottom - stripTop,
-                    [rTop, rTop, rBottom, rBottom],
+                    [0, 0, rBottom, rBottom],
                 );
                 this.ctx.fill();
                 this.ctx.restore();
+            }
+        }
+    }
 
-                // Branch name label — pinned to top of visible area but
-                // clamped within this segment's vertical extent
-                const segName = seg.branchName || "";
-                if (segName) {
-                    const labelTop = seg.minY - pad;
-                    const labelBottom = seg.maxY + pad - 24 / k;
-                    const headerY = Math.max(labelTop, Math.min(topY + 18 / k, labelBottom));
-                    this.ctx.save();
-                    this.ctx.font = LANE_HEADER_FONT;
-                    this.ctx.textAlign = "center";
-                    this.ctx.textBaseline = "top";
+    /**
+     * Renders a header bar at the top of each lane background segment.
+     * Shows branch names and provides a visual anchor for each section.
+     * Drawn in graph space so bars scroll/zoom with the content.
+     *
+     * @param {Array<{index: number, color: string, branchName: string, segments: Array<{minY: number, maxY: number, branchName?: string}>, minY: number, maxY: number}>} laneInfo Lane metadata.
+     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     */
+    renderLaneHeaders(laneInfo) {
+        const ctx = this.ctx;
+        const pad = LANE_VERTICAL_STEP / 2;
+
+        for (const lane of laneInfo) {
+            const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+            const halfW = LANE_WIDTH / 2 - 4;
+            const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
+
+            for (const seg of segments) {
+                const barY = seg.minY - pad;
+                const barW = halfW * 2;
+                const barX = cx - halfW;
+                const barH = LANE_HEADER_HEIGHT;
+
+                // Header background — rounded top corners, squared bottom
+                ctx.save();
+                ctx.globalAlpha = 0.15;
+                ctx.fillStyle = lane.color;
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barW, barH, [4, 4, 0, 0]);
+                ctx.fill();
+                ctx.restore();
+
+                // Bottom border line — subtle visual separator
+                ctx.save();
+                ctx.globalAlpha = 0.25;
+                ctx.strokeStyle = lane.color;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(barX, barY + barH);
+                ctx.lineTo(barX + barW, barY + barH);
+                ctx.stroke();
+                ctx.restore();
+
+                // Branch name label
+                const name = seg.branchName || "";
+                if (name) {
+                    ctx.save();
+                    ctx.font = LANE_HEADER_FONT;
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
 
                     // Halo for readability
-                    this.ctx.lineWidth = 3;
-                    this.ctx.lineJoin = "round";
-                    this.ctx.strokeStyle = this.palette.labelHalo;
-                    this.ctx.globalAlpha = 0.9;
-                    this.ctx.strokeText(segName, cx, headerY);
+                    ctx.lineWidth = 3;
+                    ctx.lineJoin = "round";
+                    ctx.strokeStyle = this.palette.labelHalo;
+                    ctx.globalAlpha = 0.9;
+                    ctx.strokeText(name, cx, barY + barH / 2);
 
                     // Text
-                    this.ctx.globalAlpha = 0.75;
-                    this.ctx.fillStyle = lane.color;
-                    this.ctx.fillText(segName, cx, headerY);
-                    this.ctx.restore();
+                    ctx.globalAlpha = 0.85;
+                    ctx.fillStyle = lane.color;
+                    ctx.fillText(name, cx, barY + barH / 2);
+                    ctx.restore();
+                } else {
+                    // No branch name — draw a grip indicator (three short lines)
+                    ctx.save();
+                    ctx.globalAlpha = 0.35;
+                    ctx.strokeStyle = lane.color;
+                    ctx.lineWidth = 1.5;
+                    ctx.lineCap = "round";
+                    const gripW = 10;
+                    for (let i = -1; i <= 1; i++) {
+                        const gy = barY + barH / 2 + i * 4;
+                        ctx.beginPath();
+                        ctx.moveTo(cx - gripW, gy);
+                        ctx.lineTo(cx + gripW, gy);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
                 }
             }
         }
@@ -362,14 +424,15 @@ export class GraphRenderer {
         const targetLane = target.laneIndex ?? 0;
         const goingRight = target.x > source.x;
         const stagger = ((sourceLane * 7 + targetLane * 13) % 11 - 5) * (goingRight ? 2 : 1);
-        // Right-going arrows: turn right after the source node so they
-        // don't pass through intermediate same-lane commits.
-        // Left-going arrows (merges): turn halfway between the target
-        // (merge node) and its previous node in the lane, giving the
-        // rounded corners room to breathe.
-        const midY = goingRight
-            ? source.y + dir * (NODE_RADIUS + 10) + stagger
-            : target.y - dir * (LANE_VERTICAL_STEP / 2) + stagger;
+        // Merge arrows: route the horizontal segment near the merge commit
+        // (target) so the arrow arrives close under the merge node regardless
+        // of which column is left/right after a swap.
+        // Fork arrows: route near the source (parent) so the long vertical
+        // run stays in the child's column.
+        const isMergeTarget = (target.commit?.parents?.length ?? 0) >= 2;
+        const midY = isMergeTarget
+            ? target.y - dir * (LANE_VERTICAL_STEP / 2) + stagger
+            : source.y + dir * (NODE_RADIUS + 10) + stagger;
         const endY = target.y - dir * (targetRadius + ARROW_LENGTH);
 
         // Clamp corner radius so it doesn't exceed half the available
