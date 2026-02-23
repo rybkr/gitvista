@@ -783,8 +783,8 @@ export function createGraphController(rootElement, options = {}) {
                     continue;
                 }
                 links.push({
-                    source: commit.hash,
-                    target: parentHash,
+                    source: parentHash,
+                    target: commit.hash,
                 });
             }
         }

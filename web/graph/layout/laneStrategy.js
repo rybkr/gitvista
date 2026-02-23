@@ -5,12 +5,10 @@
  * Conforms to LayoutStrategy interface defined in layoutStrategy.js.
  *
  * Algorithm:
- * 1. Sort commits chronologically (newest first)
- * 2. Seed lane 0 with the main branch tip
- * 3. Process commits in order — each inherits the lane of its child
- * 4. Merge parents get new/reused lanes; lanes freed on convergence
- * 5. Position nodes: Y = chronological, X = lane index
- * 6. Animate smooth transitions between modes
+ * 1. Walk first-parent chains from branch tips (main first) to claim ownership
+ * 2. Assign remaining commits (merge parents) via column-reuse
+ * 3. Position nodes: Y = chronological, X = lane index
+ * 4. Animate smooth transitions between modes
  */
 
 import {
@@ -229,19 +227,19 @@ export class LaneStrategy {
 	}
 
 	/**
-	 * Assigns commits to lanes using a topological column-reuse algorithm.
+	 * Assigns commits to lanes using a first-parent ownership heuristic.
 	 *
-	 * Processes commits chronologically (newest first) and maintains a set of
-	 * "active lanes" — columns that track which parent hash they expect next.
-	 * Each commit inherits the lane of its child, and lanes are freed and
-	 * reused when branches converge, keeping the graph compact.
+	 * Phase 1 — First-parent chains:
+	 *   Walk the first-parent chain from each branch tip in priority order
+	 *   (main/master/trunk first, then alphabetical). Each chain claims its
+	 *   commits for a dedicated lane. Walking stops when a commit already
+	 *   claimed by a higher-priority branch is reached, so shared ancestors
+	 *   (like the init commit) are attributed to the most important branch.
 	 *
-	 * Algorithm:
-	 * 1. Seed lane 0 with the main branch tip
-	 * 2. Process commits newest-first
-	 * 3. Each commit takes the lane that expects it (or the lowest free lane)
-	 * 4. First parent inherits the lane; merge parents get new/reused lanes
-	 * 5. When multiple lanes converge on one commit, extras are freed
+	 * Phase 2 — Remaining commits:
+	 *   Any commits not on a first-parent chain (merge parents reachable only
+	 *   via non-first-parent edges) are assigned via column-reuse: lowest
+	 *   free lane, with active-lane tracking for convergence.
 	 *
 	 * @param {Array<Object>} nodes Array of graph nodes
 	 * @param {Map<string, Object>} commits Map of commit hash to commit data
@@ -253,7 +251,34 @@ export class LaneStrategy {
 		const commitNodes = nodes.filter((n) => n.type === "commit");
 		if (commitNodes.length === 0) return;
 
-		// Sort commits chronologically (newest first)
+		const commitHashes = new Set(commitNodes.map((n) => n.hash));
+
+		// --- Phase 1: First-parent chain ownership ---
+		const sortedBranches = this._prioritizeBranches(branches);
+		const commitOwner = new Map(); // hash → lane index
+		let nextLane = 0;
+
+		for (const [, tipHash] of sortedBranches) {
+			let current = tipHash;
+			const chain = [];
+
+			// Follow first-parent links until we reach a commit already owned
+			while (current && commitHashes.has(current) && !commitOwner.has(current)) {
+				chain.push(current);
+				const commit = commits.get(current);
+				current = commit?.parents?.[0] ?? null;
+			}
+
+			if (chain.length === 0) continue;
+
+			const lane = nextLane++;
+			for (const hash of chain) {
+				commitOwner.set(hash, lane);
+				this.commitToLane.set(hash, lane);
+			}
+		}
+
+		// --- Phase 2: Assign remaining commits (merge parents, orphans) ---
 		const ordered = [...commitNodes].sort((a, b) => {
 			const aTime = getCommitTimestamp(commits.get(a.hash));
 			const bTime = getCommitTimestamp(commits.get(b.hash));
@@ -261,66 +286,60 @@ export class LaneStrategy {
 			return bTime - aTime;
 		});
 
-		// Active lanes: index = column, value = hash expected next (or null if free)
-		const activeLanes = [];
-
-		// Seed lane 0 with main branch tip so it always occupies the leftmost column
-		const mainBranchNames = ["main", "master", "trunk"];
-		let mainBranchHash = null;
-		for (const name of mainBranchNames) {
-			if (branches.has(name)) {
-				mainBranchHash = branches.get(name);
-				break;
-			}
-		}
-		if (!mainBranchHash && branches.size > 0) {
-			mainBranchHash = branches.values().next().value;
-		}
-		if (mainBranchHash) {
-			activeLanes.push(mainBranchHash);
-		}
+		// Active lanes track which hash each column expects next (for convergence)
+		const activeLanes = new Array(nextLane).fill(null);
 
 		for (const node of ordered) {
 			const hash = node.hash;
 			const commit = commits.get(hash);
 			const parents = commit?.parents || [];
 
-			// Find all lanes expecting this commit
-			let lane = -1;
-			const convergingLanes = [];
-			for (let i = 0; i < activeLanes.length; i++) {
-				if (activeLanes[i] === hash) {
-					if (lane === -1) {
+			let lane;
+
+			if (this.commitToLane.has(hash)) {
+				// Already assigned by phase 1
+				lane = this.commitToLane.get(hash);
+			} else {
+				// Check if an active lane expects this commit
+				lane = -1;
+				for (let i = 0; i < activeLanes.length; i++) {
+					if (activeLanes[i] === hash) {
 						lane = i;
-					} else {
-						convergingLanes.push(i);
+						break;
 					}
 				}
+				if (lane === -1) {
+					lane = this._findFreeLane(activeLanes);
+				}
+				this.commitToLane.set(hash, lane);
 			}
 
-			if (lane === -1) {
-				// New branch tip — find lowest free lane
-				lane = this._findFreeLane(activeLanes);
+			// Free any other active lanes that also expected this commit (convergence)
+			for (let i = 0; i < activeLanes.length; i++) {
+				if (i !== lane && activeLanes[i] === hash) {
+					activeLanes[i] = null;
+				}
 			}
-
-			// Free converging lanes (branches merging into this commit)
-			for (const cl of convergingLanes) {
-				activeLanes[cl] = null;
-			}
-
-			this.commitToLane.set(hash, lane);
 
 			if (parents.length === 0) {
 				// Root commit — free the lane
 				activeLanes[lane] = null;
 			} else {
-				// First parent continues this lane
-				activeLanes[lane] = parents[0];
+				const firstParent = parents[0];
 
-				// Additional parents (merge sources) get new/reused lanes
+				// First parent continues this lane only if it isn't owned by a different lane
+				if (!commitOwner.has(firstParent) || commitOwner.get(firstParent) === lane) {
+					activeLanes[lane] = firstParent;
+				} else {
+					activeLanes[lane] = null; // Parent belongs to another branch's lane
+				}
+
+				// Merge parents (non-first) get new/reused lanes
 				for (let i = 1; i < parents.length; i++) {
 					const parentHash = parents[i];
-					// Only allocate if no lane already expects this parent
+					if (!commitHashes.has(parentHash)) continue;
+					if (commitOwner.has(parentHash)) continue; // Already owned
+
 					let alreadyExpected = false;
 					for (let j = 0; j < activeLanes.length; j++) {
 						if (activeLanes[j] === parentHash) {
@@ -357,6 +376,48 @@ export class LaneStrategy {
 		}
 		activeLanes.push(null);
 		return activeLanes.length - 1;
+	}
+
+	/**
+	 * Returns branches sorted by priority for lane assignment.
+	 * main/master/trunk gets first priority (lane 0), then alphabetical.
+	 *
+	 * @param {Map<string, string>} branches Map of branch name to target hash
+	 * @returns {Array<[string, string]>} Sorted [name, hash] pairs
+	 */
+	_prioritizeBranches(branches) {
+		if (!branches || branches.size === 0) return [];
+
+		const mainNames = ["main", "master", "trunk"];
+		const result = [];
+		let mainEntry = null;
+
+		for (const name of mainNames) {
+			if (branches.has(name)) {
+				mainEntry = name;
+				result.push([name, branches.get(name)]);
+				break;
+			}
+		}
+
+		// Fallback: use the first branch if no main/master/trunk
+		if (!mainEntry && branches.size > 0) {
+			const [name, hash] = branches.entries().next().value;
+			mainEntry = name;
+			result.push([name, hash]);
+		}
+
+		// Remaining branches alphabetically
+		const others = [];
+		for (const [name, hash] of branches.entries()) {
+			if (name !== mainEntry) {
+				others.push([name, hash]);
+			}
+		}
+		others.sort((a, b) => a[0].localeCompare(b[0]));
+		result.push(...others);
+
+		return result;
 	}
 
 	/**
