@@ -392,9 +392,21 @@ export function createGraphController(rootElement, options = {}) {
     };
 
     const centerOnLatestCommit = () => {
+        // Prefer centering on HEAD when available — the "latest commit by
+        // timestamp" heuristic used by layout strategies often picks a
+        // different commit, leaving the view stranded in the middle of history.
+        if (state.headHash) {
+            const headNode = nodes.find(
+                (n) => n.type === "commit" && n.hash === state.headHash,
+            );
+            if (headNode) {
+                select(canvas).call(zoom.translateTo, headNode.x, headNode.y);
+                return;
+            }
+        }
+
         const target = layoutStrategy.findCenterTarget(nodes);
         if (target) {
-            // select(canvas).call(...) translates view to center on target coordinates.
             select(canvas).call(zoom.translateTo, target.x, target.y);
         }
     };

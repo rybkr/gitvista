@@ -1253,12 +1253,15 @@ canvas {
     color: var(--text-color);
 }
 
+/* ── Branch tooltip ── */
+
 .branch-tooltip {
     position: fixed;
     pointer-events: none;
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
+    border-left: 3px solid var(--branch-node-color);
     border-radius: 10px;
     box-shadow: 0 12px 32px var(--node-shadow-color);
     padding: 12px 14px;
@@ -1282,6 +1285,12 @@ canvas {
     opacity: 1;
 }
 
+.branch-tooltip-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .branch-tooltip-name {
     display: inline-flex;
     align-items: center;
@@ -1291,12 +1300,17 @@ canvas {
     letter-spacing: 0.01em;
     padding: 4px 8px;
     border-radius: 6px;
-    background: rgba(208, 215, 222, 0.48);
+    background: rgba(130, 80, 223, 0.1);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 @media (prefers-color-scheme: dark) {
     .branch-tooltip-name {
-        background: rgba(48, 54, 61, 0.8);
+        background: rgba(188, 140, 255, 0.12);
     }
 }
 
@@ -1304,6 +1318,7 @@ canvas {
     content: "";
     width: 8px;
     height: 8px;
+    flex-shrink: 0;
     border-radius: 50%;
     background: var(--branch-node-color);
     box-shadow: 0 0 0 2px rgba(130, 80, 223, 0.2);
@@ -1315,20 +1330,205 @@ canvas {
     }
 }
 
+.branch-tooltip-copy {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    color: var(--text-secondary, #656d76);
+    display: flex;
+    align-items: center;
+    pointer-events: auto;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: color 0.15s ease;
+}
+
+.branch-tooltip-copy:hover {
+    color: var(--branch-node-color);
+}
+
+.branch-tooltip-badge {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+    width: max-content;
+}
+
+.branch-tooltip-badge--local {
+    color: #1a7f37;
+    background: rgba(26, 127, 55, 0.1);
+}
+
+.branch-tooltip-badge--remote {
+    color: #9a6700;
+    background: rgba(154, 103, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+    .branch-tooltip-badge--local {
+        color: #56d364;
+        background: rgba(86, 211, 100, 0.12);
+    }
+    .branch-tooltip-badge--remote {
+        color: #d29922;
+        background: rgba(210, 153, 34, 0.12);
+    }
+}
+
 .branch-tooltip-target {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 12px;
+    font-size: 11px;
+    font-weight: 600;
     letter-spacing: 0.04em;
-    color: var(--text-secondary);
+    color: var(--branch-node-color);
+    background: rgba(130, 80, 223, 0.08);
+    border-radius: 6px;
+    padding: 4px 8px;
+    width: max-content;
     display: inline-flex;
     align-items: center;
     gap: 4px;
 }
 
+@media (prefers-color-scheme: dark) {
+    .branch-tooltip-target {
+        background: rgba(188, 140, 255, 0.1);
+    }
+}
+
 .branch-tooltip-target::before {
     content: "→";
     font-size: 12px;
-    color: var(--text-secondary);
+}
+
+/* ── Tag tooltip ── */
+
+.tag-tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid #9a6700;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px var(--node-shadow-color);
+    padding: 12px 14px;
+    min-width: 160px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 15;
+    opacity: 0;
+    transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(8px);
+}
+
+@media (prefers-color-scheme: dark) {
+    .tag-tooltip {
+        border-left-color: #d29922;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+}
+
+.tag-tooltip:not([hidden]) {
+    opacity: 1;
+}
+
+.tag-tooltip-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tag-tooltip-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(154, 103, 0, 0.1);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+    .tag-tooltip-name {
+        background: rgba(210, 153, 34, 0.12);
+    }
+}
+
+.tag-tooltip-name::before {
+    content: "⌂";
+    font-size: 11px;
+    flex-shrink: 0;
+    color: #9a6700;
+}
+
+@media (prefers-color-scheme: dark) {
+    .tag-tooltip-name::before {
+        color: #d29922;
+    }
+}
+
+.tag-tooltip-copy {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    color: var(--text-secondary, #656d76);
+    display: flex;
+    align-items: center;
+    pointer-events: auto;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: color 0.15s ease;
+}
+
+.tag-tooltip-copy:hover {
+    color: #9a6700;
+}
+
+@media (prefers-color-scheme: dark) {
+    .tag-tooltip-copy:hover {
+        color: #d29922;
+    }
+}
+
+.tag-tooltip-target {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #9a6700;
+    background: rgba(154, 103, 0, 0.08);
+    border-radius: 6px;
+    padding: 4px 8px;
+    width: max-content;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .tag-tooltip-target {
+        color: #d29922;
+        background: rgba(210, 153, 34, 0.1);
+    }
+}
+
+.tag-tooltip-target::before {
+    content: "→";
+    font-size: 12px;
 }
 
 .blob-tooltip {
