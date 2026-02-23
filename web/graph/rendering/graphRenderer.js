@@ -33,6 +33,7 @@ import {
     HOVER_GLOW_EXTRA_RADIUS,
     HOVER_GLOW_OPACITY,
     LANE_CORNER_RADIUS,
+    LANE_VERTICAL_STEP,
     LANE_WIDTH,
     LANE_MARGIN,
     LANE_HEADER_FONT,
@@ -338,8 +339,16 @@ export class GraphRenderer {
         // Use lane indices (small bounded integers) for deterministic stagger
         const sourceLane = source.laneIndex ?? 0;
         const targetLane = target.laneIndex ?? 0;
-        const stagger = ((sourceLane * 7 + targetLane * 13) % 11) - 5;
-        const midY = (source.y + target.y) / 2 + stagger;
+        const goingRight = target.x > source.x;
+        const stagger = ((sourceLane * 7 + targetLane * 13) % 11 - 5) * (goingRight ? 2 : 1);
+        // Right-going arrows: turn right after the source node so they
+        // don't pass through intermediate same-lane commits.
+        // Left-going arrows (merges): turn halfway between the target
+        // (merge node) and its previous node in the lane, giving the
+        // rounded corners room to breathe.
+        const midY = goingRight
+            ? source.y + dir * (NODE_RADIUS + 10) + stagger
+            : target.y - dir * (LANE_VERTICAL_STEP / 2) + stagger;
         const endY = target.y - dir * (targetRadius + ARROW_LENGTH);
 
         // Clamp corner radius so it doesn't exceed half the available
