@@ -79,16 +79,11 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
+      - name: Install golangci-lint from source
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
+
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa  # v7
-        with:
-          version: v2.1
-          # Only report issues on new code in PRs
-          only-new-issues: ${{ github.event_name == 'pull_request' }}
-          # Use config from repo
-          args: --config=.golangci.yml --timeout=10m
-          # Disable caching to ensure fresh results
-          skip-cache: false
+        run: golangci-lint run --config=.golangci.yml --timeout=10m
 
   # Security - runs govulncheck for known vulnerabilities
   security:
