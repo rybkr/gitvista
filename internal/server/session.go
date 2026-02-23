@@ -34,9 +34,10 @@ type RepoSession struct {
 	blameCache *LRUCache[any]
 	diffCache  *LRUCache[any]
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	clientWg sync.WaitGroup // tracks clientReadPump/clientWritePump goroutines
 }
 
 // SessionConfig holds initialization parameters for a RepoSession.
@@ -89,12 +90,34 @@ func (rs *RepoSession) Start() {
 	go rs.handleBroadcast()
 }
 
-// Close cancels the session context, waits for goroutines to finish, and
-// closes all WebSocket client connections.
+// Close cancels the session context, waits for server-side goroutines, sends
+// WebSocket close frames to all clients, then force-closes connections.
 func (rs *RepoSession) Close() {
 	rs.cancel()
 	rs.wg.Wait()
 
+	// Send close frames to all connected clients.
+	rs.clientsMu.RLock()
+	clients := make([]*websocket.Conn, 0, len(rs.clients))
+	for conn := range rs.clients {
+		clients = append(clients, conn)
+	}
+	clientCount := len(clients)
+	rs.clientsMu.RUnlock()
+
+	if clientCount > 0 {
+		rs.logger.Info("Sending close frames to WebSocket clients", "count", clientCount)
+		closeMsg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
+		deadline := time.Now().Add(1 * time.Second)
+		for _, conn := range clients {
+			_ = conn.WriteControl(websocket.CloseMessage, closeMsg, deadline)
+		}
+
+		// Brief grace period for clients to acknowledge the close frame.
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Force-close all remaining connections.
 	rs.clientsMu.Lock()
 	for conn := range rs.clients {
 		if err := conn.Close(); err != nil {
@@ -103,6 +126,13 @@ func (rs *RepoSession) Close() {
 	}
 	rs.clients = make(map[*websocket.Conn]*sync.Mutex)
 	rs.clientsMu.Unlock()
+
+	// Wait for pump goroutines to finish (they will exit once connections close).
+	rs.clientWg.Wait()
+
+	if clientCount > 0 {
+		rs.logger.Info("All WebSocket connections closed")
+	}
 }
 
 // updateRepository reloads repository state and broadcasts changes to clients.
@@ -276,6 +306,7 @@ func (rs *RepoSession) removeClient(conn *websocket.Conn) {
 // clientReadPump blocks on reads to detect client disconnect, then closes
 // the done channel to signal clientWritePump to stop.
 func (rs *RepoSession) clientReadPump(conn *websocket.Conn, done chan struct{}) {
+	defer rs.clientWg.Done()
 	defer func() {
 		if r := recover(); r != nil {
 			rs.logger.Warn("Recovered panic in clientReadPump", "addr", conn.RemoteAddr(), "panic", r)
@@ -296,6 +327,7 @@ func (rs *RepoSession) clientReadPump(conn *websocket.Conn, done chan struct{}) 
 
 // clientWritePump sends keepalive pings. writeMu serializes writes with broadcasts.
 func (rs *RepoSession) clientWritePump(conn *websocket.Conn, done chan struct{}, writeMu *sync.Mutex) {
+	defer rs.clientWg.Done()
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 	defer rs.removeClient(conn)

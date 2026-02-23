@@ -138,6 +138,9 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 				debounceTimer.Stop()
 			}
 			debounceTimer = time.AfterFunc(debounceTime, func() {
+				if s.ctx.Err() != nil {
+					return
+				}
 				s.localSession.updateRepository()
 			})
 

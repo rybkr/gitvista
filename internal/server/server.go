@@ -332,27 +332,38 @@ func hasPrefix(s, prefix string) bool {
 
 // Shutdown gracefully shuts down the server and all sessions.
 func (s *Server) Shutdown() {
+	start := time.Now()
 	s.logger.Info("Server shutting down")
 
 	if s.httpServer != nil {
+		s.logger.Info("Stopping HTTP listener")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 			s.logger.Error("HTTP server shutdown error", "err", err)
 		}
+		s.logger.Info("HTTP listener stopped", "elapsed", time.Since(start).Round(time.Millisecond))
 	}
 
+	s.logger.Info("Canceling server context")
 	s.cancel()
 	s.rateLimiter.Close()
 
+	s.logger.Info("Waiting for watcher goroutines to exit")
 	s.wg.Wait()
+	s.logger.Info("Watcher goroutines stopped")
 
-	// Close all sessions
+	// Close all sessions (sends close frames, force-closes connections)
 	if s.mode == ModeLocal {
 		if s.localSession != nil {
 			s.localSession.Close()
 		}
 	} else {
+		s.sessionsMu.Lock()
+		sessionCount := len(s.sessions)
+		s.sessionsMu.Unlock()
+		s.logger.Info("Closing sessions", "count", sessionCount)
+
 		s.sessionsMu.Lock()
 		for id, session := range s.sessions {
 			session.Close()
@@ -361,5 +372,5 @@ func (s *Server) Shutdown() {
 		s.sessionsMu.Unlock()
 	}
 
-	s.logger.Info("Server shutdown complete")
+	s.logger.Info("Server shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
 }

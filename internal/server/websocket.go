@@ -59,6 +59,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	writeMu := session.registerClient(conn)
 
 	done := make(chan struct{})
+	session.clientWg.Add(2)
 	go session.clientReadPump(conn, done)
 	go session.clientWritePump(conn, done, writeMu)
 }

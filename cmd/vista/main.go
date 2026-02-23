@@ -62,6 +62,8 @@ func main() {
 		Shutdown()
 	}
 
+	var rm *repomanager.RepoManager
+
 	if *repoPath != "" {
 		// LOCAL MODE: load repo, create local server
 		repo, err := gitcore.NewRepository(*repoPath)
@@ -76,7 +78,8 @@ func main() {
 		slog.Info("Repository loaded", "path", *repoPath)
 	} else {
 		// SAAS MODE: create RepoManager, start it, create SaaS server
-		rm, err := repomanager.New(repomanager.Config{DataDir: *dataDir})
+		var err error
+		rm, err = repomanager.New(repomanager.Config{DataDir: *dataDir})
 		if err != nil {
 			slog.Error("Failed to create repo manager", "err", err)
 			os.Exit(1)
@@ -110,8 +113,14 @@ func main() {
 			os.Exit(1)
 		}
 	case <-ctx.Done():
+		slog.Info("Shutdown initiated, press Ctrl+C again to force exit")
 		stop()
 		serv.Shutdown()
+		if rm != nil {
+			slog.Info("Stopping repo manager")
+			rm.Close()
+			slog.Info("Repo manager stopped")
+		}
 	}
 }
 

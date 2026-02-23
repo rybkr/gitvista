@@ -15,12 +15,13 @@ const (
 
 // rateLimiter implements a simple token bucket rate limiter per client IP.
 type rateLimiter struct {
-	mu      sync.Mutex
-	clients map[string]*bucket
-	rate    int           // tokens per interval
-	burst   int           // max tokens
-	window  time.Duration // time window
-	stop    chan struct{}
+	mu        sync.Mutex
+	clients   map[string]*bucket
+	rate      int           // tokens per interval
+	burst     int           // max tokens
+	window    time.Duration // time window
+	stop      chan struct{}
+	closeOnce sync.Once
 }
 
 // bucket represents a token bucket for a single client.
@@ -46,8 +47,11 @@ func newRateLimiter(rate int, burst int, window time.Duration) *rateLimiter {
 }
 
 // Close stops the cleanup goroutine. Call during server shutdown.
+// Safe to call multiple times.
 func (rl *rateLimiter) Close() {
-	close(rl.stop)
+	rl.closeOnce.Do(func() {
+		close(rl.stop)
+	})
 }
 
 // allow checks if a request from the given IP should be allowed.
