@@ -176,7 +176,7 @@ function bootstrapGraph(root, repoId) {
     const sidebar = createSidebar([
         { name: "repository", icon: "", tooltip: "Repository", content: repoTabContent },
         { name: "file-explorer", icon: "", tooltip: "File Explorer", content: fileExplorer.el },
-        { name: "three-zones", tooltip: "Three Zones", content: stagingView.el },
+        { name: "three-zones", tooltip: "Lifecycle", content: stagingView.el },
     ]);
     root.parentElement.insertBefore(sidebar.activityBar, root);
     root.parentElement.insertBefore(sidebar.panel, root);

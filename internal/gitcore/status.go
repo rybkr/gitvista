@@ -43,7 +43,6 @@ type WorkingTreeStatus struct {
 //  1. HEAD tree vs index — to identify staged additions, modifications, and deletions.
 //  2. Index vs working directory — to identify unstaged modifications and deletions.
 //  3. Working directory walk — to identify untracked files.
-//
 func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	// Step 1: Build a flat map of all blob paths from the HEAD tree.
 	// An empty HEAD (fresh repository) results in an empty map.
@@ -117,8 +116,17 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	workDir := repo.WorkDir()
 	for path, entry := range index.ByPath {
 		diskPath := filepath.Join(workDir, filepath.FromSlash(path))
+		isSymlink := entry.Mode&0170000 == 0120000
 
-		info, statErr := os.Stat(diskPath)
+		// Use Lstat for symlinks so we examine the link itself, not its target.
+		var info os.FileInfo
+		var statErr error
+		if isSymlink {
+			info, statErr = os.Lstat(diskPath)
+		} else {
+			info, statErr = os.Stat(diskPath)
+		}
+
 		if statErr != nil {
 			if os.IsNotExist(statErr) {
 				// File tracked in the index is gone from disk → unstaged deletion.
@@ -131,6 +139,25 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			} else {
 				// Unexpected stat error (permission denied, etc.) — surface it.
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: stat %s: %w", diskPath, statErr)
+			}
+			continue
+		}
+
+		// For symlinks, git stores the symlink target path as the blob
+		// content. Read the link target with Readlink and hash that.
+		if isSymlink {
+			linkTarget, linkErr := os.Readlink(diskPath)
+			if linkErr != nil {
+				return nil, fmt.Errorf("ComputeWorkingTreeStatus: readlink %s: %w", diskPath, linkErr)
+			}
+			diskHash := hashBlobContent([]byte(linkTarget))
+			if diskHash != entry.Hash {
+				fs, exists := results[path]
+				if !exists {
+					results[path] = &FileStatus{Path: path}
+					fs = results[path]
+				}
+				fs.WorkStatus = StatusModified
 			}
 			continue
 		}
@@ -174,7 +201,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	// reported (directories are not listed as untracked entries, matching
 	// the general convention from `git status`). .gitignore rules are
 	// respected: ignored files and directories are excluded.
-	ignore := loadIgnoreMatcher(workDir)
+	ignore := loadIgnoreMatcher(workDir, repo.GitDir())
 
 	walkErr := filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

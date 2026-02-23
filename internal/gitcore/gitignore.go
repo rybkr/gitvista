@@ -29,9 +29,11 @@ type ignoreRule struct {
 	pat     ignorePattern
 }
 
-// loadIgnoreMatcher creates an ignoreMatcher pre-loaded with the root .gitignore.
-func loadIgnoreMatcher(workDir string) *ignoreMatcher {
+// loadIgnoreMatcher creates an ignoreMatcher pre-loaded with the root
+// .gitignore and .git/info/exclude (if present).
+func loadIgnoreMatcher(workDir, gitDir string) *ignoreMatcher {
 	m := &ignoreMatcher{}
+	m.loadExcludeFile(filepath.Join(gitDir, "info", "exclude"))
 	m.loadFile(workDir, "")
 	return m
 }
@@ -41,9 +43,21 @@ func loadIgnoreMatcher(workDir string) *ignoreMatcher {
 // relative directory path (e.g. "src/").
 func (m *ignoreMatcher) loadFile(workDir, baseDir string) {
 	path := filepath.Join(workDir, filepath.FromSlash(baseDir), ".gitignore")
+	m.loadExcludeFileWithBase(path, baseDir)
+}
+
+// loadExcludeFile reads an exclude-format file (like .git/info/exclude) and
+// appends its patterns with an empty base directory.
+func (m *ignoreMatcher) loadExcludeFile(path string) {
+	m.loadExcludeFileWithBase(path, "")
+}
+
+// loadExcludeFileWithBase reads a gitignore-format file and appends its
+// patterns scoped to baseDir.
+func (m *ignoreMatcher) loadExcludeFileWithBase(path, baseDir string) {
 	f, err := os.Open(path) //nolint:gosec // path is relative to the repository
 	if err != nil {
-		return // .gitignore is optional
+		return // file is optional
 	}
 	defer f.Close()
 
@@ -105,9 +119,19 @@ func parseIgnoreLine(line string) (ignorePattern, bool) {
 		line = line[1:]
 	}
 
-	// A pattern containing '/' (after stripping leading slash) is anchored.
+	// A pattern containing '/' (after stripping leading slash) is anchored,
+	// UNLESS the only slash is part of a leading "**/" prefix. Git treats
+	// "**/foo" the same as the non-anchored pattern "foo".
 	if strings.Contains(line, "/") {
-		pat.anchored = true
+		remainder := strings.TrimPrefix(line, "**/")
+		// If there's still a '/' in the remainder, the pattern is anchored.
+		if strings.Contains(remainder, "/") {
+			pat.anchored = true
+		} else if !strings.HasPrefix(line, "**/") {
+			// Regular slash (not **/) → anchored.
+			pat.anchored = true
+		}
+		// "**/foo" with no further slashes → NOT anchored.
 	}
 
 	pat.pattern = line
@@ -115,7 +139,7 @@ func parseIgnoreLine(line string) (ignorePattern, bool) {
 }
 
 // matchPattern checks whether a relative path matches a single rule.
-func matchPattern(rule ignoreRule, relPath string, isDir bool) bool {
+func matchPattern(rule ignoreRule, relPath string, _ bool) bool {
 	pat := rule.pat
 
 	// For rules loaded from subdirectory .gitignore files, strip the base
@@ -130,8 +154,7 @@ func matchPattern(rule ignoreRule, relPath string, isDir bool) bool {
 
 	if pat.anchored {
 		// Anchored patterns must match the full remaining path.
-		matched, _ := filepath.Match(pat.pattern, target)
-		return matched
+		return matchGlob(pat.pattern, target)
 	}
 
 	// Non-anchored patterns can match against the basename alone, or against
@@ -141,14 +164,67 @@ func matchPattern(rule ignoreRule, relPath string, isDir bool) bool {
 	if idx := strings.LastIndex(target, "/"); idx >= 0 {
 		base = target[idx+1:]
 	}
-	if matched, _ := filepath.Match(pat.pattern, base); matched {
+	if matchGlob(pat.pattern, base) {
 		return true
 	}
 
 	// Try matching the full relative target.
-	if matched, _ := filepath.Match(pat.pattern, target); matched {
+	if matchGlob(pat.pattern, target) {
 		return true
 	}
 
 	return false
+}
+
+// matchGlob matches a gitignore-style glob pattern against a path. Unlike
+// filepath.Match, it handles "**" to match zero or more path components:
+//   - A leading "**/" matches in all directories.
+//   - A trailing "/**" matches everything inside.
+//   - "/**/" in the middle matches zero or more directories.
+func matchGlob(pattern, name string) bool {
+	// Fast path: no ** in pattern — delegate to filepath.Match.
+	if !strings.Contains(pattern, "**") {
+		matched, _ := filepath.Match(pattern, name)
+		return matched
+	}
+
+	patParts := strings.Split(pattern, "/")
+	nameParts := strings.Split(name, "/")
+	return matchSegments(patParts, nameParts)
+}
+
+// matchSegments recursively matches pattern segments against path segments,
+// handling "**" as a wildcard for zero or more path components.
+func matchSegments(patParts, nameParts []string) bool {
+	pi, ni := 0, 0
+	for pi < len(patParts) && ni < len(nameParts) {
+		if patParts[pi] == "**" {
+			pi++
+			if pi >= len(patParts) {
+				return true // trailing ** matches everything remaining
+			}
+			// Try matching the rest of the pattern against every suffix
+			// of the remaining name segments.
+			for tryNi := ni; tryNi <= len(nameParts); tryNi++ {
+				if matchSegments(patParts[pi:], nameParts[tryNi:]) {
+					return true
+				}
+			}
+			return false
+		}
+		matched, _ := filepath.Match(patParts[pi], nameParts[ni])
+		if !matched {
+			return false
+		}
+		pi++
+		ni++
+	}
+	// Consume any trailing ** segments in the pattern.
+	for pi < len(patParts) {
+		if patParts[pi] != "**" {
+			return false
+		}
+		pi++
+	}
+	return ni >= len(nameParts)
 }

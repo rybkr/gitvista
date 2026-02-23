@@ -329,8 +329,8 @@ func TestMatchPattern_DirectoryOnly(t *testing.T) {
 		isDir   bool
 		want    bool
 	}{
-		{"build", true, true},    // directory — should match
-		{"build", false, false},  // file — isIgnored skips, but matchPattern itself matches
+		{"build", true, true},   // directory — should match
+		{"build", false, false}, // file — isIgnored skips, but matchPattern itself matches
 		{"src/build", true, true},
 		{"src/build", false, false},
 	}
@@ -371,10 +371,10 @@ func TestMatchPattern_SubdirectoryBaseDir(t *testing.T) {
 		relPath string
 		want    bool
 	}{
-		{"vendor/cache.tmp", true},     // under vendor/
-		{"vendor/a/deep.tmp", true},    // deeply nested under vendor/
-		{"cache.tmp", false},            // at root — not under vendor/
-		{"src/cache.tmp", false},        // under src/ — not under vendor/
+		{"vendor/cache.tmp", true},  // under vendor/
+		{"vendor/a/deep.tmp", true}, // deeply nested under vendor/
+		{"cache.tmp", false},        // at root — not under vendor/
+		{"src/cache.tmp", false},    // under src/ — not under vendor/
 	}
 	for _, tt := range tests {
 		t.Run(tt.relPath, func(t *testing.T) {
@@ -396,7 +396,7 @@ func TestMatchPattern_AnchoredWithSubdirectoryBase(t *testing.T) {
 		relPath string
 		want    bool
 	}{
-		{"src/generated/code", true},       // exact match relative to src/
+		{"src/generated/code", true},        // exact match relative to src/
 		{"src/other/generated/code", false}, // too deep
 		{"generated/code", false},           // outside src/
 	}
@@ -447,7 +447,7 @@ func TestIsIgnored_SingleNonAnchoredPattern(t *testing.T) {
 func TestIsIgnored_NegationOverridesIgnore(t *testing.T) {
 	m := &ignoreMatcher{}
 	m.rules = []ignoreRule{
-		makeRule("", "*.log", false, false, false),      // ignore all .log
+		makeRule("", "*.log", false, false, false),        // ignore all .log
 		makeRule("", "important.log", true, false, false), // but un-ignore important.log
 	}
 
@@ -455,7 +455,7 @@ func TestIsIgnored_NegationOverridesIgnore(t *testing.T) {
 		relPath string
 		want    bool
 	}{
-		{"debug.log", true},     // ignored by first rule
+		{"debug.log", true},      // ignored by first rule
 		{"important.log", false}, // un-ignored by negation rule
 		{"app.txt", false},       // not matched by either rule
 	}
@@ -502,8 +502,8 @@ func TestIsIgnored_DirectoryOnlyRuleSkipsFiles(t *testing.T) {
 func TestIsIgnored_LaterRuleWins(t *testing.T) {
 	m := &ignoreMatcher{}
 	m.rules = []ignoreRule{
-		makeRule("", "*.cfg", false, false, false), // ignore all .cfg
-		makeRule("", "keep.cfg", true, false, false), // un-ignore keep.cfg
+		makeRule("", "*.cfg", false, false, false),    // ignore all .cfg
+		makeRule("", "keep.cfg", true, false, false),  // un-ignore keep.cfg
 		makeRule("", "keep.cfg", false, false, false), // then re-ignore keep.cfg
 	}
 
@@ -574,7 +574,7 @@ func writeGitignore(t *testing.T, dir, content string) {
 // succeeds and creates an empty matcher when no .gitignore exists.
 func TestLoadIgnoreMatcher_NoGitignoreFile(t *testing.T) {
 	dir := t.TempDir()
-	m := loadIgnoreMatcher(dir)
+	m := loadIgnoreMatcher(dir, dir)
 	if m == nil {
 		t.Fatal("loadIgnoreMatcher returned nil")
 	}
@@ -589,7 +589,7 @@ func TestLoadIgnoreMatcher_BasicPatterns(t *testing.T) {
 	dir := t.TempDir()
 	writeGitignore(t, dir, "# comment\n*.log\nbuild/\n/dist\n")
 
-	m := loadIgnoreMatcher(dir)
+	m := loadIgnoreMatcher(dir, dir)
 	if m == nil {
 		t.Fatal("loadIgnoreMatcher returned nil")
 	}
@@ -599,14 +599,14 @@ func TestLoadIgnoreMatcher_BasicPatterns(t *testing.T) {
 		isDir   bool
 		want    bool
 	}{
-		{"app.log", false, true},          // matches *.log
-		{"logs/server.log", false, true},  // matches *.log (basename)
-		{"build", true, true},             // matches build/ (dirOnly)
-		{"build", false, false},           // build/ rule is dirOnly — files not ignored
-		{"src/build", true, true},         // non-anchored, so matches src/build dir too
-		{"dist", false, true},             // matches /dist (anchored)
-		{"src/dist", false, false},        // /dist is anchored to root, src/dist not matched
-		{"main.go", false, false},         // not ignored
+		{"app.log", false, true},         // matches *.log
+		{"logs/server.log", false, true}, // matches *.log (basename)
+		{"build", true, true},            // matches build/ (dirOnly)
+		{"build", false, false},          // build/ rule is dirOnly — files not ignored
+		{"src/build", true, true},        // non-anchored, so matches src/build dir too
+		{"dist", false, true},            // matches /dist (anchored)
+		{"src/dist", false, false},       // /dist is anchored to root, src/dist not matched
+		{"main.go", false, false},        // not ignored
 	}
 	for _, tt := range tests {
 		t.Run(tt.relPath+"/isDir="+boolStr(tt.isDir), func(t *testing.T) {
@@ -624,7 +624,7 @@ func TestLoadIgnoreMatcher_NegationPattern(t *testing.T) {
 	dir := t.TempDir()
 	writeGitignore(t, dir, "*.log\n!keep.log\n")
 
-	m := loadIgnoreMatcher(dir)
+	m := loadIgnoreMatcher(dir, dir)
 
 	tests := []struct {
 		relPath string
@@ -650,7 +650,7 @@ func TestLoadIgnoreMatcher_BlankLinesAndComments(t *testing.T) {
 	dir := t.TempDir()
 	writeGitignore(t, dir, "\n# first comment\n\n# second comment\n*.tmp\n")
 
-	m := loadIgnoreMatcher(dir)
+	m := loadIgnoreMatcher(dir, dir)
 
 	// Only the *.tmp rule should have been loaded.
 	if len(m.rules) != 1 {
@@ -676,8 +676,8 @@ func TestLoadFile_SubdirectoryGitignore(t *testing.T) {
 	vendorDir := filepath.Join(dir, "vendor")
 	writeGitignore(t, vendorDir, "*.tmp\n")
 
-	m := loadIgnoreMatcher(dir)         // loads root .gitignore
-	m.loadFile(dir, "vendor/")          // loads vendor/.gitignore
+	m := loadIgnoreMatcher(dir, dir) // loads root .gitignore
+	m.loadFile(dir, "vendor/")       // loads vendor/.gitignore
 
 	tests := []struct {
 		relPath string
@@ -1031,7 +1031,7 @@ func TestLoadIgnoreMatcher_RuleCount(t *testing.T) {
 	content := "# comment 1\n\n*.log\n# comment 2\nbuild/\n\n"
 	writeGitignore(t, dir, content)
 
-	m := loadIgnoreMatcher(dir)
+	m := loadIgnoreMatcher(dir, dir)
 	// Expected: 2 rules ("*.log" and "build/"), all others are blank or comments.
 	if len(m.rules) != 2 {
 		t.Errorf("expected 2 rules, got %d", len(m.rules))
@@ -1062,3 +1062,143 @@ func TestParseIgnoreLine_PatternPreservesGlob(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Tests for ** (double-star) glob patterns
+// ---------------------------------------------------------------------------
+
+// TestMatchGlob_DoubleStar verifies that matchGlob handles ** patterns
+// correctly: matching zero or more path components.
+func TestMatchGlob_DoubleStar(t *testing.T) {
+	tests := []struct {
+		pattern string
+		name    string
+		want    bool
+	}{
+		// Leading **/
+		{"**/foo", "foo", true},
+		{"**/foo", "a/foo", true},
+		{"**/foo", "a/b/foo", true},
+		{"**/foo", "a/b/c/foo", true},
+		{"**/foo", "bar", false},
+		{"**/foo", "a/bar", false},
+
+		// Trailing /**
+		{"foo/**", "foo/a", true},
+		{"foo/**", "foo/a/b", true},
+		{"foo/**", "foo/a/b/c", true},
+		{"foo/**", "bar/a", false},
+
+		// Middle /**/
+		{"a/**/b", "a/b", true},
+		{"a/**/b", "a/x/b", true},
+		{"a/**/b", "a/x/y/b", true},
+		{"a/**/b", "a/x/y/z/b", true},
+		{"a/**/b", "c/x/b", false},
+
+		// ** alone
+		{"**", "anything", true},
+		{"**", "a/b/c", true},
+
+		// Patterns without ** (should fall through to filepath.Match)
+		{"*.log", "test.log", true},
+		{"*.log", "test.txt", false},
+		{"foo", "foo", true},
+		{"foo", "bar", false},
+
+		// ** with wildcards in other segments
+		{"**/*.log", "test.log", true},
+		{"**/*.log", "a/test.log", true},
+		{"**/*.log", "a/b/test.log", true},
+		{"**/*.log", "test.txt", false},
+
+		// Complex patterns
+		{"**/node_modules/**", "node_modules/foo", true},
+		{"**/node_modules/**", "a/node_modules/foo", true},
+		{"**/node_modules/**", "a/b/node_modules/foo/bar", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pattern+"_vs_"+tt.name, func(t *testing.T) {
+			got := matchGlob(tt.pattern, tt.name)
+			if got != tt.want {
+				t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseIgnoreLine_DoubleStarAnchoring verifies that patterns starting with
+// **/ are NOT treated as anchored, matching git's behavior.
+func TestParseIgnoreLine_DoubleStarAnchoring(t *testing.T) {
+	tests := []struct {
+		line         string
+		wantAnchored bool
+		wantPattern  string
+	}{
+		{"**/foo", false, "**/foo"},
+		{"**/node_modules/", false, "**/node_modules"},
+		{"**/.DS_Store", false, "**/.DS_Store"},
+		{"**/foo/bar", true, "**/foo/bar"},   // slash after ** prefix → anchored
+		{"foo/**/bar", true, "foo/**/bar"},   // not starting with ** → anchored
+		{"src/**/*.js", true, "src/**/*.js"}, // not starting with ** → anchored
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			pat, ok := parseIgnoreLine(tt.line)
+			if !ok {
+				t.Fatalf("parseIgnoreLine(%q): expected ok=true", tt.line)
+			}
+			if pat.anchored != tt.wantAnchored {
+				t.Errorf("anchored = %v, want %v", pat.anchored, tt.wantAnchored)
+			}
+			if pat.pattern != tt.wantPattern {
+				t.Errorf("pattern = %q, want %q", pat.pattern, tt.wantPattern)
+			}
+		})
+	}
+}
+
+// TestIsIgnored_DoubleStarNodeModules verifies the specific scenario where
+// "**/node_modules/" or "node_modules/" in .gitignore should ignore
+// node_modules directories at any nesting depth.
+func TestIsIgnored_DoubleStarNodeModules(t *testing.T) {
+	tests := []struct {
+		name     string
+		patterns []string // gitignore lines
+		path     string
+		isDir    bool
+		want     bool
+	}{
+		// Plain "node_modules/" (non-anchored, dirOnly)
+		{"plain/root", []string{"node_modules/"}, "node_modules", true, true},
+		{"plain/nested1", []string{"node_modules/"}, "frontend/node_modules", true, true},
+		{"plain/nested2", []string{"node_modules/"}, "a/b/node_modules", true, true},
+		{"plain/file", []string{"node_modules/"}, "node_modules", false, false}, // dirOnly
+
+		// "**/node_modules/" pattern
+		{"dstar/root", []string{"**/node_modules/"}, "node_modules", true, true},
+		{"dstar/nested1", []string{"**/node_modules/"}, "frontend/node_modules", true, true},
+		{"dstar/nested2", []string{"**/node_modules/"}, "a/b/node_modules", true, true},
+		{"dstar/nested3", []string{"**/node_modules/"}, "a/b/c/d/node_modules", true, true},
+		{"dstar/file", []string{"**/node_modules/"}, "node_modules", false, false},
+
+		// "**/node_modules" without trailing slash (matches files too)
+		{"dstar_nodir/file", []string{"**/node_modules"}, "node_modules", false, true},
+		{"dstar_nodir/dir", []string{"**/node_modules"}, "frontend/node_modules", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &ignoreMatcher{}
+			for _, line := range tt.patterns {
+				pat, ok := parseIgnoreLine(line)
+				if !ok {
+					t.Fatalf("parseIgnoreLine(%q) returned ok=false", line)
+				}
+				m.rules = append(m.rules, ignoreRule{baseDir: "", pat: pat})
+			}
+			got := m.isIgnored(tt.path, tt.isDir)
+			if got != tt.want {
+				t.Errorf("isIgnored(%q, isDir=%v) = %v, want %v", tt.path, tt.isDir, got, tt.want)
+			}
+		})
+	}
+}
