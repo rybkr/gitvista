@@ -108,7 +108,7 @@ export function createFileContentViewer() {
                 lines.forEach((_, i) => {
                     const span = document.createElement("span");
                     span.className = "file-content-linenum";
-                    span.textContent = String(i + 1) + "\n";
+                    span.textContent = String(i + 1);
                     lineNumsPre.appendChild(span);
                 });
                 codeWrapper.insertAdjacentElement("beforebegin", lineNumsPre);
