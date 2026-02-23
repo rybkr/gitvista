@@ -223,7 +223,7 @@ export function createGraphController(rootElement, options = {}) {
         viewportHeight,
         onTick: tick,
     });
-    const laneStrategy = new LaneStrategy();
+    const laneStrategy = new LaneStrategy({ onTick: tick });
 
     // Restore layout mode from localStorage, default to "force"
     const STORAGE_KEY_LAYOUT_MODE = "gitvista-layout-mode";
@@ -326,6 +326,7 @@ export function createGraphController(rootElement, options = {}) {
 
         // Force immediate reposition
         updateGraph();
+        render();
     };
 
     // Wire button click handlers
@@ -1199,6 +1200,9 @@ export function createGraphController(rootElement, options = {}) {
                 tooltipManager,
                 headHash: state.headHash,
                 hoverNode: state.hoverNode,
+                tags: state.tags,
+                layoutMode: state.layoutMode,
+                laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
             });
         });
     }

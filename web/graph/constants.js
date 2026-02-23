@@ -52,10 +52,13 @@ export const TREE_ICON_SIZE = 7;
 export const TREE_ICON_OFFSET = 2;
 
 // Lane layout constants for lane-based positioning strategy
-export const LANE_WIDTH = 80; // Pixels between lane centers
+export const LANE_WIDTH = 120; // Pixels between lane centers
 export const LANE_MARGIN = 60; // Left margin for lane 0
+export const LANE_VERTICAL_STEP = 70; // Dedicated vertical spacing for lane mode
 export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
 export const LANE_CORNER_RADIUS = 10; // Rounded corner radius for cross-lane stepped paths
+export const LANE_HEADER_FONT =
+    "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 export const LANE_COLORS = [
     "#0969da", // Blue
     "#8250df", // Purple

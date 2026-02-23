@@ -33,6 +33,9 @@ import {
     HOVER_GLOW_EXTRA_RADIUS,
     HOVER_GLOW_OPACITY,
     LANE_CORNER_RADIUS,
+    LANE_WIDTH,
+    LANE_MARGIN,
+    LANE_HEADER_FONT,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 import { getAuthorColor } from "../../utils/colors.js";
@@ -63,11 +66,20 @@ export class GraphRenderer {
         const highlightKey = state.tooltipManager?.getHighlightKey();
         const headHash = state.headHash ?? "";
         const hoverNode = state.hoverNode ?? null;
+        const tags = state.tags ?? new Map();
+
+        const laneInfo = state.laneInfo ?? [];
+
         this.clear(viewportWidth, viewportHeight);
         this.setupTransform(zoomTransform);
 
+        if (laneInfo.length > 0) {
+            this.renderLaneBackgrounds(laneInfo, viewportHeight, zoomTransform);
+        }
+
         this.renderLinks(links, nodes);
-        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode);
+        const layoutMode = state.layoutMode ?? "force";
+        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode);
 
         this.ctx.restore();
     }
@@ -100,6 +112,55 @@ export class GraphRenderer {
     setupTransform(zoomTransform) {
         this.ctx.translate(zoomTransform.x, zoomTransform.y);
         this.ctx.scale(zoomTransform.k, zoomTransform.k);
+    }
+
+    /**
+     * Renders semi-transparent vertical background strips and branch name headers
+     * for each lane in lane layout mode.
+     *
+     * @param {Array<{index: number, color: string, branchName: string, minY: number, maxY: number}>} laneInfo Lane metadata.
+     * @param {number} viewportHeight Viewport height in CSS pixels.
+     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     */
+    renderLaneBackgrounds(laneInfo, viewportHeight, zoomTransform) {
+        const k = zoomTransform.k;
+        // Convert viewport bounds into graph coordinates for the vertical extent
+        const topY = -zoomTransform.y / k;
+        const bottomY = topY + viewportHeight / k;
+
+        for (const lane of laneInfo) {
+            const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+            const halfW = LANE_WIDTH / 2 - 4;
+
+            // Draw vertical strip
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.06;
+            this.ctx.fillStyle = lane.color;
+            this.ctx.fillRect(cx - halfW, topY, halfW * 2, bottomY - topY);
+            this.ctx.restore();
+
+            // Draw branch name header at top of visible area
+            if (lane.branchName) {
+                const headerY = topY + 18 / k;
+                this.ctx.save();
+                this.ctx.font = LANE_HEADER_FONT;
+                this.ctx.textAlign = "center";
+                this.ctx.textBaseline = "top";
+
+                // Halo for readability
+                this.ctx.lineWidth = 3;
+                this.ctx.lineJoin = "round";
+                this.ctx.strokeStyle = this.palette.labelHalo;
+                this.ctx.globalAlpha = 0.9;
+                this.ctx.strokeText(lane.branchName, cx, headerY);
+
+                // Text
+                this.ctx.globalAlpha = 0.75;
+                this.ctx.fillStyle = lane.color;
+                this.ctx.fillText(lane.branchName, cx, headerY);
+                this.ctx.restore();
+            }
+        }
     }
 
     /**
@@ -269,11 +330,17 @@ export class GraphRenderer {
      * @param {string} color Stroke and fill color for the arrow.
      */
     renderSteppedArrow(source, target, targetRadius, color) {
+        // Determine direction: target may be above or below source
+        const goingDown = target.y >= source.y;
+        const dir = goingDown ? 1 : -1;
+
         // Calculate midpoint Y with stagger for octopus merges
-        // Use hash of source position to deterministically stagger multiple parents
-        const stagger = ((source.x * 17 + source.y * 13) % 20) - 10;
+        // Use lane indices (small bounded integers) for deterministic stagger
+        const sourceLane = source.laneIndex ?? 0;
+        const targetLane = target.laneIndex ?? 0;
+        const stagger = ((sourceLane * 7 + targetLane * 13) % 11) - 5;
         const midY = (source.y + target.y) / 2 + stagger;
-        const endY = target.y - targetRadius - ARROW_LENGTH;
+        const endY = target.y - dir * (targetRadius + ARROW_LENGTH);
 
         // Clamp corner radius so it doesn't exceed half the available
         // vertical or horizontal span (avoids visual artefacts on tight paths).
@@ -293,11 +360,11 @@ export class GraphRenderer {
         this.ctx.lineTo(target.x, endY);
         this.ctx.stroke();
 
-        // Draw arrowhead pointing down at target
-        const arrowTipY = target.y - targetRadius;
+        // Draw arrowhead pointing toward target
+        const arrowTipY = target.y - dir * targetRadius;
         this.ctx.save();
         this.ctx.translate(target.x, arrowTipY);
-        this.ctx.rotate(Math.PI / 2); // Point downward
+        this.ctx.rotate(goingDown ? Math.PI / 2 : -Math.PI / 2);
         this.ctx.beginPath();
         this.ctx.moveTo(0, 0);
         this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
@@ -314,10 +381,23 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode) {
+    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode) {
+        // Build a reverse map: commit hash -> array of tag names pointing at it.
+        const tagsByCommit = new Map();
+        if (tags) {
+            for (const [tagName, commitHash] of tags) {
+                const existing = tagsByCommit.get(commitHash);
+                if (existing) {
+                    existing.push(tagName);
+                } else {
+                    tagsByCommit.set(commitHash, [tagName]);
+                }
+            }
+        }
+
         for (const node of nodes) {
             if (node.type === "commit") {
-                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode);
+                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode);
             }
         }
         for (const node of nodes) {
@@ -338,7 +418,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      * @param {string|null} highlightKey Current highlight identifier.
      */
-    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode) {
+    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
@@ -421,7 +501,7 @@ export class GraphRenderer {
         // Skip label rendering for dimmed nodes — labels at 15% opacity would
         // clutter the view without adding navigational value.
         if (!isDimmed) {
-            this.renderCommitLabel(node, spawnAlpha, zoomTransform);
+            this.renderCommitLabel(node, spawnAlpha, zoomTransform, layoutMode);
         }
     }
 
@@ -494,9 +574,8 @@ export class GraphRenderer {
      */
     renderNormalMerge(node, radius) {
         const authorEmail = node.commit?.author?.email;
-        this.ctx.fillStyle = authorEmail
-            ? getAuthorColor(authorEmail)
-            : this.palette.mergeNode;
+        this.ctx.fillStyle = node.laneColor
+            || (authorEmail ? getAuthorColor(authorEmail) : this.palette.mergeNode);
         this.applyShadow();
         this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
@@ -549,7 +628,7 @@ export class GraphRenderer {
      *
      * @param {import("../types.js").GraphNodeCommit} node Commit node to annotate.
      */
-    renderCommitLabel(node, spawnAlpha = 1, zoomTransform) {
+    renderCommitLabel(node, spawnAlpha = 1, zoomTransform, layoutMode) {
         if (!node.commit?.hash) return;
 
         const text = shortenHash(node.commit.hash);
@@ -580,8 +659,9 @@ export class GraphRenderer {
         // Tier 1 (zoom >= 1.5): first line of commit message
         if (zoomK >= COMMIT_MESSAGE_ZOOM_THRESHOLD && node.commit.message) {
             const firstLine = node.commit.message.split("\n")[0].trim();
-            const truncated = firstLine.length > COMMIT_MESSAGE_MAX_CHARS
-                ? firstLine.slice(0, COMMIT_MESSAGE_MAX_CHARS) + "…"
+            const maxChars = layoutMode === "lane" ? 30 : COMMIT_MESSAGE_MAX_CHARS;
+            const truncated = firstLine.length > maxChars
+                ? firstLine.slice(0, maxChars) + "…"
                 : firstLine;
             this.ctx.font = COMMIT_MESSAGE_FONT;
             this.ctx.globalAlpha = 0.65 * spawnAlpha;

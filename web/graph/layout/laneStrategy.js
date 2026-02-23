@@ -16,10 +16,9 @@
 import {
 	LANE_WIDTH,
 	LANE_MARGIN,
+	LANE_VERTICAL_STEP,
 	LANE_TRANSITION_DURATION,
 	LANE_COLORS,
-	LINK_DISTANCE,
-	TIMELINE_SPACING,
 	TIMELINE_PADDING,
 	TIMELINE_MARGIN,
 } from "../constants.js";
@@ -30,7 +29,10 @@ import { getCommitTimestamp } from "../utils/time.js";
  * @implements {LayoutStrategy}
  */
 export class LaneStrategy {
-	constructor() {
+	constructor(options = {}) {
+		/** @type {Function|null} Callback invoked each animation frame (mirrors ForceStrategy pattern) */
+		this._onTick = options.onTick || null;
+
 		/** @type {Map<string, number>} Map from commit hash to lane index */
 		this.commitToLane = new Map();
 
@@ -51,6 +53,9 @@ export class LaneStrategy {
 
 		/** @type {number} Viewport height for layout calculations */
 		this.viewportHeight = 0;
+
+		/** @type {Array<{index: number, color: string, branchName: string, minY: number, maxY: number}>} */
+		this._laneInfo = [];
 	}
 
 	/**
@@ -79,6 +84,9 @@ export class LaneStrategy {
 
 		// Compute target positions for all nodes
 		this.computeTargetPositions(nodes, commits);
+
+		// Build lane info for rendering backgrounds and headers
+		this._buildLaneInfo(nodes, branches);
 
 		// Store current positions as start positions
 		this.transitionStartPositions.clear();
@@ -131,6 +139,9 @@ export class LaneStrategy {
 
 		// Update target positions
 		this.computeTargetPositions(nodes, commits);
+
+		// Rebuild lane info for rendering
+		this._buildLaneInfo(nodes, branches);
 
 		// Apply positions immediately (no transition for incremental updates)
 		this.applyTargetPositions(nodes);
@@ -349,6 +360,70 @@ export class LaneStrategy {
 	}
 
 	/**
+	 * Returns lane metadata for rendering lane backgrounds and headers.
+	 * @returns {Array<{index: number, color: string, branchName: string, minY: number, maxY: number}>}
+	 */
+	getLaneInfo() {
+		return this._laneInfo;
+	}
+
+	/**
+	 * Builds lane info array from current lane assignments and target positions.
+	 * Maps lanes to branch names by checking which branch tips occupy which lanes.
+	 *
+	 * @param {Array<Object>} nodes Array of graph nodes
+	 * @param {Map<string, string>} branches Map of branch name to target hash
+	 */
+	_buildLaneInfo(nodes, branches) {
+		// Collect per-lane data: Y extents and candidate branch names
+		const laneData = new Map();
+
+		for (const node of nodes) {
+			if (node.type !== "commit") continue;
+			const laneIndex = this.commitToLane.get(node.hash);
+			if (laneIndex === undefined) continue;
+
+			const target = this.transitionTargetPositions.get(node.hash);
+			const y = target ? target.y : node.y;
+
+			if (!laneData.has(laneIndex)) {
+				laneData.set(laneIndex, {
+					index: laneIndex,
+					color: LANE_COLORS[laneIndex % LANE_COLORS.length],
+					branchName: "",
+					minY: y,
+					maxY: y,
+				});
+			} else {
+				const info = laneData.get(laneIndex);
+				info.minY = Math.min(info.minY, y);
+				info.maxY = Math.max(info.maxY, y);
+			}
+		}
+
+		// Map branch tips to lanes for naming
+		if (branches) {
+			for (const [branchName, targetHash] of branches.entries()) {
+				const laneIndex = this.commitToLane.get(targetHash);
+				if (laneIndex === undefined) continue;
+				const info = laneData.get(laneIndex);
+				if (!info || info.branchName) continue; // First branch wins
+
+				// Strip refs/heads/ and refs/remotes/ prefixes for display
+				let displayName = branchName;
+				if (displayName.startsWith("refs/heads/")) {
+					displayName = displayName.slice("refs/heads/".length);
+				} else if (displayName.startsWith("refs/remotes/")) {
+					displayName = displayName.slice("refs/remotes/".length);
+				}
+				info.branchName = displayName;
+			}
+		}
+
+		this._laneInfo = Array.from(laneData.values()).sort((a, b) => a.index - b.index);
+	}
+
+	/**
 	 * Computes target positions for all commit nodes.
 	 * Y-axis: chronological (newest at top)
 	 * X-axis: lane-based (LANE_MARGIN + laneIndex * LANE_WIDTH)
@@ -375,7 +450,7 @@ export class LaneStrategy {
 		// Calculate vertical spacing
 		const count = ordered.length;
 		const span = Math.max(1, count - 1);
-		const baseStep = LINK_DISTANCE * TIMELINE_SPACING;
+		const baseStep = LANE_VERTICAL_STEP;
 		const desiredLength = span * baseStep + TIMELINE_PADDING;
 		const available = Math.max(desiredLength, this.viewportHeight - TIMELINE_MARGIN * 2);
 		const step = span === 0 ? 0 : available / span;
@@ -411,11 +486,29 @@ export class LaneStrategy {
 	}
 
 	/**
-	 * Starts the transition animation.
+	 * Starts the transition animation and kicks off the rAF render loop.
 	 */
 	startTransition() {
 		this.isTransitioning = true;
 		this.transitionStartTime = performance.now();
+		this._runTransitionFrame();
+	}
+
+	/**
+	 * Drives the transition animation via requestAnimationFrame.
+	 * Calls tick() to interpolate positions, then onTick() to trigger rendering.
+	 */
+	_runTransitionFrame() {
+		if (!this.isTransitioning) return;
+
+		const needsRender = this.tick();
+		if (needsRender && this._onTick) {
+			this._onTick();
+		}
+
+		if (this.isTransitioning) {
+			this.animationFrameId = requestAnimationFrame(() => this._runTransitionFrame());
+		}
 	}
 
 	/**
