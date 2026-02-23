@@ -35,7 +35,7 @@ import {
     LANE_CORNER_RADIUS,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
-import { getAuthorColor } from "../../utils/colors.js";
+import { getAuthorColor, computeHighlightColors } from "../../utils/colors.js";
 import { relativeTime } from "../utils/time.js";
 
 /**
@@ -109,6 +109,33 @@ export class GraphRenderer {
      */
     updatePalette(palette) {
         this.palette = palette;
+    }
+
+    /**
+     * Returns the effective fill color for a commit node.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Commit node.
+     * @returns {string} CSS color string.
+     */
+    getCommitColor(node) {
+        const authorEmail = node.commit?.author?.email;
+        return (
+            node.laneColor ||
+            (authorEmail ? getAuthorColor(authorEmail) : this.palette.node)
+        );
+    }
+
+    /**
+     * Returns the effective fill color for a merge commit node.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Merge commit node.
+     * @returns {string} CSS color string.
+     */
+    getMergeColor(node) {
+        const authorEmail = node.commit?.author?.email;
+        return authorEmail
+            ? getAuthorColor(authorEmail)
+            : this.palette.mergeNode;
     }
 
     /**
@@ -408,10 +435,13 @@ export class GraphRenderer {
         // HEAD accent ring — rendered even when dimmed so HEAD is identifiable
         // during search. Its alpha is scaled by dimMultiplier for consistency.
         if (isHead) {
+            const headColor = isMerge
+                ? this.getMergeColor(node)
+                : this.getCommitColor(node);
             this.ctx.save();
             this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45 * dimMultiplier;
             this.ctx.lineWidth = 1.5;
-            this.ctx.strokeStyle = this.palette.nodeHighlight;
+            this.ctx.strokeStyle = headColor;
             this.ctx.beginPath();
             this.ctx.arc(node.x, node.y, drawRadius + 3.5, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -432,10 +462,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderNormalCommit(node, radius) {
-        // Lane mode: use lane color. Force mode: use author-derived color.
-        const authorEmail = node.commit?.author?.email;
-        this.ctx.fillStyle = node.laneColor
-            || (authorEmail ? getAuthorColor(authorEmail) : this.palette.node);
+        this.ctx.fillStyle = this.getCommitColor(node);
         this.applyShadow();
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -449,8 +476,11 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      */
     renderHighlightedCommit(node, radius) {
+        const baseColor = this.getCommitColor(node);
+        const hl = computeHighlightColors(baseColor, this.palette.isDark);
+
         this.ctx.save();
-        this.ctx.fillStyle = this.palette.nodeHighlightGlow;
+        this.ctx.fillStyle = hl.glow;
         this.ctx.globalAlpha = 0.35;
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius + 7, 0, Math.PI * 2);
@@ -465,9 +495,9 @@ export class GraphRenderer {
             node.y,
             radius,
         );
-        gradient.addColorStop(0, this.palette.nodeHighlightCore);
-        gradient.addColorStop(0.7, this.palette.nodeHighlight);
-        gradient.addColorStop(1, this.palette.nodeHighlightRing);
+        gradient.addColorStop(0, hl.core);
+        gradient.addColorStop(0.7, hl.highlight);
+        gradient.addColorStop(1, hl.ring);
 
         this.ctx.fillStyle = gradient;
         this.applyShadow();
@@ -478,7 +508,7 @@ export class GraphRenderer {
 
         this.ctx.save();
         this.ctx.lineWidth = 1.25;
-        this.ctx.strokeStyle = this.palette.nodeHighlight;
+        this.ctx.strokeStyle = hl.highlight;
         this.ctx.globalAlpha = 0.8;
         this.ctx.beginPath();
         this.ctx.arc(node.x, node.y, radius + 1.8, 0, Math.PI * 2);
@@ -493,10 +523,7 @@ export class GraphRenderer {
      * @param {number} radius Half-diagonal of the diamond.
      */
     renderNormalMerge(node, radius) {
-        const authorEmail = node.commit?.author?.email;
-        this.ctx.fillStyle = authorEmail
-            ? getAuthorColor(authorEmail)
-            : this.palette.mergeNode;
+        this.ctx.fillStyle = this.getMergeColor(node);
         this.applyShadow();
         this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
@@ -510,8 +537,11 @@ export class GraphRenderer {
      * @param {number} radius Half-diagonal of the diamond.
      */
     renderHighlightedMerge(node, radius) {
+        const baseColor = this.getMergeColor(node);
+        const hl = computeHighlightColors(baseColor, this.palette.isDark);
+
         this.ctx.save();
-        this.ctx.fillStyle = this.palette.mergeHighlightGlow;
+        this.ctx.fillStyle = hl.glow;
         this.ctx.globalAlpha = 0.35;
         this.drawDiamond(node.x, node.y, radius + 7);
         this.ctx.fill();
@@ -525,9 +555,9 @@ export class GraphRenderer {
             node.y,
             radius,
         );
-        gradient.addColorStop(0, this.palette.mergeHighlightCore);
-        gradient.addColorStop(0.7, this.palette.mergeHighlight);
-        gradient.addColorStop(1, this.palette.mergeHighlightRing);
+        gradient.addColorStop(0, hl.core);
+        gradient.addColorStop(0.7, hl.highlight);
+        gradient.addColorStop(1, hl.ring);
 
         this.ctx.fillStyle = gradient;
         this.applyShadow();
@@ -537,7 +567,7 @@ export class GraphRenderer {
 
         this.ctx.save();
         this.ctx.lineWidth = 1.25;
-        this.ctx.strokeStyle = this.palette.mergeHighlight;
+        this.ctx.strokeStyle = hl.highlight;
         this.ctx.globalAlpha = 0.8;
         this.drawDiamond(node.x, node.y, radius + 1.8);
         this.ctx.stroke();

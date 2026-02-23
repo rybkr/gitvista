@@ -75,3 +75,108 @@ export function getAuthorColor(email) {
     colorCache.set(email, color);
     return color;
 }
+
+/**
+ * Converts an HSL triplet to RGB.
+ *
+ * @param {number} h Hue in degrees (0–360).
+ * @param {number} s Saturation percentage (0–100).
+ * @param {number} l Lightness percentage (0–100).
+ * @returns {{ r: number, g: number, b: number }} RGB values (0–255).
+ */
+function hslToRgb(h, s, l) {
+    s /= 100;
+    l /= 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+        const k = (n + h / 30) % 12;
+        return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    };
+    return {
+        r: Math.round(f(0) * 255),
+        g: Math.round(f(8) * 255),
+        b: Math.round(f(4) * 255),
+    };
+}
+
+/**
+ * Converts RGB values to an HSL triplet.
+ *
+ * @param {number} r Red (0–255).
+ * @param {number} g Green (0–255).
+ * @param {number} b Blue (0–255).
+ * @returns {{ h: number, s: number, l: number }} Hue (0–360), saturation (0–100), lightness (0–100).
+ */
+function rgbToHsl(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l: l * 100 };
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+    return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
+/**
+ * Parses a CSS color string (hex or hsl) into HSL and RGB components.
+ *
+ * @param {string} color CSS color string (#hex or hsl(...)).
+ * @returns {{ h: number, s: number, l: number, r: number, g: number, b: number }}
+ */
+function parseColor(color) {
+    const hslMatch = color.match(
+        /hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%?\s*,\s*([\d.]+)%?\s*\)/,
+    );
+    if (hslMatch) {
+        const h = parseFloat(hslMatch[1]);
+        const s = parseFloat(hslMatch[2]);
+        const l = parseFloat(hslMatch[3]);
+        const { r, g, b } = hslToRgb(h, s, l);
+        return { h, s, l, r, g, b };
+    }
+    const hex = color.replace("#", "");
+    const fullHex =
+        hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+    const r = parseInt(fullHex.substring(0, 2), 16);
+    const g = parseInt(fullHex.substring(2, 4), 16);
+    const b = parseInt(fullHex.substring(4, 6), 16);
+    const hsl = rgbToHsl(r, g, b);
+    return { ...hsl, r, g, b };
+}
+
+/** Memoized map from "color|isDark" to computed highlight object. */
+const highlightCache = new Map();
+
+/**
+ * Computes highlight color variants (glow, core, highlight, ring) for an
+ * arbitrary base color. Used so that a node's highlight treatment matches
+ * its actual rendered color rather than a fixed palette value.
+ *
+ * @param {string} baseColor CSS color string (hex or hsl).
+ * @param {boolean} isDark Whether the current theme is dark.
+ * @returns {{ glow: string, core: string, highlight: string, ring: string }}
+ */
+export function computeHighlightColors(baseColor, isDark) {
+    const key = `${baseColor}|${isDark ? 1 : 0}`;
+    const cached = highlightCache.get(key);
+    if (cached) return cached;
+
+    const { h, s, r, g, b } = parseColor(baseColor);
+    const result = {
+        glow: `rgba(${r}, ${g}, ${b}, 0.3)`,
+        core: isDark
+            ? `hsl(${h}, ${Math.min(s, 50)}%, 13%)`
+            : `hsl(${h}, ${Math.min(s, 60)}%, 96%)`,
+        highlight: baseColor,
+        ring: baseColor,
+    };
+    highlightCache.set(key, result);
+    return result;
+}

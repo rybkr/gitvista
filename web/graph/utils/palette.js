@@ -15,7 +15,18 @@ export function buildPalette(element) {
     const read = (name, fallback) =>
         styles.getPropertyValue(name)?.trim() || fallback;
 
+    const bg = read("--bg-color", "#ffffff");
+    // Determine light vs dark theme from background luminance.
+    const isDark = (() => {
+        const hex = bg.replace("#", "");
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        return (0.299 * r + 0.587 * g + 0.114 * b) < 128;
+    })();
+
     return {
+        isDark,
         background: read("--surface-color", "#ffffff"),
         node: read("--node-color", "#0969da"),
         link: read("--link-color", "#d0d7de"),
