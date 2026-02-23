@@ -459,6 +459,12 @@ export class LaneStrategy {
 			lc.yByHash.set(node.hash, y);
 		}
 
+		// Global hash→Y lookup (across all lanes) for resolving fork/merge points
+		const hashToY = new Map();
+		for (const lc of laneCommits.values()) {
+			for (const [h, y] of lc.yByHash) hashToY.set(h, y);
+		}
+
 		// Build segments per lane using parent-child connectivity (union-find)
 		const laneData = new Map();
 
@@ -490,19 +496,58 @@ export class LaneStrategy {
 				}
 			}
 
-			// Group into connected components
+			// Group into connected components (collect hashes per group)
 			const groups = new Map();
 			for (const hash of lc.hashes) {
 				const root = find(hash);
 				if (!groups.has(root)) groups.set(root, []);
-				groups.get(root).push(lc.yByHash.get(hash));
+				groups.get(root).push(hash);
 			}
 
-			// Build segments from groups
+			// Build segments from groups, extending to fork/merge points
 			const segments = [];
-			for (const ys of groups.values()) {
-				ys.sort((a, b) => a - b);
-				segments.push({ minY: ys[0], maxY: ys[ys.length - 1] });
+			for (const groupHashes of groups.values()) {
+				let minY = Infinity, maxY = -Infinity;
+				for (const h of groupHashes) {
+					const y = lc.yByHash.get(h);
+					if (y < minY) minY = y;
+					if (y > maxY) maxY = y;
+				}
+				const groupSet = new Set(groupHashes);
+
+				// Extend to fork point: find cross-lane parents of this
+				// segment's commits (the source of the right-going arrow
+				// that spawned this branch).
+				for (const h of groupHashes) {
+					const commit = commits?.get(h);
+					if (!commit?.parents) continue;
+					for (const ph of commit.parents) {
+						if (!groupSet.has(ph) && hashToY.has(ph)) {
+							const py = hashToY.get(ph);
+							if (py > maxY) maxY = py;
+							if (py < minY) minY = py;
+						}
+					}
+				}
+
+				// Extend to merge point: find cross-lane children that
+				// have a parent in this segment (the target of the
+				// left-going arrow merging this branch back).
+				for (const node of nodes) {
+					if (node.type !== "commit") continue;
+					if (groupSet.has(node.hash)) continue;
+					const commit = commits?.get(node.hash);
+					if (!commit?.parents) continue;
+					for (const ph of commit.parents) {
+						if (groupSet.has(ph) && hashToY.has(node.hash)) {
+							const cy = hashToY.get(node.hash);
+							if (cy < minY) minY = cy;
+							if (cy > maxY) maxY = cy;
+						}
+					}
+				}
+
+				segments.push({ minY, maxY });
 			}
 			segments.sort((a, b) => a.minY - b.minY);
 
