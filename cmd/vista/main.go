@@ -17,7 +17,8 @@ import (
 	"github.com/rybkr/gitvista/internal/server"
 )
 
-const version = "1.0.0"
+// version is set at build time via -ldflags "-X main.version=<tag>".
+var version = "dev"
 
 func main() {
 	initLogger()
