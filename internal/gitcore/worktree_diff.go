@@ -150,7 +150,7 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		return result, nil
 	}
 
-	if isBinaryContent(headContent) || isBinaryContent(diskContent) {
+	if IsBinaryContent(headContent) || IsBinaryContent(diskContent) {
 		result.IsBinary = true
 		return result, nil
 	}

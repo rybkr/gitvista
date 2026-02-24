@@ -7,13 +7,13 @@ import (
 	"github.com/rybkr/gitvista/internal/gitcore"
 )
 
-// File status label constants used across the server package.
+// File status label constants reference the canonical values in gitcore.
 const (
-	fileStatusAdded    = "added"
-	fileStatusModified = "modified"
-	fileStatusDeleted  = "deleted"
-	fileStatusRenamed  = "renamed"
-	fileStatusCopied   = "copied"
+	fileStatusAdded    = gitcore.StatusAdded
+	fileStatusModified = gitcore.StatusModified
+	fileStatusDeleted  = gitcore.StatusDeleted
+	fileStatusRenamed  = gitcore.StatusRenamed
+	fileStatusCopied   = gitcore.StatusCopied
 )
 
 // FileStatus represents the status of a file and its path.
@@ -119,55 +119,3 @@ func workStatusCode(s string) string {
 	}
 }
 
-// parsePorcelainStatus parses "git status --porcelain" output.
-// Format: XY PATH where X = index status, Y = worktree status.
-// Retained for use in unit tests.
-func parsePorcelainStatus(output string) *WorkingTreeStatus {
-	status := &WorkingTreeStatus{
-		Staged:    []FileStatus{},
-		Modified:  []FileStatus{},
-		Untracked: []FileStatus{},
-	}
-
-	for line := range strings.SplitSeq(output, "\n") {
-		if len(line) < 3 {
-			continue
-		}
-
-		x := line[0]
-		y := line[1]
-		path := line[3:]
-
-		if x == 'R' || y == 'R' {
-			if idx := strings.Index(path, " -> "); idx >= 0 {
-				path = path[idx+4:]
-			}
-		}
-
-		if x == '?' && y == '?' {
-			status.Untracked = append(status.Untracked, FileStatus{
-				Path:       path,
-				StatusCode: "?",
-			})
-			continue
-		}
-
-		// Staged changes (index has modifications)
-		if x == 'M' || x == 'A' || x == 'D' || x == 'R' || x == 'C' {
-			status.Staged = append(status.Staged, FileStatus{
-				Path:       path,
-				StatusCode: string(x),
-			})
-		}
-
-		// Worktree modifications
-		if y == 'M' || y == 'D' {
-			status.Modified = append(status.Modified, FileStatus{
-				Path:       path,
-				StatusCode: string(y),
-			})
-		}
-	}
-
-	return status
-}

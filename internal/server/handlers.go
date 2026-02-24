@@ -159,14 +159,9 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// isBinaryContent delegates to gitcore.IsBinaryContent to avoid duplication.
 func isBinaryContent(content []byte) bool {
-	checkSize := min(8192, len(content))
-	for i := range checkSize {
-		if content[i] == 0 {
-			return true
-		}
-	}
-	return false
+	return gitcore.IsBinaryContent(content)
 }
 
 func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {

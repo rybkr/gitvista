@@ -300,6 +300,7 @@ const (
 	StatusModified = "modified"
 	StatusDeleted  = "deleted"
 	StatusRenamed  = "renamed"
+	StatusCopied   = "copied"
 	StatusUnknown  = "unknown"
 )
 

@@ -293,7 +293,7 @@ func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path strin
 		return result, nil
 	}
 
-	if isBinaryContent(oldContent) || isBinaryContent(newContent) {
+	if IsBinaryContent(oldContent) || IsBinaryContent(newContent) {
 		result.IsBinary = true
 		return result, nil
 	}
@@ -305,8 +305,8 @@ func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path strin
 	return result, nil
 }
 
-// isBinaryContent uses Git's heuristic: checks first 8KB for null bytes.
-func isBinaryContent(data []byte) bool {
+// IsBinaryContent uses Git's heuristic: checks first 8KB for null bytes.
+func IsBinaryContent(data []byte) bool {
 	limit := len(data)
 	if limit > 8192 {
 		limit = 8192

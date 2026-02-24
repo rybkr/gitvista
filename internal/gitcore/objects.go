@@ -48,7 +48,7 @@ func (r *Repository) loadObjects() error {
 
 		object, err := r.readObject(ref)
 		if err != nil {
-			return fmt.Errorf("error traversing object: %v", err)
+			return fmt.Errorf("error traversing object: %w", err)
 		}
 
 		switch object.Type() {
