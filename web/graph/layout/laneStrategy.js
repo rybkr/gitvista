@@ -26,6 +26,45 @@ import {
 import { getCommitTimestamp } from "../utils/time.js";
 
 /**
+ * Extracts a branch name from a merge commit message.
+ * Handles standard patterns produced by git, GitHub, and custom messages:
+ *   "Merge branch 'feature/foo'"
+ *   "Merge branch 'feature/foo' into main"
+ *   "Merge remote-tracking branch 'origin/feature/foo'"
+ *   "Merge pull request #123 from user/branch-name"
+ *   "Merge feature/foo: description"
+ *   "Merge dev into main: description"
+ *
+ * @param {string} message Commit message (first line).
+ * @returns {string} Extracted branch name, or "" if no pattern matches.
+ */
+function parseMergeBranchName(message) {
+	const first = message.split("\n")[0];
+
+	// "Merge remote-tracking branch 'origin/name'" — strip remote prefix
+	const remoteMatch = first.match(/^Merge remote-tracking branch '([^']+)'/);
+	if (remoteMatch) {
+		const raw = remoteMatch[1];
+		const slashIdx = raw.indexOf("/");
+		return slashIdx >= 0 ? raw.slice(slashIdx + 1) : raw;
+	}
+
+	// "Merge branch 'name'" — keep the full branch name (no stripping)
+	const branchMatch = first.match(/^Merge branch '([^']+)'/);
+	if (branchMatch) return branchMatch[1];
+
+	// "Merge pull request #N from user/branch"
+	const prMatch = first.match(/^Merge pull request #\d+ from [^/]+\/(.+)/);
+	if (prMatch) return prMatch[1].trim();
+
+	// Custom merge messages: "Merge feature/foo: ..." or "Merge dev into main"
+	const customMatch = first.match(/^Merge ([\w][\w./-]*\w)(?:\s+into\b|\s*:|$)/);
+	if (customMatch) return customMatch[1];
+
+	return "";
+}
+
+/**
  * Lane-based layout strategy implementation.
  * @implements {LayoutStrategy}
  */
@@ -66,6 +105,9 @@ export class LaneStrategy {
 
 		/** @type {Array<string>} Branch name owning each logical lane (index → name) */
 		this._laneOwners = [];
+
+		/** @type {Map<string, number>|null} Phase 1 commit hash → lane index */
+		this._phase1Commits = null;
 
 		/** @type {Array<Object>} Computed segments with position info */
 		this._segments = [];
@@ -146,6 +188,7 @@ export class LaneStrategy {
 		this._commits = null;
 		this._branches = null;
 		this._laneOwners = [];
+		this._phase1Commits = null;
 		this._segments = [];
 		this._segmentPositions.clear();
 		this._yPositions.clear();
@@ -417,6 +460,10 @@ export class LaneStrategy {
 			}
 		}
 
+		// Save Phase 1 ownership so _buildSegments can distinguish
+		// Phase 1 commits from Phase 2 commits that reused the same lane.
+		this._phase1Commits = commitOwner;
+
 		// Apply lane assignments to nodes
 		for (const node of commitNodes) {
 			const laneIndex = this.commitToLane.get(node.hash) ?? 0;
@@ -536,7 +583,37 @@ export class LaneStrategy {
 			for (const seg of segments) {
 				const barY = seg.minY - pad;
 				if (graphY >= barY && graphY <= barY + LANE_HEADER_HEIGHT) {
-					return { displayLane: lane.position, segmentHashes: seg.hashes };
+					return { displayLane: lane.position, segmentHashes: seg.hashes, branchOwner: seg.branchOwner || "", tipHash: seg.tipHash || "" };
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Hit-tests a graph-space point against lane body regions (below headers).
+	 * Returns an object with the lane position and merged commit hashes,
+	 * or null if the point isn't inside any lane body.
+	 * @param {number} graphX X coordinate in graph space.
+	 * @param {number} graphY Y coordinate in graph space.
+	 * @returns {{position: number, hashes: Set<string>}|null}
+	 */
+	findLaneBodyAt(graphX, graphY) {
+		const halfW = LANE_WIDTH / 2 - 4;
+
+		for (const lane of this._laneInfo) {
+			const cx = this.positionToX(lane.position);
+			if (graphX < cx - halfW || graphX > cx + halfW) continue;
+
+			const segments = lane.segments ?? [];
+			for (const seg of segments) {
+				if (graphY >= seg.coreMinY && graphY <= seg.coreMaxY) {
+					// Merge all segment hashes at this position
+					const allHashes = new Set();
+					for (const s of segments) {
+						for (const h of s.hashes) allHashes.add(h);
+					}
+					return { position: lane.position, hashes: allHashes };
 				}
 			}
 		}
@@ -762,10 +839,17 @@ export class LaneStrategy {
 			}
 
 			// Build segments from groups
-			const branchOwner = this._laneOwners[laneIndex] || "";
+			const laneOwner = this._laneOwners[laneIndex] || "";
 			const isMain = laneIndex === 0;
 
 			for (const groupHashes of groups.values()) {
+				// Only inherit the lane's branch name if this segment actually
+				// contains Phase 1 commits for this lane.  Phase 2 commits that
+				// reused a freed lane slot should NOT inherit the old name.
+				const ownsLane = groupHashes.some(
+					(h) => this._phase1Commits?.get(h) === laneIndex,
+				);
+				const branchOwner = ownsLane ? laneOwner : "";
 				let minY = Infinity, maxY = -Infinity;
 				for (const h of groupHashes) {
 					const y = hashToY.get(h);
@@ -821,6 +905,10 @@ export class LaneStrategy {
 
 				const id = branchOwner + ":" + tipHash;
 
+				// Resolve the tip commit's timestamp for age badges
+				const tipCommit = commits?.get(tipHash);
+				const tipTimestamp = tipCommit?.author?.when ?? null;
+
 				const segment = {
 					id,
 					laneIndex,
@@ -834,6 +922,8 @@ export class LaneStrategy {
 					position: 0, // will be assigned in _assignSegmentPositions
 					isMain,
 					branchOwner,
+					tipHash,
+					tipTimestamp,
 					color: LANE_COLORS[laneIndex % LANE_COLORS.length],
 				};
 
@@ -847,6 +937,30 @@ export class LaneStrategy {
 
 		// Sort segments by minY for consistent processing
 		this._segments.sort((a, b) => a.minY - b.minY);
+
+		// Infer branch names for unnamed segments from merge commit messages.
+		// When a merge commit outside the segment has a parent inside it, its
+		// message often contains the original branch name (e.g. "Merge branch
+		// 'feature/foo'" or "Merge pull request #N from user/branch").
+		for (const seg of this._segments) {
+			if (seg.branchOwner) continue;
+
+			for (const node of nodes) {
+				if (node.type !== "commit") continue;
+				if (seg.hashes.has(node.hash)) continue;
+				const commit = commits?.get(node.hash);
+				if (!commit?.parents || commit.parents.length < 2) continue;
+				const mergesIntoSeg = commit.parents.some((ph) => seg.hashes.has(ph));
+				if (!mergesIntoSeg) continue;
+
+				const msg = commit.message || "";
+				const name = parseMergeBranchName(msg);
+				if (name) {
+					seg.branchOwner = name;
+					break;
+				}
+			}
+		}
 	}
 
 	/**
@@ -1028,6 +1142,9 @@ export class LaneStrategy {
 					coreMaxY: seg.coreMaxY,
 					hashes: seg.hashes,
 					color: seg.color,
+					branchOwner: seg.branchOwner,
+					tipHash: seg.id.split(":")[1] || "",
+					tipTimestamp: seg.tipTimestamp ?? null,
 				});
 			}
 
