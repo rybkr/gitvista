@@ -153,7 +153,7 @@ func (rs *RepoSession) updateRepository() {
 	if oldRepo != nil {
 		delta = newRepo.Diff(oldRepo)
 	} else {
-		delta = newRepo.Diff(&gitcore.Repository{})
+		delta = newRepo.Diff(gitcore.NewEmptyRepository())
 	}
 
 	rs.cacheMu.Lock()
@@ -257,7 +257,7 @@ func (rs *RepoSession) sendInitialState(conn *websocket.Conn) {
 	repo := rs.Repo()
 
 	message := UpdateMessage{
-		Delta:  repo.Diff(&gitcore.Repository{}),
+		Delta:  repo.Diff(gitcore.NewEmptyRepository()),
 		Status: getWorkingTreeStatus(repo),
 		Head:   buildHeadInfo(repo),
 	}

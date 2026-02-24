@@ -31,7 +31,7 @@ func TestNewServer_LoggerInheritsDefault(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(original) })
 
 	// Construct directly (not via newTestServer which overrides the logger).
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	webFS := os.DirFS(t.TempDir())
 	s := NewServer(repo, "127.0.0.1:0", webFS)
 

@@ -14,7 +14,7 @@ import (
 // handlers that only need a non-nil repo in the context.
 func newTestSession(repo *gitcore.Repository) *RepoSession {
 	if repo == nil {
-		repo = &gitcore.Repository{}
+		repo = gitcore.NewEmptyRepository()
 	}
 	return NewRepoSession(SessionConfig{
 		ID:          "test",
@@ -117,7 +117,7 @@ func TestIsBinaryContent(t *testing.T) {
 }
 
 func TestHandleRepository_Success(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 	s := newTestServer(t)
 

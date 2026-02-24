@@ -29,6 +29,18 @@ type Repository struct {
 	mu sync.RWMutex
 }
 
+// NewEmptyRepository returns a Repository with all maps initialized but
+// containing no data. Used as the "old" state when computing the initial delta.
+func NewEmptyRepository() *Repository {
+	return &Repository{
+		refs:      make(map[string]Hash),
+		commits:   make([]*Commit, 0),
+		commitMap: make(map[Hash]*Commit),
+		tags:      make([]*Tag, 0),
+		stashes:   make([]*StashEntry, 0),
+	}
+}
+
 // NewRepository opens a Git repository starting from path, which can be
 // the working directory, the .git directory, or any parent directory.
 func NewRepository(path string) (*Repository, error) {

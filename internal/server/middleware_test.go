@@ -10,7 +10,7 @@ import (
 )
 
 func TestSessionFromCtx_Present(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 
 	ctx := withSessionCtx(context.Background(), session)
@@ -29,7 +29,7 @@ func TestSessionFromCtx_Absent(t *testing.T) {
 }
 
 func TestWithLocalSession(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 
 	var captured *RepoSession

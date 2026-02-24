@@ -8,7 +8,7 @@ import (
 )
 
 func TestNewRepoSession(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	rs := NewRepoSession(SessionConfig{
 		ID:          "test-session",
 		InitialRepo: repo,
@@ -47,7 +47,7 @@ func TestNewRepoSession(t *testing.T) {
 }
 
 func TestRepoSession_Repo(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	rs := NewRepoSession(SessionConfig{
 		ID:          "test",
 		InitialRepo: repo,
@@ -62,7 +62,7 @@ func TestRepoSession_Repo(t *testing.T) {
 }
 
 func TestRepoSession_Close(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	rs := NewRepoSession(SessionConfig{
 		ID:          "test",
 		InitialRepo: repo,
@@ -92,7 +92,7 @@ func TestRepoSession_Close(t *testing.T) {
 }
 
 func TestRepoSession_DefaultCacheSize(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	rs := NewRepoSession(SessionConfig{
 		ID:          "test",
 		InitialRepo: repo,
@@ -107,7 +107,7 @@ func TestRepoSession_DefaultCacheSize(t *testing.T) {
 }
 
 func TestRepoSession_DefaultLogger(t *testing.T) {
-	repo := &gitcore.Repository{}
+	repo := gitcore.NewEmptyRepository()
 	rs := NewRepoSession(SessionConfig{
 		ID:          "test",
 		InitialRepo: repo,
