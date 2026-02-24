@@ -3,6 +3,7 @@ package server
 import (
 	"compress/flate"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,24 +16,53 @@ const (
 	maxMessageSize = 512
 )
 
-// CheckOrigin allows all origins; GitVista is designed for local use only.
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(_ *http.Request) bool {
-		return true
+// localUpgrader allows all origins; used in local mode where the server is
+// only reachable from localhost.
+var localUpgrader = websocket.Upgrader{
+	CheckOrigin:       func(_ *http.Request) bool { return true },
+	EnableCompression: true,
+}
+
+// saasUpgrader validates that the Origin header matches the request Host to
+// prevent cross-site WebSocket hijacking in SaaS mode.
+var saasUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return false
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return u.Host == r.Host
 	},
 	EnableCompression: true,
 }
 
 // handleWebSocket upgrades the connection and delegates client management to
-// the session extracted from the request context.
+// the session extracted from the request context. WebSocket upgrades go through
+// the rate limiter to prevent resource exhaustion.
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Rate-limit WebSocket upgrades to prevent connection exhaustion.
+	ip := getClientIP(r)
+	if !s.rateLimiter.allow(ip) {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	session := sessionFromCtx(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	up := localUpgrader
+	if s.mode == ModeSaaS {
+		up = saasUpgrader
+	}
+
+	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error("WebSocket upgrade failed", "err", err)
 		return
