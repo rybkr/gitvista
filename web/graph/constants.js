@@ -65,7 +65,7 @@ export const LANE_COLORS = [
     "#3d9970",  // Eucalyptus
     "#cc8c3c",  // Amber
     "#c4584a",  // Terra cotta
-    "#5a7fb5",  // Slate
+    "#2a9d8f",  // Teal
     "#a06090",  // Mauve
     "#6a9a4a",  // Moss
 ];

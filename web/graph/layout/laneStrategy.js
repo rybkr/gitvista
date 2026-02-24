@@ -1020,6 +1020,7 @@ export class LaneStrategy {
 					coreMinY: seg.coreMinY,
 					coreMaxY: seg.coreMaxY,
 					hashes: seg.hashes,
+					color: seg.color,
 				});
 			}
 

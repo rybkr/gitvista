@@ -150,16 +150,17 @@ export class GraphRenderer {
                 const x = cx - halfW;
                 const w = halfW * 2;
                 const h = stripBottom - stripTop;
+                const segColor = seg.color ?? lane.color;
 
                 // Background fill with subtle border outline
                 this.ctx.save();
                 this.ctx.beginPath();
                 this.ctx.roundRect(x, stripTop, w, h, [0, 0, rBottom, rBottom]);
                 this.ctx.globalAlpha = 0.05;
-                this.ctx.fillStyle = lane.color;
+                this.ctx.fillStyle = segColor;
                 this.ctx.fill();
                 this.ctx.globalAlpha = 0.07;
-                this.ctx.strokeStyle = lane.color;
+                this.ctx.strokeStyle = segColor;
                 this.ctx.lineWidth = 1;
                 this.ctx.stroke();
                 this.ctx.restore();
@@ -189,12 +190,13 @@ export class GraphRenderer {
                 const barX = cx - halfW;
                 const barH = LANE_HEADER_HEIGHT;
                 const r = 6;
+                const segColor = seg.color ?? lane.color;
 
                 // Header background — gradient fading downward
                 ctx.save();
                 const grad = ctx.createLinearGradient(barX, barY, barX, barY + barH);
-                grad.addColorStop(0, lane.color);
-                grad.addColorStop(1, lane.color);
+                grad.addColorStop(0, segColor);
+                grad.addColorStop(1, segColor);
                 ctx.fillStyle = grad;
                 ctx.globalAlpha = 0.12;
                 ctx.beginPath();
@@ -202,7 +204,7 @@ export class GraphRenderer {
                 ctx.fill();
                 // Outline to tie header to the column below
                 ctx.globalAlpha = 0.10;
-                ctx.strokeStyle = lane.color;
+                ctx.strokeStyle = segColor;
                 ctx.lineWidth = 1;
                 ctx.stroke();
                 ctx.restore();
@@ -210,7 +212,7 @@ export class GraphRenderer {
                 // Bottom accent line
                 ctx.save();
                 ctx.globalAlpha = 0.30;
-                ctx.strokeStyle = lane.color;
+                ctx.strokeStyle = segColor;
                 ctx.lineWidth = 1.5;
                 ctx.beginPath();
                 ctx.moveTo(barX, barY + barH);
