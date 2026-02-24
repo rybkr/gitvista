@@ -283,6 +283,15 @@ function bootstrapGraph(root, repoId) {
         onNavigatePrev: () => graph.navigateCommits("prev"),
     });
 
+    /** If the file explorer has no commit loaded, open HEAD. */
+    function openHeadInExplorerIfEmpty() {
+        if (fileExplorer.hasCommit()) return;
+        const headHash = graph.getHeadHash();
+        if (!headHash) return;
+        const commit = graph.getCommits().get(headHash);
+        if (commit) fileExplorer.openCommit(commit);
+    }
+
     let currentBranchName = "";
     let repoName = "";
 
@@ -333,6 +342,7 @@ function bootstrapGraph(root, repoId) {
                         graph.selectAndCenter(permalinkHash);
                     }, 80);
                 }
+                openHeadInExplorerIfEmpty();
             }
         },
         onStatus: (status) => {
@@ -347,6 +357,7 @@ function bootstrapGraph(root, repoId) {
                 updateTitle();
             }
             graph.setHeadHash(headInfo?.hash ?? null);
+            openHeadInExplorerIfEmpty();
         },
         onRepoMetadata: (metadata) => {
             setRepositoryAvailable(true);

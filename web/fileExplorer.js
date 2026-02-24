@@ -921,5 +921,7 @@ export function createFileExplorer() {
         el,
         openCommit,
         updateWorkingTreeStatus,
+        /** Returns true when a commit is currently loaded. */
+        hasCommit: () => !!state.commitHash,
     };
 }
