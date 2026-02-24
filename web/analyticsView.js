@@ -1,9 +1,12 @@
 /**
- * Analytics view — commit velocity trend line chart.
+ * Analytics view — commit velocity trend line chart, author contributions,
+ * activity heatmap, and merge statistics.
  *
  * Factory: createAnalyticsView({ getCommits, getTags })
  * Returns: { el, update() }
  */
+
+import { getAuthorColor } from "./utils/colors.js";
 
 const PERIODS = [
     { label: "3m", months: 3 },
@@ -15,6 +18,9 @@ const PERIODS = [
 const CHART_HEIGHT = 200;
 const ROLLING_WINDOW = 4;
 const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+const TOP_N_AUTHORS = 10;
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const HOUR_LABELS = ["12a", "", "", "3a", "", "", "6a", "", "", "9a", "", "", "12p", "", "", "3p", "", "", "6p", "", "", "9p", "", ""];
 
 /** Returns the Monday-based ISO week start for a given date. */
 function weekStart(date) {
@@ -127,6 +133,123 @@ function computeVelocity(commits, periodMonths) {
 }
 
 /**
+ * Groups commits by author email, returns top authors sorted by count.
+ *
+ * @param {Map<string, object>} commits
+ * @param {number} periodMonths - 0 means all
+ * @returns {{ authors: {name: string, email: string, count: number}[], totalInPeriod: number }}
+ */
+function computeAuthorCounts(commits, periodMonths) {
+    let cutoff = 0;
+    if (periodMonths > 0) {
+        const d = new Date();
+        d.setUTCMonth(d.getUTCMonth() - periodMonths);
+        cutoff = d.getTime();
+    }
+
+    const byEmail = new Map();
+    let totalInPeriod = 0;
+
+    for (const c of commits.values()) {
+        const when = c.author?.when || c.author?.When;
+        if (!when) continue;
+        const ts = new Date(when).getTime();
+        if (cutoff > 0 && ts < cutoff) continue;
+        totalInPeriod++;
+
+        const email = c.author?.email || c.author?.Email || "unknown";
+        const name = c.author?.name || c.author?.Name || email;
+        const entry = byEmail.get(email);
+        if (entry) {
+            entry.count++;
+        } else {
+            byEmail.set(email, { name, email, count: 1 });
+        }
+    }
+
+    const authors = [...byEmail.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, TOP_N_AUTHORS);
+
+    return { authors, totalInPeriod };
+}
+
+/**
+ * Builds a 7×24 grid of commit counts (Mon=0..Sun=6, hour 0..23 UTC).
+ *
+ * @param {Map<string, object>} commits
+ * @param {number} periodMonths - 0 means all
+ * @returns {{ grid: number[][], max: number }}
+ */
+function computeHeatmapData(commits, periodMonths) {
+    let cutoff = 0;
+    if (periodMonths > 0) {
+        const d = new Date();
+        d.setUTCMonth(d.getUTCMonth() - periodMonths);
+        cutoff = d.getTime();
+    }
+
+    const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
+    let max = 0;
+
+    for (const c of commits.values()) {
+        const when = c.author?.when || c.author?.When;
+        if (!when) continue;
+        const ts = new Date(when).getTime();
+        if (cutoff > 0 && ts < cutoff) continue;
+
+        const d = new Date(when);
+        const jsDay = d.getUTCDay(); // 0=Sun
+        const day = jsDay === 0 ? 6 : jsDay - 1; // Mon=0..Sun=6
+        const hour = d.getUTCHours();
+        grid[day][hour]++;
+        if (grid[day][hour] > max) max = grid[day][hour];
+    }
+
+    return { grid, max };
+}
+
+/**
+ * Computes merge commit statistics.
+ *
+ * @param {Map<string, object>} commits
+ * @param {number} periodMonths - 0 means all
+ * @returns {{ mergeCount: number, totalCount: number, mergePercent: number, mergesPerWeek: number }}
+ */
+function computeMergeStats(commits, periodMonths) {
+    let cutoff = 0;
+    if (periodMonths > 0) {
+        const d = new Date();
+        d.setUTCMonth(d.getUTCMonth() - periodMonths);
+        cutoff = d.getTime();
+    }
+
+    let mergeCount = 0;
+    let totalCount = 0;
+    let minTs = Infinity;
+    let maxTs = -Infinity;
+
+    for (const c of commits.values()) {
+        const when = c.author?.when || c.author?.When;
+        if (!when) continue;
+        const ts = new Date(when).getTime();
+        if (cutoff > 0 && ts < cutoff) continue;
+        totalCount++;
+        if (ts < minTs) minTs = ts;
+        if (ts > maxTs) maxTs = ts;
+
+        const parents = c.parents || c.Parents || [];
+        if (parents.length > 1) mergeCount++;
+    }
+
+    const mergePercent = totalCount > 0 ? (mergeCount / totalCount) * 100 : 0;
+    const spanWeeks = totalCount > 0 ? Math.max(1, (maxTs - minTs) / MS_PER_WEEK) : 1;
+    const mergesPerWeek = mergeCount / spanWeeks;
+
+    return { mergeCount, totalCount, mergePercent, mergesPerWeek };
+}
+
+/**
  * @param {{ getCommits: () => Map<string, object>, getTags: () => Map<string, string> }} deps
  */
 export function createAnalyticsView({ getCommits, getTags }) {
@@ -200,8 +323,54 @@ export function createAnalyticsView({ getCommits, getTags }) {
     el.appendChild(chartContainer);
     el.appendChild(emptyState);
 
+    // ── Section helper ──
+    function makeSection(title) {
+        const section = document.createElement("div");
+        section.className = "analytics-section";
+        const h3 = document.createElement("h3");
+        h3.className = "analytics-section-title";
+        h3.textContent = title;
+        section.appendChild(h3);
+        return section;
+    }
+
+    // ── Author contributions section ──
+    const authorSection = makeSection("Top Contributors");
+    const authorChartContainer = document.createElement("div");
+    authorChartContainer.className = "analytics-chart-container";
+    const authorCanvas = document.createElement("canvas");
+    authorCanvas.className = "analytics-chart-canvas";
+    authorChartContainer.appendChild(authorCanvas);
+    authorSection.appendChild(authorChartContainer);
+    el.appendChild(authorSection);
+
+    // ── Heatmap section ──
+    const heatmapSection = makeSection("Activity Heatmap");
+    const heatmapChartContainer = document.createElement("div");
+    heatmapChartContainer.className = "analytics-chart-container";
+    const heatmapCanvas = document.createElement("canvas");
+    heatmapCanvas.className = "analytics-chart-canvas";
+    heatmapChartContainer.appendChild(heatmapCanvas);
+    heatmapSection.appendChild(heatmapChartContainer);
+    el.appendChild(heatmapSection);
+
+    // ── Merge stats section ──
+    const mergeSection = makeSection("Merge Statistics");
+    const mergeSummary = document.createElement("div");
+    mergeSummary.className = "analytics-summary";
+    const mergeCountStat = makeStat("Merges");
+    const mergePercentStat = makeStat("Merge %");
+    const mergesPerWeekStat = makeStat("Merges / week");
+    mergeSummary.appendChild(mergeCountStat.el);
+    mergeSummary.appendChild(mergePercentStat.el);
+    mergeSummary.appendChild(mergesPerWeekStat.el);
+    mergeSection.appendChild(mergeSummary);
+    el.appendChild(mergeSection);
+
     // ── Chart state ──
     let currentData = null;
+    let cachedAuthorData = null;
+    let cachedHeatmapData = null;
     const padding = { top: 20, right: 16, bottom: 32, left: 40 };
 
     /** Maps canvas mouse position to data coordinates. Returns week index or -1. */
@@ -241,8 +410,12 @@ export function createAnalyticsView({ getCommits, getTags }) {
     // ── Resize observer ──
     const resizeObserver = new ResizeObserver(() => {
         if (currentData) drawChart(currentData);
+        if (cachedAuthorData) drawAuthorChart(cachedAuthorData);
+        if (cachedHeatmapData) drawHeatmap(cachedHeatmapData);
     });
     resizeObserver.observe(chartContainer);
+    resizeObserver.observe(authorChartContainer);
+    resizeObserver.observe(heatmapChartContainer);
 
     /** Renders the chart onto the canvas. */
     function drawChart(data) {
@@ -418,6 +591,139 @@ export function createAnalyticsView({ getCommits, getTags }) {
         ctx.stroke();
     }
 
+    /** Renders the author bar chart onto the author canvas. */
+    function drawAuthorChart(data) {
+        cachedAuthorData = data;
+        const { authors } = data;
+        if (authors.length === 0) return;
+
+        const barHeight = 22;
+        const gap = 6;
+        const labelWidth = 100;
+        const countWidth = 40;
+        const chartPadding = { top: 4, right: 8, bottom: 4, left: labelWidth + 8 };
+        const totalHeight = authors.length * (barHeight + gap) + chartPadding.top + chartPadding.bottom;
+
+        const rect = authorChartContainer.getBoundingClientRect();
+        const width = Math.max(rect.width, 100);
+        const dpr = window.devicePixelRatio || 1;
+
+        authorCanvas.width = width * dpr;
+        authorCanvas.height = totalHeight * dpr;
+        authorCanvas.style.width = `${width}px`;
+        authorCanvas.style.height = `${totalHeight}px`;
+
+        const ctx = authorCanvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, totalHeight);
+
+        const textColor = cssVar("--text-secondary") || "#57606a";
+        const maxCount = authors[0].count;
+        const barAreaWidth = width - chartPadding.left - chartPadding.right - countWidth;
+
+        ctx.font = "11px 'Geist', system-ui, sans-serif";
+        ctx.textBaseline = "middle";
+
+        for (let i = 0; i < authors.length; i++) {
+            const a = authors[i];
+            const y = chartPadding.top + i * (barHeight + gap);
+            const barWidth = Math.max(2, (a.count / maxCount) * barAreaWidth);
+            const radius = 3;
+
+            // Author name (truncated)
+            ctx.fillStyle = textColor;
+            ctx.textAlign = "right";
+            let displayName = a.name;
+            if (displayName.length > 16) displayName = displayName.slice(0, 15) + "\u2026";
+            ctx.fillText(displayName, chartPadding.left - 8, y + barHeight / 2);
+
+            // Bar
+            ctx.fillStyle = getAuthorColor(a.email);
+            ctx.beginPath();
+            ctx.roundRect(chartPadding.left, y, barWidth, barHeight, radius);
+            ctx.fill();
+
+            // Count label
+            ctx.fillStyle = textColor;
+            ctx.textAlign = "left";
+            ctx.fillText(String(a.count), chartPadding.left + barWidth + 6, y + barHeight / 2);
+        }
+    }
+
+    /** Renders the activity heatmap onto the heatmap canvas. */
+    function drawHeatmap(data) {
+        cachedHeatmapData = data;
+        const { grid, max } = data;
+
+        const rect = heatmapChartContainer.getBoundingClientRect();
+        const availWidth = Math.max(rect.width, 100);
+        const labelLeftWidth = 32;
+        const labelTopHeight = 16;
+        const cellGap = 2;
+        const cellSize = Math.max(8, Math.floor((availWidth - labelLeftWidth - cellGap * 23) / 24));
+        const totalWidth = labelLeftWidth + 24 * (cellSize + cellGap);
+        const totalHeight = labelTopHeight + 7 * (cellSize + cellGap) + 4;
+
+        const dpr = window.devicePixelRatio || 1;
+        heatmapCanvas.width = totalWidth * dpr;
+        heatmapCanvas.height = totalHeight * dpr;
+        heatmapCanvas.style.width = `${totalWidth}px`;
+        heatmapCanvas.style.height = `${totalHeight}px`;
+
+        const ctx = heatmapCanvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, totalWidth, totalHeight);
+
+        const textColor = cssVar("--text-secondary") || "#57606a";
+        const nodeColor = cssVar("--node-color") || "#0ea5e9";
+        const borderColor = cssVar("--border-color") || "#d8dce2";
+
+        // Hour labels (top)
+        ctx.font = "9px 'Geist', system-ui, sans-serif";
+        ctx.fillStyle = textColor;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        for (let h = 0; h < 24; h++) {
+            if (HOUR_LABELS[h]) {
+                const x = labelLeftWidth + h * (cellSize + cellGap) + cellSize / 2;
+                ctx.fillText(HOUR_LABELS[h], x, labelTopHeight - 2);
+            }
+        }
+
+        // Day labels (left) and cells
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.font = "10px 'Geist', system-ui, sans-serif";
+
+        for (let day = 0; day < 7; day++) {
+            const y = labelTopHeight + day * (cellSize + cellGap);
+
+            // Day label
+            ctx.fillStyle = textColor;
+            ctx.fillText(DAY_NAMES[day], labelLeftWidth - 6, y + cellSize / 2);
+
+            for (let hour = 0; hour < 24; hour++) {
+                const x = labelLeftWidth + hour * (cellSize + cellGap);
+                const count = grid[day][hour];
+
+                if (count === 0 || max === 0) {
+                    // Empty cell
+                    ctx.fillStyle = borderColor;
+                    ctx.globalAlpha = 0.3;
+                    ctx.fillRect(x, y, cellSize, cellSize);
+                    ctx.globalAlpha = 1;
+                } else {
+                    // Filled cell — opacity scales with count
+                    const alpha = 0.15 + 0.85 * (count / max);
+                    ctx.fillStyle = nodeColor;
+                    ctx.globalAlpha = alpha;
+                    ctx.fillRect(x, y, cellSize, cellSize);
+                    ctx.globalAlpha = 1;
+                }
+            }
+        }
+    }
+
     /** Main update — re-reads commits and redraws everything. */
     function update() {
         const commits = getCommits();
@@ -433,6 +739,9 @@ export function createAnalyticsView({ getCommits, getTags }) {
             summary.style.display = "none";
             periodSelector.style.display = "none";
             chartContainer.style.display = "none";
+            authorSection.style.display = "none";
+            heatmapSection.style.display = "none";
+            mergeSection.style.display = "none";
             return;
         }
 
@@ -440,6 +749,9 @@ export function createAnalyticsView({ getCommits, getTags }) {
         summary.style.display = "";
         periodSelector.style.display = "";
         chartContainer.style.display = "";
+        authorSection.style.display = "";
+        heatmapSection.style.display = "";
+        mergeSection.style.display = "";
 
         const data = computeVelocity(commits, period.months);
 
@@ -451,6 +763,20 @@ export function createAnalyticsView({ getCommits, getTags }) {
             : "—";
 
         drawChart(data);
+
+        // Author contributions
+        const authorData = computeAuthorCounts(commits, period.months);
+        drawAuthorChart(authorData);
+
+        // Activity heatmap
+        const heatmapData = computeHeatmapData(commits, period.months);
+        drawHeatmap(heatmapData);
+
+        // Merge statistics
+        const mergeData = computeMergeStats(commits, period.months);
+        mergeCountStat.value.textContent = mergeData.mergeCount.toLocaleString();
+        mergePercentStat.value.textContent = `${mergeData.mergePercent.toFixed(1)}%`;
+        mergesPerWeekStat.value.textContent = mergeData.mergesPerWeek.toFixed(1);
     }
 
     return { el, update };
