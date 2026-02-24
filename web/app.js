@@ -7,6 +7,7 @@ import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
 import { createFileExplorer } from "./fileExplorer.js";
 import { createStagingView } from "./stagingView.js";
+import { createAnalyticsView } from "./analyticsView.js";
 import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
@@ -159,6 +160,10 @@ function bootstrapGraph(root, repoId) {
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
     const stagingView = createStagingView();
+    const analyticsView = createAnalyticsView({
+        getCommits: () => graph.getCommits(),
+        getTags: () => graph.getTags?.() ?? new Map(),
+    });
 
     const repoTabContent = document.createElement("div");
     repoTabContent.style.display = "flex";
@@ -186,6 +191,7 @@ function bootstrapGraph(root, repoId) {
         { name: "repository", icon: "", tooltip: "Repository", content: repoTabContent },
         { name: "file-explorer", icon: "", tooltip: "File Explorer", content: fileExplorer.el },
         { name: "three-zones", tooltip: "Lifecycle", content: stagingView.el },
+        { name: "analytics", tooltip: "Analytics", content: analyticsView.el },
     ]);
     root.parentElement.insertBefore(sidebar.activityBar, root);
     root.parentElement.insertBefore(sidebar.panel, root);
@@ -298,6 +304,7 @@ function bootstrapGraph(root, repoId) {
         },
         onDelta: (delta) => {
             graph.applyDelta(delta);
+            analyticsView.update();
 
             graphFilters.updateBranches(graph.getBranches());
 

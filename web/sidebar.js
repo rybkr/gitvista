@@ -44,6 +44,11 @@ const ICONS = {
         <circle cx="8" cy="8" r="2.5"/>
         <circle cx="8" cy="13.5" r="2.5"/>
     </svg>`,
+    analytics: `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+        <rect x="1" y="8" width="3" height="7" rx=".75"/>
+        <rect x="6.5" y="4" width="3" height="11" rx=".75"/>
+        <rect x="12" y="1" width="3" height="14" rx=".75"/>
+    </svg>`,
 };
 
 const CHEVRON_LEFT = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

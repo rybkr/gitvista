@@ -1475,5 +1475,12 @@ export function createGraphController(rootElement, options = {}) {
          * @returns {Map<string, import("./types.js").GraphCommit>}
          */
         getCommits: () => commits,
+        /**
+         * Returns the live tags Map for external components (e.g. analytics)
+         * that need tag-to-commit mappings.
+         *
+         * @returns {Map<string, string>} tag-name → commit-hash map.
+         */
+        getTags: () => state.tags,
     };
 }
