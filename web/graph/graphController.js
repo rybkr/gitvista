@@ -335,6 +335,8 @@ export function createGraphController(rootElement, options = {}) {
     rebalanceBtn.addEventListener("click", () => {
         if (layoutStrategy.supportsRebalance) {
             layoutStrategy.rebalance();
+            snapDecoratorNodesForLaneDrag();
+            render();
         }
     });
 
@@ -682,7 +684,7 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             const hit = findNodeAt(pendingHoverX, pendingHoverY);
-            if (hit !== state.hoverNode) {
+            if (hit !== state.hoverNode || canvas.style.cursor === "grab") {
                 state.hoverNode = hit;
                 canvas.style.cursor = hit ? "pointer" : "default";
                 render();
@@ -1220,7 +1222,7 @@ export function createGraphController(rootElement, options = {}) {
                 if (!t) continue;
                 const i = bCount.get(t.hash) || 0;
                 bCount.set(t.hash, i + 1);
-                n.x = t.x;
+                n.x = t.x + BRANCH_NODE_OFFSET_X;
                 n.y = t.y - BRANCH_NODE_RADIUS - 8 - i * (BRANCH_NODE_RADIUS * 2.5 + 2);
             } else if (n.type === "tag" && n.targetHash) {
                 const t = commitMap.get(n.targetHash);

@@ -84,7 +84,7 @@ export class LaneStrategy {
 	 * @type {boolean}
 	 */
 	get supportsRebalance() {
-		return false; // Deterministic layout doesn't need rebalancing
+		return true;
 	}
 
 	/**
@@ -247,10 +247,17 @@ export class LaneStrategy {
 	}
 
 	/**
-	 * Rebalance the layout (not supported for lane strategy).
+	 * Rebalance the layout by clearing all user-customized segment positions
+	 * and recomputing the default spiral assignment (1, -1, 2, -2, ...).
 	 */
 	rebalance() {
-		// No-op: lane layout is deterministic
+		if (!this.nodes) return;
+
+		this._segmentPositions.clear();
+		this._assignSegmentPositions();
+		this._computeXPositions(this.nodes);
+		this._buildLaneInfo(this.nodes, this._branches, this._commits);
+		this.applyTargetPositions(this.nodes);
 	}
 
 	/**
