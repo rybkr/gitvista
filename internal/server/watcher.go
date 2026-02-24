@@ -42,6 +42,7 @@ func (s *Server) startWatcher() error {
 	s.wg.Add(1)
 	go s.statusPollLoop()
 
+	s.wg.Add(1)
 	go s.watchLoop(watcher)
 
 	s.logger.Info("Watching Git repository for changes", "gitDir", gitDir)

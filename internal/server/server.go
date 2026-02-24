@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -194,26 +195,38 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
 
+	const apiWriteDeadline = 30 * time.Second
+
 	if s.mode == ModeLocal {
 		ls := s.localSession
 		ls.Start()
 
-		mux.HandleFunc("/api/repository", s.rateLimiter.middleware(withLocalSession(ls, s.handleRepository)))
-		mux.HandleFunc("/api/tree/blame/", s.rateLimiter.middleware(withLocalSession(ls, s.handleTreeBlame)))
-		mux.HandleFunc("/api/tree/", s.rateLimiter.middleware(withLocalSession(ls, s.handleTree)))
-		mux.HandleFunc("/api/blob/", s.rateLimiter.middleware(withLocalSession(ls, s.handleBlob)))
-		mux.HandleFunc("/api/commit/diff/", s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff)))
-		mux.HandleFunc("/api/working-tree/diff", s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff)))
+		mux.HandleFunc("/api/repository", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleRepository))))
+		mux.HandleFunc("/api/tree/blame/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleTreeBlame))))
+		mux.HandleFunc("/api/tree/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleTree))))
+		mux.HandleFunc("/api/blob/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleBlob))))
+		mux.HandleFunc("/api/commit/diff/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff))))
+		mux.HandleFunc("/api/working-tree/diff", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
 		// Repo management endpoints (SaaS mode only)
-		mux.HandleFunc("/api/repos", s.rateLimiter.middleware(s.handleRepos))
-		mux.HandleFunc("/api/repos/", s.rateLimiter.middleware(s.handleRepoRoutes))
+		mux.HandleFunc("/api/repos", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(s.handleRepos)))
+		mux.HandleFunc("/api/repos/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(s.handleRepoRoutes)))
 	}
 
+	// Build the handler chain: logging wraps the mux, and CORS wraps
+	// logging in SaaS mode.
+	var handler http.Handler = requestLogger(s.logger, mux)
+	if s.mode == ModeSaaS {
+		handler = corsMiddleware(handler)
+	}
+
+	// WriteTimeout must remain 0 because WebSocket connections are long-lived.
+	// Non-WebSocket handlers enforce per-response write deadlines via the
+	// writeDeadline middleware applied at the route level.
 	s.httpServer = &http.Server{
 		Addr:         s.addr,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
@@ -222,9 +235,9 @@ func (s *Server) Start() error {
 	if s.mode == ModeLocal {
 		s.wg.Add(1)
 		go func() {
+			defer s.wg.Done()
 			if err := s.startWatcher(); err != nil {
 				s.logger.Error("watcher error", "err", err)
-				s.wg.Done()
 			}
 		}()
 	}
@@ -270,7 +283,7 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 	// Extract id and remainder
 	id := path
 	remainder := ""
-	if idx := indexOf(path, '/'); idx >= 0 {
+	if idx := strings.IndexByte(path, '/'); idx >= 0 {
 		id = path[:idx]
 		remainder = path[idx:]
 	}
@@ -300,13 +313,13 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case remainder == "/repository" && r.Method == http.MethodGet:
 		s.handleRepository(w, r)
-	case hasPrefix(remainder, "/tree/blame/"):
+	case strings.HasPrefix(remainder, "/tree/blame/"):
 		s.handleTreeBlame(w, r)
-	case hasPrefix(remainder, "/tree/"):
+	case strings.HasPrefix(remainder, "/tree/"):
 		s.handleTree(w, r)
-	case hasPrefix(remainder, "/blob/"):
+	case strings.HasPrefix(remainder, "/blob/"):
 		s.handleBlob(w, r)
-	case hasPrefix(remainder, "/commit/diff/"):
+	case strings.HasPrefix(remainder, "/commit/diff/"):
 		s.handleCommitDiff(w, r)
 	case remainder == "/working-tree/diff" && r.Method == http.MethodGet:
 		s.handleWorkingTreeDiff(w, r)
@@ -315,19 +328,6 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
-}
-
-func indexOf(s string, b byte) int {
-	for i := range len(s) {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
-}
-
-func hasPrefix(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
 
 // Shutdown gracefully shuts down the server and all sessions.
