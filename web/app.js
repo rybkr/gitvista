@@ -13,7 +13,8 @@ import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
 import { createSearch } from "./search.js";
 import { createGraphFilters, loadFilterState } from "./graphFilters.js";
-import { setApiBase } from "./apiBase.js";
+import { setApiBase, apiUrl } from "./apiBase.js";
+import { apiFetch } from "./apiFetch.js";
 import { createRepoLanding } from "./repoLanding.js";
 import { setConnectionState as setErrorConnectionState, setRepositoryAvailable } from "./errorState.js";
 import { createConnectionBanner } from "./connectionBanner.js";
@@ -163,6 +164,11 @@ function bootstrapGraph(root, repoId) {
     const analyticsView = createAnalyticsView({
         getCommits: () => graph.getCommits(),
         getTags: () => graph.getTags?.() ?? new Map(),
+        fetchDiffStats: async () => {
+            const resp = await apiFetch(apiUrl("/commits/diffstats"));
+            if (!resp.ok) throw new Error("Failed to fetch diff stats");
+            return resp.json();
+        },
     });
 
     const repoTabContent = document.createElement("div");

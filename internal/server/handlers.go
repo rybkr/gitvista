@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
 )
@@ -336,6 +337,90 @@ func (s *Server) handleCommitDiffList(w http.ResponseWriter, repo *gitcore.Repos
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	repo := session.Repo()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	const cacheKey = "bulk-diffstats"
+	if cached, ok := session.diffCache.Get(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(cached); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	commits := repo.Commits()
+
+	type diffStatEntry struct {
+		FilesChanged int      `json:"filesChanged"`
+		Files        []string `json:"files"`
+	}
+
+	var mu sync.Mutex
+	result := make(map[string]diffStatEntry, len(commits))
+
+	// Bounded concurrency: 10-goroutine semaphore
+	sem := make(chan struct{}, 10)
+	var wg sync.WaitGroup
+
+	for hash, commit := range commits {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(h gitcore.Hash, c *gitcore.Commit) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			var parentTreeHash gitcore.Hash
+			if len(c.Parents) > 0 {
+				if parentCommit, exists := commits[c.Parents[0]]; exists {
+					parentTreeHash = parentCommit.Tree
+				}
+			}
+
+			entries, err := gitcore.TreeDiff(repo, parentTreeHash, c.Tree, "")
+			if err != nil {
+				s.logger.Error("Bulk diff stats: failed to compute diff", "hash", h, "err", err)
+				return
+			}
+
+			files := make([]string, len(entries))
+			for i, entry := range entries {
+				files[i] = entry.Path
+			}
+
+			mu.Lock()
+			result[string(h)] = diffStatEntry{
+				FilesChanged: len(entries),
+				Files:        files,
+			}
+			mu.Unlock()
+		}(hash, commit)
+	}
+	wg.Wait()
+
+	session.diffCache.Put(cacheKey, result)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }

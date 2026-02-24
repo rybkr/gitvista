@@ -205,6 +205,7 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/tree/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleTree))))
 		mux.HandleFunc("/api/blob/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBlob))))
 		mux.HandleFunc("/api/commit/diff/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff))))
+		mux.HandleFunc("/api/commits/diffstats", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBulkDiffStats))))
 		mux.HandleFunc("/api/working-tree/diff", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
@@ -320,6 +321,8 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleBlob(w, r)
 	case strings.HasPrefix(remainder, "/commit/diff/"):
 		s.handleCommitDiff(w, r)
+	case remainder == "/commits/diffstats" && r.Method == http.MethodGet:
+		s.handleBulkDiffStats(w, r)
 	case remainder == "/working-tree/diff" && r.Method == http.MethodGet:
 		s.handleWorkingTreeDiff(w, r)
 	case remainder == "/ws":

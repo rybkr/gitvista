@@ -1,8 +1,8 @@
 /**
  * Analytics view — commit velocity trend line chart, author contributions,
- * activity heatmap, and merge statistics.
+ * activity heatmap, merge statistics, change size distribution, and rework rate.
  *
- * Factory: createAnalyticsView({ getCommits, getTags })
+ * Factory: createAnalyticsView({ getCommits, getTags, fetchDiffStats })
  * Returns: { el, update() }
  */
 
@@ -21,6 +21,15 @@ const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
 const TOP_N_AUTHORS = 10;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const HOUR_LABELS = ["12a", "", "", "3a", "", "", "6a", "", "", "9a", "", "", "12p", "", "", "3p", "", "", "6p", "", "", "9p", "", ""];
+
+const CHURN_WINDOW_DAYS = 21;
+const SIZE_BUCKETS = [
+    { label: "XS", max: 5 },
+    { label: "S", max: 20 },
+    { label: "M", max: 50 },
+    { label: "L", max: 100 },
+    { label: "XL", max: Infinity },
+];
 
 /** Returns the Monday-based ISO week start for a given date. */
 function weekStart(date) {
@@ -250,10 +259,158 @@ function computeMergeStats(commits, periodMonths) {
 }
 
 /**
- * @param {{ getCommits: () => Map<string, object>, getTags: () => Map<string, string> }} deps
+ * Buckets commits by number of files changed into XS/S/M/L/XL.
+ *
+ * @param {Map<string, object>} commits
+ * @param {Map<string, object>} diffStats - hash → { filesChanged, files }
+ * @param {number} periodMonths - 0 means all
+ * @returns {{ buckets: {label: string, count: number}[], median: number, avgSize: number }}
  */
-export function createAnalyticsView({ getCommits, getTags }) {
+function computeChangeSizeDistribution(commits, diffStats, periodMonths) {
+    let cutoff = 0;
+    if (periodMonths > 0) {
+        const d = new Date();
+        d.setUTCMonth(d.getUTCMonth() - periodMonths);
+        cutoff = d.getTime();
+    }
+
+    const sizes = [];
+    for (const [hash, c] of commits) {
+        const when = c.author?.when || c.author?.When;
+        if (!when) continue;
+        const ts = new Date(when).getTime();
+        if (cutoff > 0 && ts < cutoff) continue;
+
+        const stats = diffStats.get(hash);
+        if (!stats) continue;
+        sizes.push(stats.filesChanged);
+    }
+
+    const buckets = SIZE_BUCKETS.map((b) => ({ label: b.label, count: 0 }));
+    for (const size of sizes) {
+        for (let i = 0; i < SIZE_BUCKETS.length; i++) {
+            if (size <= SIZE_BUCKETS[i].max) {
+                buckets[i].count++;
+                break;
+            }
+        }
+    }
+
+    sizes.sort((a, b) => a - b);
+    const median = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] : 0;
+    const avgSize = sizes.length > 0 ? sizes.reduce((s, v) => s + v, 0) / sizes.length : 0;
+
+    return { buckets, median, avgSize };
+}
+
+/**
+ * Computes weekly rework rate — proportion of files modified that were also
+ * modified within the prior CHURN_WINDOW_DAYS days.
+ *
+ * @param {Map<string, object>} commits
+ * @param {Map<string, object>} diffStats - hash → { filesChanged, files }
+ * @param {number} periodMonths - 0 means all
+ * @returns {{ weeks: {ts: number, rate: number}[], avgRate: number }}
+ */
+function computeReworkRate(commits, diffStats, periodMonths) {
+    let cutoff = 0;
+    if (periodMonths > 0) {
+        const d = new Date();
+        d.setUTCMonth(d.getUTCMonth() - periodMonths);
+        cutoff = d.getTime();
+    }
+
+    // Collect commits with timestamps and file lists, sorted by time
+    const entries = [];
+    for (const [hash, c] of commits) {
+        const when = c.author?.when || c.author?.When;
+        if (!when) continue;
+        const ts = new Date(when).getTime();
+        if (cutoff > 0 && ts < cutoff) continue;
+
+        const stats = diffStats.get(hash);
+        if (!stats || !stats.files || stats.files.length === 0) continue;
+        entries.push({ ts, files: stats.files });
+    }
+    entries.sort((a, b) => a.ts - b.ts);
+
+    if (entries.length === 0) {
+        return { weeks: [], avgRate: 0 };
+    }
+
+    const windowMs = CHURN_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+    // Group by ISO week
+    const weekBuckets = new Map();
+    for (const entry of entries) {
+        const ws = weekStart(entry.ts);
+        if (!weekBuckets.has(ws)) {
+            weekBuckets.set(ws, []);
+        }
+        weekBuckets.get(ws).push(entry);
+    }
+
+    const weeks = [];
+    for (const [ws, weekEntries] of weekBuckets) {
+        let totalFiles = 0;
+        let reworkedFiles = 0;
+
+        for (const entry of weekEntries) {
+            for (const file of entry.files) {
+                totalFiles++;
+                // Check if this file was modified in a prior commit within the window
+                for (const other of entries) {
+                    if (other.ts >= entry.ts) break;
+                    if (entry.ts - other.ts > windowMs) continue;
+                    if (other.files.includes(file)) {
+                        reworkedFiles++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const rate = totalFiles > 0 ? (reworkedFiles / totalFiles) * 100 : 0;
+        weeks.push({ ts: ws, rate });
+    }
+
+    weeks.sort((a, b) => a.ts - b.ts);
+    const avgRate = weeks.length > 0
+        ? weeks.reduce((s, w) => s + w.rate, 0) / weeks.length
+        : 0;
+
+    return { weeks, avgRate };
+}
+
+/**
+ * @param {{ getCommits: () => Map<string, object>, getTags: () => Map<string, string>, fetchDiffStats: () => Promise<object> }} deps
+ */
+export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
     let selectedPeriod = "All";
+
+    // ── Diff stats async cache ──
+    let diffStatsCache = null;
+    let diffStatsLoading = false;
+    let diffStatsError = false;
+
+    async function loadDiffStats() {
+        if (diffStatsCache || diffStatsLoading || !fetchDiffStats) return;
+        diffStatsLoading = true;
+        diffStatsError = false;
+        updateDiffStatsUI();
+
+        try {
+            const raw = await fetchDiffStats();
+            diffStatsCache = new Map(Object.entries(raw));
+            diffStatsLoading = false;
+            updateDiffStatsUI();
+            redrawDiffStatsCharts();
+        } catch (err) {
+            diffStatsLoading = false;
+            diffStatsError = true;
+            updateDiffStatsUI();
+        }
+    }
 
     // ── Root element ──
     const el = document.createElement("div");
@@ -367,10 +524,78 @@ export function createAnalyticsView({ getCommits, getTags }) {
     mergeSection.appendChild(mergeSummary);
     el.appendChild(mergeSection);
 
+    // ── Change size distribution section ──
+    const changeSizeSection = makeSection("Change Size Distribution");
+    const changeSizeChartContainer = document.createElement("div");
+    changeSizeChartContainer.className = "analytics-chart-container";
+    const changeSizeCanvas = document.createElement("canvas");
+    changeSizeCanvas.className = "analytics-chart-canvas";
+    changeSizeChartContainer.appendChild(changeSizeCanvas);
+    changeSizeSection.appendChild(changeSizeChartContainer);
+    const changeSizeSummary = document.createElement("div");
+    changeSizeSummary.className = "analytics-summary";
+    const medianSizeStat = makeStat("Median size");
+    const avgSizeStat = makeStat("Avg size");
+    changeSizeSummary.appendChild(medianSizeStat.el);
+    changeSizeSummary.appendChild(avgSizeStat.el);
+    changeSizeSection.appendChild(changeSizeSummary);
+    el.appendChild(changeSizeSection);
+
+    // ── Rework rate section ──
+    const reworkSection = makeSection("Rework Rate");
+    const reworkChartContainer = document.createElement("div");
+    reworkChartContainer.className = "analytics-chart-container";
+    const reworkCanvas = document.createElement("canvas");
+    reworkCanvas.className = "analytics-chart-canvas";
+    reworkChartContainer.appendChild(reworkCanvas);
+    reworkSection.appendChild(reworkChartContainer);
+    const reworkSummary = document.createElement("div");
+    reworkSummary.className = "analytics-summary";
+    const avgReworkStat = makeStat("Avg rework %");
+    reworkSummary.appendChild(avgReworkStat.el);
+    reworkSection.appendChild(reworkSummary);
+    el.appendChild(reworkSection);
+
+    // ── Diff stats loading/error message ──
+    const diffStatsMsg = document.createElement("div");
+    diffStatsMsg.className = "analytics-diff-stats-msg";
+    diffStatsMsg.style.display = "none";
+    // Insert before changeSizeSection title
+    changeSizeSection.insertBefore(diffStatsMsg, changeSizeSection.firstChild);
+
+    function updateDiffStatsUI() {
+        if (diffStatsLoading) {
+            diffStatsMsg.textContent = "Loading diff stats...";
+            diffStatsMsg.style.display = "block";
+            changeSizeChartContainer.style.display = "none";
+            changeSizeSummary.style.display = "none";
+            reworkChartContainer.style.display = "none";
+            reworkSummary.style.display = "none";
+            reworkSection.querySelector(".analytics-section-title").style.opacity = "0.5";
+        } else if (diffStatsError) {
+            diffStatsMsg.textContent = "Failed to load diff stats.";
+            diffStatsMsg.style.display = "block";
+            changeSizeChartContainer.style.display = "none";
+            changeSizeSummary.style.display = "none";
+            reworkChartContainer.style.display = "none";
+            reworkSummary.style.display = "none";
+            reworkSection.querySelector(".analytics-section-title").style.opacity = "0.5";
+        } else {
+            diffStatsMsg.style.display = "none";
+            changeSizeChartContainer.style.display = "";
+            changeSizeSummary.style.display = "";
+            reworkChartContainer.style.display = "";
+            reworkSummary.style.display = "";
+            reworkSection.querySelector(".analytics-section-title").style.opacity = "";
+        }
+    }
+
     // ── Chart state ──
     let currentData = null;
     let cachedAuthorData = null;
     let cachedHeatmapData = null;
+    let cachedChangeSizeData = null;
+    let cachedReworkData = null;
     const padding = { top: 20, right: 16, bottom: 32, left: 40 };
 
     /** Maps canvas mouse position to data coordinates. Returns week index or -1. */
@@ -412,10 +637,14 @@ export function createAnalyticsView({ getCommits, getTags }) {
         if (currentData) drawChart(currentData);
         if (cachedAuthorData) drawAuthorChart(cachedAuthorData);
         if (cachedHeatmapData) drawHeatmap(cachedHeatmapData);
+        if (cachedChangeSizeData) drawChangeSizeChart(cachedChangeSizeData);
+        if (cachedReworkData) drawReworkChart(cachedReworkData);
     });
     resizeObserver.observe(chartContainer);
     resizeObserver.observe(authorChartContainer);
     resizeObserver.observe(heatmapChartContainer);
+    resizeObserver.observe(changeSizeChartContainer);
+    resizeObserver.observe(reworkChartContainer);
 
     /** Renders the chart onto the canvas. */
     function drawChart(data) {
@@ -724,6 +953,220 @@ export function createAnalyticsView({ getCommits, getTags }) {
         }
     }
 
+    /** Renders the change size histogram onto its canvas. */
+    function drawChangeSizeChart(data) {
+        cachedChangeSizeData = data;
+        const { buckets } = data;
+        if (buckets.length === 0) return;
+
+        const rect = changeSizeChartContainer.getBoundingClientRect();
+        const width = Math.max(rect.width, 100);
+        const height = CHART_HEIGHT;
+        const dpr = window.devicePixelRatio || 1;
+
+        changeSizeCanvas.width = width * dpr;
+        changeSizeCanvas.height = height * dpr;
+        changeSizeCanvas.style.width = `${width}px`;
+        changeSizeCanvas.style.height = `${height}px`;
+
+        const ctx = changeSizeCanvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const textColor = cssVar("--text-secondary") || "#57606a";
+        const nodeColor = cssVar("--node-color") || "#0ea5e9";
+        const borderColor = cssVar("--border-color") || "#d8dce2";
+
+        ctx.clearRect(0, 0, width, height);
+
+        const barPadding = { top: 20, right: 16, bottom: 32, left: 40 };
+        const plotWidth = width - barPadding.left - barPadding.right;
+        const plotHeight = height - barPadding.top - barPadding.bottom;
+
+        const maxCount = Math.max(...buckets.map((b) => b.count), 1);
+        const barWidth = Math.floor(plotWidth / buckets.length) - 8;
+        const gap = (plotWidth - barWidth * buckets.length) / (buckets.length + 1);
+
+        // Y-axis
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(barPadding.left, barPadding.top);
+        ctx.lineTo(barPadding.left, barPadding.top + plotHeight);
+        ctx.stroke();
+
+        // X-axis
+        ctx.beginPath();
+        ctx.moveTo(barPadding.left, barPadding.top + plotHeight);
+        ctx.lineTo(barPadding.left + plotWidth, barPadding.top + plotHeight);
+        ctx.stroke();
+
+        // Y-axis ticks
+        ctx.font = "10px 'Geist', system-ui, sans-serif";
+        ctx.fillStyle = textColor;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        const yTicks = Math.min(5, maxCount);
+        for (let i = 0; i <= yTicks; i++) {
+            const v = Math.round((maxCount / yTicks) * i);
+            const y = barPadding.top + plotHeight - (v / maxCount) * plotHeight;
+            ctx.fillText(String(v), barPadding.left - 6, y);
+        }
+
+        // Bars
+        ctx.fillStyle = nodeColor;
+        ctx.font = "10px 'Geist', system-ui, sans-serif";
+        for (let i = 0; i < buckets.length; i++) {
+            const x = barPadding.left + gap + i * (barWidth + gap);
+            const barH = maxCount > 0 ? (buckets[i].count / maxCount) * plotHeight : 0;
+            const y = barPadding.top + plotHeight - barH;
+
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.roundRect(x, y, barWidth, barH, 3);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // Count above bar
+            ctx.fillStyle = textColor;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            if (buckets[i].count > 0) {
+                ctx.fillText(String(buckets[i].count), x + barWidth / 2, y - 4);
+            }
+
+            // Label below x-axis
+            ctx.textBaseline = "top";
+            ctx.fillText(buckets[i].label, x + barWidth / 2, barPadding.top + plotHeight + 6);
+
+            ctx.fillStyle = nodeColor;
+        }
+    }
+
+    /** Renders the rework rate line chart onto its canvas. */
+    function drawReworkChart(data) {
+        cachedReworkData = data;
+        const { weeks } = data;
+        if (weeks.length < 2) return;
+
+        const rect = reworkChartContainer.getBoundingClientRect();
+        const width = Math.max(rect.width, 100);
+        const height = CHART_HEIGHT;
+        const dpr = window.devicePixelRatio || 1;
+
+        reworkCanvas.width = width * dpr;
+        reworkCanvas.height = height * dpr;
+        reworkCanvas.style.width = `${width}px`;
+        reworkCanvas.style.height = `${height}px`;
+
+        const ctx = reworkCanvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const textColor = cssVar("--text-secondary") || "#57606a";
+        const warningColor = cssVar("--warning-color") || "#d97706";
+        const borderColor = cssVar("--border-color") || "#d8dce2";
+
+        ctx.clearRect(0, 0, width, height);
+
+        const plotWidth = width - padding.left - padding.right;
+        const plotHeight = height - padding.top - padding.bottom;
+
+        const maxRate = Math.max(100, Math.ceil(Math.max(...weeks.map((w) => w.rate)) * 1.1));
+        const xAt = (i) => padding.left + (i / (weeks.length - 1)) * plotWidth;
+        const yAt = (v) => padding.top + plotHeight - (v / maxRate) * plotHeight;
+
+        // Axes
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, padding.top);
+        ctx.lineTo(padding.left, padding.top + plotHeight);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(padding.left, padding.top + plotHeight);
+        ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+        ctx.stroke();
+
+        // Y-axis ticks (percentage)
+        ctx.font = "10px 'Geist', system-ui, sans-serif";
+        ctx.fillStyle = textColor;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        for (let i = 0; i <= 4; i++) {
+            const v = Math.round((maxRate / 4) * i);
+            const y = yAt(v);
+            ctx.fillText(`${v}%`, padding.left - 6, y);
+            if (i > 0) {
+                ctx.save();
+                ctx.strokeStyle = borderColor;
+                ctx.globalAlpha = 0.3;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(padding.left, y);
+                ctx.lineTo(padding.left + plotWidth, y);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // X-axis labels
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        let lastLabel = "";
+        const labelInterval = Math.max(1, Math.floor(weeks.length / 8));
+        for (let i = 0; i < weeks.length; i += labelInterval) {
+            const label = formatMonthYear(weeks[i].ts);
+            if (label !== lastLabel) {
+                ctx.fillText(label, xAt(i), padding.top + plotHeight + 6);
+                lastLabel = label;
+            }
+        }
+
+        // Filled area under line
+        const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + plotHeight);
+        gradient.addColorStop(0, warningColor + "33");
+        gradient.addColorStop(1, warningColor + "05");
+
+        ctx.beginPath();
+        ctx.moveTo(xAt(0), yAt(0));
+        for (let i = 0; i < weeks.length; i++) {
+            ctx.lineTo(xAt(i), yAt(weeks[i].rate));
+        }
+        ctx.lineTo(xAt(weeks.length - 1), yAt(0));
+        ctx.closePath();
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // Line
+        ctx.beginPath();
+        ctx.strokeStyle = warningColor;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        for (let i = 0; i < weeks.length; i++) {
+            const x = xAt(i);
+            const y = yAt(weeks[i].rate);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    /** Recomputes and redraws both diff-stats-dependent charts. */
+    function redrawDiffStatsCharts() {
+        if (!diffStatsCache) return;
+        const commits = getCommits();
+        if (!commits || commits.size === 0) return;
+        const period = PERIODS.find((p) => p.label === selectedPeriod) || PERIODS[3];
+
+        const changeSizeData = computeChangeSizeDistribution(commits, diffStatsCache, period.months);
+        medianSizeStat.value.textContent = `${changeSizeData.median} files`;
+        avgSizeStat.value.textContent = `${changeSizeData.avgSize.toFixed(1)} files`;
+        drawChangeSizeChart(changeSizeData);
+
+        const reworkData = computeReworkRate(commits, diffStatsCache, period.months);
+        avgReworkStat.value.textContent = `${reworkData.avgRate.toFixed(1)}%`;
+        drawReworkChart(reworkData);
+    }
+
     /** Main update — re-reads commits and redraws everything. */
     function update() {
         const commits = getCommits();
@@ -742,6 +1185,8 @@ export function createAnalyticsView({ getCommits, getTags }) {
             authorSection.style.display = "none";
             heatmapSection.style.display = "none";
             mergeSection.style.display = "none";
+            changeSizeSection.style.display = "none";
+            reworkSection.style.display = "none";
             return;
         }
 
@@ -752,6 +1197,8 @@ export function createAnalyticsView({ getCommits, getTags }) {
         authorSection.style.display = "";
         heatmapSection.style.display = "";
         mergeSection.style.display = "";
+        changeSizeSection.style.display = "";
+        reworkSection.style.display = "";
 
         const data = computeVelocity(commits, period.months);
 
@@ -777,6 +1224,13 @@ export function createAnalyticsView({ getCommits, getTags }) {
         mergeCountStat.value.textContent = mergeData.mergeCount.toLocaleString();
         mergePercentStat.value.textContent = `${mergeData.mergePercent.toFixed(1)}%`;
         mergesPerWeekStat.value.textContent = mergeData.mergesPerWeek.toFixed(1);
+
+        // Diff-stats-dependent charts
+        if (diffStatsCache) {
+            redrawDiffStatsCharts();
+        } else {
+            loadDiffStats();
+        }
     }
 
     return { el, update };
