@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -22,6 +23,11 @@ func normalizeURL(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return "", fmt.Errorf("empty URL")
+	}
+
+	// Reject URLs that could be interpreted as git command-line options.
+	if strings.HasPrefix(rawURL, "-") {
+		return "", fmt.Errorf("invalid URL: must not start with '-'")
 	}
 
 	lower := strings.ToLower(rawURL)
@@ -54,6 +60,10 @@ func normalizeURL(rawURL string) (string, error) {
 		return "", fmt.Errorf("missing hostname")
 	}
 
+	if isPrivateHost(host) {
+		return "", fmt.Errorf("cloning from private/internal addresses is not allowed")
+	}
+
 	port := parsed.Port()
 	hostPart := host
 	if port != "" {
@@ -82,7 +92,7 @@ func cloneRepo(ctx context.Context, repoURL, destPath string, timeout time.Durat
 	defer cancel()
 
 	//nolint:gosec // G204: URL is validated by normalizeURL before reaching here
-	cmd := exec.CommandContext(ctx, "git", "clone", "--bare", "--quiet", repoURL, destPath)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--bare", "--quiet", "--", repoURL, destPath)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -113,4 +123,35 @@ func fetchRepo(ctx context.Context, repoPath string, timeout time.Duration) erro
 		return fmt.Errorf("fetch failed: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil
+}
+
+// isPrivateHost returns true if the hostname resolves to a private, loopback,
+// or link-local IP address. This prevents SSRF attacks where a user-supplied
+// clone URL targets internal infrastructure (e.g., cloud metadata endpoints).
+func isPrivateHost(host string) bool {
+	switch host {
+	case "localhost", "metadata.google.internal":
+		return true
+	}
+
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return false
+		}
+		return isPrivateIP(ip)
+	}
+
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip != nil && isPrivateIP(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
