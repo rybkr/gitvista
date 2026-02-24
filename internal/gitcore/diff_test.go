@@ -36,6 +36,7 @@ func setupTestRepo(t *testing.T) *Repository {
 		packIndices: make([]*PackIndex, 0),
 		refs:        make(map[string]Hash),
 		commits:     make([]*Commit, 0),
+		commitMap:   make(map[Hash]*Commit),
 	}
 
 	return repo
@@ -835,7 +836,7 @@ func TestIsBinaryContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isBinaryContent(tt.content)
+			result := IsBinaryContent(tt.content)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}

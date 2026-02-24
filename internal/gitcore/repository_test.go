@@ -95,7 +95,8 @@ func TestRepositoryDiff(t *testing.T) {
 	}
 
 	oldRepo := &Repository{
-		commits: []*Commit{commit1, commit2},
+		commits:   []*Commit{commit1, commit2},
+		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2},
 		refs: map[string]Hash{
 			"refs/heads/main":    commit2.ID,
 			"refs/heads/feature": commit1.ID,
@@ -103,7 +104,8 @@ func TestRepositoryDiff(t *testing.T) {
 	}
 
 	newRepo := &Repository{
-		commits: []*Commit{commit1, commit2, commit3},
+		commits:   []*Commit{commit1, commit2, commit3},
+		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2, commit3.ID: commit3},
 		refs: map[string]Hash{
 			"refs/heads/main":    commit3.ID,
 			"refs/heads/develop": commit2.ID,
@@ -516,11 +518,11 @@ func TestRepository_GetCommit(t *testing.T) {
 	hash1 := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	hash2 := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
+	c1 := &Commit{ID: hash1, Message: "first"}
+	c2 := &Commit{ID: hash2, Message: "second"}
 	repo := &Repository{
-		commits: []*Commit{
-			{ID: hash1, Message: "first"},
-			{ID: hash2, Message: "second"},
-		},
+		commits:   []*Commit{c1, c2},
+		commitMap: map[Hash]*Commit{hash1: c1, hash2: c2},
 	}
 
 	t.Run("found", func(t *testing.T) {
@@ -591,8 +593,9 @@ func TestRepository_CommitLog(t *testing.T) {
 	}
 
 	repo := &Repository{
-		head:    commit3.ID,
-		commits: []*Commit{commit1, commit2, commit3},
+		head:      commit3.ID,
+		commits:   []*Commit{commit1, commit2, commit3},
+		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2, commit3.ID: commit3},
 	}
 
 	t.Run("all commits", func(t *testing.T) {
@@ -622,7 +625,7 @@ func TestRepository_CommitLog(t *testing.T) {
 	})
 
 	t.Run("empty head", func(t *testing.T) {
-		emptyRepo := &Repository{}
+		emptyRepo := NewEmptyRepository()
 		log := emptyRepo.CommitLog(0)
 		if log != nil {
 			t.Errorf("CommitLog() on empty repo = %v, want nil", log)

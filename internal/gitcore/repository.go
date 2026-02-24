@@ -98,17 +98,15 @@ func (r *Repository) Commits() map[Hash]*Commit {
 	return r.commitsMap()
 }
 
-// commitsMap returns the cached commit map, building it on demand if nil.
+// commitsMap returns the cached commit map. The map is always initialized by
+// loadObjects during NewRepository construction; this method panics if that
+// invariant is violated.
 // Caller must hold at least r.mu.RLock().
 func (r *Repository) commitsMap() map[Hash]*Commit {
-	if r.commitMap != nil {
-		return r.commitMap
+	if r.commitMap == nil {
+		panic("gitcore: commitMap is nil — Repository was not fully initialized via NewRepository")
 	}
-	m := make(map[Hash]*Commit, len(r.commits))
-	for _, c := range r.commits {
-		m[c.ID] = c
-	}
-	return m
+	return r.commitMap
 }
 
 // CommitCount returns the number of commits without building a map.

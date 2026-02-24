@@ -20,6 +20,10 @@ func wireHeadCommit(repo *Repository, treeHash Hash) {
 	}
 	repo.head = commit.ID
 	repo.commits = append(repo.commits, commit)
+	if repo.commitMap == nil {
+		repo.commitMap = make(map[Hash]*Commit)
+	}
+	repo.commitMap[commit.ID] = commit
 }
 
 // writeDiskFile writes content to a file under the repo's working directory,
