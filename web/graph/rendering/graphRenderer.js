@@ -38,6 +38,7 @@ import {
     LANE_MARGIN,
     LANE_HEADER_FONT,
     LANE_HEADER_HEIGHT,
+    LANE_ARROW_CASING,
 } from "../constants.js";
 import { shortenHash } from "../../utils/format.js";
 import { getAuthorColor } from "../../utils/colors.js";
@@ -140,24 +141,28 @@ export class GraphRenderer {
             const pad = LANE_VERTICAL_STEP / 2;
             const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
 
-            // Draw background strip and label per segment
+            // Draw background strip per segment
             for (const seg of segments) {
                 const stripTop = Math.max(topY, seg.minY - pad);
                 const stripBottom = Math.min(bottomY, seg.maxY + pad);
                 if (stripTop >= stripBottom) continue;
 
-                // Background — squared top (header bar sits above), rounded bottom
+                const rBottom = stripBottom >= bottomY ? 0 : 10;
+                const x = cx - halfW;
+                const w = halfW * 2;
+                const h = stripBottom - stripTop;
+
+                // Background fill with subtle border outline
                 this.ctx.save();
-                this.ctx.globalAlpha = 0.06;
-                this.ctx.fillStyle = lane.color;
-                const rBottom = stripBottom >= bottomY ? 0 : 12;
                 this.ctx.beginPath();
-                this.ctx.roundRect(
-                    cx - halfW, stripTop,
-                    halfW * 2, stripBottom - stripTop,
-                    [0, 0, rBottom, rBottom],
-                );
+                this.ctx.roundRect(x, stripTop, w, h, [0, 0, rBottom, rBottom]);
+                this.ctx.globalAlpha = 0.05;
+                this.ctx.fillStyle = lane.color;
                 this.ctx.fill();
+                this.ctx.globalAlpha = 0.07;
+                this.ctx.strokeStyle = lane.color;
+                this.ctx.lineWidth = 1;
+                this.ctx.stroke();
                 this.ctx.restore();
             }
         }
@@ -185,21 +190,30 @@ export class GraphRenderer {
                 const barW = halfW * 2;
                 const barX = cx - halfW;
                 const barH = LANE_HEADER_HEIGHT;
+                const r = 6;
 
-                // Header background — rounded top corners, squared bottom
+                // Header background — gradient fading downward
                 ctx.save();
-                ctx.globalAlpha = 0.15;
-                ctx.fillStyle = lane.color;
+                const grad = ctx.createLinearGradient(barX, barY, barX, barY + barH);
+                grad.addColorStop(0, lane.color);
+                grad.addColorStop(1, lane.color);
+                ctx.fillStyle = grad;
+                ctx.globalAlpha = 0.12;
                 ctx.beginPath();
-                ctx.roundRect(barX, barY, barW, barH, [4, 4, 0, 0]);
+                ctx.roundRect(barX, barY, barW, barH, [r, r, 0, 0]);
                 ctx.fill();
-                ctx.restore();
-
-                // Bottom border line — subtle visual separator
-                ctx.save();
-                ctx.globalAlpha = 0.25;
+                // Outline to tie header to the column below
+                ctx.globalAlpha = 0.10;
                 ctx.strokeStyle = lane.color;
                 ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.restore();
+
+                // Bottom accent line
+                ctx.save();
+                ctx.globalAlpha = 0.30;
+                ctx.strokeStyle = lane.color;
+                ctx.lineWidth = 1.5;
                 ctx.beginPath();
                 ctx.moveTo(barX, barY + barH);
                 ctx.lineTo(barX + barW, barY + barH);
@@ -222,20 +236,20 @@ export class GraphRenderer {
                     ctx.strokeText(name, cx, barY + barH / 2);
 
                     // Text
-                    ctx.globalAlpha = 0.85;
+                    ctx.globalAlpha = 0.90;
                     ctx.fillStyle = lane.color;
                     ctx.fillText(name, cx, barY + barH / 2);
                     ctx.restore();
                 } else {
-                    // No branch name — draw a grip indicator (three short lines)
+                    // No branch name — draw a grip indicator (two short lines)
                     ctx.save();
-                    ctx.globalAlpha = 0.35;
+                    ctx.globalAlpha = 0.25;
                     ctx.strokeStyle = lane.color;
                     ctx.lineWidth = 1.5;
                     ctx.lineCap = "round";
-                    const gripW = 10;
-                    for (let i = -1; i <= 1; i++) {
-                        const gy = barY + barH / 2 + i * 4;
+                    const gripW = 8;
+                    for (let i = 0; i <= 1; i++) {
+                        const gy = barY + barH / 2 + (i * 2 - 1) * 3;
                         ctx.beginPath();
                         ctx.moveTo(cx - gripW, gy);
                         ctx.lineTo(cx + gripW, gy);
@@ -444,16 +458,34 @@ export class GraphRenderer {
         const maxH = Math.abs(target.x - source.x) / 2;
         const r = Math.max(0, Math.min(LANE_CORNER_RADIUS, maxV, maxH));
 
-        // Draw the stepped path with rounded corners via arcTo
+        // Trace the stepped path (reused for casing and stroke)
+        const tracePath = () => {
+            this.ctx.beginPath();
+            this.ctx.moveTo(source.x, source.y);
+            this.ctx.arcTo(source.x, midY, target.x, midY, r);
+            this.ctx.arcTo(target.x, midY, target.x, endY, r);
+            this.ctx.lineTo(target.x, endY);
+        };
+
+        // Casing: wider background-colored stroke so overlapping arrows
+        // separate cleanly — the same technique used in transit maps.
+        this.ctx.save();
+        this.ctx.strokeStyle = this.palette.background;
+        this.ctx.lineWidth = this.ctx.lineWidth + LANE_ARROW_CASING;
+        this.ctx.lineCap = "round";
+        this.ctx.lineJoin = "round";
+        tracePath();
+        this.ctx.stroke();
+        this.ctx.restore();
+
+        // Actual arrow stroke
         this.ctx.strokeStyle = color;
-        this.ctx.beginPath();
-        this.ctx.moveTo(source.x, source.y);
-        this.ctx.arcTo(source.x, midY, target.x, midY, r);
-        this.ctx.arcTo(target.x, midY, target.x, endY, r);
-        this.ctx.lineTo(target.x, endY);
+        this.ctx.lineCap = "round";
+        this.ctx.lineJoin = "round";
+        tracePath();
         this.ctx.stroke();
 
-        // Draw arrowhead pointing toward target
+        // Arrowhead pointing toward target
         const arrowTipY = target.y - dir * targetRadius;
         this.ctx.save();
         this.ctx.translate(target.x, arrowTipY);
