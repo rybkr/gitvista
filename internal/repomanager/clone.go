@@ -134,7 +134,7 @@ func isPrivateHost(host string) bool {
 		return true
 	}
 
-	ips, err := net.LookupHost(host)
+	ips, err := net.DefaultResolver.LookupHost(context.Background(), host)
 	if err != nil {
 		ip := net.ParseIP(host)
 		if ip == nil {

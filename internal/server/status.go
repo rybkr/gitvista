@@ -118,4 +118,3 @@ func workStatusCode(s string) string {
 		return ""
 	}
 }
-

@@ -14,6 +14,9 @@ type contextKey int
 
 const sessionKey contextKey = iota
 
+// apiWriteDeadline is the per-response write deadline for API handlers.
+const apiWriteDeadline = 30 * time.Second
+
 // withSessionCtx returns a new context carrying the given RepoSession.
 func withSessionCtx(ctx context.Context, rs *RepoSession) context.Context {
 	return context.WithValue(ctx, sessionKey, rs)
@@ -74,10 +77,10 @@ func requestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 // writeDeadline wraps a handler to set a per-response write deadline using
 // ResponseController. This enforces a timeout on individual HTTP responses
 // without affecting long-lived WebSocket connections (which are not wrapped).
-func writeDeadline(d time.Duration, next http.HandlerFunc) http.HandlerFunc {
+func writeDeadline(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rc := http.NewResponseController(w)
-		_ = rc.SetWriteDeadline(time.Now().Add(d))
+		_ = rc.SetWriteDeadline(time.Now().Add(apiWriteDeadline))
 		next(w, r)
 	}
 }

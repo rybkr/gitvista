@@ -1,3 +1,4 @@
+// Package server implements the GitVista HTTP server and WebSocket handlers.
 package server
 
 import (
@@ -195,28 +196,26 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
 
-	const apiWriteDeadline = 30 * time.Second
-
 	if s.mode == ModeLocal {
 		ls := s.localSession
 		ls.Start()
 
-		mux.HandleFunc("/api/repository", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleRepository))))
-		mux.HandleFunc("/api/tree/blame/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleTreeBlame))))
-		mux.HandleFunc("/api/tree/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleTree))))
-		mux.HandleFunc("/api/blob/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleBlob))))
-		mux.HandleFunc("/api/commit/diff/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff))))
-		mux.HandleFunc("/api/working-tree/diff", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
+		mux.HandleFunc("/api/repository", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleRepository))))
+		mux.HandleFunc("/api/tree/blame/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleTreeBlame))))
+		mux.HandleFunc("/api/tree/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleTree))))
+		mux.HandleFunc("/api/blob/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBlob))))
+		mux.HandleFunc("/api/commit/diff/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff))))
+		mux.HandleFunc("/api/working-tree/diff", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
 		// Repo management endpoints (SaaS mode only)
-		mux.HandleFunc("/api/repos", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(s.handleRepos)))
-		mux.HandleFunc("/api/repos/", writeDeadline(apiWriteDeadline, s.rateLimiter.middleware(s.handleRepoRoutes)))
+		mux.HandleFunc("/api/repos", writeDeadline(s.rateLimiter.middleware(s.handleRepos)))
+		mux.HandleFunc("/api/repos/", writeDeadline(s.rateLimiter.middleware(s.handleRepoRoutes)))
 	}
 
 	// Build the handler chain: logging wraps the mux, and CORS wraps
 	// logging in SaaS mode.
-	var handler http.Handler = requestLogger(s.logger, mux)
+	handler := requestLogger(s.logger, mux)
 	if s.mode == ModeSaaS {
 		handler = corsMiddleware(handler)
 	}
