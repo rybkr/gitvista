@@ -52,19 +52,24 @@ export const TREE_ICON_SIZE = 7;
 export const TREE_ICON_OFFSET = 2;
 
 // Lane layout constants for lane-based positioning strategy
-export const LANE_WIDTH = 80; // Pixels between lane centers
+export const LANE_WIDTH = 120; // Pixels between lane centers
 export const LANE_MARGIN = 60; // Left margin for lane 0
+export const LANE_VERTICAL_STEP = 70; // Dedicated vertical spacing for lane mode
 export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
-export const LANE_CORNER_RADIUS = 10; // Rounded corner radius for cross-lane stepped paths
+export const LANE_CORNER_RADIUS = 14; // Rounded corner radius for cross-lane stepped paths
+export const LANE_HEADER_FONT =
+    "600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
+export const LANE_HEADER_HEIGHT = 28; // Screen-space height of the lane header bar (px)
+export const LANE_ARROW_CASING = 5; // Width of background-colored casing behind cross-lane arrows
 export const LANE_COLORS = [
-    "#0969da", // Blue
-    "#8250df", // Purple
-    "#1a7f37", // Green
-    "#bf8700", // Yellow/Orange
-    "#cf222e", // Red
-    "#0550ae", // Dark blue
-    "#6639ba", // Dark purple
-    "#116329"  // Dark green
+    "#3a86c4",  // Azure
+    "#8b6cb5",  // Wisteria
+    "#3d9970",  // Eucalyptus
+    "#cc8c3c",  // Amber
+    "#c4584a",  // Terra cotta
+    "#5a7fb5",  // Slate
+    "#a06090",  // Mauve
+    "#6a9a4a",  // Moss
 ];
 
 // Tag node styling

@@ -223,7 +223,7 @@ export function createGraphController(rootElement, options = {}) {
         viewportHeight,
         onTick: tick,
     });
-    const laneStrategy = new LaneStrategy();
+    const laneStrategy = new LaneStrategy({ onTick: tick });
 
     // Restore layout mode from localStorage, default to "force"
     const STORAGE_KEY_LAYOUT_MODE = "gitvista-layout-mode";
@@ -326,6 +326,7 @@ export function createGraphController(rootElement, options = {}) {
 
         // Force immediate reposition
         updateGraph();
+        render();
     };
 
     // Wire button click handlers
@@ -523,6 +524,7 @@ export function createGraphController(rootElement, options = {}) {
 
         dragState = null;
         isDraggingNode = false;
+        canvas.style.cursor = "default";
     };
 
     const handlePointerDown = (event) => {
@@ -531,6 +533,34 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         const { x, y } = toGraphCoordinates(event);
+
+        // Lane header drag detection — check before node hit-test
+        if (state.layoutMode === "lane") {
+            const hit = laneStrategy.findLaneHeaderAt(x, y);
+            if (hit && hit.displayLane >= 0 && hit.displayLane < laneStrategy.laneOrder.length) {
+                event.stopImmediatePropagation();
+                event.preventDefault();
+                isDraggingNode = true;
+                dragState = {
+                    node: null,
+                    pointerId: event.pointerId,
+                    startX: x,
+                    startY: y,
+                    dragged: true,
+                    laneDrag: true,
+                    segmentHashes: hit.segmentHashes,
+                    sourceLaneDisplay: hit.displayLane,
+                    currentLaneDisplay: hit.displayLane,
+                };
+                canvas.style.cursor = "grabbing";
+                try {
+                    canvas.setPointerCapture(event.pointerId);
+                } catch {
+                    // ignore
+                }
+                return;
+            }
+        }
 
         const targetNode = findNodeAt(x, y);
 
@@ -595,6 +625,24 @@ export function createGraphController(rootElement, options = {}) {
             event.preventDefault();
             const { x, y } = toGraphCoordinates(event);
 
+            // Lane header drag — move segment as pointer crosses lane boundaries
+            if (dragState.laneDrag) {
+                const currentDisplay = laneStrategy.findLaneAtX(x);
+                if (
+                    currentDisplay >= 0 &&
+                    currentDisplay < laneStrategy.laneOrder.length &&
+                    currentDisplay !== dragState.currentLaneDisplay
+                ) {
+                    laneStrategy.moveSegment(dragState.segmentHashes, currentDisplay);
+                    dragState.currentLaneDisplay = currentDisplay;
+                    // Re-snap branch/tag decorator nodes to new commit positions
+                    snapDecoratorNodesForLaneDrag();
+                }
+                canvas.style.cursor = "grabbing";
+                render();
+                return;
+            }
+
             if (!dragState.dragged) {
                 const distance = Math.hypot(
                     x - dragState.startX,
@@ -625,6 +673,18 @@ export function createGraphController(rootElement, options = {}) {
         if (hoverRafId !== null) return;
         hoverRafId = requestAnimationFrame(() => {
             hoverRafId = null;
+
+            // Lane header hover cursor
+            if (state.layoutMode === "lane" && !dragState) {
+                const hit = laneStrategy.findLaneHeaderAt(pendingHoverX, pendingHoverY);
+                if (hit && hit.displayLane >= 0 && hit.displayLane < laneStrategy.laneOrder.length) {
+                    state.hoverNode = null;
+                    canvas.style.cursor = "grab";
+                    render();
+                    return;
+                }
+            }
+
             const hit = findNodeAt(pendingHoverX, pendingHoverY);
             if (hit !== state.hoverNode) {
                 state.hoverNode = hit;
@@ -782,8 +842,8 @@ export function createGraphController(rootElement, options = {}) {
                     continue;
                 }
                 links.push({
-                    source: commit.hash,
-                    target: parentHash,
+                    source: parentHash,
+                    target: commit.hash,
                 });
             }
         }
@@ -982,7 +1042,7 @@ export function createGraphController(rootElement, options = {}) {
         nodes.splice(0, nodes.length, ...allNodes);
         links.splice(0, links.length, ...allLinks);
 
-        if (dragState && !nodes.includes(dragState.node)) {
+        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
             releaseDrag();
         }
 
@@ -990,10 +1050,6 @@ export function createGraphController(rootElement, options = {}) {
         if (currentTarget && !nodes.includes(currentTarget)) {
             hideTooltip();
         }
-
-        // Snap branch and tag nodes to their target commits before updating layout strategy
-        snapBranchesToTargets(branchReconciliation.alignments);
-        snapTagsToTargets(tagReconciliation.alignments);
 
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after reconciliation so newly-created nodes are
@@ -1016,6 +1072,10 @@ export function createGraphController(rootElement, options = {}) {
             { width: viewportWidth, height: viewportHeight },
             structureChanged,
         );
+
+        // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
+        snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
 
         // Center on latest commit if auto-centering is requested
         if (layoutStrategy.shouldAutoCenter()) {
@@ -1067,19 +1127,18 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, position branches based on lane structure, not current commit position
-                const laneIndex = targetNode.laneIndex ?? 0;
-                const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
+                // In lane mode, use commit's X directly (already display-aware)
+                const laneX = targetNode.x;
 
                 // Stack multiple branches on the same commit vertically
-                const key = targetNode.hash ?? laneIndex;
+                const key = targetNode.hash ?? (targetNode.laneIndex ?? 0);
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                // Position branch above its commit (negative Y offset), stacked if multiple
+                // Center X on lane, position Y directly above commit with stacking
                 const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
-                branchNode.x = laneX - BRANCH_NODE_OFFSET_X;
-                branchNode.y = (targetNode.y ?? 0) - BRANCH_NODE_OFFSET_Y * 4 - stackOffset;
+                branchNode.x = laneX;
+                branchNode.y = targetNode.y - BRANCH_NODE_RADIUS - 8 - stackOffset;
             } else {
                 // Force mode: small jitter is fine since simulation will settle
                 const baseX = targetNode.x ?? 0;
@@ -1148,6 +1207,36 @@ export function createGraphController(rootElement, options = {}) {
         };
     }
 
+    /**
+     * Re-snaps branch and tag decorator nodes to their target commits
+     * after a lane swap. Used during lane drag to keep decorators aligned.
+     */
+    function snapDecoratorNodesForLaneDrag() {
+        const commitMap = new Map();
+        for (const n of nodes) {
+            if (n.type === "commit") commitMap.set(n.hash, n);
+        }
+        const bCount = new Map();
+        const tCount = new Map();
+        for (const n of nodes) {
+            if (n.type === "branch" && n.targetHash) {
+                const t = commitMap.get(n.targetHash);
+                if (!t) continue;
+                const i = bCount.get(t.hash) || 0;
+                bCount.set(t.hash, i + 1);
+                n.x = t.x;
+                n.y = t.y - BRANCH_NODE_RADIUS - 8 - i * (BRANCH_NODE_RADIUS * 2.5 + 2);
+            } else if (n.type === "tag" && n.targetHash) {
+                const t = commitMap.get(n.targetHash);
+                if (!t) continue;
+                const i = tCount.get(t.hash) || 0;
+                tCount.set(t.hash, i + 1);
+                n.x = t.x;
+                n.y = t.y + TAG_NODE_RADIUS + 8 + i * (TAG_NODE_RADIUS * 2.5 + 2);
+            }
+        }
+    }
+
     function snapTagsToTargets(pairs) {
         // Track per-commit tag count for stacking in lane mode
         const perCommitCount = new Map();
@@ -1160,18 +1249,17 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, position tags to the RIGHT of the commit lane
-                const laneIndex = targetNode.laneIndex ?? 0;
-                const laneX = LANE_MARGIN + laneIndex * LANE_WIDTH;
+                // In lane mode, use commit's X directly (already display-aware)
+                const laneX = targetNode.x;
 
                 // Stack multiple tags on the same commit vertically
-                const key = targetNode.hash ?? laneIndex;
+                const key = targetNode.hash ?? (targetNode.laneIndex ?? 0);
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
                 const stackOffset = index * (TAG_NODE_RADIUS * 2.5 + 2);
-                tagNode.x = laneX + TAG_NODE_OFFSET_X;
-                tagNode.y = (targetNode.y ?? 0) - TAG_NODE_OFFSET_Y * 4 - stackOffset;
+                tagNode.x = laneX;
+                tagNode.y = targetNode.y + TAG_NODE_RADIUS + 8 + stackOffset;
             } else {
                 // Force mode: small jitter offset from target commit
                 const baseX = targetNode.x ?? 0;
@@ -1199,6 +1287,9 @@ export function createGraphController(rootElement, options = {}) {
                 tooltipManager,
                 headHash: state.headHash,
                 hoverNode: state.hoverNode,
+                tags: state.tags,
+                layoutMode: state.layoutMode,
+                laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
             });
         });
     }
