@@ -129,17 +129,31 @@ function getReachableCommits(branchTipHash, commits) {
  * @param {Map<string, string>} branches Live branch map.
  * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
  * @param {Array<{hash: string}>} stashes Live stash list from delta.
+ * @param {number|null} isolatedLanePosition When non-null, only commits at this lane position pass.
+ * @param {Array<Object>} segments Segments array from laneStrategy (used for isolation).
  * @returns {((node: import("./types.js").GraphNode) => boolean) | null}
  */
-function buildFilterPredicate(searchState, filterState, branches, commits, stashes) {
+function buildFilterPredicate(searchState, filterState, branches, commits, stashes, isolatedLanePosition, segments) {
     // The matcher is null when the query is empty (parseSearchQuery sets isEmpty).
     const matcher = searchState?.matcher ?? null;
     const hasSearch = matcher !== null;
     const { hideRemotes, hideMerges, hideStashes, focusBranch } = filterState;
-    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch;
+    const hasIsolation = isolatedLanePosition !== null && isolatedLanePosition !== undefined;
+    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch || hasIsolation;
 
     // Short-circuit: nothing active → caller skips the dimming loop entirely.
     if (!hasSearch && !hasAnyFilter) return null;
+
+    // Pre-compute isolated hashes set from segments at the given position.
+    let isolatedHashes = null;
+    if (hasIsolation && Array.isArray(segments)) {
+        isolatedHashes = new Set();
+        for (const seg of segments) {
+            if (seg.position === isolatedLanePosition) {
+                for (const h of seg.hashes) isolatedHashes.add(h);
+            }
+        }
+    }
 
     // Pre-compute the reachable set once via BFS (not per-node).
     let reachableSet = null;
@@ -175,6 +189,9 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
         if (hideMerges && (node.commit?.parents?.length ?? 0) > 1) return false;
         if (hideStashes && isStashCommit(node, branches, stashes)) return false;
         if (reachableSet !== null && !reachableSet.has(node.hash)) return false;
+
+        // Lane isolation: only commits in segments at the isolated position pass.
+        if (isolatedHashes !== null && !isolatedHashes.has(node.hash)) return false;
 
         return true;
     };
@@ -293,6 +310,9 @@ export function createGraphController(rootElement, options = {}) {
         if (state.layoutMode === newMode) {
             return; // Already in this mode
         }
+
+        // Clear lane isolation when switching modes
+        state.isolatedLanePosition = null;
 
         // Deactivate current strategy
         layoutStrategy.deactivate();
@@ -564,6 +584,20 @@ export function createGraphController(rootElement, options = {}) {
             }
         }
 
+        // Lane body click → toggle isolation
+        if (state.layoutMode === "lane") {
+            const bodyHit = laneStrategy.findLaneBodyAt(x, y);
+            if (bodyHit) {
+                // Check that we're not clicking on a node
+                const nodeAtClick = findNodeAt(x, y);
+                if (!nodeAtClick) {
+                    state.isolatedLanePosition = (state.isolatedLanePosition === bodyHit.position) ? null : bodyHit.position;
+                    rebuildAndApplyPredicate();
+                    return;
+                }
+            }
+        }
+
         const targetNode = findNodeAt(x, y);
 
         if (!targetNode) {
@@ -672,12 +706,13 @@ export function createGraphController(rootElement, options = {}) {
         hoverRafId = requestAnimationFrame(() => {
             hoverRafId = null;
 
-            // Lane header hover cursor
+            // Lane header hover cursor + title tooltip for full branch name
             if (state.layoutMode === "lane" && !dragState) {
                 const hit = laneStrategy.findLaneHeaderAt(pendingHoverX, pendingHoverY);
                 if (hit) {
                     state.hoverNode = null;
                     canvas.style.cursor = "grab";
+                    canvas.title = hit.branchOwner || hit.tipHash || "";
                     render();
                     return;
                 }
@@ -687,6 +722,7 @@ export function createGraphController(rootElement, options = {}) {
             if (hit !== state.hoverNode || canvas.style.cursor === "grab") {
                 state.hoverNode = hit;
                 canvas.style.cursor = hit ? "pointer" : "default";
+                canvas.title = "";
                 render();
             }
         });
@@ -974,6 +1010,8 @@ export function createGraphController(rootElement, options = {}) {
             branches,
             commits,
             state.stashes,
+            state.isolatedLanePosition,
+            laneStrategy._segments,
         );
         const predicate = state.filterPredicate;
         for (const node of nodes) {
@@ -1480,5 +1518,17 @@ export function createGraphController(rootElement, options = {}) {
          * @returns {Map<string, string>} tag-name → commit-hash map.
          */
         getTags: () => state.tags,
+        /**
+         * Clears the lane isolation filter (if active) and re-applies the
+         * compound predicate.  Called by the global Escape handler.
+         *
+         * @returns {boolean} True if isolation was active and cleared.
+         */
+        clearIsolation: () => {
+            if (state.isolatedLanePosition === null) return false;
+            state.isolatedLanePosition = null;
+            rebuildAndApplyPredicate();
+            return true;
+        },
     };
 }

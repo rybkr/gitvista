@@ -88,6 +88,10 @@ export class GraphRenderer {
         }
 
         this.ctx.restore();
+
+        if (laneInfo.length > 0) {
+            this.renderStickyHeaders(laneInfo, zoomTransform, viewportWidth);
+        }
     }
 
     /**
@@ -219,8 +223,150 @@ export class GraphRenderer {
                 ctx.lineTo(barX + barW, barY + barH);
                 ctx.stroke();
                 ctx.restore();
+
+                // Branch name label
+                const label = seg.branchOwner || (seg.tipHash ? shortenHash(seg.tipHash) : "");
+                if (label) {
+                    ctx.save();
+                    ctx.font = COMMIT_DETAIL_FONT;
+                    ctx.textBaseline = "middle";
+                    ctx.textAlign = "left";
+                    const labelY = barY + barH / 2;
+                    const maxLabelW = barW - 12;
+                    let displayLabel = label;
+                    if (ctx.measureText(displayLabel).width > maxLabelW) {
+                        while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > maxLabelW) {
+                            displayLabel = displayLabel.slice(0, -1);
+                        }
+                        displayLabel += "\u2026";
+                    }
+
+                    // Age badge — right-aligned pill
+                    const ageText = relativeTime(seg.tipTimestamp);
+                    let agePillW = 0;
+                    if (ageText) {
+                        const ageMetrics = ctx.measureText(ageText);
+                        agePillW = ageMetrics.width + 8;
+                        const pillH = 14;
+                        const pillX = barX + barW - agePillW - 4;
+                        const pillY = barY + (barH - pillH) / 2;
+                        ctx.globalAlpha = 0.20;
+                        ctx.fillStyle = segColor;
+                        ctx.beginPath();
+                        ctx.roundRect(pillX, pillY, agePillW, pillH, 3);
+                        ctx.fill();
+                        ctx.globalAlpha = 0.55;
+                        ctx.fillStyle = this.palette.labelText;
+                        ctx.textAlign = "center";
+                        ctx.fillText(ageText, pillX + agePillW / 2, labelY);
+                        ctx.textAlign = "left";
+                    }
+
+                    // Re-truncate label if age pill takes space
+                    const availW = barW - 12 - (agePillW > 0 ? agePillW + 8 : 0);
+                    if (availW < maxLabelW && ctx.measureText(displayLabel).width > availW) {
+                        displayLabel = label;
+                        while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > availW) {
+                            displayLabel = displayLabel.slice(0, -1);
+                        }
+                        displayLabel += "\u2026";
+                    }
+
+                    // Halo stroke for contrast
+                    ctx.lineWidth = 3;
+                    ctx.lineJoin = "round";
+                    ctx.strokeStyle = this.palette.labelHalo;
+                    ctx.globalAlpha = 0.7;
+                    ctx.strokeText(displayLabel, barX + 6, labelY);
+                    // Fill text
+                    ctx.globalAlpha = 0.7;
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillText(displayLabel, barX + 6, labelY);
+                    ctx.restore();
+                }
             }
         }
+    }
+
+    /**
+     * Renders sticky lane headers pinned to the top of the viewport.
+     * Called in screen-space (after ctx.restore) for lanes whose graph-space
+     * header has scrolled above the visible area.
+     *
+     * @param {Array<Object>} laneInfo Lane metadata.
+     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     * @param {number} viewportWidth Viewport width in CSS pixels.
+     */
+    renderStickyHeaders(laneInfo, zoomTransform, viewportWidth) {
+        const ctx = this.ctx;
+        const dpr = window.devicePixelRatio || 1;
+        const k = zoomTransform.k;
+        const pad = LANE_VERTICAL_STEP / 2;
+        const halfW = LANE_WIDTH / 2 - 4;
+        const barH = LANE_HEADER_HEIGHT;
+
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        for (const lane of laneInfo) {
+            const segments = lane.segments ?? [];
+            if (segments.length === 0) continue;
+
+            // Use the first segment's header position
+            const seg = segments[0];
+            const headerGraphY = seg.minY - pad;
+            const headerScreenY = headerGraphY * k + zoomTransform.y;
+
+            // Only render sticky header when graph header is scrolled off top
+            if (headerScreenY >= 0) continue;
+
+            // Stop showing sticky header once the lane's actual commits scroll off top.
+            // lane.maxY is computed from real commit Y positions, not the extended
+            // fork/merge range that segments[].maxY uses.
+            const laneBottomScreenY = (lane.maxY + pad) * k + zoomTransform.y;
+            if (laneBottomScreenY < barH) continue;
+
+            const screenX = (LANE_MARGIN + lane.position * LANE_WIDTH) * k + zoomTransform.x;
+            const barW = halfW * 2 * k;
+            const stickyBarX = screenX - halfW * k;
+
+            // Skip lanes entirely off viewport
+            if (stickyBarX + barW < 0 || stickyBarX > viewportWidth) continue;
+
+            const segColor = seg.color ?? lane.color;
+
+            // Compact bar at y=0
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = segColor;
+            ctx.beginPath();
+            ctx.roundRect(stickyBarX, 0, barW, barH, [0, 0, 4, 4]);
+            ctx.fill();
+            ctx.restore();
+
+            // Label text (unscaled font)
+            const label = seg.branchOwner || (seg.tipHash ? shortenHash(seg.tipHash) : "");
+            if (label) {
+                ctx.save();
+                ctx.font = COMMIT_DETAIL_FONT;
+                ctx.textBaseline = "middle";
+                ctx.textAlign = "left";
+                const maxW = barW - 12;
+                let displayLabel = label;
+                if (ctx.measureText(displayLabel).width > maxW) {
+                    while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > maxW) {
+                        displayLabel = displayLabel.slice(0, -1);
+                    }
+                    displayLabel += "\u2026";
+                }
+                ctx.globalAlpha = 0.95;
+                ctx.fillStyle = "#ffffff";
+                ctx.fillText(displayLabel, stickyBarX + 6, barH / 2);
+                ctx.restore();
+            }
+        }
+
+        ctx.restore();
     }
 
     /**
