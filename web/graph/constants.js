@@ -57,8 +57,6 @@ export const LANE_MARGIN = 60; // Left margin for lane 0
 export const LANE_VERTICAL_STEP = 70; // Dedicated vertical spacing for lane mode
 export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
 export const LANE_CORNER_RADIUS = 14; // Rounded corner radius for cross-lane stepped paths
-export const LANE_HEADER_FONT =
-    "600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 export const LANE_HEADER_HEIGHT = 28; // Screen-space height of the lane header bar (px)
 export const LANE_ARROW_CASING = 5; // Width of background-colored casing behind cross-lane arrows
 export const LANE_COLORS = [

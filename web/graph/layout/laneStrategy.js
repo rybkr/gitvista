@@ -53,7 +53,7 @@ export class LaneStrategy {
 		/** @type {number} Viewport height for layout calculations */
 		this.viewportHeight = 0;
 
-		/** @type {Array<{index: number, color: string, branchName: string, minY: number, maxY: number}>} */
+		/** @type {Array<{index: number, color: string, minY: number, maxY: number}>} */
 		this._laneInfo = [];
 
 		/** @type {Array<number>} Permutation mapping logical lane index → display position */
@@ -508,7 +508,7 @@ export class LaneStrategy {
 
 	/**
 	 * Returns lane metadata for rendering lane backgrounds and headers.
-	 * @returns {Array<{index: number, color: string, branchName: string, minY: number, maxY: number}>}
+	 * @returns {Array<{index: number, color: string, minY: number, maxY: number}>}
 	 */
 	getLaneInfo() {
 		return this._laneInfo;
@@ -704,7 +704,7 @@ export class LaneStrategy {
 					}
 				}
 
-				segments.push({ minY, maxY, coreMinY, coreMaxY, hashes: groupSet, branchName: "" });
+				segments.push({ minY, maxY, coreMinY, coreMaxY, hashes: groupSet });
 			}
 			segments.sort((a, b) => a.minY - b.minY);
 
@@ -726,39 +726,10 @@ export class LaneStrategy {
 			laneData.set(laneIndex, {
 				index: this.getDisplayIndex(laneIndex),
 				color: LANE_COLORS[laneIndex % LANE_COLORS.length],
-				branchName: "",
 				segments,
 				minY: Math.min(...allY),
 				maxY: Math.max(...allY),
 			});
-		}
-
-		// Map branch tips to the specific segment they belong to
-		if (branches) {
-			for (const [branchName, targetHash] of branches.entries()) {
-				const laneIndex = this.commitToLane.get(targetHash);
-				if (laneIndex === undefined) continue;
-				const info = laneData.get(laneIndex);
-				if (!info) continue;
-
-				// Strip refs/heads/ and refs/remotes/ prefixes for display
-				let displayName = branchName;
-				if (displayName.startsWith("refs/heads/")) {
-					displayName = displayName.slice("refs/heads/".length);
-				} else if (displayName.startsWith("refs/remotes/")) {
-					displayName = displayName.slice("refs/remotes/".length);
-				}
-
-				// Find the segment containing this branch tip
-				const seg = info.segments.find(s => s.hashes.has(targetHash));
-				if (seg && !seg.branchName) {
-					seg.branchName = displayName;
-				}
-				// Also set lane-level name for the first branch (header fallback)
-				if (!info.branchName) {
-					info.branchName = displayName;
-				}
-			}
 		}
 
 		this._laneInfo = Array.from(laneData.values()).sort((a, b) => a.index - b.index);

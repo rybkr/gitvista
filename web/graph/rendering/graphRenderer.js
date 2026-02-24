@@ -36,7 +36,6 @@ import {
     LANE_VERTICAL_STEP,
     LANE_WIDTH,
     LANE_MARGIN,
-    LANE_HEADER_FONT,
     LANE_HEADER_HEIGHT,
     LANE_ARROW_CASING,
 } from "../constants.js";
@@ -125,7 +124,7 @@ export class GraphRenderer {
      * Renders semi-transparent vertical background strips and branch name headers
      * for each lane in lane layout mode.
      *
-     * @param {Array<{index: number, color: string, branchName: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
+     * @param {Array<{index: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
      * @param {number} viewportHeight Viewport height in CSS pixels.
      * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
      */
@@ -173,8 +172,7 @@ export class GraphRenderer {
      * Shows branch names and provides a visual anchor for each section.
      * Drawn in graph space so bars scroll/zoom with the content.
      *
-     * @param {Array<{index: number, color: string, branchName: string, segments: Array<{minY: number, maxY: number, branchName?: string}>, minY: number, maxY: number}>} laneInfo Lane metadata.
-     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     * @param {Array<{index: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
      */
     renderLaneHeaders(laneInfo) {
         const ctx = this.ctx;
@@ -219,44 +217,6 @@ export class GraphRenderer {
                 ctx.lineTo(barX + barW, barY + barH);
                 ctx.stroke();
                 ctx.restore();
-
-                // Branch name label
-                const name = seg.branchName || "";
-                if (name) {
-                    ctx.save();
-                    ctx.font = LANE_HEADER_FONT;
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-
-                    // Halo for readability
-                    ctx.lineWidth = 3;
-                    ctx.lineJoin = "round";
-                    ctx.strokeStyle = this.palette.labelHalo;
-                    ctx.globalAlpha = 0.9;
-                    ctx.strokeText(name, cx, barY + barH / 2);
-
-                    // Text
-                    ctx.globalAlpha = 0.90;
-                    ctx.fillStyle = lane.color;
-                    ctx.fillText(name, cx, barY + barH / 2);
-                    ctx.restore();
-                } else {
-                    // No branch name — draw a grip indicator (two short lines)
-                    ctx.save();
-                    ctx.globalAlpha = 0.25;
-                    ctx.strokeStyle = lane.color;
-                    ctx.lineWidth = 1.5;
-                    ctx.lineCap = "round";
-                    const gripW = 8;
-                    for (let i = 0; i <= 1; i++) {
-                        const gy = barY + barH / 2 + (i * 2 - 1) * 3;
-                        ctx.beginPath();
-                        ctx.moveTo(cx - gripW, gy);
-                        ctx.lineTo(cx + gripW, gy);
-                        ctx.stroke();
-                    }
-                    ctx.restore();
-                }
             }
         }
     }

@@ -1127,7 +1127,8 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, use commit's X directly (already display-aware)
+                // In lane mode, offset branch pills to the right of the commit
+                // so they don't overlap with the centered lane header labels.
                 const laneX = targetNode.x;
 
                 // Stack multiple branches on the same commit vertically
@@ -1135,9 +1136,8 @@ export function createGraphController(rootElement, options = {}) {
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                // Center X on lane, position Y directly above commit with stacking
                 const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
-                branchNode.x = laneX;
+                branchNode.x = laneX + BRANCH_NODE_OFFSET_X;
                 branchNode.y = targetNode.y - BRANCH_NODE_RADIUS - 8 - stackOffset;
             } else {
                 // Force mode: small jitter is fine since simulation will settle
