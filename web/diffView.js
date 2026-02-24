@@ -22,6 +22,8 @@ const STATUS_CONFIG = {
 };
 
 import { apiUrl } from "./apiBase.js";
+import { apiFetch } from "./apiFetch.js";
+import { createInlineError } from "./inlineError.js";
 
 export function createDiffView(backend, diffContentViewer) {
     const el = document.createElement("div");
@@ -42,7 +44,7 @@ export function createDiffView(backend, diffContentViewer) {
     };
 
     async function fetchCommitDiff(commitHash) {
-        const response = await fetch(apiUrl(`/commit/diff/${commitHash}`));
+        const response = await apiFetch(apiUrl(`/commit/diff/${commitHash}`));
         if (!response.ok) {
             throw new Error(`Failed to fetch commit diff: ${response.status} ${response.statusText}`);
         }
@@ -51,7 +53,7 @@ export function createDiffView(backend, diffContentViewer) {
 
     async function fetchFileDiff(commitHash, filePath) {
         const url = apiUrl(`/commit/diff/${commitHash}/file?path=${encodeURIComponent(filePath)}`);
-        const response = await fetch(url);
+        const response = await apiFetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch file diff: ${response.status} ${response.statusText}`);
         }
@@ -213,8 +215,11 @@ export function createDiffView(backend, diffContentViewer) {
         } catch (err) {
             console.error("Failed to fetch file diff:", err);
             if (state.generation !== gen) return;
-            if (diffContentViewer && typeof diffContentViewer.showError === "function") {
-                diffContentViewer.showError(`Failed to load diff for ${entry.path}: ${err.message}`);
+            if (diffContentViewer) {
+                diffContentViewer.showRetryError(
+                    `Failed to load diff for ${entry.path}: ${err.message}`,
+                    () => handleFileClick(entry),
+                );
             }
         }
     }
@@ -258,25 +263,10 @@ export function createDiffView(backend, diffContentViewer) {
     }
 
     function renderErrorState() {
-        const error = document.createElement("div");
-        error.className = "diff-view-error";
-
-        const icon = document.createElement("div");
-        icon.className = "diff-error-icon";
-        icon.innerHTML = ALERT_SVG;
-        error.appendChild(icon);
-
-        const title = document.createElement("div");
-        title.className = "diff-error-title";
-        title.textContent = "Failed to load diff";
-        error.appendChild(title);
-
-        const hint = document.createElement("div");
-        hint.className = "diff-error-hint";
-        hint.textContent = "There was an error loading the commit diff. Please try again.";
-        error.appendChild(hint);
-
-        return error;
+        return createInlineError({
+            message: "Failed to load commit diff",
+            onRetry: () => open(state.commitHash, state.commitMessage),
+        });
     }
 
     async function open(commitHash, commitMessage = null) {

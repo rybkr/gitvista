@@ -14,6 +14,9 @@ import { createSearch } from "./search.js";
 import { createGraphFilters, loadFilterState } from "./graphFilters.js";
 import { setApiBase } from "./apiBase.js";
 import { createRepoLanding } from "./repoLanding.js";
+import { setConnectionState as setErrorConnectionState, setRepositoryAvailable } from "./errorState.js";
+import { createConnectionBanner } from "./connectionBanner.js";
+import { createRepoUnavailableOverlay } from "./repoUnavailableOverlay.js";
 
 const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
 const REPO_HASH_RE = /^repo\/([^/]+)(?:\/([0-9a-f]{40}))?$/i;
@@ -116,6 +119,12 @@ function bootstrapGraph(root, repoId) {
         background: #8b949e; z-index: 9999; transition: background 300ms ease;
     `;
     document.body.appendChild(statusDot);
+
+    const banner = createConnectionBanner();
+    document.body.appendChild(banner.el);
+
+    const overlay = createRepoUnavailableOverlay({ repoId });
+    document.body.appendChild(overlay.el);
 
     const styleEl = document.createElement("style");
     styleEl.textContent = `
@@ -283,7 +292,10 @@ function bootstrapGraph(root, repoId) {
 
     startBackend({
         logger,
-        onConnectionStateChange: setConnectionState,
+        onConnectionStateChange: (state, attempt) => {
+            setConnectionState(state);
+            setErrorConnectionState(state, attempt);
+        },
         onDelta: (delta) => {
             graph.applyDelta(delta);
 
@@ -324,6 +336,7 @@ function bootstrapGraph(root, repoId) {
             graph.setHeadHash(headInfo?.hash ?? null);
         },
         onRepoMetadata: (metadata) => {
+            setRepositoryAvailable(true);
             infoBar.update(metadata);
             repoName = metadata.name || "";
             if (metadata.currentBranch) {

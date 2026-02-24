@@ -1,4 +1,5 @@
 import { apiUrl, wsUrl } from "./apiBase.js";
+import { apiFetch } from "./apiFetch.js";
 
 // Reconnection backoff constants
 const RECONNECT_DELAY_INITIAL_MS = 1000;
@@ -12,7 +13,7 @@ export async function startBackend({ onDelta, onStatus, onHead, onRepoMetadata, 
 async function loadRepositoryMetadata(logger, onRepoMetadata) {
     logger?.info("Requesting repository metadata");
     try {
-        const response = await fetch(apiUrl("/repository"));
+        const response = await apiFetch(apiUrl("/repository"));
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
@@ -29,10 +30,11 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
     logger?.info("Opening WebSocket connection", url);
 
     let reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
+    let reconnectAttempt = 0;
     let destroyed = false;
 
-    function notifyState(state) {
-        onConnectionStateChange?.(state);
+    function notifyState(state, attempt) {
+        onConnectionStateChange?.(state, attempt);
     }
 
     function connect() {
@@ -49,8 +51,9 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
 
         socket.addEventListener("open", () => {
             logger?.info("WebSocket connection established");
-            const isReconnect = reconnectDelay > RECONNECT_DELAY_INITIAL_MS;
+            const isReconnect = reconnectAttempt > 0;
             reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
+            reconnectAttempt = 0;
             notifyState("connected");
             // Re-fetch metadata on reconnect so the info bar reflects any changes
             // (new branches, changed HEAD, etc.) that occurred while disconnected.
@@ -96,8 +99,9 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
             if (destroyed) return;
 
             // Reconnect with exponential backoff regardless of close code.
-            notifyState("reconnecting");
-            logger?.info(`Reconnecting in ${reconnectDelay}ms`);
+            reconnectAttempt++;
+            notifyState("reconnecting", reconnectAttempt);
+            logger?.info(`Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt})`);
 
             setTimeout(() => connect(), reconnectDelay);
 

@@ -7,6 +7,8 @@
  */
 
 import { apiUrl } from "./apiBase.js";
+import { apiFetch } from "./apiFetch.js";
+import { createInlineError } from "./inlineError.js";
 import { getFileIcon } from "./fileIcons.js";
 import { loadHighlightJs } from "./hljs.js";
 
@@ -22,7 +24,7 @@ export function createFileContentViewer() {
     let onBackCallback = null;
 
     async function fetchBlob(blobHash) {
-        const response = await fetch(apiUrl(`/blob/${blobHash}`));
+        const response = await apiFetch(apiUrl(`/blob/${blobHash}`));
         if (!response.ok) {
             throw new Error(`Failed to fetch blob ${blobHash}: ${response.status}`);
         }
@@ -133,10 +135,10 @@ export function createFileContentViewer() {
 
         } catch (error) {
             el.innerHTML = "";
-            const errorMsg = document.createElement("div");
-            errorMsg.className = "file-content-error";
-            errorMsg.textContent = `Error loading file: ${error.message}`;
-            el.appendChild(errorMsg);
+            el.appendChild(createInlineError({
+                message: `Error loading file: ${error.message}`,
+                onRetry: () => open(blobHash, fileName),
+            }));
         }
     }
 

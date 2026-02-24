@@ -18,6 +18,8 @@
  */
 
 import { loadHighlightJs, getLanguageFromPath } from "./hljs.js";
+import { apiFetch } from "./apiFetch.js";
+import { createInlineError } from "./inlineError.js";
 
 // Kick off CDN loading immediately so the script is ready before the first
 // show() call.  This is a module-level side effect that is intentional.
@@ -201,7 +203,7 @@ export function createDiffContentViewer() {
             url.searchParams.set("context", String(currentContextLines));
 
             showLoading();
-            fetch(url.toString())
+            apiFetch(url.toString())
                 .then((res) => {
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     return res.json();
@@ -383,6 +385,17 @@ export function createDiffContentViewer() {
     }
 
     /**
+     * Show an error with a retry button.
+     * @param {string} message - The error message to display
+     * @param {() => void} onRetry - Callback to invoke on retry
+     */
+    function showRetryError(message, onRetry) {
+        el.style.display = "flex";
+        el.innerHTML = "";
+        el.appendChild(createInlineError({ message, onRetry }));
+    }
+
+    /**
      * Fetch and display a diff from a URL.
      * Tracks the URL so that expand-context buttons can re-fetch with more context.
      *
@@ -395,12 +408,12 @@ export function createDiffContentViewer() {
 
         showLoading();
         try {
-            const res = await fetch(url);
+            const res = await apiFetch(url);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const fileDiff = await res.json();
             show(fileDiff);
         } catch (err) {
-            showError(`Failed to load diff: ${err.message}`);
+            showRetryError(`Failed to load diff: ${err.message}`, () => showFromUrl(url));
         }
     }
 
@@ -427,6 +440,7 @@ export function createDiffContentViewer() {
         showFromUrl,
         showLoading,
         showError,
+        showRetryError,
         close,
         clear,
         onBack,

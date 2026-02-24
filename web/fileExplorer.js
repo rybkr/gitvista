@@ -12,6 +12,7 @@
  */
 
 import { apiUrl } from "./apiBase.js";
+import { apiFetch } from "./apiFetch.js";
 import { createFileContentViewer } from "./fileContentViewer.js";
 import { createDiffView } from "./diffView.js";
 import { createDiffContentViewer } from "./diffContentViewer.js";
@@ -98,7 +99,7 @@ export function createFileExplorer() {
     };
 
     async function fetchTree(treeHash) {
-        const response = await fetch(apiUrl(`/tree/${treeHash}`));
+        const response = await apiFetch(apiUrl(`/tree/${treeHash}`));
         if (!response.ok) {
             throw new Error(`Failed to fetch tree ${treeHash}: ${response.status}`);
         }
@@ -107,7 +108,7 @@ export function createFileExplorer() {
 
     async function fetchBlame(commitHash, dirPath) {
         const url = apiUrl(`/tree/blame/${commitHash}?path=${encodeURIComponent(dirPath)}`);
-        const response = await fetch(url);
+        const response = await apiFetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch blame for ${dirPath}: ${response.status}`);
         }
