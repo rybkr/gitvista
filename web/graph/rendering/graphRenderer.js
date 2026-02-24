@@ -7,6 +7,7 @@ import {
     ARROW_LENGTH,
     ARROW_WIDTH,
     BRANCH_NODE_CORNER_RADIUS,
+    BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_PADDING_X,
     BRANCH_NODE_PADDING_Y,
     BRANCH_NODE_RADIUS,
@@ -647,9 +648,30 @@ export class GraphRenderer {
             }
         }
 
+        // Pre-pass: measure branch pill right edges so commit labels can
+        // shift past them and avoid overlap.  Only branch nodes matter here —
+        // tags are positioned below the commit in lane mode and don't collide.
+        // Keyed by target commit hash, value is the max right-edge X offset
+        // from the commit center.
+        const decoratorRightOffset = new Map();
+        if (layoutMode === "lane") {
+            this.ctx.save();
+            this.ctx.font = LABEL_FONT;
+            for (const node of nodes) {
+                if (node.type !== "branch" || !node.targetHash) continue;
+                const text = node.branch ?? "";
+                if (!text) continue;
+                const pillW = this.ctx.measureText(text).width + BRANCH_NODE_PADDING_X * 2;
+                const rightEdge = BRANCH_NODE_OFFSET_X + pillW / 2;
+                const prev = decoratorRightOffset.get(node.targetHash) ?? 0;
+                if (rightEdge > prev) decoratorRightOffset.set(node.targetHash, rightEdge);
+            }
+            this.ctx.restore();
+        }
+
         for (const node of nodes) {
             if (node.type === "commit") {
-                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode);
+                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, decoratorRightOffset);
             }
         }
         for (const node of nodes) {
@@ -670,7 +692,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      * @param {string|null} highlightKey Current highlight identifier.
      */
-    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode) {
+    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, decoratorRightOffset) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
@@ -756,7 +778,7 @@ export class GraphRenderer {
         // Skip label rendering for dimmed nodes — labels at 15% opacity would
         // clutter the view without adding navigational value.
         if (!isDimmed) {
-            this.renderCommitLabel(node, spawnAlpha, zoomTransform, layoutMode);
+            this.renderCommitLabel(node, spawnAlpha, zoomTransform, layoutMode, decoratorRightOffset);
         }
     }
 
@@ -886,7 +908,7 @@ export class GraphRenderer {
      *
      * @param {import("../types.js").GraphNodeCommit} node Commit node to annotate.
      */
-    renderCommitLabel(node, spawnAlpha = 1, zoomTransform, layoutMode) {
+    renderCommitLabel(node, spawnAlpha = 1, zoomTransform, layoutMode, decoratorRightOffset) {
         if (!node.commit?.hash) return;
 
         const text = shortenHash(node.commit.hash);
@@ -897,7 +919,15 @@ export class GraphRenderer {
         this.ctx.textBaseline = "middle";
         this.ctx.textAlign = "left";
 
-        const offset = node.radius + LABEL_PADDING;
+        // Default offset: just past the node circle
+        let offset = node.radius + LABEL_PADDING;
+
+        // In lane mode, shift label past any branch/tag pill to avoid overlap
+        const decRight = decoratorRightOffset?.get(node.hash);
+        if (decRight && decRight + 4 > offset) {
+            offset = decRight + 4;
+        }
+
         const labelX = node.x + offset;
         const labelY = node.y;
 
