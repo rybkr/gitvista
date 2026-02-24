@@ -2,8 +2,60 @@ package server
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
+
+// parsePorcelainStatus parses "git status --porcelain" output.
+// Format: XY PATH where X = index status, Y = worktree status.
+// Test-only helper for verifying status parsing logic.
+func parsePorcelainStatus(output string) *WorkingTreeStatus {
+	status := &WorkingTreeStatus{
+		Staged:    []FileStatus{},
+		Modified:  []FileStatus{},
+		Untracked: []FileStatus{},
+	}
+
+	for line := range strings.SplitSeq(output, "\n") {
+		if len(line) < 3 {
+			continue
+		}
+
+		x := line[0]
+		y := line[1]
+		path := line[3:]
+
+		if x == 'R' || y == 'R' {
+			if idx := strings.Index(path, " -> "); idx >= 0 {
+				path = path[idx+4:]
+			}
+		}
+
+		if x == '?' && y == '?' {
+			status.Untracked = append(status.Untracked, FileStatus{
+				Path:       path,
+				StatusCode: "?",
+			})
+			continue
+		}
+
+		if x == 'M' || x == 'A' || x == 'D' || x == 'R' || x == 'C' {
+			status.Staged = append(status.Staged, FileStatus{
+				Path:       path,
+				StatusCode: string(x),
+			})
+		}
+
+		if y == 'M' || y == 'D' {
+			status.Modified = append(status.Modified, FileStatus{
+				Path:       path,
+				StatusCode: string(y),
+			})
+		}
+	}
+
+	return status
+}
 
 func TestParsePorcelainStatus(t *testing.T) {
 	tests := []struct {

@@ -1,6 +1,6 @@
 import { logger } from "./logger.js";
 import { initThemeToggle } from "./themeToggle.js";
-import { createGraph } from "./graph.js";
+import { createGraphController as createGraph } from "./graph/graphController.js";
 import { startBackend } from "./backend.js";
 import { createSidebar } from "./sidebar.js";
 import { createInfoBar } from "./infoBar.js";

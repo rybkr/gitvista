@@ -3,12 +3,15 @@ package server
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rybkr/gitvista/internal/gitcore"
 )
+
+const broadcastChannelSize = 256
 
 // ReloadFunc returns a freshly-loaded repository, used by updateRepository to
 // reload state from disk. For local mode this calls gitcore.NewRepository; for
@@ -23,8 +26,9 @@ type RepoSession struct {
 	logger   *slog.Logger
 	reloadFn ReloadFunc
 
-	cacheMu sync.RWMutex
-	cached  struct{ repo *gitcore.Repository }
+	updateMu sync.Mutex   // serializes updateRepository calls
+	cacheMu  sync.RWMutex // guards cached.repo reads/writes
+	cached   struct{ repo *gitcore.Repository }
 
 	clientsMu sync.RWMutex
 	clients   map[*websocket.Conn]*sync.Mutex
@@ -136,7 +140,12 @@ func (rs *RepoSession) Close() {
 }
 
 // updateRepository reloads repository state and broadcasts changes to clients.
+// Serialized via updateMu to prevent concurrent reloads from computing
+// incorrect deltas against a stale oldRepo.
 func (rs *RepoSession) updateRepository() {
+	rs.updateMu.Lock()
+	defer rs.updateMu.Unlock()
+
 	rs.logger.Debug("Updating repository")
 
 	rs.cacheMu.RLock()
@@ -377,4 +386,34 @@ func (rs *RepoSession) StartFetchTicker(interval time.Duration) {
 			}
 		}
 	}()
+}
+
+func buildHeadInfo(repo *gitcore.Repository) *HeadInfo {
+	headRef := repo.HeadRef()
+
+	branchName := ""
+	if headRef != "" {
+		if name, ok := strings.CutPrefix(headRef, "refs/heads/"); ok {
+			branchName = name
+		}
+	}
+
+	tagNames := repo.TagNames()
+	recentTags := tagNames
+	if len(tagNames) > 5 {
+		recentTags = tagNames[:5]
+	}
+
+	return &HeadInfo{
+		Hash:        string(repo.Head()),
+		Ref:         headRef,
+		BranchName:  branchName,
+		IsDetached:  repo.HeadDetached(),
+		CommitCount: repo.CommitCount(),
+		BranchCount: len(repo.Branches()),
+		TagCount:    len(tagNames),
+		Description: repo.Description(),
+		Remotes:     repo.Remotes(),
+		RecentTags:  recentTags,
+	}
 }
