@@ -210,7 +210,7 @@ func parseTimezone(tz string) *time.Location {
 
 // ObjectResolver retrieves raw object data and type byte by hash.
 // Used for resolving delta base objects during pack file reading.
-type ObjectResolver func(id Hash) (data []byte, objectType byte, err error)
+type ObjectResolver func(id Hash, depth int) (data []byte, objectType byte, err error)
 
 // PackIndex maps object hashes to their byte offsets within a pack file.
 type PackIndex struct {

@@ -31,6 +31,11 @@ const (
 	packObjectRefDelta    byte = 7
 )
 
+const maxDeltaDepth = 50
+
+// ErrDeltaChainTooDeep occurs when the recursive pack delta checker exceeds maxDeltaDepth.
+var ErrDeltaChainTooDeep = fmt.Errorf("delta chain exceeds maximum depth of %d", maxDeltaDepth)
+
 // Pack index v2 large offset constants.
 // In version 2 pack indices, a 32-bit offset with the high bit set indicates
 // that the actual offset is >= 4 GiB and must be looked up in the large offset table.
@@ -232,7 +237,11 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 }
 
 // readPackObject reads a pack object at the current position, resolving deltas as needed.
-func readPackObject(rs io.ReadSeeker, resolve ObjectResolver) (data []byte, objectType byte, err error) {
+func readPackObject(rs io.ReadSeeker, resolve ObjectResolver, depth int) (data []byte, objectType byte, err error) {
+	if depth > maxDeltaDepth {
+		return nil, 0, ErrDeltaChainTooDeep
+	}
+
 	objStart, err := rs.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, 0, err
@@ -248,9 +257,9 @@ func readPackObject(rs io.ReadSeeker, resolve ObjectResolver) (data []byte, obje
 		data, err := readCompressedObject(rs, size)
 		return data, objType, err
 	case packObjectOffsetDelta:
-		return readOffsetDelta(rs, size, objStart, resolve)
+		return readOffsetDelta(rs, size, objStart, resolve, depth)
 	case packObjectRefDelta:
-		return readRefDelta(rs, size, resolve)
+		return readRefDelta(rs, size, resolve, depth)
 	default:
 		return nil, 0, fmt.Errorf("unsupported object type: %d", objType)
 	}
@@ -290,7 +299,7 @@ func readCompressedObject(r io.Reader, expectedSize int64) ([]byte, error) {
 	return content, nil
 }
 
-func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResolver) ([]byte, byte, error) {
+func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResolver, depth int) ([]byte, byte, error) {
 	var b [1]byte
 
 	if _, err := rs.Read(b[:]); err != nil {
@@ -322,7 +331,7 @@ func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResol
 	if _, _err := rs.Seek(basePos, io.SeekStart); _err != nil {
 		return nil, 0, fmt.Errorf("failed to seek to base object at %d: %w", basePos, _err)
 	}
-	baseData, baseType, err := readPackObject(rs, resolve)
+	baseData, baseType, err := readPackObject(rs, resolve, depth+1)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read base object at %d (type %d): %w", basePos, baseType, err)
 	}
@@ -338,7 +347,7 @@ func readOffsetDelta(rs io.ReadSeeker, size, objStart int64, resolve ObjectResol
 	return result, baseType, nil
 }
 
-func readRefDelta(rs io.ReadSeeker, size int64, resolve ObjectResolver) ([]byte, byte, error) {
+func readRefDelta(rs io.ReadSeeker, size int64, resolve ObjectResolver, depth int) ([]byte, byte, error) {
 	var baseHash [20]byte
 	if _, err := io.ReadFull(rs, baseHash[:]); err != nil {
 		return nil, 0, fmt.Errorf("failed to read base hash: %w", err)
@@ -357,7 +366,7 @@ func readRefDelta(rs io.ReadSeeker, size int64, resolve ObjectResolver) ([]byte,
 		return nil, 0, fmt.Errorf("failed to read ref delta data at %d: %w", beforeDelta, err)
 	}
 
-	baseData, baseType, err := resolve(baseHashStr)
+	baseData, baseType, err := resolve(baseHashStr, depth+1)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read base object %s: %w", baseHashStr.Short(), err)
 	}

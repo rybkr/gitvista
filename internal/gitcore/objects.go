@@ -109,7 +109,7 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 }
 
 // readObjectData returns raw bytes and type byte for any object (loose or packed).
-func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
+func (r *Repository) readObjectData(id Hash, depth int) ([]byte, byte, error) {
 	header, content, err := r.readLooseObjectRaw(id)
 	if err == nil {
 		typeNum, err := objectTypeFromHeader(header)
@@ -121,7 +121,7 @@ func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 
 	for _, idx := range r.packIndices {
 		if offset, found := idx.FindObject(id); found {
-			return r.readFromPackFile(idx.PackFile(), offset)
+			return r.readFromPackFile(idx.PackFile(), offset, depth)
 		}
 	}
 
@@ -131,7 +131,7 @@ func (r *Repository) readObjectData(id Hash) ([]byte, byte, error) {
 // readFromPackFile opens a pack file, seeks to offset, and reads a pack object.
 // Scoped to its own function so defer closes the file after each call,
 // preventing fd leaks when called in a loop.
-func (r *Repository) readFromPackFile(packPath string, offset int64) ([]byte, byte, error) {
+func (r *Repository) readFromPackFile(packPath string, offset int64, depth int) ([]byte, byte, error) {
 	//nolint:gosec // G304: Pack file paths are controlled by git repository structure
 	file, err := os.Open(packPath)
 	if err != nil {
@@ -146,7 +146,7 @@ func (r *Repository) readFromPackFile(packPath string, offset int64) ([]byte, by
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return nil, 0, err
 	}
-	return readPackObject(file, r.readObjectData)
+	return readPackObject(file, r.readObjectData, depth)
 }
 
 // readLooseObjectRaw reads and decompresses a loose object, returning its header and content.
@@ -199,7 +199,7 @@ func objectTypeFromHeader(header string) (byte, error) {
 }
 
 func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (Object, error) {
-	objectData, objectType, err := r.readFromPackFile(packPath, offset)
+	objectData, objectType, err := r.readFromPackFile(packPath, offset, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pack object: %w", err)
 	}

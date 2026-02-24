@@ -388,6 +388,144 @@ func TestReadCompressedObject(t *testing.T) {
 	}
 }
 
+func TestReadPackObject_DeltaDepthExceeded(t *testing.T) {
+	// Any pack stream will do — the depth check fires before reading any bytes.
+	var buf bytes.Buffer
+	buf.WriteByte(0x35) // type=3 (blob), size=5, single-byte header
+
+	var compressed bytes.Buffer
+	w := zlib.NewWriter(&compressed)
+	if _, err := w.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	buf.Write(compressed.Bytes())
+
+	noopResolver := func(id Hash, depth int) ([]byte, byte, error) {
+		return nil, 0, fmt.Errorf("should not be called")
+	}
+
+	_, _, err := readPackObject(bytes.NewReader(buf.Bytes()), noopResolver, maxDeltaDepth+1)
+	if err != ErrDeltaChainTooDeep {
+		t.Fatalf("expected ErrDeltaChainTooDeep, got: %v", err)
+	}
+}
+
+func TestReadPackObject_DeltaChainWithinLimit(t *testing.T) {
+	// Build a pack stream: base blob at offset 0, then an OFS_DELTA referencing it.
+	baseContent := []byte("base content here!")
+
+	// --- Base object: type=3 (blob), size=18 ---
+	var pack bytes.Buffer
+
+	// Pack object header: type=3, size=18
+	// First byte: 0 | 011 | 0010 = 0x32 (no continuation, type=3, low 4 bits=2)
+	// But 18 > 15 so we need continuation.
+	// First byte: 1 | 011 | 0010 = 0xB2 (continue=1, type=3, low 4 bits=2)
+	// Second byte: 0 | 0000001 = 0x01 (continue=0, value=1, so size = 2 | (1<<4) = 18)
+	pack.WriteByte(0xB2)
+	pack.WriteByte(0x01)
+
+	var baseCompressed bytes.Buffer
+	bw := zlib.NewWriter(&baseCompressed)
+	if _, err := bw.Write(baseContent); err != nil {
+		t.Fatal(err)
+	}
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pack.Write(baseCompressed.Bytes())
+
+	// --- OFS_DELTA object referencing the base ---
+	deltaObjStart := pack.Len()
+
+	// Build delta instructions: copy all 18 bytes from base, then add " extra"
+	targetContent := append([]byte{}, baseContent...)
+	targetContent = append(targetContent, []byte(" extra")...)
+
+	var deltaPayload bytes.Buffer
+	deltaPayload.WriteByte(18)                       // source size
+	deltaPayload.WriteByte(byte(len(targetContent))) // target size = 24
+	// Copy 18 bytes from offset 0: cmd=0x91, offset=0, size=18
+	deltaPayload.WriteByte(0x91)
+	deltaPayload.WriteByte(0x00) // offset=0
+	deltaPayload.WriteByte(18)   // size=18
+	// Add 6 bytes: " extra"
+	deltaPayload.WriteByte(6)
+	deltaPayload.Write([]byte(" extra"))
+
+	deltaBytes := deltaPayload.Bytes()
+
+	// Pack header for OFS_DELTA: type=6, size=len(deltaBytes)
+	size := int64(len(deltaBytes))
+	firstByte := (packObjectOffsetDelta << 4) | byte(size&0x0F)
+	size >>= 4
+	if size > 0 {
+		firstByte |= 0x80
+	}
+	pack.WriteByte(firstByte)
+	for size > 0 {
+		b := byte(size & 0x7F)
+		size >>= 7
+		if size > 0 {
+			b |= 0x80
+		}
+		pack.WriteByte(b)
+	}
+
+	// Negative offset encoding: offset = deltaObjStart - 0 = deltaObjStart
+	offset := int64(deltaObjStart)
+	// OFS_DELTA offset is encoded as a variable-length big-endian with (n-1) continuation.
+	// Encode: last byte has no continuation, preceding bytes add 1 before shifting.
+	var offsetBytes []byte
+	offsetBytes = append(offsetBytes, byte(offset&0x7F))
+	offset >>= 7
+	for offset > 0 {
+		offset--
+		offsetBytes = append(offsetBytes, byte(offset&0x7F)|0x80)
+		offset >>= 7
+	}
+	// Reverse to get MSB first
+	for i, j := 0, len(offsetBytes)-1; i < j; i, j = i+1, j-1 {
+		offsetBytes[i], offsetBytes[j] = offsetBytes[j], offsetBytes[i]
+	}
+	pack.Write(offsetBytes)
+
+	// Compressed delta data
+	var deltaCompressed bytes.Buffer
+	dw := zlib.NewWriter(&deltaCompressed)
+	if _, err := dw.Write(deltaBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err := dw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pack.Write(deltaCompressed.Bytes())
+
+	// Seek to the OFS_DELTA object and read
+	reader := bytes.NewReader(pack.Bytes())
+	if _, err := reader.Seek(int64(deltaObjStart), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	noopResolver := func(id Hash, depth int) ([]byte, byte, error) {
+		return nil, 0, fmt.Errorf("should not be called for OFS_DELTA")
+	}
+
+	data, objType, err := readPackObject(reader, noopResolver, 0)
+	if err != nil {
+		t.Fatalf("readPackObject failed: %v", err)
+	}
+	if objType != packObjectBlob {
+		t.Errorf("expected type %d (blob), got %d", packObjectBlob, objType)
+	}
+	if string(data) != string(targetContent) {
+		t.Errorf("got %q, want %q", string(data), string(targetContent))
+	}
+}
+
 func TestReadCompressedObject_SizeMismatch(t *testing.T) {
 	data := []byte("hello")
 

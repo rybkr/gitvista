@@ -243,7 +243,7 @@ func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
 
 // GetBlob retrieves raw blob data by its hash.
 func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
-	objectData, objectType, err := r.readObjectData(blobHash)
+	objectData, objectType, err := r.readObjectData(blobHash, 0)
 	if err != nil {
 		return nil, fmt.Errorf("blob not found: %s", blobHash)
 	}
@@ -280,7 +280,7 @@ func (r *Repository) GetTag(hash Hash) (*Tag, error) {
 
 // GetObjectInfo returns the object type name and size in bytes for any object.
 func (r *Repository) GetObjectInfo(hash Hash) (string, int, error) {
-	data, typeByte, err := r.readObjectData(hash)
+	data, typeByte, err := r.readObjectData(hash, 0)
 	if err != nil {
 		return "", 0, err
 	}
