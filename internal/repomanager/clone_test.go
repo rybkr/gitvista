@@ -74,6 +74,26 @@ func TestNormalizeURL(t *testing.T) {
 			input:   "git://github.com/user/repo.git",
 			wantErr: true,
 		},
+		{
+			name:    "option injection rejected",
+			input:   "--upload-pack=malicious",
+			wantErr: true,
+		},
+		{
+			name:    "localhost rejected (SSRF)",
+			input:   "https://localhost/repo",
+			wantErr: true,
+		},
+		{
+			name:    "loopback IP rejected (SSRF)",
+			input:   "https://127.0.0.1/repo",
+			wantErr: true,
+		},
+		{
+			name:    "metadata endpoint rejected (SSRF)",
+			input:   "https://metadata.google.internal/computeMetadata/v1/",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
