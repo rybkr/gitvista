@@ -134,9 +134,9 @@ export class GraphRenderer {
      */
     renderLaneBackgrounds(laneInfo, viewportHeight, zoomTransform) {
         const k = zoomTransform.k;
-        // Convert viewport bounds into graph coordinates for the vertical extent
         const topY = -zoomTransform.y / k;
         const bottomY = topY + viewportHeight / k;
+        const isDark = this.palette.isDark;
 
         for (const lane of laneInfo) {
             const cx = LANE_MARGIN + lane.position * LANE_WIDTH;
@@ -144,28 +144,33 @@ export class GraphRenderer {
             const pad = LANE_VERTICAL_STEP / 2;
             const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
 
-            // Draw background strip per segment
             for (const seg of segments) {
                 const stripTop = Math.max(topY, seg.minY - pad);
                 const stripBottom = Math.min(bottomY, seg.maxY + pad - 10);
                 if (stripTop >= stripBottom) continue;
 
-                const rBottom = stripBottom >= bottomY ? 0 : 10;
+                const rBottom = stripBottom >= bottomY ? 0 : 6;
                 const x = cx - halfW;
                 const w = halfW * 2;
                 const h = stripBottom - stripTop;
                 const segColor = seg.color ?? lane.color;
 
-                // Background fill with subtle border outline
+                // Subtle tinted fill — barely visible, just enough to
+                // delineate the lane column against the canvas background.
                 this.ctx.save();
                 this.ctx.beginPath();
                 this.ctx.roundRect(x, stripTop, w, h, [0, 0, rBottom, rBottom]);
-                this.ctx.globalAlpha = 0.05;
+                this.ctx.globalAlpha = isDark ? 0.06 : 0.04;
                 this.ctx.fillStyle = segColor;
                 this.ctx.fill();
-                this.ctx.globalAlpha = 0.07;
+
+                // Thin left-edge accent line (like a gutter indicator)
+                this.ctx.globalAlpha = isDark ? 0.18 : 0.12;
                 this.ctx.strokeStyle = segColor;
-                this.ctx.lineWidth = 1;
+                this.ctx.lineWidth = 1.5;
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, stripTop);
+                this.ctx.lineTo(x, stripBottom - rBottom);
                 this.ctx.stroke();
                 this.ctx.restore();
             }
@@ -182,6 +187,9 @@ export class GraphRenderer {
     renderLaneHeaders(laneInfo) {
         const ctx = this.ctx;
         const pad = LANE_VERTICAL_STEP / 2;
+        const isDark = this.palette.isDark;
+        const monoFont = "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
+        const metaFont = "9px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
 
         for (const lane of laneInfo) {
             const cx = LANE_MARGIN + lane.position * LANE_WIDTH;
@@ -193,95 +201,76 @@ export class GraphRenderer {
                 const barW = halfW * 2;
                 const barX = cx - halfW;
                 const barH = LANE_HEADER_HEIGHT;
-                const r = 6;
                 const segColor = seg.color ?? lane.color;
 
-                // Header background — gradient fading downward
+                // Header background — opaque tinted bar
                 ctx.save();
-                const grad = ctx.createLinearGradient(barX, barY, barX, barY + barH);
-                grad.addColorStop(0, segColor);
-                grad.addColorStop(1, segColor);
-                ctx.fillStyle = grad;
-                ctx.globalAlpha = 0.12;
+                ctx.fillStyle = isDark ? "#1c2128" : "#f0f1f3";
+                ctx.globalAlpha = 0.92;
                 ctx.beginPath();
-                ctx.roundRect(barX, barY, barW, barH, [r, r, 0, 0]);
+                ctx.roundRect(barX, barY, barW, barH, [4, 4, 0, 0]);
                 ctx.fill();
-                // Outline to tie header to the column below
-                ctx.globalAlpha = 0.10;
-                ctx.strokeStyle = segColor;
-                ctx.lineWidth = 1;
-                ctx.stroke();
                 ctx.restore();
 
-                // Bottom accent line
+                // Color accent — top 2px strip
                 ctx.save();
-                ctx.globalAlpha = 0.30;
-                ctx.strokeStyle = segColor;
-                ctx.lineWidth = 1.5;
+                ctx.globalAlpha = 0.85;
+                ctx.fillStyle = segColor;
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barW, 2, [4, 4, 0, 0]);
+                ctx.fill();
+                ctx.restore();
+
+                // Bottom hairline separator
+                ctx.save();
+                ctx.globalAlpha = isDark ? 0.12 : 0.08;
+                ctx.strokeStyle = isDark ? "#ffffff" : "#000000";
+                ctx.lineWidth = 0.5;
                 ctx.beginPath();
                 ctx.moveTo(barX, barY + barH);
                 ctx.lineTo(barX + barW, barY + barH);
                 ctx.stroke();
                 ctx.restore();
 
-                // Branch name label
+                // Branch name label — monospace, muted
                 const label = seg.branchOwner || (seg.tipHash ? shortenHash(seg.tipHash) : "");
                 if (label) {
                     ctx.save();
-                    ctx.font = COMMIT_DETAIL_FONT;
+                    ctx.font = monoFont;
                     ctx.textBaseline = "middle";
                     ctx.textAlign = "left";
-                    const labelY = barY + barH / 2;
-                    const maxLabelW = barW - 12;
-                    let displayLabel = label;
-                    if (ctx.measureText(displayLabel).width > maxLabelW) {
-                        while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > maxLabelW) {
-                            displayLabel = displayLabel.slice(0, -1);
-                        }
-                        displayLabel += "\u2026";
-                    }
+                    const labelY = barY + 2 + (barH - 2) / 2;
+                    const insetX = barX + 7;
 
-                    // Age badge — right-aligned pill
+                    // Age badge — right-aligned, ultra-compact
                     const ageText = relativeTime(seg.tipTimestamp);
-                    let agePillW = 0;
+                    let ageBadgeW = 0;
                     if (ageText) {
+                        ctx.font = metaFont;
                         const ageMetrics = ctx.measureText(ageText);
-                        agePillW = ageMetrics.width + 8;
-                        const pillH = 14;
-                        const pillX = barX + barW - agePillW - 4;
-                        const pillY = barY + (barH - pillH) / 2;
-                        ctx.globalAlpha = 0.20;
-                        ctx.fillStyle = segColor;
-                        ctx.beginPath();
-                        ctx.roundRect(pillX, pillY, agePillW, pillH, 3);
-                        ctx.fill();
-                        ctx.globalAlpha = 0.55;
+                        ageBadgeW = ageMetrics.width + 4;
+                        ctx.globalAlpha = isDark ? 0.35 : 0.40;
                         ctx.fillStyle = this.palette.labelText;
-                        ctx.textAlign = "center";
-                        ctx.fillText(ageText, pillX + agePillW / 2, labelY);
+                        ctx.textAlign = "right";
+                        ctx.fillText(ageText, barX + barW - 6, labelY);
                         ctx.textAlign = "left";
+                        ctx.font = monoFont;
                     }
 
-                    // Re-truncate label if age pill takes space
-                    const availW = barW - 12 - (agePillW > 0 ? agePillW + 8 : 0);
-                    if (availW < maxLabelW && ctx.measureText(displayLabel).width > availW) {
-                        displayLabel = label;
+                    // Truncate label to available width
+                    const availW = barW - 14 - (ageBadgeW > 0 ? ageBadgeW + 8 : 0);
+                    let displayLabel = label;
+                    if (ctx.measureText(displayLabel).width > availW) {
                         while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > availW) {
                             displayLabel = displayLabel.slice(0, -1);
                         }
                         displayLabel += "\u2026";
                     }
 
-                    // Halo stroke for contrast
-                    ctx.lineWidth = 3;
-                    ctx.lineJoin = "round";
-                    ctx.strokeStyle = this.palette.labelHalo;
-                    ctx.globalAlpha = 0.7;
-                    ctx.strokeText(displayLabel, barX + 6, labelY);
-                    // Fill text
-                    ctx.globalAlpha = 0.7;
-                    ctx.fillStyle = "#ffffff";
-                    ctx.fillText(displayLabel, barX + 6, labelY);
+                    // Label text — crisp, no halo needed on opaque background
+                    ctx.globalAlpha = isDark ? 0.82 : 0.72;
+                    ctx.fillStyle = this.palette.labelText;
+                    ctx.fillText(displayLabel, insetX, labelY);
                     ctx.restore();
                 }
             }
@@ -304,6 +293,8 @@ export class GraphRenderer {
         const pad = LANE_VERTICAL_STEP / 2;
         const halfW = LANE_WIDTH / 2 - 4;
         const barH = LANE_HEADER_HEIGHT;
+        const isDark = this.palette.isDark;
+        const monoFont = "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
 
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -312,17 +303,12 @@ export class GraphRenderer {
             const segments = lane.segments ?? [];
             if (segments.length === 0) continue;
 
-            // Use the first segment's header position
             const seg = segments[0];
             const headerGraphY = seg.minY - pad;
             const headerScreenY = headerGraphY * k + zoomTransform.y;
 
-            // Only render sticky header when graph header is scrolled off top
             if (headerScreenY >= 0) continue;
 
-            // Stop showing sticky header once the lane's actual commits scroll off top.
-            // lane.maxY is computed from real commit Y positions, not the extended
-            // fork/merge range that segments[].maxY uses.
             const laneBottomScreenY = (lane.maxY + pad) * k + zoomTransform.y;
             if (laneBottomScreenY < barH) continue;
 
@@ -330,28 +316,34 @@ export class GraphRenderer {
             const barW = halfW * 2 * k;
             const stickyBarX = screenX - halfW * k;
 
-            // Skip lanes entirely off viewport
             if (stickyBarX + barW < 0 || stickyBarX > viewportWidth) continue;
 
             const segColor = seg.color ?? lane.color;
 
-            // Compact bar at y=0
+            // Opaque background matching header style
             ctx.save();
-            ctx.globalAlpha = 0.85;
-            ctx.fillStyle = segColor;
+            ctx.fillStyle = isDark ? "#1c2128" : "#f0f1f3";
+            ctx.globalAlpha = 0.95;
             ctx.beginPath();
-            ctx.roundRect(stickyBarX, 0, barW, barH, [0, 0, 4, 4]);
+            ctx.roundRect(stickyBarX, 0, barW, barH, [0, 0, 3, 3]);
             ctx.fill();
             ctx.restore();
 
-            // Label text (unscaled font)
+            // Bottom color accent (inverted vs in-graph: accent on bottom for sticky)
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = segColor;
+            ctx.fillRect(stickyBarX, barH - 2, barW, 2);
+            ctx.restore();
+
+            // Monospace label
             const label = seg.branchOwner || (seg.tipHash ? shortenHash(seg.tipHash) : "");
             if (label) {
                 ctx.save();
-                ctx.font = COMMIT_DETAIL_FONT;
+                ctx.font = monoFont;
                 ctx.textBaseline = "middle";
                 ctx.textAlign = "left";
-                const maxW = barW - 12;
+                const maxW = barW - 14;
                 let displayLabel = label;
                 if (ctx.measureText(displayLabel).width > maxW) {
                     while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > maxW) {
@@ -359,9 +351,9 @@ export class GraphRenderer {
                     }
                     displayLabel += "\u2026";
                 }
-                ctx.globalAlpha = 0.95;
-                ctx.fillStyle = "#ffffff";
-                ctx.fillText(displayLabel, stickyBarX + 6, barH / 2);
+                ctx.globalAlpha = isDark ? 0.82 : 0.72;
+                ctx.fillStyle = this.palette.labelText;
+                ctx.fillText(displayLabel, stickyBarX + 7, barH / 2);
                 ctx.restore();
             }
         }

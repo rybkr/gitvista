@@ -602,6 +602,11 @@ export function createGraphController(rootElement, options = {}) {
 
         if (!targetNode) {
             hideTooltip();
+            // Clicking empty canvas clears lane isolation
+            if (state.isolatedLanePosition !== null) {
+                state.isolatedLanePosition = null;
+                rebuildAndApplyPredicate();
+            }
             return;
         }
 

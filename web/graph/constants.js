@@ -57,17 +57,17 @@ export const LANE_MARGIN = 60; // Left margin for lane 0
 export const LANE_VERTICAL_STEP = 70; // Dedicated vertical spacing for lane mode
 export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
 export const LANE_CORNER_RADIUS = 14; // Rounded corner radius for cross-lane stepped paths
-export const LANE_HEADER_HEIGHT = 28; // Screen-space height of the lane header bar (px)
+export const LANE_HEADER_HEIGHT = 24; // Screen-space height of the lane header bar (px)
 export const LANE_ARROW_CASING = 5; // Width of background-colored casing behind cross-lane arrows
 export const LANE_COLORS = [
-    "#3a86c4",  // Azure
-    "#8b6cb5",  // Wisteria
-    "#3d9970",  // Eucalyptus
-    "#cc8c3c",  // Amber
-    "#c4584a",  // Terra cotta
-    "#2a9d8f",  // Teal
-    "#a06090",  // Mauve
-    "#6a9a4a",  // Moss
+    "#4d9de0",  // Steel blue (main branch — distinctive but not loud)
+    "#7b8794",  // Slate (neutral default for secondary branches)
+    "#e07941",  // Burnt sienna (warm accent — stands out for active work)
+    "#7c6fbb",  // Muted violet (git-purple nod)
+    "#49a882",  // Sage (understated success/stable tone)
+    "#c2694f",  // Terracotta (earthy warmth)
+    "#5e8ca0",  // Dusty teal
+    "#9e7c5a",  // Khaki (utilitarian)
 ];
 
 // Tag node styling
