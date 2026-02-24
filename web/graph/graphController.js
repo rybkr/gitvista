@@ -537,7 +537,7 @@ export function createGraphController(rootElement, options = {}) {
         // Lane header drag detection — check before node hit-test
         if (state.layoutMode === "lane") {
             const hit = laneStrategy.findLaneHeaderAt(x, y);
-            if (hit && hit.displayLane >= 0 && hit.displayLane < laneStrategy.laneOrder.length) {
+            if (hit) {
                 event.stopImmediatePropagation();
                 event.preventDefault();
                 isDraggingNode = true;
@@ -627,12 +627,8 @@ export function createGraphController(rootElement, options = {}) {
 
             // Lane header drag — move segment as pointer crosses lane boundaries
             if (dragState.laneDrag) {
-                const currentDisplay = laneStrategy.findLaneAtX(x);
-                if (
-                    currentDisplay >= 0 &&
-                    currentDisplay < laneStrategy.laneOrder.length &&
-                    currentDisplay !== dragState.currentLaneDisplay
-                ) {
+                const currentDisplay = laneStrategy.findPositionAtX(x);
+                if (currentDisplay !== dragState.currentLaneDisplay) {
                     laneStrategy.moveSegment(dragState.segmentHashes, currentDisplay);
                     dragState.currentLaneDisplay = currentDisplay;
                     // Re-snap branch/tag decorator nodes to new commit positions
@@ -677,7 +673,7 @@ export function createGraphController(rootElement, options = {}) {
             // Lane header hover cursor
             if (state.layoutMode === "lane" && !dragState) {
                 const hit = laneStrategy.findLaneHeaderAt(pendingHoverX, pendingHoverY);
-                if (hit && hit.displayLane >= 0 && hit.displayLane < laneStrategy.laneOrder.length) {
+                if (hit) {
                     state.hoverNode = null;
                     canvas.style.cursor = "grab";
                     render();

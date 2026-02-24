@@ -124,7 +124,7 @@ export class GraphRenderer {
      * Renders semi-transparent vertical background strips and branch name headers
      * for each lane in lane layout mode.
      *
-     * @param {Array<{index: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
+     * @param {Array<{position: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
      * @param {number} viewportHeight Viewport height in CSS pixels.
      * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
      */
@@ -135,7 +135,7 @@ export class GraphRenderer {
         const bottomY = topY + viewportHeight / k;
 
         for (const lane of laneInfo) {
-            const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+            const cx = LANE_MARGIN + lane.position * LANE_WIDTH;
             const halfW = LANE_WIDTH / 2 - 4;
             const pad = LANE_VERTICAL_STEP / 2;
             const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
@@ -143,7 +143,7 @@ export class GraphRenderer {
             // Draw background strip per segment
             for (const seg of segments) {
                 const stripTop = Math.max(topY, seg.minY - pad);
-                const stripBottom = Math.min(bottomY, seg.maxY + pad);
+                const stripBottom = Math.min(bottomY, seg.maxY + pad - 10);
                 if (stripTop >= stripBottom) continue;
 
                 const rBottom = stripBottom >= bottomY ? 0 : 10;
@@ -172,14 +172,14 @@ export class GraphRenderer {
      * Shows branch names and provides a visual anchor for each section.
      * Drawn in graph space so bars scroll/zoom with the content.
      *
-     * @param {Array<{index: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
+     * @param {Array<{position: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
      */
     renderLaneHeaders(laneInfo) {
         const ctx = this.ctx;
         const pad = LANE_VERTICAL_STEP / 2;
 
         for (const lane of laneInfo) {
-            const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+            const cx = LANE_MARGIN + lane.position * LANE_WIDTH;
             const halfW = LANE_WIDTH / 2 - 4;
             const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
 

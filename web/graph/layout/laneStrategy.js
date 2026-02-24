@@ -7,8 +7,10 @@
  * Algorithm:
  * 1. Walk first-parent chains from branch tips (main first) to claim ownership
  * 2. Assign remaining commits (merge parents) via column-reuse
- * 3. Position nodes: Y = chronological, X = lane index
- * 4. Animate smooth transitions between modes
+ * 3. Build segments from connected components within each lane
+ * 4. Assign each segment an independent position on a number line (0 = main)
+ * 5. Position nodes: Y = chronological, X = segment position
+ * 6. Animate smooth transitions between modes
  */
 
 import {
@@ -53,20 +55,29 @@ export class LaneStrategy {
 		/** @type {number} Viewport height for layout calculations */
 		this.viewportHeight = 0;
 
-		/** @type {Array<{index: number, color: string, minY: number, maxY: number}>} */
+		/** @type {Array<Object>} Lane info for rendering */
 		this._laneInfo = [];
 
-		/** @type {Array<number>} Permutation mapping logical lane index → display position */
-		this.laneOrder = [];
-
-		/** @type {Map<string, Object>|null} Cached commits map for swap recomputation */
+		/** @type {Map<string, Object>|null} Cached commits map for recomputation */
 		this._commits = null;
 
-		/** @type {Map<string, string>|null} Cached branches map for swap recomputation */
+		/** @type {Map<string, string>|null} Cached branches map for recomputation */
 		this._branches = null;
 
 		/** @type {Array<string>} Branch name owning each logical lane (index → name) */
 		this._laneOwners = [];
+
+		/** @type {Array<Object>} Computed segments with position info */
+		this._segments = [];
+
+		/** @type {Map<string, number>} Persisted segment ID → position (survives graph updates) */
+		this._segmentPositions = new Map();
+
+		/** @type {Map<string, number>} Commit hash → Y coordinate */
+		this._yPositions = new Map();
+
+		/** @type {Map<string, string>} Commit hash → segment ID */
+		this._commitToSegmentId = new Map();
 	}
 
 	/**
@@ -92,13 +103,22 @@ export class LaneStrategy {
 		this._branches = branches;
 		this.viewportHeight = viewport.height || 800;
 
-		// Compute lane assignments
+		// 1. Compute lane assignments
 		this.assignLanes(nodes, commits, branches);
 
-		// Compute target positions for all nodes
-		this.computeTargetPositions(nodes, commits);
+		// 2. Compute Y positions
+		this._computeYPositions(nodes, commits);
 
-		// Build lane info for rendering backgrounds and headers
+		// 3. Build segments
+		this._buildSegments(nodes, commits);
+
+		// 4. Assign segment positions
+		this._assignSegmentPositions();
+
+		// 5. Compute X positions → transitionTargetPositions
+		this._computeXPositions(nodes);
+
+		// 6. Build lane info for rendering
 		this._buildLaneInfo(nodes, branches, commits);
 
 		// Store current positions as start positions
@@ -123,10 +143,13 @@ export class LaneStrategy {
 		this.commitToLane.clear();
 		this.transitionStartPositions.clear();
 		this.transitionTargetPositions.clear();
-		this.laneOrder = [];
 		this._commits = null;
 		this._branches = null;
 		this._laneOwners = [];
+		this._segments = [];
+		this._segmentPositions.clear();
+		this._yPositions.clear();
+		this._commitToSegmentId.clear();
 
 		// Clear lane-specific properties from shared node objects
 		if (this.nodes) {
@@ -153,13 +176,22 @@ export class LaneStrategy {
 		this._branches = branches;
 		this.viewportHeight = viewport.height || 800;
 
-		// Recompute lane assignments
+		// 1. Recompute lane assignments
 		this.assignLanes(nodes, commits, branches);
 
-		// Update target positions
-		this.computeTargetPositions(nodes, commits);
+		// 2. Compute Y positions
+		this._computeYPositions(nodes, commits);
 
-		// Rebuild lane info for rendering
+		// 3. Build segments
+		this._buildSegments(nodes, commits);
+
+		// 4. Assign segment positions (restores previous positions)
+		this._assignSegmentPositions();
+
+		// 5. Compute X positions
+		this._computeXPositions(nodes);
+
+		// 6. Rebuild lane info for rendering
 		this._buildLaneInfo(nodes, branches, commits);
 
 		// Apply positions immediately (no transition for incremental updates)
@@ -385,56 +417,10 @@ export class LaneStrategy {
 			node.laneColor = LANE_COLORS[laneIndex % LANE_COLORS.length];
 		}
 
-		// Rebuild display order permutation, preserving user's drag reordering
+		// Pad laneOwners for Phase-2 lanes (no named branch owner)
 		const maxLane = Math.max(0, ...Array.from(this.commitToLane.values()));
-		const newLength = maxLane + 1;
-
-		// Pad newLaneOwners for Phase-2 lanes (no named branch owner)
-		while (newLaneOwners.length < newLength) {
+		while (newLaneOwners.length < maxLane + 1) {
 			newLaneOwners.push("");
-		}
-
-		const prevOwners = this._laneOwners;
-		const prevOrder = this.laneOrder;
-
-		if (prevOwners.length === 0 || prevOrder.length === 0) {
-			// First activation — identity permutation
-			this.laneOrder = Array.from({ length: newLength }, (_, i) => i);
-		} else {
-			// Map old branch names to their previous display positions
-			const branchToOldDisplay = new Map();
-			for (let i = 0; i < prevOwners.length; i++) {
-				if (prevOwners[i] && i < prevOrder.length) {
-					branchToOldDisplay.set(prevOwners[i], prevOrder[i]);
-				}
-			}
-
-			const newOrder = new Array(newLength);
-			const usedPositions = new Set();
-
-			// First pass: assign known branches their old display positions
-			for (let i = 0; i < newLength; i++) {
-				const branch = newLaneOwners[i];
-				if (branch && branchToOldDisplay.has(branch)) {
-					const oldDisplay = branchToOldDisplay.get(branch);
-					if (oldDisplay < newLength && !usedPositions.has(oldDisplay)) {
-						newOrder[i] = oldDisplay;
-						usedPositions.add(oldDisplay);
-					}
-				}
-			}
-
-			// Second pass: fill remaining lanes with unused display positions
-			let nextFree = 0;
-			for (let i = 0; i < newLength; i++) {
-				if (newOrder[i] !== undefined) continue;
-				while (usedPositions.has(nextFree)) nextFree++;
-				newOrder[i] = nextFree;
-				usedPositions.add(nextFree);
-				nextFree++;
-			}
-
-			this.laneOrder = newOrder;
 		}
 
 		this._laneOwners = newLaneOwners;
@@ -453,15 +439,6 @@ export class LaneStrategy {
 		}
 		activeLanes.push(null);
 		return activeLanes.length - 1;
-	}
-
-	/**
-	 * Maps a logical lane index to its current display position.
-	 * @param {number} logicalIndex Logical lane index from commitToLane.
-	 * @returns {number} Display position index.
-	 */
-	getDisplayIndex(logicalIndex) {
-		return this.laneOrder[logicalIndex] ?? logicalIndex;
 	}
 
 	/**
@@ -508,25 +485,34 @@ export class LaneStrategy {
 
 	/**
 	 * Returns lane metadata for rendering lane backgrounds and headers.
-	 * @returns {Array<{index: number, color: string, minY: number, maxY: number}>}
+	 * @returns {Array<Object>}
 	 */
 	getLaneInfo() {
 		return this._laneInfo;
 	}
 
 	/**
-	 * Returns the display lane index at a given X coordinate in graph space.
-	 * @param {number} graphX X coordinate in graph space.
-	 * @returns {number} Display lane index (may be out of range — caller must clamp).
+	 * Converts a number-line position to an X coordinate.
+	 * @param {number} position Integer position on the number line.
+	 * @returns {number} X coordinate in graph space.
 	 */
-	findLaneAtX(graphX) {
+	positionToX(position) {
+		return LANE_MARGIN + position * LANE_WIDTH;
+	}
+
+	/**
+	 * Returns the nearest number-line position at a given X coordinate.
+	 * @param {number} graphX X coordinate in graph space.
+	 * @returns {number} Integer position on the number line (may be negative).
+	 */
+	findPositionAtX(graphX) {
 		return Math.round((graphX - LANE_MARGIN) / LANE_WIDTH);
 	}
 
 	/**
-	 * Hit-tests a graph-space point against all lane header bar rectangles.
-	 * Returns an object with the display lane index and the segment's commit
-	 * hashes, or null if the point isn't inside any header.
+	 * Hit-tests a graph-space point against all segment header bar rectangles.
+	 * Returns an object with the segment position and commit hashes,
+	 * or null if the point isn't inside any header.
 	 * @param {number} graphX X coordinate in graph space.
 	 * @param {number} graphY Y coordinate in graph space.
 	 * @returns {{displayLane: number, segmentHashes: Set<string>}|null}
@@ -536,14 +522,14 @@ export class LaneStrategy {
 		const halfW = LANE_WIDTH / 2 - 4;
 
 		for (const lane of this._laneInfo) {
-			const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+			const cx = this.positionToX(lane.position);
 			if (graphX < cx - halfW || graphX > cx + halfW) continue;
 
 			const segments = lane.segments ?? [];
 			for (const seg of segments) {
 				const barY = seg.minY - pad;
 				if (graphY >= barY && graphY <= barY + LANE_HEADER_HEIGHT) {
-					return { displayLane: lane.index, segmentHashes: seg.hashes };
+					return { displayLane: lane.position, segmentHashes: seg.hashes };
 				}
 			}
 		}
@@ -551,210 +537,102 @@ export class LaneStrategy {
 	}
 
 	/**
-	 * Swaps two entire display columns.
-	 * Only the display positions in laneOrder are exchanged — logical lane
-	 * assignments and colors stay the same, so no overlaps can occur.
-	 * @param {Set<string>} segmentHashes Commit hashes used to identify the source column.
-	 * @param {number} targetDisplay Target display column index.
+	 * Moves a segment to a target position on the number line.
+	 * Position 0 is locked to the main branch and cannot be displaced.
+	 * Y-overlapping segments at the target position are pushed away.
+	 *
+	 * @param {Set<string>} segmentHashes Commit hashes identifying the segment.
+	 * @param {number} targetPosition Target position on the number line.
 	 */
-	moveSegment(segmentHashes, targetDisplay) {
-		// Determine the source logical lane from one of the dragged commits
+	moveSegment(segmentHashes, targetPosition) {
+		// Can't displace main at position 0
+		if (targetPosition === 0) return;
+
+		// Find the source segment
 		const sampleHash = segmentHashes.values().next().value;
-		const sourceLogical = this.commitToLane.get(sampleHash);
-		if (sourceLogical === undefined) return;
+		const segId = this._commitToSegmentId.get(sampleHash);
+		if (!segId) return;
 
-		// Find the logical lane that currently maps to the target display position
-		let targetLogical = -1;
-		for (let i = 0; i < this.laneOrder.length; i++) {
-			if (this.laneOrder[i] === targetDisplay) {
-				targetLogical = i;
-				break;
-			}
+		const sourceSeg = this._segments.find((s) => s.id === segId);
+		if (!sourceSeg) return;
+
+		// Can't move main
+		if (sourceSeg.isMain) return;
+
+		const oldPosition = sourceSeg.position;
+		if (oldPosition === targetPosition) return;
+
+		// Set the segment's position to target
+		sourceSeg.position = targetPosition;
+		this._segmentPositions.set(sourceSeg.id, targetPosition);
+
+		// Push Y-overlapping segments at the target position
+		const direction = Math.sign(oldPosition - targetPosition);
+		for (const other of this._segments) {
+			if (other === sourceSeg) continue;
+			if (other.position !== targetPosition) continue;
+			if (!this._segmentsOverlapY(sourceSeg, other)) continue;
+			this._pushSegment(other, direction || 1);
 		}
-		if (targetLogical === -1 || targetLogical === sourceLogical) return;
 
-		// Swap display positions — all segments in each column move together
-		const tmp = this.laneOrder[sourceLogical];
-		this.laneOrder[sourceLogical] = this.laneOrder[targetLogical];
-		this.laneOrder[targetLogical] = tmp;
-
-		// Recompute positions and lane info
-		this.computeTargetPositions(this.nodes, this._commits);
+		// Recompute X positions and lane info
+		this._computeXPositions(this.nodes);
 		this._buildLaneInfo(this.nodes, this._branches, this._commits);
 		this.applyTargetPositions(this.nodes);
 	}
 
 	/**
-	 * Builds lane info array from current lane assignments and target positions.
-	 * Maps lanes to branch names by checking which branch tips occupy which lanes.
-	 * Splits lanes into contiguous segments based on parent-child connectivity
-	 * so that merged branches get distinct background strips.
+	 * Recursively pushes a segment in the given direction to resolve collisions.
+	 * Skips position 0 (reserved for main).
 	 *
-	 * @param {Array<Object>} nodes Array of graph nodes
-	 * @param {Map<string, string>} branches Map of branch name to target hash
-	 * @param {Map<string, Object>} commits Map of commit hash to commit data
+	 * @param {Object} segment The segment to push.
+	 * @param {number} direction +1 or -1.
 	 */
-	_buildLaneInfo(nodes, branches, commits) {
-		// Collect per-lane commit hashes and Y positions
-		/** @type {Map<number, {hashes: Set<string>, yByHash: Map<string, number>}>} */
-		const laneCommits = new Map();
+	_pushSegment(segment, direction) {
+		if (segment.isMain) return; // Never push main
 
-		for (const node of nodes) {
-			if (node.type !== "commit") continue;
-			const laneIndex = this.commitToLane.get(node.hash);
-			if (laneIndex === undefined) continue;
+		let candidate = segment.position + direction;
+		// Skip position 0 (reserved for main)
+		if (candidate === 0) candidate += direction;
 
-			const target = this.transitionTargetPositions.get(node.hash);
-			const y = target ? target.y : node.y;
-
-			if (!laneCommits.has(laneIndex)) {
-				laneCommits.set(laneIndex, { hashes: new Set(), yByHash: new Map() });
-			}
-			const lc = laneCommits.get(laneIndex);
-			lc.hashes.add(node.hash);
-			lc.yByHash.set(node.hash, y);
+		// Check for Y-overlapping segments at the candidate position
+		for (const other of this._segments) {
+			if (other === segment) continue;
+			if (other.position !== candidate) continue;
+			if (!this._segmentsOverlapY(segment, other)) continue;
+			// Recurse: push the blocking segment further
+			this._pushSegment(other, direction);
 		}
 
-		// Global hash→Y lookup (across all lanes) for resolving fork/merge points
-		const hashToY = new Map();
-		for (const lc of laneCommits.values()) {
-			for (const [h, y] of lc.yByHash) hashToY.set(h, y);
-		}
-
-		// Build segments per lane using parent-child connectivity (union-find)
-		const laneData = new Map();
-
-		for (const [laneIndex, lc] of laneCommits.entries()) {
-			// Union-find for grouping connected commits in this lane
-			const parent = new Map();
-			for (const h of lc.hashes) parent.set(h, h);
-
-			const find = (a) => {
-				while (parent.get(a) !== a) {
-					parent.set(a, parent.get(parent.get(a)));
-					a = parent.get(a);
-				}
-				return a;
-			};
-			const union = (a, b) => {
-				const ra = find(a), rb = find(b);
-				if (ra !== rb) parent.set(ra, rb);
-			};
-
-			// Union commits that are direct parent-child within the same lane
-			for (const hash of lc.hashes) {
-				const commit = commits?.get(hash);
-				if (!commit?.parents) continue;
-				for (const ph of commit.parents) {
-					if (lc.hashes.has(ph)) {
-						union(hash, ph);
-					}
-				}
-			}
-
-			// Group into connected components (collect hashes per group)
-			const groups = new Map();
-			for (const hash of lc.hashes) {
-				const root = find(hash);
-				if (!groups.has(root)) groups.set(root, []);
-				groups.get(root).push(hash);
-			}
-
-			// Build segments from groups, extending to fork/merge points
-			const segments = [];
-			for (const groupHashes of groups.values()) {
-				let minY = Infinity, maxY = -Infinity;
-				for (const h of groupHashes) {
-					const y = lc.yByHash.get(h);
-					if (y < minY) minY = y;
-					if (y > maxY) maxY = y;
-				}
-				const coreMinY = minY, coreMaxY = maxY;
-				const groupSet = new Set(groupHashes);
-
-				// Extend to fork point: find cross-lane parents of this
-				// segment's commits (the source of the right-going arrow
-				// that spawned this branch).
-				for (const h of groupHashes) {
-					const commit = commits?.get(h);
-					if (!commit?.parents) continue;
-					for (const ph of commit.parents) {
-						if (!groupSet.has(ph) && hashToY.has(ph)) {
-							const py = hashToY.get(ph);
-							if (py > maxY) maxY = py;
-							if (py < minY) minY = py;
-						}
-					}
-				}
-
-				// Extend to merge point: find cross-lane children that
-				// have a parent in this segment (the target of the
-				// left-going arrow merging this branch back).
-				for (const node of nodes) {
-					if (node.type !== "commit") continue;
-					if (groupSet.has(node.hash)) continue;
-					const commit = commits?.get(node.hash);
-					if (!commit?.parents) continue;
-					for (const ph of commit.parents) {
-						if (groupSet.has(ph) && hashToY.has(node.hash)) {
-							const cy = hashToY.get(node.hash);
-							if (cy < minY) minY = cy;
-							if (cy > maxY) maxY = cy;
-						}
-					}
-				}
-
-				segments.push({ minY, maxY, coreMinY, coreMaxY, hashes: groupSet });
-			}
-			segments.sort((a, b) => a.minY - b.minY);
-
-			// Prevent adjacent segment backgrounds from overlapping.
-			// Rendered backgrounds extend by pad above/below the raw range,
-			// so clip extensions at the midpoint between core ranges.
-			const pad = LANE_VERTICAL_STEP / 2;
-			for (let i = 0; i < segments.length - 1; i++) {
-				const cur = segments[i];
-				const next = segments[i + 1];
-				if (cur.maxY + pad > next.minY - pad) {
-					const mid = (cur.coreMaxY + next.coreMinY) / 2;
-					cur.maxY = Math.max(cur.coreMaxY, mid - pad);
-					next.minY = Math.min(next.coreMinY, mid + pad);
-				}
-			}
-
-			const allY = [...lc.yByHash.values()];
-			laneData.set(laneIndex, {
-				index: this.getDisplayIndex(laneIndex),
-				color: LANE_COLORS[laneIndex % LANE_COLORS.length],
-				segments,
-				minY: Math.min(...allY),
-				maxY: Math.max(...allY),
-			});
-		}
-
-		this._laneInfo = Array.from(laneData.values()).sort((a, b) => a.index - b.index);
+		segment.position = candidate;
+		this._segmentPositions.set(segment.id, candidate);
 	}
 
 	/**
-	 * Computes target positions for all commit nodes.
-	 * Y-axis: chronological (newest at top)
-	 * X-axis: lane-based (LANE_MARGIN + laneIndex * LANE_WIDTH)
+	 * Tests whether two segments overlap in Y (using extended ranges).
+	 * @param {Object} a First segment.
+	 * @param {Object} b Second segment.
+	 * @returns {boolean}
+	 */
+	_segmentsOverlapY(a, b) {
+		return a.extMinY <= b.extMaxY && b.extMinY <= a.extMaxY;
+	}
+
+	/**
+	 * Computes Y positions for all commit nodes.
+	 * Extracts the chronological sort + topological correction from computeTargetPositions.
 	 *
 	 * @param {Array<Object>} nodes Array of graph nodes
 	 * @param {Map<string, Object>} commits Map of commit hash to commit data
 	 */
-	computeTargetPositions(nodes, commits) {
-		this.transitionTargetPositions.clear();
+	_computeYPositions(nodes, commits) {
+		this._yPositions.clear();
 
 		const commitNodes = nodes.filter((n) => n.type === "commit");
 		if (commitNodes.length === 0) return;
 
-		// Chronological sort with topological correction.
-		// Start with each commit's real timestamp, then bump any child whose
-		// timestamp would place it below a parent (effective_time = max of own
-		// timestamp and all parents' effective_times + 1).  Unrelated commits
-		// on disjoint branches keep their natural timestamps — no zipper effect.
-		const commitHashes = new Set(commitNodes.map(n => n.hash));
+		// Chronological sort with topological correction
+		const commitHashes = new Set(commitNodes.map((n) => n.hash));
 
 		const childrenOf = new Map();
 		const parentCount = new Map();
@@ -808,14 +686,380 @@ export class LaneStrategy {
 		const step = span === 0 ? 0 : available / span;
 		const startY = Math.max(TIMELINE_MARGIN, (this.viewportHeight - available) / 2);
 
-		// Position each commit
 		ordered.forEach((node, index) => {
-			const laneIndex = this.commitToLane.get(node.hash) || 0;
-			const x = LANE_MARGIN + this.getDisplayIndex(laneIndex) * LANE_WIDTH;
 			const y = span === 0 ? startY : startY + step * index;
-
-			this.transitionTargetPositions.set(node.hash, { x, y });
+			this._yPositions.set(node.hash, y);
 		});
+	}
+
+	/**
+	 * Builds segments from connected components within each lane.
+	 * Uses union-find to group commits that are parent-child within the same lane.
+	 *
+	 * @param {Array<Object>} nodes Array of graph nodes
+	 * @param {Map<string, Object>} commits Map of commit hash to commit data
+	 */
+	_buildSegments(nodes, commits) {
+		this._segments = [];
+		this._commitToSegmentId.clear();
+
+		// Collect per-lane commit hashes
+		const laneCommits = new Map();
+		for (const node of nodes) {
+			if (node.type !== "commit") continue;
+			const laneIndex = this.commitToLane.get(node.hash);
+			if (laneIndex === undefined) continue;
+			if (!laneCommits.has(laneIndex)) {
+				laneCommits.set(laneIndex, new Set());
+			}
+			laneCommits.get(laneIndex).add(node.hash);
+		}
+
+		// Global hash→Y lookup for extending to fork/merge points
+		const hashToY = this._yPositions;
+
+		for (const [laneIndex, hashes] of laneCommits.entries()) {
+			// Union-find
+			const parent = new Map();
+			for (const h of hashes) parent.set(h, h);
+
+			const find = (a) => {
+				while (parent.get(a) !== a) {
+					parent.set(a, parent.get(parent.get(a)));
+					a = parent.get(a);
+				}
+				return a;
+			};
+			const union = (a, b) => {
+				const ra = find(a), rb = find(b);
+				if (ra !== rb) parent.set(ra, rb);
+			};
+
+			// Union commits that are direct parent-child within the same lane
+			for (const hash of hashes) {
+				const commit = commits?.get(hash);
+				if (!commit?.parents) continue;
+				for (const ph of commit.parents) {
+					if (hashes.has(ph)) {
+						union(hash, ph);
+					}
+				}
+			}
+
+			// Group into connected components
+			const groups = new Map();
+			for (const hash of hashes) {
+				const root = find(hash);
+				if (!groups.has(root)) groups.set(root, []);
+				groups.get(root).push(hash);
+			}
+
+			// Build segments from groups
+			const branchOwner = this._laneOwners[laneIndex] || "";
+			const isMain = laneIndex === 0;
+
+			for (const groupHashes of groups.values()) {
+				let minY = Infinity, maxY = -Infinity;
+				for (const h of groupHashes) {
+					const y = hashToY.get(h);
+					if (y !== undefined) {
+						if (y < minY) minY = y;
+						if (y > maxY) maxY = y;
+					}
+				}
+				const coreMinY = minY, coreMaxY = maxY;
+				const hashSet = new Set(groupHashes);
+
+				// Extend to fork/merge points for background rendering
+				let extMinY = minY, extMaxY = maxY;
+
+				// Extend to fork point
+				for (const h of groupHashes) {
+					const commit = commits?.get(h);
+					if (!commit?.parents) continue;
+					for (const ph of commit.parents) {
+						if (!hashSet.has(ph) && hashToY.has(ph)) {
+							const py = hashToY.get(ph);
+							if (py > extMaxY) extMaxY = py;
+							if (py < extMinY) extMinY = py;
+						}
+					}
+				}
+
+				// Extend to merge point
+				for (const node of nodes) {
+					if (node.type !== "commit") continue;
+					if (hashSet.has(node.hash)) continue;
+					const commit = commits?.get(node.hash);
+					if (!commit?.parents) continue;
+					for (const ph of commit.parents) {
+						if (hashSet.has(ph) && hashToY.has(node.hash)) {
+							const cy = hashToY.get(node.hash);
+							if (cy < extMinY) extMinY = cy;
+							if (cy > extMaxY) extMaxY = cy;
+						}
+					}
+				}
+
+				// Find tip hash (newest commit) for segment ID
+				let tipHash = groupHashes[0];
+				let tipY = hashToY.get(tipHash) ?? Infinity;
+				for (const h of groupHashes) {
+					const y = hashToY.get(h) ?? Infinity;
+					if (y < tipY) {
+						tipY = y;
+						tipHash = h;
+					}
+				}
+
+				const id = branchOwner + ":" + tipHash;
+
+				const segment = {
+					id,
+					laneIndex,
+					hashes: hashSet,
+					minY,
+					maxY,
+					coreMinY,
+					coreMaxY,
+					extMinY,
+					extMaxY,
+					position: 0, // will be assigned in _assignSegmentPositions
+					isMain,
+					branchOwner,
+					color: LANE_COLORS[laneIndex % LANE_COLORS.length],
+				};
+
+				this._segments.push(segment);
+
+				for (const h of hashSet) {
+					this._commitToSegmentId.set(h, id);
+				}
+			}
+		}
+
+		// Sort segments by minY for consistent processing
+		this._segments.sort((a, b) => a.minY - b.minY);
+	}
+
+	/**
+	 * Assigns positions to segments on the number line.
+	 * Restores previous positions by branch owner name, assigns new segments
+	 * outward from 0, and resolves collisions.
+	 */
+	_assignSegmentPositions() {
+		// Build a map from branch owner to previous positions for restoration
+		const prevPositionsByOwner = new Map();
+		for (const [segId, pos] of this._segmentPositions) {
+			const colonIdx = segId.indexOf(":");
+			const owner = colonIdx >= 0 ? segId.slice(0, colonIdx) : "";
+			if (owner) {
+				// Store all previous positions for this owner
+				if (!prevPositionsByOwner.has(owner)) {
+					prevPositionsByOwner.set(owner, []);
+				}
+				prevPositionsByOwner.get(owner).push(pos);
+			}
+		}
+
+		// Clear old positions map — will rebuild
+		this._segmentPositions.clear();
+
+		// 1. Main segments → always position 0
+		for (const seg of this._segments) {
+			if (seg.isMain) {
+				seg.position = 0;
+				this._segmentPositions.set(seg.id, 0);
+			}
+		}
+
+		// 2. Restore previous positions by branch owner name
+		const unmatched = [];
+		for (const seg of this._segments) {
+			if (seg.isMain) continue;
+
+			const owner = seg.branchOwner;
+			if (owner && prevPositionsByOwner.has(owner)) {
+				const positions = prevPositionsByOwner.get(owner);
+				if (positions.length > 0) {
+					seg.position = positions.shift();
+					this._segmentPositions.set(seg.id, seg.position);
+					continue;
+				}
+			}
+			unmatched.push(seg);
+		}
+
+		// 3. Assign positions to unmatched segments via spiral from 0
+		for (const seg of unmatched) {
+			seg.position = this._assignInitialPosition(seg);
+			this._segmentPositions.set(seg.id, seg.position);
+		}
+
+		// 4. Resolve any collisions introduced by restoration
+		this._resolveAllCollisions();
+	}
+
+	/**
+	 * Assigns an initial position for a new segment by spiraling outward from 0.
+	 * Tries 1, -1, 2, -2, ... skipping positions occupied by Y-overlapping segments.
+	 *
+	 * @param {Object} segment The segment needing a position.
+	 * @returns {number} Assigned position.
+	 */
+	_assignInitialPosition(segment) {
+		for (let dist = 1; dist < 100; dist++) {
+			for (const sign of [1, -1]) {
+				const candidate = dist * sign;
+				// Position 0 is reserved for main
+				if (candidate === 0) continue;
+
+				let occupied = false;
+				for (const other of this._segments) {
+					if (other === segment) continue;
+					if (other.position !== candidate) continue;
+					if (this._segmentsOverlapY(segment, other)) {
+						occupied = true;
+						break;
+					}
+				}
+				if (!occupied) return candidate;
+			}
+		}
+		return this._segments.length; // fallback
+	}
+
+	/**
+	 * Resolves all Y-overlapping collisions at the same position.
+	 * Scans all pairs and pushes colliding segments outward.
+	 */
+	_resolveAllCollisions() {
+		let changed = true;
+		let iterations = 0;
+		while (changed && iterations < 50) {
+			changed = false;
+			iterations++;
+			for (let i = 0; i < this._segments.length; i++) {
+				for (let j = i + 1; j < this._segments.length; j++) {
+					const a = this._segments[i];
+					const b = this._segments[j];
+					if (a.position !== b.position) continue;
+					if (a.isMain && b.isMain) continue;
+					if (!this._segmentsOverlapY(a, b)) continue;
+
+					// Push the non-main one away
+					const toPush = b.isMain ? a : (a.isMain ? b : b);
+					const direction = toPush.position > 0 ? 1 : (toPush.position < 0 ? -1 : 1);
+					this._pushSegment(toPush, direction);
+					changed = true;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Computes X positions for all commit nodes based on their segment positions.
+	 * Combines with Y positions to fill transitionTargetPositions.
+	 *
+	 * @param {Array<Object>} nodes Array of graph nodes
+	 */
+	_computeXPositions(nodes) {
+		this.transitionTargetPositions.clear();
+
+		for (const node of nodes) {
+			if (node.type !== "commit") continue;
+			const y = this._yPositions.get(node.hash);
+			if (y === undefined) continue;
+
+			const segId = this._commitToSegmentId.get(node.hash);
+			let position = 0;
+			if (segId) {
+				const seg = this._segments.find((s) => s.id === segId);
+				if (seg) position = seg.position;
+			}
+
+			const x = this.positionToX(position);
+			this.transitionTargetPositions.set(node.hash, { x, y });
+		}
+	}
+
+	/**
+	 * Builds lane info array for rendering backgrounds and headers.
+	 * Each segment becomes its own entry with position-based X placement.
+	 *
+	 * @param {Array<Object>} nodes Array of graph nodes
+	 * @param {Map<string, string>} branches Map of branch name to target hash
+	 * @param {Map<string, Object>} commits Map of commit hash to commit data
+	 */
+	_buildLaneInfo(nodes, branches, commits) {
+		const pad = LANE_VERTICAL_STEP / 2;
+		const result = [];
+
+		// Group segments by position for overlap clipping
+		const segsByPosition = new Map();
+		for (const seg of this._segments) {
+			if (!segsByPosition.has(seg.position)) {
+				segsByPosition.set(seg.position, []);
+			}
+			segsByPosition.get(seg.position).push(seg);
+		}
+
+		for (const [position, segs] of segsByPosition) {
+			// Sort segments at this position by minY
+			segs.sort((a, b) => a.minY - b.minY);
+
+			// Build rendering segments with overlap clipping
+			const renderSegments = [];
+			for (const seg of segs) {
+				let renderMinY = seg.extMinY;
+				let renderMaxY = seg.extMaxY;
+
+				renderSegments.push({
+					minY: renderMinY,
+					maxY: renderMaxY,
+					coreMinY: seg.coreMinY,
+					coreMaxY: seg.coreMaxY,
+					hashes: seg.hashes,
+				});
+			}
+
+			// Clip adjacent segment backgrounds at midpoints
+			for (let i = 0; i < renderSegments.length - 1; i++) {
+				const cur = renderSegments[i];
+				const next = renderSegments[i + 1];
+				if (cur.maxY + pad > next.minY - pad) {
+					const mid = (cur.coreMaxY + next.coreMinY) / 2;
+					cur.maxY = Math.max(cur.coreMaxY, mid - pad);
+					next.minY = Math.min(next.coreMinY, mid + pad);
+				}
+			}
+
+			// Find overall Y range for this position
+			let minY = Infinity, maxY = -Infinity;
+			for (const seg of segs) {
+				for (const h of seg.hashes) {
+					const y = this._yPositions.get(h);
+					if (y !== undefined) {
+						if (y < minY) minY = y;
+						if (y > maxY) maxY = y;
+					}
+				}
+			}
+
+			// Use the color from the first segment at this position
+			const color = segs[0].color;
+
+			result.push({
+				position,
+				color,
+				segments: renderSegments,
+				minY,
+				maxY,
+			});
+		}
+
+		result.sort((a, b) => a.position - b.position);
+		this._laneInfo = result;
 	}
 
 	/**
