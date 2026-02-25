@@ -34,7 +34,9 @@ func (s *Server) startWatcher() error {
 	// creation/deletion events (which touch files inside those dirs) are
 	// picked up. walkAndWatch also handles hierarchical branch names
 	// (e.g., refs/heads/feature/login) by walking the entire subtree.
-	for _, sub := range []string{"refs/heads", "refs/tags", "refs/remotes"} {
+	// We also watch refs/ itself so that stash creation/deletion (which
+	// touches refs/stash directly) is detected.
+	for _, sub := range []string{"refs", "refs/heads", "refs/tags", "refs/remotes"} {
 		dir := filepath.Join(gitDir, sub)
 		walkAndWatch(watcher, dir, s.logger)
 	}

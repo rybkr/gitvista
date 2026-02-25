@@ -400,6 +400,25 @@ export class LaneStrategy {
 			return bTime - aTime;
 		});
 
+		// Build stash lookup: stash commits → first parent's lane.
+		// Internal children (index commit, untracked commit) go to a side lane.
+		const stashParentLane = new Map();  // stash hash → lane of first parent
+		const stashInternalHashes = new Set();
+		for (const node of commitNodes) {
+			if (!node.isStash) continue;
+			const c = commits.get(node.hash);
+			if (!c?.parents?.[0]) continue;
+			const parentLane = commitOwner.get(c.parents[0]);
+			if (parentLane !== undefined) {
+				stashParentLane.set(node.hash, parentLane);
+			}
+			for (let i = 1; i < c.parents.length; i++) {
+				if (commitHashes.has(c.parents[i])) {
+					stashInternalHashes.add(c.parents[i]);
+				}
+			}
+		}
+
 		// Active lanes track which hash each column expects next (for convergence)
 		const activeLanes = new Array(nextLane).fill(null);
 
@@ -413,9 +432,14 @@ export class LaneStrategy {
 			if (this.commitToLane.has(hash)) {
 				// Already assigned by phase 1
 				lane = this.commitToLane.get(hash);
+			} else if (stashParentLane.has(hash)) {
+				// Stash commit → place on the same lane as the branch it was stashed from.
+				lane = stashParentLane.get(hash);
+				this.commitToLane.set(hash, lane);
 			} else {
 				// Check if an active lane expects this commit
 				lane = -1;
+				const isInternal = stashInternalHashes.has(hash);
 				for (let i = 0; i < activeLanes.length; i++) {
 					if (activeLanes[i] === hash) {
 						lane = i;
@@ -423,7 +447,7 @@ export class LaneStrategy {
 					}
 				}
 				if (lane === -1) {
-					lane = this._findFreeLane(activeLanes);
+					lane = this._findFreeLane(activeLanes, isInternal);
 				}
 				this.commitToLane.set(hash, lane);
 			}
@@ -465,7 +489,7 @@ export class LaneStrategy {
 						}
 					}
 					if (!alreadyExpected) {
-						const mergeLane = this._findFreeLane(activeLanes);
+						const mergeLane = this._findFreeLane(activeLanes, stashInternalHashes.has(parentHash));
 						activeLanes[mergeLane] = parentHash;
 					}
 				}
@@ -497,10 +521,12 @@ export class LaneStrategy {
 	 * Appends a new slot if none are free.
 	 *
 	 * @param {Array<string|null>} activeLanes Active lane tracking array
+	 * @param {boolean} [skipMainLane=false] When true, skip lane 0 (reserved for main).
 	 * @returns {number} Index of the free lane
 	 */
-	_findFreeLane(activeLanes) {
-		for (let i = 0; i < activeLanes.length; i++) {
+	_findFreeLane(activeLanes, skipMainLane = false) {
+		const start = skipMainLane ? 1 : 0;
+		for (let i = start; i < activeLanes.length; i++) {
 			if (activeLanes[i] === null) return i;
 		}
 		activeLanes.push(null);
