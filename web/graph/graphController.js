@@ -11,6 +11,7 @@ import {
     BRANCH_NODE_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
     LANE_MARGIN,
+    LANE_VERTICAL_STEP,
     LANE_WIDTH,
     NODE_RADIUS,
     TAG_NODE_OFFSET_X,
@@ -1103,14 +1104,41 @@ export function createGraphController(rootElement, options = {}) {
             const oursNode = commitNodeByHash.get(mp.oursHash);
             const theirsNode = commitNodeByHash.get(mp.theirsHash);
             if (oursNode && theirsNode) {
+                // In lane mode, place the ghost where a real merge commit
+                // would land: in the ours lane, one step above the current
+                // topmost commit (since it would be the newest commit).
+                // In force mode, center between the two branch tips.
+                const useLane = state.layoutMode === "lane" &&
+                    oursNode.laneIndex !== undefined;
+                let ghostX, ghostY;
+                if (useLane) {
+                    ghostX = oursNode.x;
+                    const commitYs = nodes
+                        .filter(n => n.type === "commit")
+                        .map(n => n.y)
+                        .sort((a, b) => a - b);
+                    const minY = commitYs[0] ?? oursNode.y;
+                    const step = commitYs.length >= 2
+                        ? (commitYs[commitYs.length - 1] - commitYs[0]) /
+                          (commitYs.length - 1)
+                        : LANE_VERTICAL_STEP;
+                    ghostY = minY - step;
+                } else {
+                    ghostX = (oursNode.x + theirsNode.x) / 2;
+                    ghostY = Math.min(oursNode.y, theirsNode.y) - 60;
+                }
                 const ghostNode = {
                     type: "ghost-merge",
                     hash: "__ghost_merge__",
-                    x: (oursNode.x + theirsNode.x) / 2,
-                    y: Math.min(oursNode.y, theirsNode.y) - 60,
-                    fx: (oursNode.x + theirsNode.x) / 2,
-                    fy: Math.min(oursNode.y, theirsNode.y) - 60,
+                    x: ghostX,
+                    y: ghostY,
+                    fx: ghostX,
+                    fy: ghostY,
                 };
+                if (useLane) {
+                    ghostNode.laneIndex = oursNode.laneIndex;
+                    ghostNode.laneColor = oursNode.laneColor;
+                }
                 nodes.push(ghostNode);
                 links.push({ source: ghostNode, target: oursNode, kind: "ghost" });
                 links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });

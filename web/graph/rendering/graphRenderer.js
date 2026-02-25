@@ -478,17 +478,30 @@ export class GraphRenderer {
                 continue;
             }
 
-            // Ghost links: dashed, low opacity, no arrowhead.
+            // Ghost links: dashed, low opacity.
+            // Cross-lane ghost links use stepped routing with arrowhead;
+            // same-lane ghost links stay as straight dashed lines.
             if (link.kind === "ghost") {
                 const prevAlpha = this.ctx.globalAlpha;
                 this.ctx.globalAlpha = 0.3;
                 this.ctx.save();
                 this.ctx.setLineDash([4, 4]);
                 this.ctx.strokeStyle = this.palette.mergeNode;
-                this.ctx.beginPath();
-                this.ctx.moveTo(source.x, source.y);
-                this.ctx.lineTo(target.x, target.y);
-                this.ctx.stroke();
+
+                const isCrossLane =
+                    source.laneIndex !== undefined &&
+                    target.laneIndex !== undefined &&
+                    source.laneIndex !== target.laneIndex;
+
+                if (isCrossLane) {
+                    this.renderGhostSteppedArrow(source, target);
+                } else {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(source.x, source.y);
+                    this.ctx.lineTo(target.x, target.y);
+                    this.ctx.stroke();
+                }
+
                 this.ctx.setLineDash([]);
                 this.ctx.restore();
                 this.ctx.globalAlpha = prevAlpha;
@@ -684,6 +697,55 @@ export class GraphRenderer {
         this.ctx.lineTo(-ARROW_LENGTH, -ARROW_WIDTH / 2);
         this.ctx.closePath();
         this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a dashed stepped path for cross-lane ghost links with a small
+     * arrowhead at the target. Expects setLineDash and strokeStyle to already
+     * be configured by the caller.
+     *
+     * @param {import("../types.js").GraphNode} source Ghost merge node.
+     * @param {import("../types.js").GraphNode} target Target commit node.
+     */
+    renderGhostSteppedArrow(source, target) {
+        const targetRadius = NODE_RADIUS;
+        const goingDown = target.y >= source.y;
+        const dir = goingDown ? 1 : -1;
+
+        // Route the horizontal segment near the source (ghost merge node),
+        // matching how normal cross-lane arrows route from merge commits.
+        const midY = source.y + dir * (NODE_RADIUS + 10);
+        const endY = target.y - dir * (targetRadius + ARROW_LENGTH);
+
+        const maxV = Math.min(
+            Math.abs(midY - source.y),
+            Math.abs(endY - midY),
+        ) / 2;
+        const maxH = Math.abs(target.x - source.x) / 2;
+        const r = Math.max(0, Math.min(LANE_CORNER_RADIUS, maxV, maxH));
+
+        // Stepped path: vertical → horizontal → vertical
+        this.ctx.beginPath();
+        this.ctx.moveTo(source.x, source.y);
+        this.ctx.arcTo(source.x, midY, target.x, midY, r);
+        this.ctx.arcTo(target.x, midY, target.x, endY, r);
+        this.ctx.lineTo(target.x, endY);
+        this.ctx.stroke();
+
+        // Small arrowhead at target
+        const arrowTipY = target.y - dir * targetRadius;
+        this.ctx.save();
+        this.ctx.setLineDash([]);
+        this.ctx.translate(target.x, arrowTipY);
+        this.ctx.rotate(goingDown ? Math.PI / 2 : -Math.PI / 2);
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, 0);
+        this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
+        this.ctx.lineTo(-ARROW_LENGTH, -ARROW_WIDTH / 2);
+        this.ctx.closePath();
+        this.ctx.fillStyle = this.palette.mergeNode;
         this.ctx.fill();
         this.ctx.restore();
     }
