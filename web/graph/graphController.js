@@ -391,6 +391,7 @@ export function createGraphController(rootElement, options = {}) {
         let bestDist = Infinity;
 
         for (const node of nodes) {
+            if (node.type === "ghost-merge") continue;
             if (type && node.type !== type) {
                 continue;
             }
@@ -1096,6 +1097,26 @@ export function createGraphController(rootElement, options = {}) {
         nodes.splice(0, nodes.length, ...allNodes);
         links.splice(0, links.length, ...allLinks);
 
+        // Inject ghost merge node when a merge preview is active.
+        if (state.mergePreview) {
+            const mp = state.mergePreview;
+            const oursNode = commitNodeByHash.get(mp.oursHash);
+            const theirsNode = commitNodeByHash.get(mp.theirsHash);
+            if (oursNode && theirsNode) {
+                const ghostNode = {
+                    type: "ghost-merge",
+                    hash: "__ghost_merge__",
+                    x: (oursNode.x + theirsNode.x) / 2,
+                    y: Math.min(oursNode.y, theirsNode.y) - 60,
+                    fx: (oursNode.x + theirsNode.x) / 2,
+                    fy: Math.min(oursNode.y, theirsNode.y) - 60,
+                };
+                nodes.push(ghostNode);
+                links.push({ source: ghostNode, target: oursNode, kind: "ghost" });
+                links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
+            }
+        }
+
         if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
             releaseDrag();
         }
@@ -1557,6 +1578,18 @@ export function createGraphController(rootElement, options = {}) {
             state.isolatedLanePosition = null;
             rebuildAndApplyPredicate();
             return true;
+        },
+        /**
+         * Sets or clears the merge preview ghost node on the graph.
+         * When preview is non-null, a ghost diamond node appears between the
+         * two branch tips. Pass null to remove it.
+         *
+         * @param {{ oursHash: string, theirsHash: string, mergeBaseHash: string } | null} preview
+         */
+        setMergePreview: (preview) => {
+            state.mergePreview = preview || null;
+            updateGraph();
+            render();
         },
     };
 }

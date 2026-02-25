@@ -576,6 +576,77 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleMergePreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	oursBranch := r.URL.Query().Get("ours")
+	theirsBranch := r.URL.Query().Get("theirs")
+	if oursBranch == "" || theirsBranch == "" {
+		http.Error(w, "Missing 'ours' and/or 'theirs' query parameters", http.StatusBadRequest)
+		return
+	}
+
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	repo := session.Repo()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	branches := repo.Branches()
+	oursHash, ok := branches[oursBranch]
+	if !ok {
+		http.Error(w, "Branch not found: ours", http.StatusNotFound)
+		return
+	}
+	theirsHash, ok := branches[theirsBranch]
+	if !ok {
+		http.Error(w, "Branch not found: theirs", http.StatusNotFound)
+		return
+	}
+
+	cacheKey := "merge-preview:" + string(oursHash) + ":" + string(theirsHash)
+	if cached, ok := session.diffCache.Get(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(cached); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	result, err := gitcore.MergePreview(repo, oursHash, theirsHash)
+	if err != nil {
+		s.logger.Error("Merge preview computation failed", "ours", oursBranch, "theirs", theirsBranch, "err", err)
+		http.Error(w, "Merge preview computation failed", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]any{
+		"oursBranch":    oursBranch,
+		"theirsBranch":  theirsBranch,
+		"oursHash":      string(result.OursHash),
+		"theirsHash":    string(result.TheirsHash),
+		"mergeBaseHash": string(result.MergeBaseHash),
+		"entries":       result.Entries,
+		"stats":         result.Stats,
+	}
+
+	session.diffCache.Put(cacheKey, response)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 // allDeletions reports whether every diff line across all hunks is a deletion.
 func allDeletions(hunks []gitcore.DiffHunk) bool {
 	for _, hunk := range hunks {

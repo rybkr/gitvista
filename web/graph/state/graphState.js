@@ -28,6 +28,7 @@ export function createGraphState() {
 		headHash: "",
 		tags: new Map(),
 		isolatedLanePosition: null,
+		mergePreview: null,
 	};
 }
 
