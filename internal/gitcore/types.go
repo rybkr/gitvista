@@ -402,6 +402,9 @@ type MergePreviewEntry struct {
 	OursStatus   string       `json:"oursStatus"`
 	TheirsStatus string       `json:"theirsStatus"`
 	IsBinary     bool         `json:"isBinary"`
+	BaseHash     Hash         `json:"baseHash,omitempty"`
+	OursHash     Hash         `json:"oursHash,omitempty"`
+	TheirsHash   Hash         `json:"theirsHash,omitempty"`
 }
 
 // MergePreviewStats summarizes the merge preview.
@@ -418,6 +421,44 @@ type MergePreviewResult struct {
 	TheirsHash    Hash                `json:"theirsHash"`
 	Entries       []MergePreviewEntry `json:"entries"`
 	Stats         MergePreviewStats   `json:"stats"`
+}
+
+// MergeRegionType classifies a region in a three-way diff.
+type MergeRegionType string
+
+const (
+	MergeRegionContext  MergeRegionType = "context"
+	MergeRegionOurs     MergeRegionType = "ours"
+	MergeRegionTheirs   MergeRegionType = "theirs"
+	MergeRegionConflict MergeRegionType = "conflict"
+)
+
+// MergeRegion represents a contiguous region in a three-way diff.
+type MergeRegion struct {
+	Type        MergeRegionType `json:"type"`
+	BaseStart   int             `json:"baseStart"`
+	BaseLines   []string        `json:"baseLines"`
+	OursLines   []string        `json:"oursLines,omitempty"`
+	TheirsLines []string        `json:"theirsLines,omitempty"`
+}
+
+// ThreeWayDiffStats summarizes the changes in a three-way diff.
+type ThreeWayDiffStats struct {
+	OursAdded       int `json:"oursAdded"`
+	OursDeleted     int `json:"oursDeleted"`
+	TheirsAdded     int `json:"theirsAdded"`
+	TheirsDeleted   int `json:"theirsDeleted"`
+	ConflictRegions int `json:"conflictRegions"`
+}
+
+// ThreeWayFileDiff represents a three-way merge diff for a single file.
+type ThreeWayFileDiff struct {
+	Path         string            `json:"path"`
+	ConflictType ConflictType      `json:"conflictType"`
+	IsBinary     bool              `json:"isBinary"`
+	Truncated    bool              `json:"truncated"`
+	Regions      []MergeRegion     `json:"regions"`
+	Stats        ThreeWayDiffStats `json:"stats"`
 }
 
 // LineType represents the type of line in a diff.

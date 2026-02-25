@@ -142,9 +142,15 @@ func MergePreview(repo *Repository, oursHash, theirsHash Hash) (*MergePreviewRes
 
 		if inOurs {
 			entry.OursStatus = oursEntry.Status.String()
+			entry.OursHash = oursEntry.NewHash
+			entry.BaseHash = oursEntry.OldHash
 		}
 		if inTheirs {
 			entry.TheirsStatus = theirsEntry.Status.String()
+			entry.TheirsHash = theirsEntry.NewHash
+			if entry.BaseHash == "" {
+				entry.BaseHash = theirsEntry.OldHash
+			}
 		}
 
 		switch {

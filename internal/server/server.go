@@ -207,6 +207,7 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/commit/diff/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff))))
 		mux.HandleFunc("/api/commits/diffstats", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBulkDiffStats))))
 		mux.HandleFunc("/api/working-tree/diff", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
+		mux.HandleFunc("/api/merge-preview/file", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreviewFileDiff))))
 		mux.HandleFunc("/api/merge-preview", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreview))))
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
@@ -326,6 +327,8 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleBulkDiffStats(w, r)
 	case remainder == "/working-tree/diff" && r.Method == http.MethodGet:
 		s.handleWorkingTreeDiff(w, r)
+	case strings.HasPrefix(remainder, "/merge-preview/file") && r.Method == http.MethodGet:
+		s.handleMergePreviewFileDiff(w, r)
 	case remainder == "/merge-preview" && r.Method == http.MethodGet:
 		s.handleMergePreview(w, r)
 	case remainder == "/ws":
