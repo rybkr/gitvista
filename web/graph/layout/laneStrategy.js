@@ -120,6 +120,9 @@ export class LaneStrategy {
 
 		/** @type {Map<string, string>} Commit hash → segment ID */
 		this._commitToSegmentId = new Map();
+
+		/** @type {boolean} Whether the next updateGraph should trigger auto-center */
+		this._needsInitialCenter = false;
 	}
 
 	/**
@@ -144,6 +147,7 @@ export class LaneStrategy {
 		this._commits = commits;
 		this._branches = branches;
 		this.viewportHeight = viewport.height || 800;
+		this._needsInitialCenter = true;
 
 		// 1. Compute lane assignments
 		this.assignLanes(nodes, commits, branches);
@@ -1284,11 +1288,23 @@ export class LaneStrategy {
 
 	/**
 	 * Check if auto-centering should be active.
-	 * Lane layout doesn't use auto-centering.
+	 * Returns true once after activation to center the viewport on HEAD,
+	 * then false for subsequent updates. Only consumes the flag when
+	 * there are actual commit nodes to center on — otherwise the
+	 * transition animation would consume it before data arrives.
 	 *
-	 * @returns {boolean} Always returns false.
+	 * @returns {boolean} True on first update with commits after activation.
 	 */
 	shouldAutoCenter() {
+		if (this._needsInitialCenter) {
+			const hasCommits = this.nodes && this.nodes.some(
+				(n) => n.type === "commit",
+			);
+			if (hasCommits) {
+				this._needsInitialCenter = false;
+				return true;
+			}
+		}
 		return false;
 	}
 

@@ -423,7 +423,20 @@ export function createGraphController(rootElement, options = {}) {
                 (n) => n.type === "commit" && n.hash === state.headHash,
             );
             if (headNode) {
-                select(canvas).call(zoom.translateTo, headNode.x, headNode.y);
+                if (state.layoutMode === "lane") {
+                    // In lane mode, place HEAD in the upper third so the
+                    // commit history is visible below.
+                    const vw = viewportWidth || canvas.width;
+                    const vh = viewportHeight || canvas.height;
+                    select(canvas).call(
+                        zoom.translateTo,
+                        headNode.x,
+                        headNode.y,
+                        [vw / 2, vh / 4],
+                    );
+                } else {
+                    select(canvas).call(zoom.translateTo, headNode.x, headNode.y);
+                }
                 return;
             }
         }
@@ -1168,18 +1181,15 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, offset branch pills to the right of the commit
-                // so they don't overlap with the centered lane header labels.
-                const laneX = targetNode.x;
-
-                // Stack multiple branches on the same commit vertically
+                // In lane mode, center pills below the commit to stay
+                // within the lane column and avoid overlapping headers.
                 const key = targetNode.hash ?? (targetNode.laneIndex ?? 0);
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
-                branchNode.x = laneX + BRANCH_NODE_OFFSET_X;
-                branchNode.y = targetNode.y - BRANCH_NODE_RADIUS - 8 - stackOffset;
+                branchNode.x = targetNode.x;
+                branchNode.y = targetNode.y + NODE_RADIUS + 14 + index * 25;
+                branchNode.maxPillWidth = LANE_WIDTH - 12;
             } else {
                 // Force mode: small jitter is fine since simulation will settle
                 const baseX = targetNode.x ?? 0;
@@ -1257,30 +1267,46 @@ export function createGraphController(rootElement, options = {}) {
         for (const n of nodes) {
             if (n.type === "commit") commitMap.set(n.hash, n);
         }
+        // Pass 1: position branch pills below commits
         const bCount = new Map();
+        for (const n of nodes) {
+            if (n.type !== "branch" || !n.targetHash) continue;
+            const t = commitMap.get(n.targetHash);
+            if (!t) continue;
+            const i = bCount.get(t.hash) || 0;
+            bCount.set(t.hash, i + 1);
+            n.x = t.x;
+            n.y = t.y + NODE_RADIUS + 14 + i * 25;
+            n.maxPillWidth = LANE_WIDTH - 12;
+        }
+        // Pass 2: position tags below branch pills
         const tCount = new Map();
         for (const n of nodes) {
-            if (n.type === "branch" && n.targetHash) {
-                const t = commitMap.get(n.targetHash);
-                if (!t) continue;
-                const i = bCount.get(t.hash) || 0;
-                bCount.set(t.hash, i + 1);
-                n.x = t.x + BRANCH_NODE_OFFSET_X;
-                n.y = t.y - BRANCH_NODE_RADIUS - 8 - i * (BRANCH_NODE_RADIUS * 2.5 + 2);
-            } else if (n.type === "tag" && n.targetHash) {
-                const t = commitMap.get(n.targetHash);
-                if (!t) continue;
-                const i = tCount.get(t.hash) || 0;
-                tCount.set(t.hash, i + 1);
-                n.x = t.x;
-                n.y = t.y + TAG_NODE_RADIUS + 8 + i * (TAG_NODE_RADIUS * 2.5 + 2);
-            }
+            if (n.type !== "tag" || !n.targetHash) continue;
+            const t = commitMap.get(n.targetHash);
+            if (!t) continue;
+            const bc = bCount.get(t.hash) || 0;
+            const i = tCount.get(t.hash) || 0;
+            tCount.set(t.hash, i + 1);
+            n.x = t.x;
+            n.y = t.y + NODE_RADIUS + 14 + bc * 25 + (bc > 0 ? 4 : 0) + i * 25;
         }
     }
 
     function snapTagsToTargets(pairs) {
         // Track per-commit tag count for stacking in lane mode
         const perCommitCount = new Map();
+
+        // Count branch pills per commit so tags stack below them
+        let branchesPerCommit = null;
+        if (state.layoutMode === "lane") {
+            branchesPerCommit = new Map();
+            for (const n of nodes) {
+                if (n.type === "branch" && n.targetHash) {
+                    branchesPerCommit.set(n.targetHash, (branchesPerCommit.get(n.targetHash) || 0) + 1);
+                }
+            }
+        }
 
         for (const pair of pairs) {
             if (!pair) continue;
@@ -1290,17 +1316,14 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, use commit's X directly (already display-aware)
-                const laneX = targetNode.x;
-
-                // Stack multiple tags on the same commit vertically
                 const key = targetNode.hash ?? (targetNode.laneIndex ?? 0);
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                const stackOffset = index * (TAG_NODE_RADIUS * 2.5 + 2);
-                tagNode.x = laneX;
-                tagNode.y = targetNode.y + TAG_NODE_RADIUS + 8 + stackOffset;
+                const bc = branchesPerCommit.get(targetNode.hash) || 0;
+                const branchStackH = bc * 25 + (bc > 0 ? 4 : 0);
+                tagNode.x = targetNode.x;
+                tagNode.y = targetNode.y + NODE_RADIUS + 14 + branchStackH + index * 25;
             } else {
                 // Force mode: small jitter offset from target commit
                 const baseX = targetNode.x ?? 0;

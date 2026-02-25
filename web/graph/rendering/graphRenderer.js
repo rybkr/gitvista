@@ -7,7 +7,6 @@ import {
     ARROW_LENGTH,
     ARROW_WIDTH,
     BRANCH_NODE_CORNER_RADIUS,
-    BRANCH_NODE_OFFSET_X,
     BRANCH_NODE_PADDING_X,
     BRANCH_NODE_PADDING_Y,
     BRANCH_NODE_RADIUS,
@@ -297,6 +296,11 @@ export class GraphRenderer {
         const isDark = this.palette.isDark;
         const monoFont = "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
 
+        // Visible graph-space Y range
+        const viewportHeight = ctx.canvas.height / dpr;
+        const vpTopY = -zoomTransform.y / k;
+        const vpBottomY = vpTopY + viewportHeight / k;
+
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -304,14 +308,29 @@ export class GraphRenderer {
             const segments = lane.segments ?? [];
             if (segments.length === 0) continue;
 
-            const seg = segments[0];
-            const headerGraphY = seg.minY - pad;
-            const headerScreenY = headerGraphY * k + zoomTransform.y;
+            // Find the topmost segment that is visible in the viewport
+            // and whose header has scrolled above the top edge.
+            let activeSeg = null;
+            for (const seg of segments) {
+                const segTop = seg.minY - pad;
+                const segBottom = seg.maxY + pad;
 
-            if (headerScreenY >= 0) continue;
+                // Segment must overlap the viewport vertically
+                if (segBottom <= vpTopY || segTop >= vpBottomY) continue;
 
-            const laneBottomScreenY = (lane.maxY + pad) * k + zoomTransform.y;
-            if (laneBottomScreenY < barH) continue;
+                // Header must have scrolled above the viewport top
+                const headerScreenY = segTop * k + zoomTransform.y;
+                if (headerScreenY >= 0) continue;
+
+                // Segment bottom must still be below the sticky bar area
+                const segBottomScreenY = segBottom * k + zoomTransform.y;
+                if (segBottomScreenY < barH) continue;
+
+                activeSeg = seg;
+                break;
+            }
+
+            if (!activeSeg) continue;
 
             const screenX = (LANE_MARGIN + lane.position * LANE_WIDTH) * k + zoomTransform.x;
             const barW = halfW * 2 * k;
@@ -319,7 +338,7 @@ export class GraphRenderer {
 
             if (stickyBarX + barW < 0 || stickyBarX > viewportWidth) continue;
 
-            const segColor = seg.color ?? lane.color;
+            const segColor = activeSeg.color ?? lane.color;
 
             // Opaque background matching header style
             ctx.save();
@@ -338,7 +357,7 @@ export class GraphRenderer {
             ctx.restore();
 
             // Monospace label
-            const label = seg.branchOwner || (seg.tipHash ? shortenHash(seg.tipHash) : "");
+            const label = activeSeg.branchOwner || (activeSeg.tipHash ? shortenHash(activeSeg.tipHash) : "");
             if (label) {
                 ctx.save();
                 ctx.font = monoFont;
@@ -648,30 +667,9 @@ export class GraphRenderer {
             }
         }
 
-        // Pre-pass: measure branch pill right edges so commit labels can
-        // shift past them and avoid overlap.  Only branch nodes matter here —
-        // tags are positioned below the commit in lane mode and don't collide.
-        // Keyed by target commit hash, value is the max right-edge X offset
-        // from the commit center.
-        const decoratorRightOffset = new Map();
-        if (layoutMode === "lane") {
-            this.ctx.save();
-            this.ctx.font = LABEL_FONT;
-            for (const node of nodes) {
-                if (node.type !== "branch" || !node.targetHash) continue;
-                const text = node.branch ?? "";
-                if (!text) continue;
-                const pillW = this.ctx.measureText(text).width + BRANCH_NODE_PADDING_X * 2;
-                const rightEdge = BRANCH_NODE_OFFSET_X + pillW / 2;
-                const prev = decoratorRightOffset.get(node.targetHash) ?? 0;
-                if (rightEdge > prev) decoratorRightOffset.set(node.targetHash, rightEdge);
-            }
-            this.ctx.restore();
-        }
-
         for (const node of nodes) {
             if (node.type === "commit") {
-                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, decoratorRightOffset);
+                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode);
             }
         }
         for (const node of nodes) {
@@ -692,7 +690,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      * @param {string|null} highlightKey Current highlight identifier.
      */
-    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, decoratorRightOffset) {
+    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
@@ -778,7 +776,7 @@ export class GraphRenderer {
         // Skip label rendering for dimmed nodes — labels at 15% opacity would
         // clutter the view without adding navigational value.
         if (!isDimmed) {
-            this.renderCommitLabel(node, spawnAlpha, zoomTransform, layoutMode, decoratorRightOffset);
+            this.renderCommitLabel(node, spawnAlpha, zoomTransform, layoutMode);
         }
     }
 
@@ -908,7 +906,7 @@ export class GraphRenderer {
      *
      * @param {import("../types.js").GraphNodeCommit} node Commit node to annotate.
      */
-    renderCommitLabel(node, spawnAlpha = 1, zoomTransform, layoutMode, decoratorRightOffset) {
+    renderCommitLabel(node, spawnAlpha = 1, zoomTransform, layoutMode) {
         if (!node.commit?.hash) return;
 
         const text = shortenHash(node.commit.hash);
@@ -919,15 +917,7 @@ export class GraphRenderer {
         this.ctx.textBaseline = "middle";
         this.ctx.textAlign = "left";
 
-        // Default offset: just past the node circle
-        let offset = node.radius + LABEL_PADDING;
-
-        // In lane mode, shift label past any branch/tag pill to avoid overlap
-        const decRight = decoratorRightOffset?.get(node.hash);
-        if (decRight && decRight + 4 > offset) {
-            offset = decRight + 4;
-        }
-
+        const offset = node.radius + LABEL_PADDING;
         const labelX = node.x + offset;
         const labelY = node.y;
 
@@ -1051,7 +1041,17 @@ export class GraphRenderer {
         this.ctx.textBaseline = "middle";
         this.ctx.textAlign = "center";
 
-        const metrics = this.ctx.measureText(text);
+        // Truncate text to fit within lane width constraint
+        let displayText = text;
+        if (node.maxPillWidth) {
+            const maxTextW = node.maxPillWidth - BRANCH_NODE_PADDING_X * 2;
+            while (displayText.length > 1 && this.ctx.measureText(displayText + "\u2026").width > maxTextW) {
+                displayText = displayText.slice(0, -1);
+            }
+            if (displayText !== text) displayText += "\u2026";
+        }
+
+        const metrics = this.ctx.measureText(displayText);
         const textHeight = metrics.actualBoundingBoxAscent ?? 9;
         const width = metrics.width + BRANCH_NODE_PADDING_X * 2;
         const height = textHeight + BRANCH_NODE_PADDING_Y * 2;
@@ -1078,7 +1078,7 @@ export class GraphRenderer {
         this.ctx.stroke();
 
         this.ctx.fillStyle = this.palette.branchLabelText;
-        this.ctx.fillText(text, node.x, node.y);
+        this.ctx.fillText(displayText, node.x, node.y);
         this.ctx.globalAlpha = previousAlpha;
         this.ctx.restore();
     }
