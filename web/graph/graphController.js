@@ -929,11 +929,13 @@ export function createGraphController(rootElement, options = {}) {
             if (s?.hash) stashHashes.set(s.hash, s.message);
         }
         const stashInternalHashes = new Set();
+        const stashInternalKinds = new Map(); // hash → "index" | "untracked"
         for (const s of state.stashes ?? []) {
             const commit = commits.get(s?.hash);
             if (commit?.parents) {
                 for (let i = 1; i < commit.parents.length; i++) {
                     stashInternalHashes.add(commit.parents[i]);
+                    stashInternalKinds.set(commit.parents[i], i === 1 ? "index" : "untracked");
                 }
             }
         }
@@ -951,6 +953,7 @@ export function createGraphController(rootElement, options = {}) {
             node.isStash = stashHashes.has(commit.hash);
             node.stashMessage = stashHashes.get(commit.hash) ?? null;
             node.isStashInternal = stashInternalHashes.has(commit.hash);
+            node.stashInternalKind = stashInternalKinds.get(commit.hash) ?? null;
             node.radius = node.radius ?? NODE_RADIUS;
             nextNodes.push(node);
             if (!existingNodes.has(commit.hash)) {

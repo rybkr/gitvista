@@ -12,6 +12,11 @@ import {
     BRANCH_NODE_RADIUS,
     HIGHLIGHT_NODE_RADIUS,
     HIGHLIGHT_MERGE_NODE_RADIUS,
+    HIGHLIGHT_STASH_NODE_RADIUS,
+    HIGHLIGHT_INDEX_NODE_RADIUS,
+    INDEX_NODE_CORNER_RADIUS,
+    INDEX_NODE_RADIUS,
+    STASH_NODE_RADIUS,
     LABEL_FONT,
     LABEL_PADDING,
     LINK_THICKNESS,
@@ -449,6 +454,26 @@ export class GraphRenderer {
      */
     getStashColor(node) {
         return this.palette.stashNode;
+    }
+
+    /**
+     * Returns the effective fill color for a stash index node.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Index commit node.
+     * @returns {string} CSS color string.
+     */
+    getIndexColor(node) {
+        return this.palette.indexNode;
+    }
+
+    /**
+     * Returns the effective fill color for an untracked stash node.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Untracked commit node.
+     * @returns {string} CSS color string.
+     */
+    getUntrackedColor(node) {
+        return this.palette.untrackedNode;
     }
 
     /**
@@ -906,13 +931,17 @@ export class GraphRenderer {
         const isMergeBase = mergeBaseHash && node.hash === mergeBaseHash;
         const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
         const isStash = !!node.isStash;
+        const isStashInternal = !!node.isStashInternal;
         // dimPhase: 0 = fully visible, 1 = fully dimmed. Lerped per-frame by
         // graphController for smooth transitions when search results change.
         const dimPhase = typeof node.dimPhase === "number" ? node.dimPhase : 0;
 
-        const baseRadius = isMerge ? MERGE_NODE_RADIUS : NODE_RADIUS;
-        const highlightRadius = isMerge
-            ? HIGHLIGHT_MERGE_NODE_RADIUS
+        const baseRadius = isStash ? STASH_NODE_RADIUS
+            : isStashInternal ? INDEX_NODE_RADIUS
+            : isMerge ? MERGE_NODE_RADIUS : NODE_RADIUS;
+        const highlightRadius = isStash ? HIGHLIGHT_STASH_NODE_RADIUS
+            : isStashInternal ? HIGHLIGHT_INDEX_NODE_RADIUS
+            : isMerge ? HIGHLIGHT_MERGE_NODE_RADIUS
             : HIGHLIGHT_NODE_RADIUS;
         const currentRadius = node.radius ?? baseRadius;
         const targetRadius = isHighlighted ? highlightRadius : baseRadius;
@@ -946,6 +975,21 @@ export class GraphRenderer {
             } else {
                 this.renderNormalStash(node, drawRadius);
             }
+        } else if (isStashInternal) {
+            const isUntracked = node.stashInternalKind === "untracked";
+            if (isHighlighted) {
+                if (isUntracked) {
+                    this.renderHighlightedUntracked(node, drawRadius);
+                } else {
+                    this.renderHighlightedIndex(node, drawRadius);
+                }
+            } else {
+                if (isUntracked) {
+                    this.renderNormalUntracked(node, drawRadius);
+                } else {
+                    this.renderNormalIndex(node, drawRadius);
+                }
+            }
         } else if (isHighlighted) {
             if (isMerge) {
                 this.renderHighlightedMerge(node, drawRadius);
@@ -978,16 +1022,26 @@ export class GraphRenderer {
         if (isHead) {
             const headColor = isStash
                 ? this.getStashColor(node)
-                : isMerge
-                    ? this.getMergeColor(node)
-                    : this.getCommitColor(node);
+                : isStashInternal
+                    ? (node.stashInternalKind === "untracked" ? this.getUntrackedColor(node) : this.getIndexColor(node))
+                    : isMerge
+                        ? this.getMergeColor(node)
+                        : this.getCommitColor(node);
             this.ctx.save();
             this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45 * dimMultiplier;
             this.ctx.lineWidth = 1.5;
             this.ctx.strokeStyle = headColor;
-            this.ctx.beginPath();
-            this.ctx.arc(node.x, node.y, drawRadius + 3.5, 0, Math.PI * 2);
-            this.ctx.stroke();
+            if (isStash) {
+                this.drawDiamond(node.x, node.y, drawRadius + 3.5);
+                this.ctx.stroke();
+            } else if (isStashInternal) {
+                this.drawRoundedSquare(node.x, node.y, drawRadius + 3.5, INDEX_NODE_CORNER_RADIUS);
+                this.ctx.stroke();
+            } else {
+                this.ctx.beginPath();
+                this.ctx.arc(node.x, node.y, drawRadius + 3.5, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
             this.ctx.restore();
         }
 
@@ -1146,8 +1200,7 @@ export class GraphRenderer {
     renderNormalStash(node, radius) {
         this.ctx.fillStyle = this.getStashColor(node);
         this.applyShadow();
-        this.ctx.beginPath();
-        this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
         this.clearShadow();
 
@@ -1156,8 +1209,7 @@ export class GraphRenderer {
         this.ctx.lineWidth = 1.5;
         this.ctx.strokeStyle = this.palette.stashNodeBorder;
         this.ctx.setLineDash([3, 3]);
-        this.ctx.beginPath();
-        this.ctx.arc(node.x, node.y, radius + 2, 0, Math.PI * 2);
+        this.drawDiamond(node.x, node.y, radius + 2);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
         this.ctx.restore();
@@ -1176,8 +1228,7 @@ export class GraphRenderer {
         this.ctx.save();
         this.ctx.fillStyle = hl.glow;
         this.ctx.globalAlpha = 0.35;
-        this.ctx.beginPath();
-        this.ctx.arc(node.x, node.y, radius + 7, 0, Math.PI * 2);
+        this.drawDiamond(node.x, node.y, radius + 7);
         this.ctx.fill();
         this.ctx.restore();
 
@@ -1191,8 +1242,7 @@ export class GraphRenderer {
 
         this.ctx.fillStyle = gradient;
         this.applyShadow();
-        this.ctx.beginPath();
-        this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
         this.clearShadow();
 
@@ -1202,10 +1252,133 @@ export class GraphRenderer {
         this.ctx.strokeStyle = hl.highlight;
         this.ctx.globalAlpha = 0.8;
         this.ctx.setLineDash([3, 3]);
-        this.ctx.beginPath();
-        this.ctx.arc(node.x, node.y, radius + 2, 0, Math.PI * 2);
+        this.drawDiamond(node.x, node.y, radius + 1.8);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a non-highlighted stash index node as a rounded square.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Index commit node.
+     * @param {number} radius Node radius.
+     */
+    renderNormalIndex(node, radius) {
+        this.ctx.fillStyle = this.getIndexColor(node);
+        this.applyShadow();
+        this.drawRoundedSquare(node.x, node.y, radius, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.fill();
+        this.clearShadow();
+
+        // Solid border to distinguish index nodes from stash nodes.
+        this.ctx.save();
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeStyle = this.palette.indexNodeBorder;
+        this.drawRoundedSquare(node.x, node.y, radius, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a highlighted stash index node with glow and gradient.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Index commit node.
+     * @param {number} radius Node radius.
+     */
+    renderHighlightedIndex(node, radius) {
+        const baseColor = this.getIndexColor(node);
+        const hl = computeHighlightColors(baseColor, this.palette.isDark);
+
+        this.ctx.save();
+        this.ctx.fillStyle = hl.glow;
+        this.ctx.globalAlpha = 0.35;
+        this.drawRoundedSquare(node.x, node.y, radius + 7, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.fill();
+        this.ctx.restore();
+
+        const gradient = this.ctx.createRadialGradient(
+            node.x, node.y, radius * 0.2,
+            node.x, node.y, radius,
+        );
+        gradient.addColorStop(0, hl.core);
+        gradient.addColorStop(0.7, hl.highlight);
+        gradient.addColorStop(1, hl.ring);
+
+        this.ctx.fillStyle = gradient;
+        this.applyShadow();
+        this.drawRoundedSquare(node.x, node.y, radius, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.fill();
+        this.clearShadow();
+
+        // Solid highlight ring.
+        this.ctx.save();
+        this.ctx.lineWidth = 1.25;
+        this.ctx.strokeStyle = hl.highlight;
+        this.ctx.globalAlpha = 0.8;
+        this.drawRoundedSquare(node.x, node.y, radius + 1.8, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a non-highlighted untracked stash node as a rounded square.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Untracked commit node.
+     * @param {number} radius Node radius.
+     */
+    renderNormalUntracked(node, radius) {
+        this.ctx.fillStyle = this.getUntrackedColor(node);
+        this.applyShadow();
+        this.drawRoundedSquare(node.x, node.y, radius, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.fill();
+        this.clearShadow();
+
+        this.ctx.save();
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeStyle = this.palette.untrackedNodeBorder;
+        this.drawRoundedSquare(node.x, node.y, radius, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a highlighted untracked stash node with glow and gradient.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Untracked commit node.
+     * @param {number} radius Node radius.
+     */
+    renderHighlightedUntracked(node, radius) {
+        const baseColor = this.getUntrackedColor(node);
+        const hl = computeHighlightColors(baseColor, this.palette.isDark);
+
+        this.ctx.save();
+        this.ctx.fillStyle = hl.glow;
+        this.ctx.globalAlpha = 0.35;
+        this.drawRoundedSquare(node.x, node.y, radius + 7, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.fill();
+        this.ctx.restore();
+
+        const gradient = this.ctx.createRadialGradient(
+            node.x, node.y, radius * 0.2,
+            node.x, node.y, radius,
+        );
+        gradient.addColorStop(0, hl.core);
+        gradient.addColorStop(0.7, hl.highlight);
+        gradient.addColorStop(1, hl.ring);
+
+        this.ctx.fillStyle = gradient;
+        this.applyShadow();
+        this.drawRoundedSquare(node.x, node.y, radius, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.fill();
+        this.clearShadow();
+
+        this.ctx.save();
+        this.ctx.lineWidth = 1.25;
+        this.ctx.strokeStyle = hl.highlight;
+        this.ctx.globalAlpha = 0.8;
+        this.drawRoundedSquare(node.x, node.y, radius + 1.8, INDEX_NODE_CORNER_RADIUS);
+        this.ctx.stroke();
         this.ctx.restore();
     }
 
@@ -1533,5 +1706,30 @@ export class GraphRenderer {
         const g = parseInt(h.slice(2, 4), 16) || 0;
         const b = parseInt(h.slice(4, 6), 16) || 0;
         return `${r}, ${g}, ${b}`;
+    }
+
+    /**
+     * Draws a rounded square path centered on the given coordinates.
+     *
+     * @param {number} cx Center X.
+     * @param {number} cy Center Y.
+     * @param {number} radius Half side-length of the square.
+     * @param {number} cornerRadius Corner rounding radius.
+     */
+    drawRoundedSquare(cx, cy, radius, cornerRadius) {
+        const half = radius;
+        const x = cx - half, y = cy - half, size = half * 2;
+        const r = Math.min(cornerRadius, half);
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + r, y);
+        this.ctx.lineTo(x + size - r, y);
+        this.ctx.arcTo(x + size, y, x + size, y + r, r);
+        this.ctx.lineTo(x + size, y + size - r);
+        this.ctx.arcTo(x + size, y + size, x + size - r, y + size, r);
+        this.ctx.lineTo(x + r, y + size);
+        this.ctx.arcTo(x, y + size, x, y + size - r, r);
+        this.ctx.lineTo(x, y + r);
+        this.ctx.arcTo(x, y, x + r, y, r);
+        this.ctx.closePath();
     }
 }
