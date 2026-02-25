@@ -30,6 +30,13 @@ type FileStatus struct {
 	// IsUntracked is true when the file exists on disk but is not recorded
 	// in the index at all. IndexStatus and WorkStatus are empty in this case.
 	IsUntracked bool
+
+	// HeadHash is the blob SHA from the HEAD tree (empty if file is new).
+	HeadHash Hash
+	// IndexHash is the blob SHA from .git/index (empty if untracked/deleted-from-index).
+	IndexHash Hash
+	// WorkHash is the blob SHA of the on-disk content (empty if deleted/untracked).
+	WorkHash Hash
 }
 
 // WorkingTreeStatus is the full working tree status computed without shelling
@@ -82,13 +89,13 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 	// Step 3: Compare HEAD tree vs index to detect staged changes.
 	for path, entry := range index.ByPath {
-		headHash, inHead := headTree[path]
+		headBlobHash, inHead := headTree[path]
 
 		var idxStatus string
 		if !inHead {
 			// Path is in the index but not in HEAD → staged addition.
 			idxStatus = StatusAdded
-		} else if headHash != entry.Hash {
+		} else if headBlobHash != entry.Hash {
 			// Path is in both but hashes differ → staged modification.
 			idxStatus = StatusModified
 		}
@@ -98,16 +105,19 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			results[path] = &FileStatus{
 				Path:        path,
 				IndexStatus: idxStatus,
+				HeadHash:    headBlobHash,
+				IndexHash:   entry.Hash,
 			}
 		}
 	}
 
 	// Find paths in HEAD that are no longer in the index → staged deletion.
-	for path := range headTree {
+	for path, blobHash := range headTree {
 		if _, inIndex := index.ByPath[path]; !inIndex {
 			results[path] = &FileStatus{
 				Path:        path,
 				IndexStatus: StatusDeleted,
+				HeadHash:    blobHash,
 			}
 		}
 	}
@@ -136,6 +146,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 					fs = results[path]
 				}
 				fs.WorkStatus = StatusDeleted
+				fs.IndexHash = entry.Hash
 			} else {
 				// Unexpected stat error (permission denied, etc.) — surface it.
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: stat %s: %w", diskPath, statErr)
@@ -158,20 +169,30 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 					fs = results[path]
 				}
 				fs.WorkStatus = StatusModified
+				fs.WorkHash = diskHash
+				fs.IndexHash = entry.Hash
 			}
 			continue
 		}
 
-		// Fast-path: if the file size on disk differs from what the index
-		// recorded, skip hashing and mark as modified immediately.
+		// If the file size on disk differs from what the index recorded,
+		// mark as modified. We still read and hash the file so WorkHash is
+		// always populated for the staging view's SHA badges.
 		diskSize := info.Size()
-		if uint32(diskSize) != entry.FileSize { // #nosec G115 -- truncation intentional; git index FileSize is uint32, mismatch triggers re-hash below
+		if uint32(diskSize) != entry.FileSize { // #nosec G115 -- truncation intentional; git index FileSize is uint32
+			//nolint:gosec // G304: path is relative to the repository working directory
+			sizeContent, sizeReadErr := os.ReadFile(diskPath)
+			if sizeReadErr != nil {
+				return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, sizeReadErr)
+			}
 			fs, exists := results[path]
 			if !exists {
 				results[path] = &FileStatus{Path: path}
 				fs = results[path]
 			}
 			fs.WorkStatus = StatusModified
+			fs.WorkHash = hashBlobContent(sizeContent)
+			fs.IndexHash = entry.Hash
 			continue
 		}
 
@@ -193,6 +214,8 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 				fs = results[path]
 			}
 			fs.WorkStatus = StatusModified
+			fs.WorkHash = diskHash
+			fs.IndexHash = entry.Hash
 		}
 	}
 

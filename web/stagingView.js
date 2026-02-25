@@ -67,6 +67,15 @@ function createFileCard(file, animClass) {
     }
 
     card.appendChild(code);
+
+    if (file.blobHash) {
+        const hash = document.createElement("span");
+        hash.className = "staging-file-hash";
+        hash.textContent = file.blobHash.slice(0, 7);
+        hash.title = file.blobHash;
+        card.appendChild(hash);
+    }
+
     card.appendChild(nameWrap);
     card.title = file.path;
 
@@ -105,25 +114,30 @@ function createZone(id, icon, label, colorModifier) {
     return { el: zone, body, badge };
 }
 
-function createConnector(commandLabel) {
+function createConnector(fwdLabel, revLabel) {
     const connector = document.createElement("div");
     connector.className = "staging-connector";
 
     const trackTop = document.createElement("div");
     trackTop.className = "staging-connector-track";
 
-    const label = document.createElement("span");
-    label.className = "staging-connector-label";
-    label.textContent = commandLabel;
+    const fwd = document.createElement("span");
+    fwd.className = "staging-connector-label";
+    fwd.textContent = fwdLabel;
+
+    const rev = document.createElement("span");
+    rev.className = "staging-connector-label staging-connector-label--rev";
+    rev.textContent = revLabel;
 
     const trackBottom = document.createElement("div");
     trackBottom.className = "staging-connector-track";
 
     connector.appendChild(trackTop);
-    connector.appendChild(label);
+    connector.appendChild(fwd);
+    connector.appendChild(rev);
     connector.appendChild(trackBottom);
 
-    return connector;
+    return { el: connector, fwdLabel: fwd, revLabel: rev };
 }
 
 export function createStagingView() {
@@ -137,10 +151,13 @@ export function createStagingView() {
     const staging = createZone("staging", ICON_STAGED, "Staged", "success");
     const repo = createZone("repo", ICON_COMMITTED, "Committed", "info");
 
+    const addConnector = createConnector("git add", "git restore --staged");
+    const commitConnector = createConnector("git commit", "git restore");
+
     zones.appendChild(working.el);
-    zones.appendChild(createConnector("git add"));
+    zones.appendChild(addConnector.el);
     zones.appendChild(staging.el);
-    zones.appendChild(createConnector("git commit"));
+    zones.appendChild(commitConnector.el);
     zones.appendChild(repo.el);
 
     el.appendChild(zones);
@@ -227,6 +244,9 @@ export function createStagingView() {
         const workingAnims = new Map();
         const stagingAnims = new Map();
 
+        let highlightRestoreStaged = false;
+        let highlightRestore = false;
+
         for (const [path, prevZone] of prevState) {
             const curZone = currentState.get(path);
 
@@ -234,11 +254,27 @@ export function createStagingView() {
                 stagingAnims.set(path, "staging-anim-slide-down");
             } else if (prevZone === "staging" && curZone === "working") {
                 workingAnims.set(path, "staging-anim-slide-up");
+                highlightRestoreStaged = true;
             } else if (prevZone === "staging" && !curZone) {
                 const file = findFile(stagingFiles, workingFiles, path) ||
                     { path, statusCode: "C" };
                 committedFiles.set(path, { file, addedAt: Date.now() });
+            } else if (prevZone === "working" && !curZone) {
+                highlightRestore = true;
             }
+        }
+
+        if (highlightRestoreStaged) {
+            addConnector.revLabel.classList.add("staging-connector-label--highlight");
+            setTimeout(() => {
+                addConnector.revLabel.classList.remove("staging-connector-label--highlight");
+            }, 600);
+        }
+        if (highlightRestore) {
+            commitConnector.revLabel.classList.add("staging-connector-label--highlight");
+            setTimeout(() => {
+                commitConnector.revLabel.classList.remove("staging-connector-label--highlight");
+            }, 600);
         }
 
         // Detect new files (not in prevState) for entrance animation

@@ -3699,6 +3699,17 @@ canvas {
     opacity: 0.5;
 }
 
+.staging-connector-label--rev {
+    font-size: 9px;
+    opacity: 0.3;
+    transition: opacity 0.3s ease, color 0.3s ease;
+}
+
+.staging-connector-label--highlight {
+    opacity: 1.0;
+    color: var(--warning-color);
+}
+
 /* ── File card ── */
 
 .staging-file-card {
@@ -3739,6 +3750,14 @@ canvas {
 .staging-file-code--added    { color: var(--success-color); }
 .staging-file-code--deleted  { color: var(--danger-color); }
 .staging-file-code--untracked { color: var(--text-secondary); opacity: 0.7; }
+
+.staging-file-hash {
+    font-size: 9px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    flex-shrink: 0;
+}
 
 .staging-file-name {
     display: flex;

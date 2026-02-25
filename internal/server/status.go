@@ -20,6 +20,7 @@ const (
 type FileStatus struct {
 	Path       string `json:"path"`
 	StatusCode string `json:"statusCode"`
+	BlobHash   string `json:"blobHash,omitempty"`
 }
 
 // WorkingTreeStatus represents the files that are staged, modified, and untracked.
@@ -64,6 +65,7 @@ func translateWorkingTreeStatus(wts *gitcore.WorkingTreeStatus) *WorkingTreeStat
 			status.Staged = append(status.Staged, FileStatus{
 				Path:       f.Path,
 				StatusCode: code,
+				BlobHash:   string(f.IndexHash),
 			})
 		}
 
@@ -72,6 +74,7 @@ func translateWorkingTreeStatus(wts *gitcore.WorkingTreeStatus) *WorkingTreeStat
 			status.Modified = append(status.Modified, FileStatus{
 				Path:       f.Path,
 				StatusCode: code,
+				BlobHash:   string(f.WorkHash),
 			})
 		}
 	}
