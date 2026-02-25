@@ -36,7 +36,6 @@ import {
     LANE_VERTICAL_STEP,
     LANE_WIDTH,
     LANE_MARGIN,
-    LANE_HEADER_FONT,
     LANE_HEADER_HEIGHT,
     LANE_ARROW_CASING,
 } from "../constants.js";
@@ -90,6 +89,10 @@ export class GraphRenderer {
         }
 
         this.ctx.restore();
+
+        if (laneInfo.length > 0) {
+            this.renderStickyHeaders(laneInfo, zoomTransform, viewportWidth);
+        }
     }
 
     /**
@@ -148,43 +151,49 @@ export class GraphRenderer {
      * Renders semi-transparent vertical background strips and branch name headers
      * for each lane in lane layout mode.
      *
-     * @param {Array<{index: number, color: string, branchName: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
+     * @param {Array<{position: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
      * @param {number} viewportHeight Viewport height in CSS pixels.
      * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
      */
     renderLaneBackgrounds(laneInfo, viewportHeight, zoomTransform) {
         const k = zoomTransform.k;
-        // Convert viewport bounds into graph coordinates for the vertical extent
         const topY = -zoomTransform.y / k;
         const bottomY = topY + viewportHeight / k;
+        const isDark = this.palette.isDark;
 
         for (const lane of laneInfo) {
-            const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+            const cx = LANE_MARGIN + lane.position * LANE_WIDTH;
             const halfW = LANE_WIDTH / 2 - 4;
             const pad = LANE_VERTICAL_STEP / 2;
             const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
 
-            // Draw background strip per segment
             for (const seg of segments) {
                 const stripTop = Math.max(topY, seg.minY - pad);
-                const stripBottom = Math.min(bottomY, seg.maxY + pad);
+                const stripBottom = Math.min(bottomY, seg.maxY + pad - 10);
                 if (stripTop >= stripBottom) continue;
 
-                const rBottom = stripBottom >= bottomY ? 0 : 10;
+                const rBottom = stripBottom >= bottomY ? 0 : 6;
                 const x = cx - halfW;
                 const w = halfW * 2;
                 const h = stripBottom - stripTop;
+                const segColor = seg.color ?? lane.color;
 
-                // Background fill with subtle border outline
+                // Subtle tinted fill — barely visible, just enough to
+                // delineate the lane column against the canvas background.
                 this.ctx.save();
                 this.ctx.beginPath();
                 this.ctx.roundRect(x, stripTop, w, h, [0, 0, rBottom, rBottom]);
-                this.ctx.globalAlpha = 0.05;
-                this.ctx.fillStyle = lane.color;
+                this.ctx.globalAlpha = isDark ? 0.06 : 0.04;
+                this.ctx.fillStyle = segColor;
                 this.ctx.fill();
-                this.ctx.globalAlpha = 0.07;
-                this.ctx.strokeStyle = lane.color;
-                this.ctx.lineWidth = 1;
+
+                // Thin left-edge accent line (like a gutter indicator)
+                this.ctx.globalAlpha = isDark ? 0.18 : 0.12;
+                this.ctx.strokeStyle = segColor;
+                this.ctx.lineWidth = 1.5;
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, stripTop);
+                this.ctx.lineTo(x, stripBottom - rBottom);
                 this.ctx.stroke();
                 this.ctx.restore();
             }
@@ -196,15 +205,17 @@ export class GraphRenderer {
      * Shows branch names and provides a visual anchor for each section.
      * Drawn in graph space so bars scroll/zoom with the content.
      *
-     * @param {Array<{index: number, color: string, branchName: string, segments: Array<{minY: number, maxY: number, branchName?: string}>, minY: number, maxY: number}>} laneInfo Lane metadata.
-     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     * @param {Array<{position: number, color: string, segments: Array<{minY: number, maxY: number}>, minY: number, maxY: number}>} laneInfo Lane metadata.
      */
     renderLaneHeaders(laneInfo) {
         const ctx = this.ctx;
         const pad = LANE_VERTICAL_STEP / 2;
+        const isDark = this.palette.isDark;
+        const monoFont = "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
+        const metaFont = "9px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
 
         for (const lane of laneInfo) {
-            const cx = LANE_MARGIN + lane.index * LANE_WIDTH;
+            const cx = LANE_MARGIN + lane.position * LANE_WIDTH;
             const halfW = LANE_WIDTH / 2 - 4;
             const segments = lane.segments ?? [{ minY: lane.minY, maxY: lane.maxY }];
 
@@ -213,75 +224,184 @@ export class GraphRenderer {
                 const barW = halfW * 2;
                 const barX = cx - halfW;
                 const barH = LANE_HEADER_HEIGHT;
-                const r = 6;
+                const segColor = seg.color ?? lane.color;
 
-                // Header background — gradient fading downward
+                // Header background — opaque tinted bar
                 ctx.save();
-                const grad = ctx.createLinearGradient(barX, barY, barX, barY + barH);
-                grad.addColorStop(0, lane.color);
-                grad.addColorStop(1, lane.color);
-                ctx.fillStyle = grad;
-                ctx.globalAlpha = 0.12;
+                ctx.fillStyle = isDark ? "#1c2128" : "#f0f1f3";
+                ctx.globalAlpha = 0.92;
                 ctx.beginPath();
-                ctx.roundRect(barX, barY, barW, barH, [r, r, 0, 0]);
+                ctx.roundRect(barX, barY, barW, barH, [4, 4, 0, 0]);
                 ctx.fill();
-                // Outline to tie header to the column below
-                ctx.globalAlpha = 0.10;
-                ctx.strokeStyle = lane.color;
-                ctx.lineWidth = 1;
-                ctx.stroke();
                 ctx.restore();
 
-                // Bottom accent line
+                // Color accent — top 2px strip
                 ctx.save();
-                ctx.globalAlpha = 0.30;
-                ctx.strokeStyle = lane.color;
-                ctx.lineWidth = 1.5;
+                ctx.globalAlpha = 0.85;
+                ctx.fillStyle = segColor;
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barW, 2, [4, 4, 0, 0]);
+                ctx.fill();
+                ctx.restore();
+
+                // Bottom hairline separator
+                ctx.save();
+                ctx.globalAlpha = isDark ? 0.12 : 0.08;
+                ctx.strokeStyle = isDark ? "#ffffff" : "#000000";
+                ctx.lineWidth = 0.5;
                 ctx.beginPath();
                 ctx.moveTo(barX, barY + barH);
                 ctx.lineTo(barX + barW, barY + barH);
                 ctx.stroke();
                 ctx.restore();
 
-                // Branch name label
-                const name = seg.branchName || "";
-                if (name) {
+                // Branch name label — monospace, muted
+                const label = seg.branchOwner || (seg.tipHash ? shortenHash(seg.tipHash) : "");
+                if (label) {
                     ctx.save();
-                    ctx.font = LANE_HEADER_FONT;
-                    ctx.textAlign = "center";
+                    ctx.font = monoFont;
                     ctx.textBaseline = "middle";
+                    ctx.textAlign = "left";
+                    const labelY = barY + 2 + (barH - 2) / 2;
+                    const insetX = barX + 7;
 
-                    // Halo for readability
-                    ctx.lineWidth = 3;
-                    ctx.lineJoin = "round";
-                    ctx.strokeStyle = this.palette.labelHalo;
-                    ctx.globalAlpha = 0.9;
-                    ctx.strokeText(name, cx, barY + barH / 2);
-
-                    // Text
-                    ctx.globalAlpha = 0.90;
-                    ctx.fillStyle = lane.color;
-                    ctx.fillText(name, cx, barY + barH / 2);
-                    ctx.restore();
-                } else {
-                    // No branch name — draw a grip indicator (two short lines)
-                    ctx.save();
-                    ctx.globalAlpha = 0.25;
-                    ctx.strokeStyle = lane.color;
-                    ctx.lineWidth = 1.5;
-                    ctx.lineCap = "round";
-                    const gripW = 8;
-                    for (let i = 0; i <= 1; i++) {
-                        const gy = barY + barH / 2 + (i * 2 - 1) * 3;
-                        ctx.beginPath();
-                        ctx.moveTo(cx - gripW, gy);
-                        ctx.lineTo(cx + gripW, gy);
-                        ctx.stroke();
+                    // Age badge — right-aligned, ultra-compact
+                    const ageText = relativeTime(seg.tipTimestamp);
+                    let ageBadgeW = 0;
+                    if (ageText) {
+                        ctx.font = metaFont;
+                        const ageMetrics = ctx.measureText(ageText);
+                        ageBadgeW = ageMetrics.width + 4;
+                        ctx.globalAlpha = isDark ? 0.35 : 0.40;
+                        ctx.fillStyle = this.palette.labelText;
+                        ctx.textAlign = "right";
+                        ctx.fillText(ageText, barX + barW - 6, labelY);
+                        ctx.textAlign = "left";
+                        ctx.font = monoFont;
                     }
+
+                    // Truncate label to available width
+                    const availW = barW - 14 - (ageBadgeW > 0 ? ageBadgeW + 8 : 0);
+                    let displayLabel = label;
+                    if (ctx.measureText(displayLabel).width > availW) {
+                        while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > availW) {
+                            displayLabel = displayLabel.slice(0, -1);
+                        }
+                        displayLabel += "\u2026";
+                    }
+
+                    // Label text — crisp, no halo needed on opaque background
+                    ctx.globalAlpha = isDark ? 0.82 : 0.72;
+                    ctx.fillStyle = this.palette.labelText;
+                    ctx.fillText(displayLabel, insetX, labelY);
                     ctx.restore();
                 }
             }
         }
+    }
+
+    /**
+     * Renders sticky lane headers pinned to the top of the viewport.
+     * Called in screen-space (after ctx.restore) for lanes whose graph-space
+     * header has scrolled above the visible area.
+     *
+     * @param {Array<Object>} laneInfo Lane metadata.
+     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     * @param {number} viewportWidth Viewport width in CSS pixels.
+     */
+    renderStickyHeaders(laneInfo, zoomTransform, viewportWidth) {
+        const ctx = this.ctx;
+        const dpr = window.devicePixelRatio || 1;
+        const k = zoomTransform.k;
+        const pad = LANE_VERTICAL_STEP / 2;
+        const halfW = LANE_WIDTH / 2 - 4;
+        const barH = LANE_HEADER_HEIGHT;
+        const isDark = this.palette.isDark;
+        const monoFont = "10px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
+
+        // Visible graph-space Y range
+        const viewportHeight = ctx.canvas.height / dpr;
+        const vpTopY = -zoomTransform.y / k;
+        const vpBottomY = vpTopY + viewportHeight / k;
+
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        for (const lane of laneInfo) {
+            const segments = lane.segments ?? [];
+            if (segments.length === 0) continue;
+
+            // Find the topmost segment that is visible in the viewport
+            // and whose header has scrolled above the top edge.
+            let activeSeg = null;
+            for (const seg of segments) {
+                const segTop = seg.minY - pad;
+                const segBottom = seg.maxY + pad;
+
+                // Segment must overlap the viewport vertically
+                if (segBottom <= vpTopY || segTop >= vpBottomY) continue;
+
+                // Header must have scrolled above the viewport top
+                const headerScreenY = segTop * k + zoomTransform.y;
+                if (headerScreenY >= 0) continue;
+
+                // Segment bottom must still be below the sticky bar area
+                const segBottomScreenY = segBottom * k + zoomTransform.y;
+                if (segBottomScreenY < barH) continue;
+
+                activeSeg = seg;
+                break;
+            }
+
+            if (!activeSeg) continue;
+
+            const screenX = (LANE_MARGIN + lane.position * LANE_WIDTH) * k + zoomTransform.x;
+            const barW = halfW * 2 * k;
+            const stickyBarX = screenX - halfW * k;
+
+            if (stickyBarX + barW < 0 || stickyBarX > viewportWidth) continue;
+
+            const segColor = activeSeg.color ?? lane.color;
+
+            // Opaque background matching header style
+            ctx.save();
+            ctx.fillStyle = isDark ? "#1c2128" : "#f0f1f3";
+            ctx.globalAlpha = 0.95;
+            ctx.beginPath();
+            ctx.roundRect(stickyBarX, 0, barW, barH, [0, 0, 3, 3]);
+            ctx.fill();
+            ctx.restore();
+
+            // Bottom color accent (inverted vs in-graph: accent on bottom for sticky)
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = segColor;
+            ctx.fillRect(stickyBarX, barH - 2, barW, 2);
+            ctx.restore();
+
+            // Monospace label
+            const label = activeSeg.branchOwner || (activeSeg.tipHash ? shortenHash(activeSeg.tipHash) : "");
+            if (label) {
+                ctx.save();
+                ctx.font = monoFont;
+                ctx.textBaseline = "middle";
+                ctx.textAlign = "left";
+                const maxW = barW - 14;
+                let displayLabel = label;
+                if (ctx.measureText(displayLabel).width > maxW) {
+                    while (displayLabel.length > 1 && ctx.measureText(displayLabel + "\u2026").width > maxW) {
+                        displayLabel = displayLabel.slice(0, -1);
+                    }
+                    displayLabel += "\u2026";
+                }
+                ctx.globalAlpha = isDark ? 0.82 : 0.72;
+                ctx.fillStyle = this.palette.labelText;
+                ctx.fillText(displayLabel, stickyBarX + 7, barH / 2);
+                ctx.restore();
+            }
+        }
+
+        ctx.restore();
     }
 
     /**
@@ -944,7 +1064,17 @@ export class GraphRenderer {
         this.ctx.textBaseline = "middle";
         this.ctx.textAlign = "center";
 
-        const metrics = this.ctx.measureText(text);
+        // Truncate text to fit within lane width constraint
+        let displayText = text;
+        if (node.maxPillWidth) {
+            const maxTextW = node.maxPillWidth - BRANCH_NODE_PADDING_X * 2;
+            while (displayText.length > 1 && this.ctx.measureText(displayText + "\u2026").width > maxTextW) {
+                displayText = displayText.slice(0, -1);
+            }
+            if (displayText !== text) displayText += "\u2026";
+        }
+
+        const metrics = this.ctx.measureText(displayText);
         const textHeight = metrics.actualBoundingBoxAscent ?? 9;
         const width = metrics.width + BRANCH_NODE_PADDING_X * 2;
         const height = textHeight + BRANCH_NODE_PADDING_Y * 2;
@@ -971,7 +1101,7 @@ export class GraphRenderer {
         this.ctx.stroke();
 
         this.ctx.fillStyle = this.palette.branchLabelText;
-        this.ctx.fillText(text, node.x, node.y);
+        this.ctx.fillText(displayText, node.x, node.y);
         this.ctx.globalAlpha = previousAlpha;
         this.ctx.restore();
     }

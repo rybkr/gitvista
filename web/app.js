@@ -278,6 +278,7 @@ function bootstrapGraph(root, repoId) {
         onDismiss: () => {
             keyboardHelp.hide();
             search.clear();
+            graph.clearIsolation();
         },
         onNavigateNext: () => graph.navigateCommits("next"),
         onNavigatePrev: () => graph.navigateCommits("prev"),

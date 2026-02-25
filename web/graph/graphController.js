@@ -129,17 +129,31 @@ function getReachableCommits(branchTipHash, commits) {
  * @param {Map<string, string>} branches Live branch map.
  * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
  * @param {Array<{hash: string}>} stashes Live stash list from delta.
+ * @param {number|null} isolatedLanePosition When non-null, only commits at this lane position pass.
+ * @param {Array<Object>} segments Segments array from laneStrategy (used for isolation).
  * @returns {((node: import("./types.js").GraphNode) => boolean) | null}
  */
-function buildFilterPredicate(searchState, filterState, branches, commits, stashes) {
+function buildFilterPredicate(searchState, filterState, branches, commits, stashes, isolatedLanePosition, segments) {
     // The matcher is null when the query is empty (parseSearchQuery sets isEmpty).
     const matcher = searchState?.matcher ?? null;
     const hasSearch = matcher !== null;
     const { hideRemotes, hideMerges, hideStashes, focusBranch } = filterState;
-    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch;
+    const hasIsolation = isolatedLanePosition !== null && isolatedLanePosition !== undefined;
+    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch || hasIsolation;
 
     // Short-circuit: nothing active → caller skips the dimming loop entirely.
     if (!hasSearch && !hasAnyFilter) return null;
+
+    // Pre-compute isolated hashes set from segments at the given position.
+    let isolatedHashes = null;
+    if (hasIsolation && Array.isArray(segments)) {
+        isolatedHashes = new Set();
+        for (const seg of segments) {
+            if (seg.position === isolatedLanePosition) {
+                for (const h of seg.hashes) isolatedHashes.add(h);
+            }
+        }
+    }
 
     // Pre-compute the reachable set once via BFS (not per-node).
     let reachableSet = null;
@@ -175,6 +189,9 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
         if (hideMerges && (node.commit?.parents?.length ?? 0) > 1) return false;
         if (hideStashes && isStashCommit(node, branches, stashes)) return false;
         if (reachableSet !== null && !reachableSet.has(node.hash)) return false;
+
+        // Lane isolation: only commits in segments at the isolated position pass.
+        if (isolatedHashes !== null && !isolatedHashes.has(node.hash)) return false;
 
         return true;
     };
@@ -294,6 +311,9 @@ export function createGraphController(rootElement, options = {}) {
             return; // Already in this mode
         }
 
+        // Clear lane isolation when switching modes
+        state.isolatedLanePosition = null;
+
         // Deactivate current strategy
         layoutStrategy.deactivate();
 
@@ -335,6 +355,8 @@ export function createGraphController(rootElement, options = {}) {
     rebalanceBtn.addEventListener("click", () => {
         if (layoutStrategy.supportsRebalance) {
             layoutStrategy.rebalance();
+            snapDecoratorNodesForLaneDrag();
+            render();
         }
     });
 
@@ -401,7 +423,20 @@ export function createGraphController(rootElement, options = {}) {
                 (n) => n.type === "commit" && n.hash === state.headHash,
             );
             if (headNode) {
-                select(canvas).call(zoom.translateTo, headNode.x, headNode.y);
+                if (state.layoutMode === "lane") {
+                    // In lane mode, place HEAD in the upper third so the
+                    // commit history is visible below.
+                    const vw = viewportWidth || canvas.width;
+                    const vh = viewportHeight || canvas.height;
+                    select(canvas).call(
+                        zoom.translateTo,
+                        headNode.x,
+                        headNode.y,
+                        [vw / 2, vh / 4],
+                    );
+                } else {
+                    select(canvas).call(zoom.translateTo, headNode.x, headNode.y);
+                }
                 return;
             }
         }
@@ -537,7 +572,7 @@ export function createGraphController(rootElement, options = {}) {
         // Lane header drag detection — check before node hit-test
         if (state.layoutMode === "lane") {
             const hit = laneStrategy.findLaneHeaderAt(x, y);
-            if (hit && hit.displayLane >= 0 && hit.displayLane < laneStrategy.laneOrder.length) {
+            if (hit) {
                 event.stopImmediatePropagation();
                 event.preventDefault();
                 isDraggingNode = true;
@@ -562,10 +597,29 @@ export function createGraphController(rootElement, options = {}) {
             }
         }
 
+        // Lane body click → toggle isolation
+        if (state.layoutMode === "lane") {
+            const bodyHit = laneStrategy.findLaneBodyAt(x, y);
+            if (bodyHit) {
+                // Check that we're not clicking on a node
+                const nodeAtClick = findNodeAt(x, y);
+                if (!nodeAtClick) {
+                    state.isolatedLanePosition = (state.isolatedLanePosition === bodyHit.position) ? null : bodyHit.position;
+                    rebuildAndApplyPredicate();
+                    return;
+                }
+            }
+        }
+
         const targetNode = findNodeAt(x, y);
 
         if (!targetNode) {
             hideTooltip();
+            // Clicking empty canvas clears lane isolation
+            if (state.isolatedLanePosition !== null) {
+                state.isolatedLanePosition = null;
+                rebuildAndApplyPredicate();
+            }
             return;
         }
 
@@ -627,12 +681,8 @@ export function createGraphController(rootElement, options = {}) {
 
             // Lane header drag — move segment as pointer crosses lane boundaries
             if (dragState.laneDrag) {
-                const currentDisplay = laneStrategy.findLaneAtX(x);
-                if (
-                    currentDisplay >= 0 &&
-                    currentDisplay < laneStrategy.laneOrder.length &&
-                    currentDisplay !== dragState.currentLaneDisplay
-                ) {
+                const currentDisplay = laneStrategy.findPositionAtX(x);
+                if (currentDisplay !== dragState.currentLaneDisplay) {
                     laneStrategy.moveSegment(dragState.segmentHashes, currentDisplay);
                     dragState.currentLaneDisplay = currentDisplay;
                     // Re-snap branch/tag decorator nodes to new commit positions
@@ -674,21 +724,23 @@ export function createGraphController(rootElement, options = {}) {
         hoverRafId = requestAnimationFrame(() => {
             hoverRafId = null;
 
-            // Lane header hover cursor
+            // Lane header hover cursor + title tooltip for full branch name
             if (state.layoutMode === "lane" && !dragState) {
                 const hit = laneStrategy.findLaneHeaderAt(pendingHoverX, pendingHoverY);
-                if (hit && hit.displayLane >= 0 && hit.displayLane < laneStrategy.laneOrder.length) {
+                if (hit) {
                     state.hoverNode = null;
                     canvas.style.cursor = "grab";
+                    canvas.title = hit.branchOwner || hit.tipHash || "";
                     render();
                     return;
                 }
             }
 
             const hit = findNodeAt(pendingHoverX, pendingHoverY);
-            if (hit !== state.hoverNode) {
+            if (hit !== state.hoverNode || canvas.style.cursor === "grab") {
                 state.hoverNode = hit;
                 canvas.style.cursor = hit ? "pointer" : "default";
+                canvas.title = "";
                 render();
             }
         });
@@ -976,6 +1028,8 @@ export function createGraphController(rootElement, options = {}) {
             branches,
             commits,
             state.stashes,
+            state.isolatedLanePosition,
+            laneStrategy._segments,
         );
         const predicate = state.filterPredicate;
         for (const node of nodes) {
@@ -1051,11 +1105,6 @@ export function createGraphController(rootElement, options = {}) {
             hideTooltip();
         }
 
-        // Apply the active compound predicate (A2 search + A3 filters) to set
-        // node.dimmed.  This runs after reconciliation so newly-created nodes are
-        // included, and rebuilds the predicate so BFS data is never stale.
-        applyDimmingFromPredicate();
-
         const linkStructureChanged = previousLinkCount !== allLinks.length;
         const structureChanged =
             commitReconciliation.changed ||
@@ -1076,6 +1125,11 @@ export function createGraphController(rootElement, options = {}) {
         // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
         snapBranchesToTargets(branchReconciliation.alignments);
         snapTagsToTargets(tagReconciliation.alignments);
+
+        // Apply the active compound predicate (A2 search + A3 filters) to set
+        // node.dimmed.  This runs after layout so lane segments are rebuilt and
+        // newly-created nodes are correctly included in isolation predicates.
+        applyDimmingFromPredicate();
 
         // Center on latest commit if auto-centering is requested
         if (layoutStrategy.shouldAutoCenter()) {
@@ -1127,18 +1181,15 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, use commit's X directly (already display-aware)
-                const laneX = targetNode.x;
-
-                // Stack multiple branches on the same commit vertically
+                // In lane mode, center pills below the commit to stay
+                // within the lane column and avoid overlapping headers.
                 const key = targetNode.hash ?? (targetNode.laneIndex ?? 0);
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                // Center X on lane, position Y directly above commit with stacking
-                const stackOffset = index * (BRANCH_NODE_RADIUS * 2.5 + 2);
-                branchNode.x = laneX;
-                branchNode.y = targetNode.y - BRANCH_NODE_RADIUS - 8 - stackOffset;
+                branchNode.x = targetNode.x;
+                branchNode.y = targetNode.y + NODE_RADIUS + 14 + index * 25;
+                branchNode.maxPillWidth = LANE_WIDTH - 12;
             } else {
                 // Force mode: small jitter is fine since simulation will settle
                 const baseX = targetNode.x ?? 0;
@@ -1216,30 +1267,46 @@ export function createGraphController(rootElement, options = {}) {
         for (const n of nodes) {
             if (n.type === "commit") commitMap.set(n.hash, n);
         }
+        // Pass 1: position branch pills below commits
         const bCount = new Map();
+        for (const n of nodes) {
+            if (n.type !== "branch" || !n.targetHash) continue;
+            const t = commitMap.get(n.targetHash);
+            if (!t) continue;
+            const i = bCount.get(t.hash) || 0;
+            bCount.set(t.hash, i + 1);
+            n.x = t.x;
+            n.y = t.y + NODE_RADIUS + 14 + i * 25;
+            n.maxPillWidth = LANE_WIDTH - 12;
+        }
+        // Pass 2: position tags below branch pills
         const tCount = new Map();
         for (const n of nodes) {
-            if (n.type === "branch" && n.targetHash) {
-                const t = commitMap.get(n.targetHash);
-                if (!t) continue;
-                const i = bCount.get(t.hash) || 0;
-                bCount.set(t.hash, i + 1);
-                n.x = t.x;
-                n.y = t.y - BRANCH_NODE_RADIUS - 8 - i * (BRANCH_NODE_RADIUS * 2.5 + 2);
-            } else if (n.type === "tag" && n.targetHash) {
-                const t = commitMap.get(n.targetHash);
-                if (!t) continue;
-                const i = tCount.get(t.hash) || 0;
-                tCount.set(t.hash, i + 1);
-                n.x = t.x;
-                n.y = t.y + TAG_NODE_RADIUS + 8 + i * (TAG_NODE_RADIUS * 2.5 + 2);
-            }
+            if (n.type !== "tag" || !n.targetHash) continue;
+            const t = commitMap.get(n.targetHash);
+            if (!t) continue;
+            const bc = bCount.get(t.hash) || 0;
+            const i = tCount.get(t.hash) || 0;
+            tCount.set(t.hash, i + 1);
+            n.x = t.x;
+            n.y = t.y + NODE_RADIUS + 14 + bc * 25 + (bc > 0 ? 4 : 0) + i * 25;
         }
     }
 
     function snapTagsToTargets(pairs) {
         // Track per-commit tag count for stacking in lane mode
         const perCommitCount = new Map();
+
+        // Count branch pills per commit so tags stack below them
+        let branchesPerCommit = null;
+        if (state.layoutMode === "lane") {
+            branchesPerCommit = new Map();
+            for (const n of nodes) {
+                if (n.type === "branch" && n.targetHash) {
+                    branchesPerCommit.set(n.targetHash, (branchesPerCommit.get(n.targetHash) || 0) + 1);
+                }
+            }
+        }
 
         for (const pair of pairs) {
             if (!pair) continue;
@@ -1249,17 +1316,14 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, use commit's X directly (already display-aware)
-                const laneX = targetNode.x;
-
-                // Stack multiple tags on the same commit vertically
                 const key = targetNode.hash ?? (targetNode.laneIndex ?? 0);
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                const stackOffset = index * (TAG_NODE_RADIUS * 2.5 + 2);
-                tagNode.x = laneX;
-                tagNode.y = targetNode.y + TAG_NODE_RADIUS + 8 + stackOffset;
+                const bc = branchesPerCommit.get(targetNode.hash) || 0;
+                const branchStackH = bc * 25 + (bc > 0 ? 4 : 0);
+                tagNode.x = targetNode.x;
+                tagNode.y = targetNode.y + NODE_RADIUS + 14 + branchStackH + index * 25;
             } else {
                 // Force mode: small jitter offset from target commit
                 const baseX = targetNode.x ?? 0;
@@ -1482,5 +1546,17 @@ export function createGraphController(rootElement, options = {}) {
          * @returns {Map<string, string>} tag-name → commit-hash map.
          */
         getTags: () => state.tags,
+        /**
+         * Clears the lane isolation filter (if active) and re-applies the
+         * compound predicate.  Called by the global Escape handler.
+         *
+         * @returns {boolean} True if isolation was active and cleared.
+         */
+        clearIsolation: () => {
+            if (state.isolatedLanePosition === null) return false;
+            state.isolatedLanePosition = null;
+            rebuildAndApplyPredicate();
+            return true;
+        },
     };
 }

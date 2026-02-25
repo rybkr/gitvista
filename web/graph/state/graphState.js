@@ -27,6 +27,7 @@ export function createGraphState() {
 		hoverNode: null,
 		headHash: "",
 		tags: new Map(),
+		isolatedLanePosition: null,
 	};
 }
 
