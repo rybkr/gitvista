@@ -451,7 +451,12 @@ export class LaneStrategy {
 					activeLanes[lane] = null; // Parent belongs to another branch's lane
 				}
 
-				// Merge parents (non-first) get new/reused lanes
+				// Merge parents (non-first) get new/reused lanes.
+				// Pre-walk the first-parent chain from each merge parent so
+				// that every unclaimed commit on the chain is assigned to the
+				// same lane upfront.  This prevents timestamp tie-breaking
+				// from fragmenting a chain when several commits share the
+				// same timestamp and therefore process out of chain order.
 				for (let i = 1; i < parents.length; i++) {
 					const parentHash = parents[i];
 					if (!commitHashes.has(parentHash)) continue;
@@ -466,6 +471,25 @@ export class LaneStrategy {
 					}
 					if (!alreadyExpected) {
 						const mergeLane = this._findFreeLane(activeLanes);
+
+						// Walk the first-parent chain and pre-assign
+						// unclaimed commits to this lane so the chain
+						// stays together regardless of processing order.
+						let walk = parentHash;
+						while (
+							walk &&
+							commitHashes.has(walk) &&
+							!commitOwner.has(walk) &&
+							!this.commitToLane.has(walk)
+						) {
+							this.commitToLane.set(walk, mergeLane);
+							const walkCommit = commits.get(walk);
+							walk = walkCommit?.parents?.[0] ?? null;
+						}
+						// Point the active lane at the merge parent
+						// (chain tip = newest commit in the chain).
+						// The main loop will propagate it forward as
+						// each chain commit is processed.
 						activeLanes[mergeLane] = parentHash;
 					}
 				}
