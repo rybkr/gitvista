@@ -4367,17 +4367,17 @@ canvas {
     gap: 8px;
     padding: 6px 14px;
     border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
-    cursor: default;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
 }
 
 .merge-preview-file-item:hover {
-    background: rgba(14, 165, 233, 0.05);
+    background: color-mix(in srgb, var(--node-color) 8%, transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-    .merge-preview-file-item:hover {
-        background: rgba(88, 166, 255, 0.06);
-    }
+.merge-preview-file-item.is-selected {
+    background: color-mix(in srgb, var(--node-color) 15%, transparent);
+    border-left: 2px solid var(--node-color);
 }
 
 .merge-preview-badge {
@@ -4493,4 +4493,173 @@ canvas {
     background: rgba(209, 36, 47, 0.08);
     border: 1px solid rgba(209, 36, 47, 0.2);
     border-radius: 6px;
+}
+
+/* Three-way diff viewer */
+.merge-diff-viewer {
+    display: flex;
+    flex-direction: column;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.merge-diff-regions {
+    display: flex;
+    flex-direction: column;
+}
+
+.merge-diff-line {
+    display: flex;
+    padding: 0 12px;
+    line-height: 20px;
+    min-height: 20px;
+    white-space: pre;
+}
+
+.merge-diff-line .line-content {
+    flex: 1;
+    overflow-x: auto;
+}
+
+.merge-diff-line--base {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+/* Region headers */
+.merge-region-header {
+    padding: 2px 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 18px;
+}
+
+.merge-region-header--ours {
+    color: #1a7f37;
+    background: rgba(26, 127, 55, 0.08);
+}
+
+.merge-region-header--theirs {
+    color: #0550ae;
+    background: rgba(5, 80, 174, 0.08);
+}
+
+.merge-region-header--conflict {
+    color: #cf222e;
+    background: rgba(207, 34, 46, 0.08);
+}
+
+/* Theirs addition lines — blue tint to differentiate from ours green */
+.diff-line-theirs-add {
+    background: rgba(5, 80, 174, 0.08);
+    color: var(--text-color);
+}
+
+/* Conflict region wrapper */
+.merge-conflict-region {
+    border-left: 3px solid #cf222e;
+    margin: 2px 0;
+}
+
+/* Sub-headers inside conflict regions */
+.merge-conflict-section-header {
+    padding: 1px 12px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    line-height: 16px;
+    opacity: 0.7;
+}
+
+.merge-conflict-section-header--base {
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--border-color) 30%, transparent);
+}
+
+.merge-conflict-section-header--ours {
+    color: #1a7f37;
+    background: rgba(26, 127, 55, 0.05);
+}
+
+.merge-conflict-section-header--theirs {
+    color: #0550ae;
+    background: rgba(5, 80, 174, 0.05);
+}
+
+/* Merge diff stats bar */
+.merge-diff-stats {
+    display: flex;
+    gap: 12px;
+    padding: 6px 12px;
+    font-size: 11px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.merge-diff-stat {
+    font-weight: 500;
+}
+
+.merge-diff-stat--ours {
+    color: #1a7f37;
+}
+
+.merge-diff-stat--theirs {
+    color: #0550ae;
+}
+
+.merge-diff-stat--conflict {
+    color: #cf222e;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+    .merge-region-header--ours {
+        color: #3fb950;
+        background: rgba(63, 185, 80, 0.1);
+    }
+
+    .merge-region-header--theirs {
+        color: #58a6ff;
+        background: rgba(88, 166, 255, 0.1);
+    }
+
+    .merge-region-header--conflict {
+        color: #f85149;
+        background: rgba(248, 81, 73, 0.1);
+    }
+
+    .diff-line-theirs-add {
+        background: rgba(88, 166, 255, 0.1);
+    }
+
+    .merge-conflict-region {
+        border-left-color: #f85149;
+    }
+
+    .merge-conflict-section-header--ours {
+        color: #3fb950;
+        background: rgba(63, 185, 80, 0.06);
+    }
+
+    .merge-conflict-section-header--theirs {
+        color: #58a6ff;
+        background: rgba(88, 166, 255, 0.06);
+    }
+
+    .merge-diff-stat--ours {
+        color: #3fb950;
+    }
+
+    .merge-diff-stat--theirs {
+        color: #58a6ff;
+    }
+
+    .merge-diff-stat--conflict {
+        color: #f85149;
+    }
 }

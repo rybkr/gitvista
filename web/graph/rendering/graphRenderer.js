@@ -71,6 +71,7 @@ export class GraphRenderer {
         const tags = state.tags ?? new Map();
 
         const laneInfo = state.laneInfo ?? [];
+        const mergeBaseHash = state.mergePreview?.mergeBaseHash ?? "";
 
         this.clear(viewportWidth, viewportHeight);
         this.renderDotGrid(viewportWidth, viewportHeight, zoomTransform);
@@ -82,7 +83,7 @@ export class GraphRenderer {
 
         this.renderLinks(links, nodes);
         const layoutMode = state.layoutMode ?? "force";
-        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode);
+        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash);
 
         if (laneInfo.length > 0) {
             this.renderLaneHeaders(laneInfo);
@@ -477,19 +478,55 @@ export class GraphRenderer {
                 continue;
             }
 
-            // Ghost links: dashed, low opacity, no arrowhead.
+            // Ghost links: glow casing + dashed stroke.
+            // Cross-lane ghost links use stepped routing with arrowhead;
+            // same-lane ghost links stay as straight dashed lines.
             if (link.kind === "ghost") {
                 const prevAlpha = this.ctx.globalAlpha;
-                this.ctx.globalAlpha = 0.3;
+                const ghostColor = this.palette.mergeNode;
+
+                const isCrossLane =
+                    source.laneIndex !== undefined &&
+                    target.laneIndex !== undefined &&
+                    source.laneIndex !== target.laneIndex;
+
+                // Glow casing — wider solid stroke at very low opacity
+                // for a soft halo effect that lifts the link off the canvas.
                 this.ctx.save();
-                this.ctx.setLineDash([4, 4]);
-                this.ctx.strokeStyle = this.palette.mergeNode;
-                this.ctx.beginPath();
-                this.ctx.moveTo(source.x, source.y);
-                this.ctx.lineTo(target.x, target.y);
+                this.ctx.globalAlpha = this.palette.isDark ? 0.1 : 0.07;
+                this.ctx.strokeStyle = ghostColor;
+                this.ctx.lineWidth = (this.ctx.lineWidth || 1) + 4;
+                this.ctx.lineCap = "round";
+                this.ctx.lineJoin = "round";
+                if (isCrossLane) {
+                    this._traceGhostSteppedPath(source, target);
+                } else {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(source.x, source.y);
+                    this.ctx.lineTo(target.x, target.y);
+                }
                 this.ctx.stroke();
-                this.ctx.setLineDash([]);
                 this.ctx.restore();
+
+                // Main dashed stroke
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.35;
+                this.ctx.setLineDash([6, 4]);
+                this.ctx.strokeStyle = ghostColor;
+                this.ctx.lineCap = "round";
+                this.ctx.lineJoin = "round";
+                if (isCrossLane) {
+                    this._traceGhostSteppedPath(source, target);
+                    this.ctx.stroke();
+                    this._drawGhostArrowhead(source, target, ghostColor);
+                } else {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(source.x, source.y);
+                    this.ctx.lineTo(target.x, target.y);
+                    this.ctx.stroke();
+                }
+                this.ctx.restore();
+
                 this.ctx.globalAlpha = prevAlpha;
                 continue;
             }
@@ -690,12 +727,65 @@ export class GraphRenderer {
     }
 
     /**
+     * Traces (but does not stroke) the stepped path geometry for a cross-lane
+     * ghost link. Reused by both the glow casing and main dashed stroke.
+     *
+     * @param {import("../types.js").GraphNode} source Ghost merge node.
+     * @param {import("../types.js").GraphNode} target Target commit node.
+     */
+    _traceGhostSteppedPath(source, target) {
+        const goingDown = target.y >= source.y;
+        const dir = goingDown ? 1 : -1;
+        const midY = source.y + dir * (NODE_RADIUS + 10);
+        const endY = target.y - dir * (NODE_RADIUS + ARROW_LENGTH);
+
+        const maxV = Math.min(
+            Math.abs(midY - source.y),
+            Math.abs(endY - midY),
+        ) / 2;
+        const maxH = Math.abs(target.x - source.x) / 2;
+        const r = Math.max(0, Math.min(LANE_CORNER_RADIUS, maxV, maxH));
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(source.x, source.y);
+        this.ctx.arcTo(source.x, midY, target.x, midY, r);
+        this.ctx.arcTo(target.x, midY, target.x, endY, r);
+        this.ctx.lineTo(target.x, endY);
+    }
+
+    /**
+     * Draws a small arrowhead at the target end of a ghost stepped link.
+     *
+     * @param {import("../types.js").GraphNode} source Ghost merge node.
+     * @param {import("../types.js").GraphNode} target Target commit node.
+     * @param {string} color Fill color for the arrowhead.
+     */
+    _drawGhostArrowhead(source, target, color) {
+        const goingDown = target.y >= source.y;
+        const dir = goingDown ? 1 : -1;
+        const arrowTipY = target.y - dir * NODE_RADIUS;
+
+        this.ctx.save();
+        this.ctx.setLineDash([]);
+        this.ctx.translate(target.x, arrowTipY);
+        this.ctx.rotate(goingDown ? Math.PI / 2 : -Math.PI / 2);
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, 0);
+        this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
+        this.ctx.lineTo(-ARROW_LENGTH, -ARROW_WIDTH / 2);
+        this.ctx.closePath();
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.restore();
+    }
+
+    /**
      * Draws commit and branch nodes, honoring highlight states.
      *
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode) {
+    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash) {
         // Build a reverse map: commit hash -> array of tag names pointing at it.
         const tagsByCommit = new Map();
         if (tags) {
@@ -711,7 +801,7 @@ export class GraphRenderer {
 
         for (const node of nodes) {
             if (node.type === "commit") {
-                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode);
+                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, mergeBaseHash);
             }
         }
         for (const node of nodes) {
@@ -732,45 +822,64 @@ export class GraphRenderer {
     }
 
     /**
-     * Renders a ghost merge preview node as a dashed diamond outline.
+     * Renders a ghost merge preview node with a spectral projection effect:
+     * soft radial glow, gradient-filled diamond, and refined dashed outline.
      *
      * @param {{ x: number, y: number }} node Ghost merge node position.
      */
     renderGhostMergeNode(node) {
         const ctx = this.ctx;
-        const size = 10;
+        const size = MERGE_NODE_RADIUS + 1;
+        const color = this.palette.mergeNode;
+        const rgb = this._colorRGB(color);
 
         ctx.save();
-        ctx.globalAlpha = 0.4;
 
-        // Diamond shape
+        // 1. Radial glow — soft halo that gives the ghost a projected quality.
+        //    Slightly stronger in dark mode where glows read more naturally.
+        const glowRadius = size * 3;
+        const baseGlow = this.palette.isDark ? 0.18 : 0.12;
+        const glow = ctx.createRadialGradient(
+            node.x, node.y, size * 0.5,
+            node.x, node.y, glowRadius,
+        );
+        glow.addColorStop(0, `rgba(${rgb}, ${baseGlow})`);
+        glow.addColorStop(0.6, `rgba(${rgb}, ${baseGlow * 0.3})`);
+        glow.addColorStop(1, `rgba(${rgb}, 0)`);
+        ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.moveTo(node.x, node.y - size);
-        ctx.lineTo(node.x + size, node.y);
-        ctx.lineTo(node.x, node.y + size);
-        ctx.lineTo(node.x - size, node.y);
-        ctx.closePath();
-
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = this.palette.mergeNode;
-        ctx.stroke();
-
-        ctx.fillStyle = this.palette.background;
-        ctx.globalAlpha = 0.25;
+        ctx.arc(node.x, node.y, glowRadius, 0, Math.PI * 2);
         ctx.fill();
+
+        // 2. Diamond fill — radial gradient for a colored-glass look.
+        const fillGrad = ctx.createRadialGradient(
+            node.x, node.y, 0,
+            node.x, node.y, size,
+        );
+        fillGrad.addColorStop(0, `rgba(${rgb}, 0.22)`);
+        fillGrad.addColorStop(1, `rgba(${rgb}, 0.06)`);
+        ctx.fillStyle = fillGrad;
+        this.drawDiamond(node.x, node.y, size);
+        ctx.fill();
+
+        // 3. Dashed stroke — fine, deliberate outline.
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = `rgba(${rgb}, 0.55)`;
+        this.drawDiamond(node.x, node.y, size);
+        ctx.stroke();
 
         ctx.setLineDash([]);
         ctx.restore();
 
-        // Label
+        // 4. Label
         ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.font = "9px 'Geist', sans-serif";
+        ctx.globalAlpha = 0.4;
+        ctx.font = "600 8px -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillStyle = this.palette.mergeNode;
-        ctx.fillText("merge preview", node.x, node.y + size + 4);
+        ctx.fillStyle = color;
+        ctx.fillText("MERGE PREVIEW", node.x, node.y + size + 5);
         ctx.restore();
     }
 
@@ -780,10 +889,11 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      * @param {string|null} highlightKey Current highlight identifier.
      */
-    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode) {
+    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, mergeBaseHash) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
+        const isMergeBase = mergeBaseHash && node.hash === mergeBaseHash;
         const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
         // dimPhase: 0 = fully visible, 1 = fully dimmed. Lerped per-frame by
         // graphController for smooth transitions when search results change.
@@ -861,9 +971,27 @@ export class GraphRenderer {
             this.ctx.restore();
         }
 
-        // Skip label rendering for significantly dimmed nodes — labels at low
-        // opacity clutter the view without adding navigational value.
-        if (dimPhase < 0.5) {
+        // Merge base dashed ring — highlights the common ancestor during merge
+        // preview. Uses a dashed stroke to distinguish from HEAD's solid ring.
+        if (isMergeBase) {
+            const baseColor = isMerge
+                ? this.getMergeColor(node)
+                : this.getCommitColor(node);
+            this.ctx.save();
+            this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.6 * dimMultiplier;
+            this.ctx.lineWidth = 1.5;
+            this.ctx.strokeStyle = baseColor;
+            this.ctx.setLineDash([3, 3]);
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, drawRadius + 5, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+            this.ctx.restore();
+        }
+
+        // Skip label rendering for dimmed nodes — labels at 15% opacity would
+        // clutter the view without adding navigational value.
+        if (!isDimmed) {
             this.renderCommitLabel(node, spawnAlpha, zoomTransform, layoutMode);
         }
     }
@@ -1295,5 +1423,20 @@ export class GraphRenderer {
         this.ctx.lineTo(cx, cy + radius);
         this.ctx.lineTo(cx - radius, cy);
         this.ctx.closePath();
+    }
+
+    /**
+     * Extracts the "r, g, b" components from a hex color string
+     * for use in rgba() expressions on canvas gradients.
+     *
+     * @param {string} hex Hex color (e.g., "#1a7f37").
+     * @returns {string} RGB components (e.g., "26, 127, 55").
+     */
+    _colorRGB(hex) {
+        const h = hex.replace("#", "");
+        const r = parseInt(h.slice(0, 2), 16) || 0;
+        const g = parseInt(h.slice(2, 4), 16) || 0;
+        const b = parseInt(h.slice(4, 6), 16) || 0;
+        return `${r}, ${g}, ${b}`;
     }
 }

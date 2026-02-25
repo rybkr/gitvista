@@ -11,6 +11,7 @@ import {
     BRANCH_NODE_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
     LANE_MARGIN,
+    LANE_VERTICAL_STEP,
     LANE_WIDTH,
     NODE_RADIUS,
     TAG_NODE_OFFSET_X,
@@ -1193,26 +1194,6 @@ export function createGraphController(rootElement, options = {}) {
         nodes.splice(0, nodes.length, ...allNodes);
         links.splice(0, links.length, ...allLinks);
 
-        // Inject ghost merge node when a merge preview is active.
-        if (state.mergePreview) {
-            const mp = state.mergePreview;
-            const oursNode = commitNodeByHash.get(mp.oursHash);
-            const theirsNode = commitNodeByHash.get(mp.theirsHash);
-            if (oursNode && theirsNode) {
-                const ghostNode = {
-                    type: "ghost-merge",
-                    hash: "__ghost_merge__",
-                    x: (oursNode.x + theirsNode.x) / 2,
-                    y: Math.min(oursNode.y, theirsNode.y) - 60,
-                    fx: (oursNode.x + theirsNode.x) / 2,
-                    fy: Math.min(oursNode.y, theirsNode.y) - 60,
-                };
-                nodes.push(ghostNode);
-                links.push({ source: ghostNode, target: oursNode, kind: "ghost" });
-                links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
-            }
-        }
-
         if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
             releaseDrag();
         }
@@ -1242,6 +1223,56 @@ export function createGraphController(rootElement, options = {}) {
         // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
         snapBranchesToTargets(branchReconciliation.alignments);
         snapTagsToTargets(tagReconciliation.alignments);
+
+        // Inject ghost merge node AFTER layout so positions reflect the
+        // current lane assignments (avoids stale positioning when branches
+        // re-arrange).  The render is deferred via rAF, so the ghost is
+        // included in the next paint.
+        if (state.mergePreview) {
+            const mp = state.mergePreview;
+            const oursNode = commitNodeByHash.get(mp.oursHash);
+            const theirsNode = commitNodeByHash.get(mp.theirsHash);
+            if (oursNode && theirsNode) {
+                // In lane mode, place the ghost where a real merge commit
+                // would land: in the ours lane, one step above the current
+                // topmost commit (since it would be the newest commit).
+                // In force mode, center between the two branch tips.
+                const useLane = state.layoutMode === "lane" &&
+                    oursNode.laneIndex !== undefined;
+                let ghostX, ghostY;
+                if (useLane) {
+                    ghostX = oursNode.x;
+                    const commitYs = nodes
+                        .filter(n => n.type === "commit")
+                        .map(n => n.y)
+                        .sort((a, b) => a - b);
+                    const minY = commitYs[0] ?? oursNode.y;
+                    const step = commitYs.length >= 2
+                        ? (commitYs[commitYs.length - 1] - commitYs[0]) /
+                          (commitYs.length - 1)
+                        : LANE_VERTICAL_STEP;
+                    ghostY = minY - step;
+                } else {
+                    ghostX = (oursNode.x + theirsNode.x) / 2;
+                    ghostY = Math.min(oursNode.y, theirsNode.y) - 60;
+                }
+                const ghostNode = {
+                    type: "ghost-merge",
+                    hash: "__ghost_merge__",
+                    x: ghostX,
+                    y: ghostY,
+                    fx: ghostX,
+                    fy: ghostY,
+                };
+                if (useLane) {
+                    ghostNode.laneIndex = oursNode.laneIndex;
+                    ghostNode.laneColor = oursNode.laneColor;
+                }
+                nodes.push(ghostNode);
+                links.push({ source: ghostNode, target: oursNode, kind: "ghost" });
+                links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
+            }
+        }
 
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after layout so lane segments are rebuilt and
@@ -1408,6 +1439,20 @@ export function createGraphController(rootElement, options = {}) {
             n.x = t.x;
             n.y = t.y + NODE_RADIUS + 14 + bc * 25 + (bc > 0 ? 4 : 0) + i * 25;
         }
+        // Pass 3: snap ghost merge node to ours lane
+        if (state.mergePreview) {
+            const ours = commitMap.get(state.mergePreview.oursHash);
+            if (ours) {
+                for (const n of nodes) {
+                    if (n.type !== "ghost-merge") continue;
+                    n.x = ours.x;
+                    n.fx = ours.x;
+                    n.laneIndex = ours.laneIndex;
+                    n.laneColor = ours.laneColor;
+                    break;
+                }
+            }
+        }
     }
 
     function snapTagsToTargets(pairs) {
@@ -1474,6 +1519,7 @@ export function createGraphController(rootElement, options = {}) {
                 tags: state.tags,
                 layoutMode: state.layoutMode,
                 laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
+                mergePreview: state.mergePreview,
             });
             // Keep the animation loop alive while transitions are in flight,
             // even if the D3 simulation has cooled.

@@ -298,6 +298,102 @@ func TestMergePreview_BothAdded(t *testing.T) {
 	}
 }
 
+// TestMergePreview_RenameVsModify tests that one side renaming a file while
+// the other modifies it is detected as a conflict (not 2 independent changes).
+func TestMergePreview_RenameVsModify(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	blobBase := createBlob(t, repo, []byte("base content"))
+	blobModified := createBlob(t, repo, []byte("modified content"))
+
+	baseTree := createTree(t, repo, []TreeEntry{
+		{ID: blobBase, Name: "file.go", Mode: "100644", Type: "blob"},
+	})
+
+	// Ours renames file.go → renamed.go (same content, exact rename).
+	oursTree := createTree(t, repo, []TreeEntry{
+		{ID: blobBase, Name: "renamed.go", Mode: "100644", Type: "blob"},
+	})
+
+	// Theirs modifies file.go.
+	theirsTree := createTree(t, repo, []TreeEntry{
+		{ID: blobModified, Name: "file.go", Mode: "100644", Type: "blob"},
+	})
+
+	hashBase := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hashOurs := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	hashTheirs := Hash("cccccccccccccccccccccccccccccccccccccccc")
+
+	addCommit(repo, makeCommit(hashBase, nil, baseTree, 30))
+	addCommit(repo, makeCommit(hashOurs, []Hash{hashBase}, oursTree, 20))
+	addCommit(repo, makeCommit(hashTheirs, []Hash{hashBase}, theirsTree, 10))
+
+	result, err := MergePreview(repo, hashOurs, hashTheirs)
+	if err != nil {
+		t.Fatalf("MergePreview failed: %v", err)
+	}
+
+	if result.Stats.Conflicts != 1 {
+		t.Errorf("Conflicts = %d, want 1", result.Stats.Conflicts)
+	}
+	if result.Stats.TotalFiles != 1 {
+		t.Errorf("TotalFiles = %d, want 1", result.Stats.TotalFiles)
+	}
+
+	if len(result.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result.Entries))
+	}
+	if result.Entries[0].ConflictType != ConflictRenameModify {
+		t.Errorf("ConflictType = %s, want %s", result.Entries[0].ConflictType, ConflictRenameModify)
+	}
+}
+
+// TestMergePreview_RenameVsRename tests that both sides renaming the same file
+// to different targets is detected as a conflict.
+func TestMergePreview_RenameVsRename(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	blobBase := createBlob(t, repo, []byte("shared content"))
+
+	baseTree := createTree(t, repo, []TreeEntry{
+		{ID: blobBase, Name: "file.go", Mode: "100644", Type: "blob"},
+	})
+
+	// Ours renames file.go → ours_name.go.
+	oursTree := createTree(t, repo, []TreeEntry{
+		{ID: blobBase, Name: "ours_name.go", Mode: "100644", Type: "blob"},
+	})
+
+	// Theirs renames file.go → theirs_name.go.
+	theirsTree := createTree(t, repo, []TreeEntry{
+		{ID: blobBase, Name: "theirs_name.go", Mode: "100644", Type: "blob"},
+	})
+
+	hashBase := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hashOurs := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	hashTheirs := Hash("cccccccccccccccccccccccccccccccccccccccc")
+
+	addCommit(repo, makeCommit(hashBase, nil, baseTree, 30))
+	addCommit(repo, makeCommit(hashOurs, []Hash{hashBase}, oursTree, 20))
+	addCommit(repo, makeCommit(hashTheirs, []Hash{hashBase}, theirsTree, 10))
+
+	result, err := MergePreview(repo, hashOurs, hashTheirs)
+	if err != nil {
+		t.Fatalf("MergePreview failed: %v", err)
+	}
+
+	if result.Stats.Conflicts != 1 {
+		t.Errorf("Conflicts = %d, want 1", result.Stats.Conflicts)
+	}
+
+	if len(result.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result.Entries))
+	}
+	if result.Entries[0].ConflictType != ConflictRenameRename {
+		t.Errorf("ConflictType = %s, want %s", result.Entries[0].ConflictType, ConflictRenameRename)
+	}
+}
+
 // TestMergePreview_IdenticalChanges tests that both sides making
 // the same change (same resulting hash) is a trivial merge, not a conflict.
 func TestMergePreview_IdenticalChanges(t *testing.T) {

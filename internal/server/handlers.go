@@ -647,6 +647,142 @@ func (s *Server) handleMergePreview(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleMergePreviewFileDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	repo := session.Repo()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
+		return
+	}
+	sanitized, err := sanitizePath(filePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid path: %v", err), http.StatusBadRequest)
+		return
+	}
+	filePath = sanitized
+
+	baseStr := r.URL.Query().Get("base")
+	oursStr := r.URL.Query().Get("ours")
+	theirsStr := r.URL.Query().Get("theirs")
+
+	// Validate hash formats when present.
+	var baseHash, oursHash, theirsHash gitcore.Hash
+	if baseStr != "" {
+		baseHash, err = gitcore.NewHash(baseStr)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid base hash: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+	if oursStr != "" {
+		oursHash, err = gitcore.NewHash(oursStr)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid ours hash: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+	if theirsStr != "" {
+		theirsHash, err = gitcore.NewHash(theirsStr)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid theirs hash: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
+	cacheKey := "merge-file:" + baseStr + ":" + oursStr + ":" + theirsStr + ":" + filePath
+	if cached, ok := session.diffCache.Get(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(cached); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Determine mode: unified when only one side changed (same hash as base),
+	// three-way when both sides changed or one side deleted (empty hash != base).
+	oursUnchanged := oursHash == baseHash // includes both-empty (root add)
+	theirsUnchanged := theirsHash == baseHash
+
+	var response any
+	if oursUnchanged && !theirsUnchanged {
+		// Only theirs changed — unified diff from base to theirs.
+		oldHash, newHash := baseHash, theirsHash
+		fileDiff, err := gitcore.ComputeFileDiff(repo, oldHash, newHash, filePath, gitcore.DefaultContextLines)
+		if err != nil {
+			s.logger.Error("Failed to compute merge file diff", "path", filePath, "err", err)
+			http.Error(w, "Merge file diff computation failed", http.StatusInternalServerError)
+			return
+		}
+		response = map[string]any{
+			"mode":      "unified",
+			"path":      fileDiff.Path,
+			"oldHash":   string(fileDiff.OldHash),
+			"newHash":   string(fileDiff.NewHash),
+			"isBinary":  fileDiff.IsBinary,
+			"truncated": fileDiff.Truncated,
+			"hunks":     fileDiff.Hunks,
+		}
+	} else if theirsUnchanged && !oursUnchanged {
+		// Only ours changed — unified diff from base to ours.
+		oldHash, newHash := baseHash, oursHash
+		fileDiff, err := gitcore.ComputeFileDiff(repo, oldHash, newHash, filePath, gitcore.DefaultContextLines)
+		if err != nil {
+			s.logger.Error("Failed to compute merge file diff", "path", filePath, "err", err)
+			http.Error(w, "Merge file diff computation failed", http.StatusInternalServerError)
+			return
+		}
+		response = map[string]any{
+			"mode":      "unified",
+			"path":      fileDiff.Path,
+			"oldHash":   string(fileDiff.OldHash),
+			"newHash":   string(fileDiff.NewHash),
+			"isBinary":  fileDiff.IsBinary,
+			"truncated": fileDiff.Truncated,
+			"hunks":     fileDiff.Hunks,
+		}
+	} else {
+		// Both sides changed (including delete/modify) — three-way diff.
+		threeWay, err := gitcore.ComputeThreeWayDiff(repo, baseHash, oursHash, theirsHash, filePath)
+		if err != nil {
+			s.logger.Error("Failed to compute three-way diff", "path", filePath, "err", err)
+			http.Error(w, "Three-way diff computation failed", http.StatusInternalServerError)
+			return
+		}
+		response = map[string]any{
+			"mode":         "three-way",
+			"path":         threeWay.Path,
+			"conflictType": threeWay.ConflictType,
+			"isBinary":     threeWay.IsBinary,
+			"truncated":    threeWay.Truncated,
+			"regions":      threeWay.Regions,
+			"stats":        threeWay.Stats,
+		}
+	}
+
+	session.diffCache.Put(cacheKey, response)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 // allDeletions reports whether every diff line across all hunks is a deletion.
 func allDeletions(hunks []gitcore.DiffHunk) bool {
 	for _, hunk := range hunks {

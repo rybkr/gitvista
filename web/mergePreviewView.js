@@ -1,5 +1,7 @@
 import { apiUrl } from "./apiBase.js";
 import { apiFetch } from "./apiFetch.js";
+import { createDiffContentViewer } from "./diffContentViewer.js";
+import { createMergePreviewDiffViewer } from "./mergePreviewDiffViewer.js";
 
 const CONFLICT_CONFIG = {
     none: { badge: "OK", className: "merge-status--clean" },
@@ -21,6 +23,13 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
     const el = document.createElement("div");
     el.className = "merge-preview-view";
 
+    // Embedded diff viewers
+    const unifiedViewer = createDiffContentViewer();
+    const threeWayViewer = createMergePreviewDiffViewer();
+
+    unifiedViewer.onBack(() => showFileList());
+    threeWayViewer.onBack(() => showFileList());
+
     const state = {
         oursBranch: "",
         theirsBranch: "",
@@ -29,10 +38,88 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
         loading: false,
         error: null,
         generation: 0,
+        fileClickGeneration: 0,
+        // Preview commit hashes from the API response
+        previewHashes: null,
+        // Detail view state
+        showingDetail: false,
+        selectedPath: null,
     };
+
+    function showFileList() {
+        state.showingDetail = false;
+        state.selectedPath = null;
+        unifiedViewer.close();
+        threeWayViewer.close();
+        render();
+    }
+
+    async function handleFileClick(entry) {
+        if (!state.previewHashes) return;
+
+        const gen = ++state.fileClickGeneration;
+        state.selectedPath = entry.path;
+        state.showingDetail = true;
+        render();
+
+        // Build the query params from the entry's blob hashes.
+        const params = new URLSearchParams();
+        params.set("path", entry.path);
+        if (entry.baseHash) params.set("base", entry.baseHash);
+        if (entry.oursHash) params.set("ours", entry.oursHash);
+        if (entry.theirsHash) params.set("theirs", entry.theirsHash);
+
+        const url = apiUrl(`/merge-preview/file?${params.toString()}`);
+
+        // Determine which viewer to show based on what we expect.
+        const isThreeWay = entry.conflictType !== "none" ||
+            (entry.oursHash && entry.theirsHash &&
+             entry.oursHash !== entry.baseHash && entry.theirsHash !== entry.baseHash);
+
+        if (isThreeWay) {
+            threeWayViewer.showLoading();
+        } else {
+            unifiedViewer.showLoading();
+        }
+
+        try {
+            const resp = await apiFetch(url);
+            if (gen !== state.fileClickGeneration) return;
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(text || `HTTP ${resp.status}`);
+            }
+            const data = await resp.json();
+            if (gen !== state.fileClickGeneration) return;
+
+            if (data.mode === "three-way") {
+                unifiedViewer.close();
+                threeWayViewer.show(data);
+            } else {
+                // Unified mode — add a status for display.
+                threeWayViewer.close();
+                data.status = entry.oursStatus || entry.theirsStatus || "modified";
+                unifiedViewer.show(data);
+            }
+        } catch (err) {
+            if (gen !== state.fileClickGeneration) return;
+            if (isThreeWay) {
+                threeWayViewer.showError(`Failed to load diff: ${err.message}`);
+            } else {
+                unifiedViewer.showError(`Failed to load diff: ${err.message}`);
+            }
+        }
+    }
 
     function render() {
         el.innerHTML = "";
+
+        // If showing detail view, just show the viewer.
+        if (state.showingDetail) {
+            el.appendChild(unifiedViewer.el);
+            el.appendChild(threeWayViewer.el);
+            return;
+        }
 
         // Branch selectors
         const selectorRow = document.createElement("div");
@@ -154,6 +241,11 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
         for (const entry of sorted) {
             const item = document.createElement("div");
             item.className = "merge-preview-file-item";
+            if (state.selectedPath === entry.path) {
+                item.classList.add("is-selected");
+            }
+
+            item.addEventListener("click", () => handleFileClick(entry));
 
             const config = CONFLICT_CONFIG[entry.conflictType] || CONFLICT_CONFIG.none;
             const badge = document.createElement("span");
@@ -241,6 +333,7 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
             state.stats = null;
             state.error = null;
             state.loading = false;
+            state.previewHashes = null;
             onPreviewResult(null);
             render();
             return;
@@ -249,6 +342,10 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
         const gen = ++state.generation;
         state.loading = true;
         state.error = null;
+        state.showingDetail = false;
+        state.selectedPath = null;
+        unifiedViewer.close();
+        threeWayViewer.close();
         render();
 
         try {
@@ -268,16 +365,18 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
             state.stats = data.stats || null;
             state.loading = false;
             state.error = null;
-
-            onPreviewResult({
+            state.previewHashes = {
                 oursHash: data.oursHash,
                 theirsHash: data.theirsHash,
                 mergeBaseHash: data.mergeBaseHash,
-            });
+            };
+
+            onPreviewResult(state.previewHashes);
         } catch (err) {
             if (gen !== state.generation) return;
             state.loading = false;
             state.error = err.message || "Failed to compute merge preview";
+            state.previewHashes = null;
             onPreviewResult(null);
         }
 
@@ -290,12 +389,14 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
             state.oursBranch = "";
             state.entries = [];
             state.stats = null;
+            state.previewHashes = null;
             onPreviewResult(null);
         }
         if (state.theirsBranch && !branches.has(state.theirsBranch)) {
             state.theirsBranch = "";
             state.entries = [];
             state.stats = null;
+            state.previewHashes = null;
             onPreviewResult(null);
         }
         render();
@@ -317,6 +418,11 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
         state.entries = [];
         state.stats = null;
         state.error = null;
+        state.previewHashes = null;
+        state.showingDetail = false;
+        state.selectedPath = null;
+        unifiedViewer.close();
+        threeWayViewer.close();
         onPreviewResult(null);
         render();
     }
