@@ -69,14 +69,14 @@ func NewRepository(path string) (*Repository, error) {
 	if err := repo.loadRefs(); err != nil {
 		return nil, fmt.Errorf("failed to load refs: %w", err)
 	}
+	if err := repo.loadStashes(); err != nil {
+		return nil, fmt.Errorf("failed to load stashes: %w", err)
+	}
 	if err := repo.loadObjects(); err != nil {
 		return nil, fmt.Errorf("failed to load objects: %w", err)
 	}
 	if err := repo.loadMailmap(); err != nil {
 		return nil, fmt.Errorf("failed to load mailmap: %w", err)
-	}
-	if err := repo.loadStashes(); err != nil {
-		return nil, fmt.Errorf("failed to load stashes: %w", err)
 	}
 
 	return repo, nil

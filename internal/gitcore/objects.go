@@ -20,20 +20,24 @@ const (
 	objectTypeTag    = "tag"
 )
 
-// loadObjects traverses all refs and loads reachable commits and tags using
-// an iterative stack to avoid stack overflow on repositories with deep linear
-// history (100K+ commits). Semantics are identical to the former recursive
-// implementation: visited map prevents re-processing, and errors propagate
-// immediately. Output ordering may differ (LIFO vs first-parent-first) but
-// consumers use unordered maps or re-sort by date, so this is invisible.
-// Must be called after loadRefs.
+// loadObjects traverses all refs and stash entries, loading reachable commits
+// and tags using an iterative stack to avoid stack overflow on repositories
+// with deep linear history (100K+ commits). Semantics are identical to the
+// former recursive implementation: visited map prevents re-processing, and
+// errors propagate immediately. Output ordering may differ (LIFO vs
+// first-parent-first) but consumers use unordered maps or re-sort by date,
+// so this is invisible.
+// Must be called after loadRefs and loadStashes.
 func (r *Repository) loadObjects() error {
 	visited := make(map[Hash]bool)
 
-	// Pre-size the stack to the number of refs to avoid initial allocations.
-	stack := make([]Hash, 0, len(r.refs))
+	// Pre-size the stack to the number of refs + stashes to avoid initial allocations.
+	stack := make([]Hash, 0, len(r.refs)+len(r.stashes))
 	for _, ref := range r.refs {
 		stack = append(stack, ref)
+	}
+	for _, stash := range r.stashes {
+		stack = append(stack, stash.Hash)
 	}
 
 	for len(stack) > 0 {

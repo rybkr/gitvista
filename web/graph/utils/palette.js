@@ -67,6 +67,8 @@ export function buildPalette(element) {
         blobNodeBorder: read("--blob-node-border-color", "#0550ae"),
         blobLabelText: read("--blob-label-text-color", "#ffffff"),
         tagLink: read("--tag-link-color", "#9a6700"),
+        stashNode: read("--stash-node-color", "#d4a017"),
+        stashNodeBorder: read("--stash-node-border-color", "#a67c00"),
         gridDot: read("--grid-dot-color", "rgba(15, 20, 25, 0.06)"),
     };
 }

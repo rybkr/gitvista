@@ -74,6 +74,8 @@ function isExclusivelyRemote(node, branches) {
  */
 function isStashCommit(node, branches, stashes) {
     if (node.type !== "commit") return false;
+    // Fast path: node was tagged during reconciliation.
+    if (node.isStash || node.isStashInternal) return true;
     const hash = node.hash;
     // Check explicit stash list from server delta — most reliable path.
     if (Array.isArray(stashes)) {
@@ -921,6 +923,21 @@ export function createGraphController(rootElement, options = {}) {
         const nextNodes = [];
         let changed = existingNodes.size !== commits.size;
 
+        // Build stash lookups so we can tag nodes during reconciliation.
+        const stashHashes = new Map();
+        for (const s of state.stashes ?? []) {
+            if (s?.hash) stashHashes.set(s.hash, s.message);
+        }
+        const stashInternalHashes = new Set();
+        for (const s of state.stashes ?? []) {
+            const commit = commits.get(s?.hash);
+            if (commit?.parents) {
+                for (let i = 1; i < commit.parents.length; i++) {
+                    stashInternalHashes.add(commit.parents[i]);
+                }
+            }
+        }
+
         for (const commit of commits.values()) {
             const parentNode = (commit.parents ?? [])
                 .map((parentHash) => existingNodes.get(parentHash))
@@ -931,6 +948,9 @@ export function createGraphController(rootElement, options = {}) {
             node.type = "commit";
             node.hash = commit.hash;
             node.commit = commit;
+            node.isStash = stashHashes.has(commit.hash);
+            node.stashMessage = stashHashes.get(commit.hash) ?? null;
+            node.isStashInternal = stashInternalHashes.has(commit.hash);
             node.radius = node.radius ?? NODE_RADIUS;
             nextNodes.push(node);
             if (!existingNodes.has(commit.hash)) {
