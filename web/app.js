@@ -242,6 +242,11 @@ function bootstrapGraph(root, repoId) {
         getCommits: () => graph.getCommits(),
         getCommitCount: () => graph.getCommitCount(),
         getTags: () => graph.getTags?.() ?? new Map(),
+        fetchDiffStats: async () => {
+            const resp = await apiFetch(apiUrl("/commits/diffstats"));
+            if (!resp.ok) throw new Error("Failed to fetch diff stats");
+            return resp.json();
+        },
         onSearch: ({ searchState }) => {
             graph.setSearchState(searchState ?? null);
         },

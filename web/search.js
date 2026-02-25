@@ -42,6 +42,8 @@ const QUALIFIERS = [
     { text: "before:", description: "Commits before date" },
     { text: "hash:",   description: "Search by commit hash" },
     { text: "tag:",    description: "Commits pointed at by a matching tag" },
+    { text: "file:",   description: "Commits that touched a file (basename match)" },
+    { text: "path:",   description: "Commits that touched files under a directory" },
     { text: "merge:only",    description: "Show only merge commits" },
     { text: "merge:exclude", description: "Exclude merge commits" },
     { text: "branch:", description: "Commits reachable from branch" },
@@ -86,6 +88,7 @@ function saveRecentSearch(query) {
  *   getCommits: () => Map<string, import("./graph/types.js").GraphCommit>,
  *   getCommitCount: () => { matching: number, total: number },
  *   getTags: () => Map<string, string>,
+ *   fetchDiffStats: () => Promise<Object>,
  *   onSearch: (result: {
  *     searchState: { query: import("./searchQuery.js").SearchQuery, matcher: ((commit: any) => boolean) | null } | null
  *   }) => void,
@@ -97,7 +100,7 @@ function saveRecentSearch(query) {
  *   destroy(): void,
  * }}
  */
-export function createSearch(container, { getBranches, getCommits, getCommitCount, getTags, onSearch }) {
+export function createSearch(container, { getBranches, getCommits, getCommitCount, getTags, fetchDiffStats, onSearch }) {
     // ── DOM construction ───────────────────────────────────────────────────────
 
     // Outer positioning wrapper — provides the relative context for the dropdown.
@@ -178,6 +181,8 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
     let debounceTimer = null;
     let isDropdownOpen = false;
     let activeDescendantIndex = -1; // -1 = no item focused, 0..N = item index
+    let diffStatsCache = null;       // Map<string, string[]> | null
+    let diffStatsFetchPromise = null; // Promise | null (dedup concurrent fetches)
 
     // ── Dropdown rendering ─────────────────────────────────────────────────────
 
@@ -424,9 +429,29 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
             return;
         }
 
+        // Lazy-fetch diffstats when file: or path: qualifiers are used.
+        const needsDiffStats = query.files.length > 0 || query.negatedFiles.length > 0 ||
+                               query.paths.length > 0 || query.negatedPaths.length > 0;
+        if (needsDiffStats && !diffStatsCache && fetchDiffStats && !diffStatsFetchPromise) {
+            diffStatsFetchPromise = fetchDiffStats()
+                .then((raw) => {
+                    diffStatsCache = new Map();
+                    for (const [hash, entry] of Object.entries(raw)) {
+                        diffStatsCache.set(hash, entry.files ?? []);
+                    }
+                })
+                .catch(() => {
+                    // On error, cache stays null — file:/path: queries match nothing.
+                })
+                .finally(() => {
+                    diffStatsFetchPromise = null;
+                    executeSearch(input.value);
+                });
+        }
+
         // Build the matcher with live graph data (called at search time so it
         // always captures the current branches/commits/tags maps).
-        const matcher = createSearchMatcher(query, getBranches(), getCommits(), getTags());
+        const matcher = createSearchMatcher(query, getBranches(), getCommits(), getTags(), diffStatsCache);
 
         const searchState = { query, matcher };
         onSearch({ searchState });

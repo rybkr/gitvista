@@ -15,6 +15,8 @@
  *   branch:<name>        — commits reachable from the named branch (BFS)
  *   message:<value>      — match commit message only (substring, OR among multiples)
  *   tag:<value>          — commits pointed at by a tag matching the value (substring)
+ *   file:<name>          — commits that touched a file with matching basename
+ *   path:<prefix>        — commits that touched files under a directory prefix
  *
  * Negation: any qualifier or bare term can be prefixed with `-` to invert it.
  *   -author:bot          — exclude commits by authors matching "bot"
@@ -55,6 +57,10 @@
  * @property {string[]} negatedMessages Negated message: qualifier values.
  * @property {string[]} tags Positive tag: qualifier patterns.
  * @property {string[]} negatedTags Negated tag: qualifier patterns.
+ * @property {string[]} files Positive file: qualifier values (basename match).
+ * @property {string[]} negatedFiles Negated file: qualifier values.
+ * @property {string[]} paths Positive path: qualifier values (directory prefix match).
+ * @property {string[]} negatedPaths Negated path: qualifier values.
  * @property {ParseError[]} errors Parse-time warnings for malformed qualifiers.
  * @property {boolean} isEmpty True when no meaningful criteria are present.
  */
@@ -165,7 +171,7 @@ function tokenize(raw) {
 // ── Known qualifiers ──────────────────────────────────────────────────────────
 
 /** Set of recognized qualifier prefixes (lowercase, without colon). */
-const KNOWN_QUALIFIERS = new Set(["author", "hash", "after", "before", "merge", "branch", "message", "tag"]);
+const KNOWN_QUALIFIERS = new Set(["author", "hash", "after", "before", "merge", "branch", "message", "tag", "file", "path"]);
 
 // ── parseSearchQuery ──────────────────────────────────────────────────────────
 
@@ -197,6 +203,10 @@ export function parseSearchQuery(raw) {
         negatedMessages: [],
         tags: [],
         negatedTags: [],
+        files: [],
+        negatedFiles: [],
+        paths: [],
+        negatedPaths: [],
         errors: [],
         isEmpty: false,
     };
@@ -314,6 +324,18 @@ export function parseSearchQuery(raw) {
                             else query.tags.push(value.toLowerCase());
                         }
                         break;
+                    case "file":
+                        if (value) {
+                            if (negated) query.negatedFiles.push(value.toLowerCase());
+                            else query.files.push(value.toLowerCase());
+                        }
+                        break;
+                    case "path":
+                        if (value) {
+                            if (negated) query.negatedPaths.push(value.toLowerCase());
+                            else query.paths.push(value.toLowerCase());
+                        }
+                        break;
                 }
                 continue;
             }
@@ -343,7 +365,11 @@ export function parseSearchQuery(raw) {
         query.messages.length > 0 ||
         query.negatedMessages.length > 0 ||
         query.tags.length > 0 ||
-        query.negatedTags.length > 0;
+        query.negatedTags.length > 0 ||
+        query.files.length > 0 ||
+        query.negatedFiles.length > 0 ||
+        query.paths.length > 0 ||
+        query.negatedPaths.length > 0;
 
     query.isEmpty = !hasContent;
     return query;
@@ -403,9 +429,10 @@ function buildReachableSet(tipHash, commits) {
  * @param {Map<string, string>} [branches] Live branch map (name → hash). Required for branch: qualifier.
  * @param {Map<string, import("./graph/types.js").GraphCommit>} [commits] All known commits. Required for branch: qualifier.
  * @param {Map<string, string>} [tags] Tag map (name → commit hash). Required for tag: qualifier.
+ * @param {Map<string, string[]>} [fileIndex] Commit hash → file paths touched. Required for file:/path: qualifiers.
  * @returns {((commit: import("./graph/types.js").GraphCommit) => boolean) | null}
  */
-export function createSearchMatcher(query, branches, commits, tags) {
+export function createSearchMatcher(query, branches, commits, tags, fileIndex) {
     if (query.isEmpty) return null;
 
     // Pre-compute the branch reachability set once (not per-commit).
@@ -578,6 +605,54 @@ export function createSearchMatcher(query, branches, commits, tags) {
         // -tag: exclude commits pointed at by a matching tag
         if (negatedTaggedCommits !== null) {
             if (negatedTaggedCommits.has(commit.hash)) return false;
+        }
+
+        // ── file: (OR among values) — exact basename match ────────────────────
+        if (query.files.length > 0) {
+            const commitFiles = fileIndex?.get(commit.hash);
+            if (!commitFiles) return false;
+            const basenames = commitFiles.map((f) => {
+                const slash = f.lastIndexOf("/");
+                return (slash >= 0 ? f.slice(slash + 1) : f).toLowerCase();
+            });
+            const matchesAny = query.files.some((f) => basenames.some((b) => b === f));
+            if (!matchesAny) return false;
+        }
+
+        // -file: any match → exclude
+        if (query.negatedFiles.length > 0) {
+            const commitFiles = fileIndex?.get(commit.hash);
+            if (commitFiles) {
+                const basenames = commitFiles.map((f) => {
+                    const slash = f.lastIndexOf("/");
+                    return (slash >= 0 ? f.slice(slash + 1) : f).toLowerCase();
+                });
+                const matchesAny = query.negatedFiles.some((f) => basenames.some((b) => b === f));
+                if (matchesAny) return false;
+            }
+        }
+
+        // ── path: (OR among values) — directory prefix match ──────────────────
+        if (query.paths.length > 0) {
+            const commitFiles = fileIndex?.get(commit.hash);
+            if (!commitFiles) return false;
+            const lowerPaths = commitFiles.map((f) => f.toLowerCase());
+            const matchesAny = query.paths.some((p) =>
+                lowerPaths.some((f) => f === p || f.startsWith(p + "/")),
+            );
+            if (!matchesAny) return false;
+        }
+
+        // -path: any match → exclude
+        if (query.negatedPaths.length > 0) {
+            const commitFiles = fileIndex?.get(commit.hash);
+            if (commitFiles) {
+                const lowerPaths = commitFiles.map((f) => f.toLowerCase());
+                const matchesAny = query.negatedPaths.some((p) =>
+                    lowerPaths.some((f) => f === p || f.startsWith(p + "/")),
+                );
+                if (matchesAny) return false;
+            }
         }
 
         // ── branch: reachability (with negation inversion) ────────────────────

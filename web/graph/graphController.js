@@ -1020,6 +1020,32 @@ export function createGraphController(rootElement, options = {}) {
      * This is called after every delta so that branch/commit data inside the
      * predicate closure is always current (the BFS reachable set rebuilds here).
      */
+    /** Rate at which dimPhase converges toward dimTarget per frame (~200ms transition at 60fps). */
+    const DIM_LERP_RATE = 0.08;
+
+    /**
+     * Advances dimPhase toward dimTarget for all nodes. Returns true if any
+     * transition is still in flight (needs another animation frame).
+     */
+    function advanceDimTransitions() {
+        let anyActive = false;
+        for (const node of nodes) {
+            if (typeof node.dimPhase !== "number") continue;
+            const target = node.dimTarget ?? 0;
+            if (node.dimPhase !== target) {
+                const diff = target - node.dimPhase;
+                if (Math.abs(diff) < 0.01) {
+                    node.dimPhase = target;
+                } else {
+                    node.dimPhase += diff * DIM_LERP_RATE;
+                    node.dimPhase = Math.max(0, Math.min(1, node.dimPhase));
+                    anyActive = true;
+                }
+            }
+        }
+        return anyActive;
+    }
+
     function applyDimmingFromPredicate() {
         // Rebuild predicate so it captures the latest branches/commits/stashes.
         state.filterPredicate = buildFilterPredicate(
@@ -1033,8 +1059,14 @@ export function createGraphController(rootElement, options = {}) {
         );
         const predicate = state.filterPredicate;
         for (const node of nodes) {
-            // null predicate = no active filter → show everything at full opacity.
-            node.dimmed = predicate !== null ? !predicate(node) : false;
+            // Set the target dim state. dimPhase is lerped per-frame toward this
+            // target in advanceDimTransitions() for smooth opacity transitions.
+            node.dimTarget = predicate !== null ? (predicate(node) ? 0 : 1) : 0;
+            if (typeof node.dimPhase !== "number") {
+                node.dimPhase = node.dimTarget;
+            }
+            // Preserve boolean for backward-compat (getCommitCount, etc.)
+            node.dimmed = node.dimTarget === 1;
         }
     }
 
@@ -1342,6 +1374,9 @@ export function createGraphController(rootElement, options = {}) {
         if (rafId !== null) return;
         rafId = requestAnimationFrame(() => {
             rafId = null;
+            // Advance dim transitions before rendering so the renderer sees
+            // the updated dimPhase values for smooth opacity animation.
+            const dimTransitionsActive = advanceDimTransitions();
             renderer.render({
                 nodes,
                 links,
@@ -1355,6 +1390,11 @@ export function createGraphController(rootElement, options = {}) {
                 layoutMode: state.layoutMode,
                 laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
             });
+            // Keep the animation loop alive while transitions are in flight,
+            // even if the D3 simulation has cooled.
+            if (dimTransitionsActive) {
+                render();
+            }
         });
     }
 
