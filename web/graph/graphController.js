@@ -1098,7 +1098,40 @@ export function createGraphController(rootElement, options = {}) {
         nodes.splice(0, nodes.length, ...allNodes);
         links.splice(0, links.length, ...allLinks);
 
-        // Inject ghost merge node when a merge preview is active.
+        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
+            releaseDrag();
+        }
+
+        const currentTarget = tooltipManager.getTargetData();
+        if (currentTarget && !nodes.includes(currentTarget)) {
+            hideTooltip();
+        }
+
+        const linkStructureChanged = previousLinkCount !== allLinks.length;
+        const structureChanged =
+            commitReconciliation.changed ||
+            branchReconciliation.changed ||
+            tagReconciliation.changed ||
+            linkStructureChanged;
+
+        // Delegate layout updates to the strategy
+        layoutStrategy.updateGraph(
+            nodes,
+            links,
+            commits,
+            branches,
+            { width: viewportWidth, height: viewportHeight },
+            structureChanged,
+        );
+
+        // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
+        snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
+
+        // Inject ghost merge node AFTER layout so positions reflect the
+        // current lane assignments (avoids stale positioning when branches
+        // re-arrange).  The render is deferred via rAF, so the ghost is
+        // included in the next paint.
         if (state.mergePreview) {
             const mp = state.mergePreview;
             const oursNode = commitNodeByHash.get(mp.oursHash);
@@ -1144,36 +1177,6 @@ export function createGraphController(rootElement, options = {}) {
                 links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
             }
         }
-
-        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
-            releaseDrag();
-        }
-
-        const currentTarget = tooltipManager.getTargetData();
-        if (currentTarget && !nodes.includes(currentTarget)) {
-            hideTooltip();
-        }
-
-        const linkStructureChanged = previousLinkCount !== allLinks.length;
-        const structureChanged =
-            commitReconciliation.changed ||
-            branchReconciliation.changed ||
-            tagReconciliation.changed ||
-            linkStructureChanged;
-
-        // Delegate layout updates to the strategy
-        layoutStrategy.updateGraph(
-            nodes,
-            links,
-            commits,
-            branches,
-            { width: viewportWidth, height: viewportHeight },
-            structureChanged,
-        );
-
-        // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
-        snapBranchesToTargets(branchReconciliation.alignments);
-        snapTagsToTargets(tagReconciliation.alignments);
 
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after layout so lane segments are rebuilt and
