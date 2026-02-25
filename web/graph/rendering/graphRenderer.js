@@ -477,6 +477,23 @@ export class GraphRenderer {
                 continue;
             }
 
+            // Ghost links: dashed, low opacity, no arrowhead.
+            if (link.kind === "ghost") {
+                const prevAlpha = this.ctx.globalAlpha;
+                this.ctx.globalAlpha = 0.3;
+                this.ctx.save();
+                this.ctx.setLineDash([4, 4]);
+                this.ctx.strokeStyle = this.palette.mergeNode;
+                this.ctx.beginPath();
+                this.ctx.moveTo(source.x, source.y);
+                this.ctx.lineTo(target.x, target.y);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+                this.ctx.restore();
+                this.ctx.globalAlpha = prevAlpha;
+                continue;
+            }
+
             // Dim links whose commit endpoints are both dimmed — fades non-matching
             // sub-graphs without removing them from the force simulation.
             // Branch and tag links are always rendered at full opacity so labels
@@ -705,6 +722,54 @@ export class GraphRenderer {
                 this.renderTagNode(node, highlightKey);
             }
         }
+        for (const node of nodes) {
+            if (node.type === "ghost-merge") {
+                this.renderGhostMergeNode(node);
+            }
+        }
+    }
+
+    /**
+     * Renders a ghost merge preview node as a dashed diamond outline.
+     *
+     * @param {{ x: number, y: number }} node Ghost merge node position.
+     */
+    renderGhostMergeNode(node) {
+        const ctx = this.ctx;
+        const size = 10;
+
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+
+        // Diamond shape
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y - size);
+        ctx.lineTo(node.x + size, node.y);
+        ctx.lineTo(node.x, node.y + size);
+        ctx.lineTo(node.x - size, node.y);
+        ctx.closePath();
+
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = this.palette.mergeNode;
+        ctx.stroke();
+
+        ctx.fillStyle = this.palette.background;
+        ctx.globalAlpha = 0.25;
+        ctx.fill();
+
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Label
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.font = "9px 'Geist', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillStyle = this.palette.mergeNode;
+        ctx.fillText("merge preview", node.x, node.y + size + 4);
+        ctx.restore();
     }
 
     /**

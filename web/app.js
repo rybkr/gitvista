@@ -8,6 +8,7 @@ import { createIndexView } from "./indexView.js";
 import { createFileExplorer } from "./fileExplorer.js";
 import { createStagingView } from "./stagingView.js";
 import { createAnalyticsView } from "./analyticsView.js";
+import { createMergePreviewView } from "./mergePreviewView.js";
 import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
@@ -171,6 +172,13 @@ function bootstrapGraph(root, repoId) {
         },
     });
 
+    const mergePreviewView = createMergePreviewView({
+        getBranches: () => graph.getBranches(),
+        onPreviewResult: (preview) => {
+            graph.setMergePreview(preview);
+        },
+    });
+
     const repoTabContent = document.createElement("div");
     repoTabContent.style.display = "flex";
     repoTabContent.style.flexDirection = "column";
@@ -198,6 +206,7 @@ function bootstrapGraph(root, repoId) {
         { name: "file-explorer", icon: "", tooltip: "File Explorer", content: fileExplorer.el },
         { name: "three-zones", tooltip: "Lifecycle", content: stagingView.el },
         { name: "analytics", tooltip: "Analytics", content: analyticsView.el },
+        { name: "compare", tooltip: "Compare", content: mergePreviewView.el },
     ]);
     root.parentElement.insertBefore(sidebar.activityBar, root);
     root.parentElement.insertBefore(sidebar.panel, root);
@@ -323,6 +332,16 @@ function bootstrapGraph(root, repoId) {
             analyticsView.update();
 
             graphFilters.updateBranches(graph.getBranches());
+            mergePreviewView.updateBranches();
+
+            // If a selected branch tip moved, refresh the merge preview.
+            if (delta.amendedBranches) {
+                const selected = mergePreviewView.getSelectedBranches();
+                const amended = Object.keys(delta.amendedBranches);
+                if (amended.includes(selected.ours) || amended.includes(selected.theirs)) {
+                    mergePreviewView.refresh();
+                }
+            }
 
             const addedCount = delta.addedCommits?.length ?? 0;
             if (addedCount > 0 && currentBranchName) {

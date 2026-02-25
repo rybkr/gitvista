@@ -49,6 +49,12 @@ const ICONS = {
         <rect x="6.5" y="4" width="3" height="11" rx=".75"/>
         <rect x="12" y="1" width="3" height="14" rx=".75"/>
     </svg>`,
+    compare: `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M5 3.254V3.25a.75.75 0 01.307.665l-.01.082a6.5 6.5 0 00-.097 1.128c0 1.316.427 2.476 1.11 3.375H5.25a.75.75 0 010-1.5h1.5a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V9.04A5.25 5.25 0 014.7 5.125a5.16 5.16 0 01.078-.9A.75.75 0 015 3.254z"/>
+        <path d="M11 12.746v.004a.75.75 0 01-.307-.665l.01-.082c.063-.37.097-.747.097-1.128 0-1.316-.427-2.476-1.11-3.375h1.06a.75.75 0 010 1.5h-1.5a.75.75 0 01-.75-.75v-1.5a.75.75 0 011.5 0v.21A5.25 5.25 0 0111.3 10.875c-.025.302-.075.601-.078.9a.75.75 0 01-.222.971z"/>
+        <circle cx="5" cy="2.5" r="1.5"/>
+        <circle cx="11" cy="13.5" r="1.5"/>
+    </svg>`,
 };
 
 const CHEVRON_LEFT = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

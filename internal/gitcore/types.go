@@ -385,6 +385,41 @@ type FileDiff struct {
 	Hunks     []DiffHunk `json:"hunks"`
 }
 
+// ConflictType classifies how a file is affected in a merge preview.
+type ConflictType string
+
+const (
+	ConflictNone         ConflictType = "none"
+	ConflictConflicting  ConflictType = "conflicting"
+	ConflictBothAdded    ConflictType = "both_added"
+	ConflictDeleteModify ConflictType = "delete_modify"
+)
+
+// MergePreviewEntry represents a single file in the merge preview.
+type MergePreviewEntry struct {
+	Path         string       `json:"path"`
+	ConflictType ConflictType `json:"conflictType"`
+	OursStatus   string       `json:"oursStatus"`
+	TheirsStatus string       `json:"theirsStatus"`
+	IsBinary     bool         `json:"isBinary"`
+}
+
+// MergePreviewStats summarizes the merge preview.
+type MergePreviewStats struct {
+	TotalFiles int `json:"totalFiles"`
+	Conflicts  int `json:"conflicts"`
+	CleanMerge int `json:"cleanMerge"`
+}
+
+// MergePreviewResult is the full result of a merge preview computation.
+type MergePreviewResult struct {
+	MergeBaseHash Hash                `json:"mergeBaseHash"`
+	OursHash      Hash                `json:"oursHash"`
+	TheirsHash    Hash                `json:"theirsHash"`
+	Entries       []MergePreviewEntry `json:"entries"`
+	Stats         MergePreviewStats   `json:"stats"`
+}
+
 // LineType represents the type of line in a diff.
 type LineType string
 
