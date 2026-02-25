@@ -56,6 +56,11 @@
     --success-color: #059669;
     --warning-color: #d97706;
     --danger-color: #dc2626;
+    --surface-recessed: #f0f1f3;
+    --surface-elevated: #ffffff;
+    --surface-elevated-shadow: 0 2px 8px rgba(15, 20, 25, 0.12);
+    --grid-dot-color: rgba(15, 20, 25, 0.06);
+    --vignette-opacity: 0.04;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -98,6 +103,11 @@
         --success-color: #3fb950;
         --warning-color: #fb923c;
         --danger-color: #f85149;
+        --surface-recessed: #0d1117;
+        --surface-elevated: #1c2129;
+        --surface-elevated-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        --grid-dot-color: rgba(234, 238, 242, 0.04);
+        --vignette-opacity: 0.15;
     }
 }
 
@@ -141,6 +151,11 @@
     --success-color: #059669;
     --warning-color: #d97706;
     --danger-color: #dc2626;
+    --surface-recessed: #f0f1f3;
+    --surface-elevated: #ffffff;
+    --surface-elevated-shadow: 0 2px 8px rgba(15, 20, 25, 0.12);
+    --grid-dot-color: rgba(15, 20, 25, 0.06);
+    --vignette-opacity: 0.04;
 }
 
 :root[data-theme="dark"] {
@@ -182,6 +197,11 @@
     --success-color: #3fb950;
     --warning-color: #fb923c;
     --danger-color: #f85149;
+    --surface-recessed: #0d1117;
+    --surface-elevated: #1c2129;
+    --surface-elevated-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --grid-dot-color: rgba(234, 238, 242, 0.04);
+    --vignette-opacity: 0.15;
 }
 
 /* Theme toggle button — positioned to the left of the connection status dot */
@@ -257,6 +277,15 @@ body {
     flex-direction: column;
 }
 
+#root::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    box-shadow: inset 0 0 120px 40px rgba(0, 0, 0, var(--vignette-opacity));
+}
+
 /* ── Activity Bar ── */
 
 .activity-bar {
@@ -267,7 +296,7 @@ body {
     align-items: center;
     padding-top: 8px;
     gap: 4px;
-    background: var(--surface-color);
+    background: var(--surface-recessed);
     border-right: 1px solid var(--border-color);
     flex-shrink: 0;
     z-index: 10;
@@ -332,9 +361,9 @@ body {
     transform: translateY(-50%);
     padding: 4px 8px;
     border-radius: 4px;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     border: 1px solid var(--border-color);
-    box-shadow: 0 4px 12px var(--node-shadow-color);
+    box-shadow: var(--surface-elevated-shadow);
     font-size: 12px;
     font-weight: 500;
     color: var(--text-color);
@@ -938,20 +967,14 @@ canvas {
     left: 0;
     right: 0;
     z-index: 50;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    box-shadow: 0 8px 30px var(--node-shadow-color), 0 2px 8px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--surface-elevated-shadow);
     overflow: hidden;
     /* Constrain height so the dropdown doesn't cover the entire canvas */
     max-height: 320px;
     overflow-y: auto;
-}
-
-@media (prefers-color-scheme: dark) {
-    .commit-search-dropdown {
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-    }
 }
 
 /* Section header within the dropdown */
@@ -1134,11 +1157,11 @@ canvas {
 .commit-tooltip {
     position: fixed;
     pointer-events: none;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    box-shadow: 0 12px 32px var(--node-shadow-color);
+    box-shadow: var(--surface-elevated-shadow);
     padding: 14px 16px;
     max-width: min(380px, 70vw);
     display: none;
@@ -1258,12 +1281,12 @@ canvas {
 .branch-tooltip {
     position: fixed;
     pointer-events: none;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     border-left: 3px solid var(--branch-node-color);
     border-radius: 10px;
-    box-shadow: 0 12px 32px var(--node-shadow-color);
+    box-shadow: var(--surface-elevated-shadow);
     padding: 12px 14px;
     min-width: 160px;
     display: none;
@@ -1273,12 +1296,6 @@ canvas {
     opacity: 0;
     transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     backdrop-filter: blur(8px);
-}
-
-@media (prefers-color-scheme: dark) {
-    .branch-tooltip {
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-    }
 }
 
 .branch-tooltip:not([hidden]) {
@@ -1410,12 +1427,12 @@ canvas {
 .tag-tooltip {
     position: fixed;
     pointer-events: none;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     border-left: 3px solid #9a6700;
     border-radius: 10px;
-    box-shadow: 0 12px 32px var(--node-shadow-color);
+    box-shadow: var(--surface-elevated-shadow);
     padding: 12px 14px;
     min-width: 160px;
     display: none;
@@ -1430,7 +1447,6 @@ canvas {
 @media (prefers-color-scheme: dark) {
     .tag-tooltip {
         border-left-color: #d29922;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     }
 }
 
@@ -1534,11 +1550,11 @@ canvas {
 .blob-tooltip {
     position: fixed;
     pointer-events: none;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    box-shadow: 0 12px 32px var(--node-shadow-color);
+    box-shadow: var(--surface-elevated-shadow);
     padding: 12px 14px;
     min-width: 160px;
     display: none;
@@ -1548,12 +1564,6 @@ canvas {
     opacity: 0;
     transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     backdrop-filter: blur(8px);
-}
-
-@media (prefers-color-scheme: dark) {
-    .blob-tooltip {
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-    }
 }
 
 .blob-tooltip:not([hidden]) {
@@ -1769,7 +1779,7 @@ canvas {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     border-left: 1px solid var(--border-color);
     overflow: hidden;
     transition: width 0.2s ease, min-width 0.2s ease;
@@ -1866,7 +1876,7 @@ canvas {
     gap: 4px;
     padding: 8px 12px;
     border-bottom: 1px solid var(--border-color);
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     flex-wrap: wrap;
     flex-shrink: 0;
 }
@@ -2392,7 +2402,7 @@ canvas {
     margin: 10px 12px 0;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     color: var(--text-secondary);
     font-size: 12px;
     font-weight: 500;
@@ -2419,7 +2429,7 @@ canvas {
     gap: 8px;
     padding: 8px 12px;
     border-bottom: 1px solid var(--border-color);
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     flex-shrink: 0;
 }
 
@@ -2506,7 +2516,7 @@ canvas {
     flex: 1;
     overflow-y: auto;
     overflow-x: auto;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
 }
 
 .diff-hunks {
@@ -2563,7 +2573,7 @@ canvas {
     font-variant-numeric: tabular-nums;
     position: sticky;
     z-index: 2;
-    background-color: var(--surface-color);
+    background-color: var(--surface-elevated);
 }
 
 .line-num-old {
@@ -2593,7 +2603,7 @@ canvas {
 
 .diff-line-add .line-num-old,
 .diff-line-add .line-num-new {
-    background-color: var(--surface-color);
+    background-color: var(--surface-elevated);
     background-image: linear-gradient(rgba(26, 127, 55, 0.12) 0 0);
 }
 
@@ -2607,7 +2617,7 @@ canvas {
 
 .diff-line-delete .line-num-old,
 .diff-line-delete .line-num-new {
-    background-color: var(--surface-color);
+    background-color: var(--surface-elevated);
     background-image: linear-gradient(rgba(209, 36, 47, 0.12) 0 0);
 }
 
@@ -2626,7 +2636,7 @@ canvas {
 
     .diff-line-add .line-num-old,
     .diff-line-add .line-num-new {
-        background-color: var(--surface-color);
+        background-color: var(--surface-elevated);
         background-image: linear-gradient(rgba(63, 185, 80, 0.15) 0 0);
     }
 
@@ -2640,7 +2650,7 @@ canvas {
 
     .diff-line-delete .line-num-old,
     .diff-line-delete .line-num-new {
-        background-color: var(--surface-color);
+        background-color: var(--surface-elevated);
         background-image: linear-gradient(rgba(248, 81, 73, 0.15) 0 0);
     }
 }
@@ -2794,14 +2804,14 @@ canvas {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     overflow: hidden;
 }
 
 .diff-view-header {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     flex-shrink: 0;
 }
 
@@ -3161,17 +3171,11 @@ canvas {
     left: 0;
     z-index: 50;
     min-width: 240px;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    box-shadow: 0 8px 30px var(--node-shadow-color), 0 2px 8px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--surface-elevated-shadow);
     overflow: hidden;
-}
-
-@media (prefers-color-scheme: dark) {
-    .graph-filter-popover {
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-    }
 }
 
 .graph-filter-popover.is-open {
@@ -3943,7 +3947,7 @@ canvas {
 }
 
 .repo-unavailable-card {
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 32px 40px;
@@ -4119,7 +4123,7 @@ canvas {
 .analytics-chart-container {
     position: relative;
     min-height: 200px;
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
@@ -4140,7 +4144,7 @@ canvas {
     font-size: 11px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     color: var(--text-color);
-    background: var(--surface-color);
+    background: var(--surface-elevated);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);

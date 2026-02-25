@@ -74,6 +74,7 @@ export class GraphRenderer {
         const laneInfo = state.laneInfo ?? [];
 
         this.clear(viewportWidth, viewportHeight);
+        this.renderDotGrid(viewportWidth, viewportHeight, zoomTransform);
         this.setupTransform(zoomTransform);
 
         if (laneInfo.length > 0) {
@@ -108,6 +109,28 @@ export class GraphRenderer {
             // Canvas is in error state - silently skip this frame
             // The error will be resolved when resize() sets valid dimensions
             return;
+        }
+    }
+
+    /**
+     * Renders a subtle dot grid behind the graph in screen space.
+     * Dots shift by a fraction of the pan translation for a parallax effect.
+     *
+     * @param {number} width Viewport width in CSS pixels.
+     * @param {number} height Viewport height in CSS pixels.
+     * @param {import("d3").ZoomTransform} zoomTransform Current zoom transform.
+     */
+    renderDotGrid(width, height, zoomTransform) {
+        const spacing = 24;
+        const parallax = 0.08;
+        const offsetX = ((zoomTransform.x * parallax) % spacing + spacing) % spacing;
+        const offsetY = ((zoomTransform.y * parallax) % spacing + spacing) % spacing;
+
+        this.ctx.fillStyle = this.palette.gridDot;
+        for (let y = offsetY; y < height; y += spacing) {
+            for (let x = offsetX; x < width; x += spacing) {
+                this.ctx.fillRect(x, y, 1, 1);
+            }
         }
     }
 

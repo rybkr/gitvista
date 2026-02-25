@@ -94,6 +94,7 @@
  * @property {string} blobNodeBorder Blob node border color.
  * @property {string} blobLabelText Blob label text color.
  * @property {string} tagLink Tag link color.
+ * @property {string} gridDot Grid dot color for the canvas background pattern.
  */
 
 /**
