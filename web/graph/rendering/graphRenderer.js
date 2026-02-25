@@ -926,6 +926,7 @@ export class GraphRenderer {
         // Compound alpha: context alpha × spawn fade-in × dimming multiplier.
         // dimMultiplier lerps smoothly from 1.0 (visible) to 0.15 (dimmed).
         const previousAlpha = this.ctx.globalAlpha;
+        const isDimmed = dimPhase > 0.5;
         const dimMultiplier = 1 - dimPhase * 0.85;
         this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01) * dimMultiplier;
         if (isHighlighted) {
