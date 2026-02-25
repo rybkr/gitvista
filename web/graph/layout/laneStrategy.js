@@ -243,6 +243,11 @@ export class LaneStrategy {
 
 		// Apply positions immediately (no transition for incremental updates)
 		this.applyTargetPositions(nodes);
+
+		// Trigger a render so the updated layout is painted immediately
+		if (this._onTick) {
+			this._onTick();
+		}
 	}
 
 	/**
