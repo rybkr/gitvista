@@ -250,8 +250,15 @@ function bootstrapGraph(root, repoId) {
         getBranches: () => graph.getBranches(),
         getCommits: () => graph.getCommits(),
         getCommitCount: () => graph.getCommitCount(),
+        getTags: () => graph.getTags?.() ?? new Map(),
+        fetchDiffStats: async () => {
+            const resp = await apiFetch(apiUrl("/commits/diffstats"));
+            if (!resp.ok) throw new Error("Failed to fetch diff stats");
+            return resp.json();
+        },
         onSearch: ({ searchState }) => {
             graph.setSearchState(searchState ?? null);
+            search.clearPosition();
         },
     });
 
@@ -291,6 +298,14 @@ function bootstrapGraph(root, repoId) {
         },
         onNavigateNext: () => graph.navigateCommits("next"),
         onNavigatePrev: () => graph.navigateCommits("prev"),
+        onSearchResultNext: () => {
+            const pos = graph.navigateSearchResults("next");
+            if (pos) search.updatePosition(pos.index, pos.total);
+        },
+        onSearchResultPrev: () => {
+            const pos = graph.navigateSearchResults("prev");
+            if (pos) search.updatePosition(pos.index, pos.total);
+        },
     });
 
     /** If the file explorer has no commit loaded, open HEAD. */

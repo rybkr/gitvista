@@ -232,6 +232,8 @@ export function createGraphController(rootElement, options = {}) {
 
     let selectedHash = null;
     let sortedCommitCache = null;
+    let searchResultCache = null;   // filtered subset matching search
+    let searchResultIndex = -1;     // current position (-1 = unset)
     let rafId = null;
 
     // Create both layout strategies
@@ -483,6 +485,12 @@ export function createGraphController(rootElement, options = {}) {
         showTooltip(node);
         options.onCommitSelect?.(hash);
         centerOnCommit(hash);
+
+        // Keep search-result index in sync when navigating via click or J/K.
+        if (searchResultCache) {
+            const idx = searchResultCache.findIndex((n) => n.hash === hash);
+            searchResultIndex = idx; // -1 if not a search result
+        }
     };
 
     /**
@@ -535,6 +543,61 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         selectAndCenterCommit(commitNodes[nextIndex].hash);
+    };
+
+    /**
+     * Moves the selection to the next or previous search result.
+     * Only operates when a search matcher is active; otherwise returns null.
+     *
+     * @param {'next' | 'prev'} direction
+     * @returns {{ index: number, total: number } | null}
+     */
+    const navigateSearchResults = (direction) => {
+        if (!state.searchState?.matcher) return null;
+
+        // Lazily build sortedCommitCache (same sort as navigateCommits).
+        if (!sortedCommitCache) {
+            sortedCommitCache = nodes
+                .filter((n) => n.type === "commit")
+                .sort((a, b) => {
+                    const aTime = getCommitTimestamp(a.commit);
+                    const bTime = getCommitTimestamp(b.commit);
+                    if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                    return bTime - aTime;
+                });
+        }
+
+        // Lazily build searchResultCache by filtering with the active matcher.
+        if (!searchResultCache) {
+            searchResultCache = sortedCommitCache.filter((n) =>
+                state.searchState.matcher(n.commit),
+            );
+            searchResultIndex = -1;
+        }
+
+        const results = searchResultCache;
+        if (results.length === 0) return null;
+
+        // On first call: if current selection is a result, start there.
+        if (searchResultIndex === -1) {
+            const currentIdx = results.findIndex((n) => n.hash === selectedHash);
+            if (currentIdx !== -1) {
+                searchResultIndex = currentIdx;
+            } else {
+                // Start at first result.
+                searchResultIndex = 0;
+                selectAndCenterCommit(results[0].hash);
+                return { index: 0, total: results.length };
+            }
+        }
+
+        // Step with wrapping.
+        const delta = direction === "next" ? 1 : -1;
+        searchResultIndex =
+            (searchResultIndex + delta + results.length) % results.length;
+
+        selectAndCenterCommit(results[searchResultIndex].hash);
+        return { index: searchResultIndex, total: results.length };
     };
 
     // Wire Prev/Next buttons now that navigateCommits is defined.
@@ -1021,6 +1084,32 @@ export function createGraphController(rootElement, options = {}) {
      * This is called after every delta so that branch/commit data inside the
      * predicate closure is always current (the BFS reachable set rebuilds here).
      */
+    /** Rate at which dimPhase converges toward dimTarget per frame (~200ms transition at 60fps). */
+    const DIM_LERP_RATE = 0.08;
+
+    /**
+     * Advances dimPhase toward dimTarget for all nodes. Returns true if any
+     * transition is still in flight (needs another animation frame).
+     */
+    function advanceDimTransitions() {
+        let anyActive = false;
+        for (const node of nodes) {
+            if (typeof node.dimPhase !== "number") continue;
+            const target = node.dimTarget ?? 0;
+            if (node.dimPhase !== target) {
+                const diff = target - node.dimPhase;
+                if (Math.abs(diff) < 0.01) {
+                    node.dimPhase = target;
+                } else {
+                    node.dimPhase += diff * DIM_LERP_RATE;
+                    node.dimPhase = Math.max(0, Math.min(1, node.dimPhase));
+                    anyActive = true;
+                }
+            }
+        }
+        return anyActive;
+    }
+
     function applyDimmingFromPredicate() {
         // Rebuild predicate so it captures the latest branches/commits/stashes.
         state.filterPredicate = buildFilterPredicate(
@@ -1034,8 +1123,14 @@ export function createGraphController(rootElement, options = {}) {
         );
         const predicate = state.filterPredicate;
         for (const node of nodes) {
-            // null predicate = no active filter → show everything at full opacity.
-            node.dimmed = predicate !== null ? !predicate(node) : false;
+            // Set the target dim state. dimPhase is lerped per-frame toward this
+            // target in advanceDimTransitions() for smooth opacity transitions.
+            node.dimTarget = predicate !== null ? (predicate(node) ? 0 : 1) : 0;
+            if (typeof node.dimPhase !== "number") {
+                node.dimPhase = node.dimTarget;
+            }
+            // Preserve boolean for backward-compat (getCommitCount, etc.)
+            node.dimmed = node.dimTarget === 1;
         }
     }
 
@@ -1045,6 +1140,7 @@ export function createGraphController(rootElement, options = {}) {
      */
     function updateGraph() {
         sortedCommitCache = null; // Invalidate on every structural update
+        searchResultCache = null;
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
         const existingTagNodes = new Map();
@@ -1363,6 +1459,9 @@ export function createGraphController(rootElement, options = {}) {
         if (rafId !== null) return;
         rafId = requestAnimationFrame(() => {
             rafId = null;
+            // Advance dim transitions before rendering so the renderer sees
+            // the updated dimPhase values for smooth opacity animation.
+            const dimTransitionsActive = advanceDimTransitions();
             renderer.render({
                 nodes,
                 links,
@@ -1376,6 +1475,11 @@ export function createGraphController(rootElement, options = {}) {
                 layoutMode: state.layoutMode,
                 laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
             });
+            // Keep the animation loop alive while transitions are in flight,
+            // even if the D3 simulation has cooled.
+            if (dimTransitionsActive) {
+                render();
+            }
         });
     }
 
@@ -1485,6 +1589,14 @@ export function createGraphController(rootElement, options = {}) {
          */
         navigateCommits,
         /**
+         * Moves the selection to the next/previous search result (N / Shift+N).
+         * Returns { index, total } for badge updates, or null if no active search.
+         *
+         * @param {'next' | 'prev'} direction
+         * @returns {{ index: number, total: number } | null}
+         */
+        navigateSearchResults,
+        /**
          * Selects the commit with the given hash, shows its tooltip, fires
          * onCommitSelect, and centers the viewport on it.
          *
@@ -1515,6 +1627,8 @@ export function createGraphController(rootElement, options = {}) {
          */
         setSearchState: (searchState) => {
             state.searchState = searchState ?? null;
+            searchResultCache = null;
+            searchResultIndex = -1;
             rebuildAndApplyPredicate();
         },
         /**
@@ -1542,6 +1656,8 @@ export function createGraphController(rootElement, options = {}) {
          */
         setFilterState: (filterState) => {
             state.filterState = { ...filterState };
+            searchResultCache = null;
+            searchResultIndex = -1;
             rebuildAndApplyPredicate();
         },
         /**

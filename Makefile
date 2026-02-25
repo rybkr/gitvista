@@ -1,5 +1,5 @@
 .PHONY: test ci-local ci-remote lint integration e2e build build-cli clean help setup-hooks \
-         format format-check vet security validate-js cover cover-html dev-check check-imports \
+         format format-check vet security validate-js test-js cover cover-html dev-check check-imports \
          check-vuln docker-build deps-check
 
 GOCMD=go
@@ -97,6 +97,11 @@ lint:
 		exit 1; \
 	fi
 
+## test-js: Run JavaScript unit tests (Node.js test runner)
+test-js:
+	@echo "Running JavaScript tests..."
+	@node --test web/**/*.test.js
+
 ## validate-js: Validate JavaScript syntax and ES module compliance
 validate-js:
 	@echo "Validating JavaScript..."
@@ -156,11 +161,11 @@ format-check:
 	@echo "All files properly formatted"
 
 ## ci-local: Run CI checks that work offline (no Docker or network needed)
-ci-local: format-check check-imports vet lint security test integration e2e validate-js build
+ci-local: format-check check-imports vet lint security test integration e2e validate-js test-js build
 	@echo "All local CI checks passed!"
 
 ## ci-remote: Run all CI checks including Docker build and dependency verification
-ci-remote: format-check check-imports vet lint security test integration e2e validate-js build docker-build deps-check
+ci-remote: format-check check-imports vet lint security test integration e2e validate-js test-js build docker-build deps-check
 	@echo "All CI checks passed!"
 
 ## clean: Clean build artifacts
