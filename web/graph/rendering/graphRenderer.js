@@ -478,32 +478,55 @@ export class GraphRenderer {
                 continue;
             }
 
-            // Ghost links: dashed, low opacity.
+            // Ghost links: glow casing + dashed stroke.
             // Cross-lane ghost links use stepped routing with arrowhead;
             // same-lane ghost links stay as straight dashed lines.
             if (link.kind === "ghost") {
                 const prevAlpha = this.ctx.globalAlpha;
-                this.ctx.globalAlpha = 0.3;
-                this.ctx.save();
-                this.ctx.setLineDash([4, 4]);
-                this.ctx.strokeStyle = this.palette.mergeNode;
+                const ghostColor = this.palette.mergeNode;
 
                 const isCrossLane =
                     source.laneIndex !== undefined &&
                     target.laneIndex !== undefined &&
                     source.laneIndex !== target.laneIndex;
 
+                // Glow casing — wider solid stroke at very low opacity
+                // for a soft halo effect that lifts the link off the canvas.
+                this.ctx.save();
+                this.ctx.globalAlpha = this.palette.isDark ? 0.1 : 0.07;
+                this.ctx.strokeStyle = ghostColor;
+                this.ctx.lineWidth = (this.ctx.lineWidth || 1) + 4;
+                this.ctx.lineCap = "round";
+                this.ctx.lineJoin = "round";
                 if (isCrossLane) {
-                    this.renderGhostSteppedArrow(source, target);
+                    this._traceGhostSteppedPath(source, target);
+                } else {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(source.x, source.y);
+                    this.ctx.lineTo(target.x, target.y);
+                }
+                this.ctx.stroke();
+                this.ctx.restore();
+
+                // Main dashed stroke
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.35;
+                this.ctx.setLineDash([6, 4]);
+                this.ctx.strokeStyle = ghostColor;
+                this.ctx.lineCap = "round";
+                this.ctx.lineJoin = "round";
+                if (isCrossLane) {
+                    this._traceGhostSteppedPath(source, target);
+                    this.ctx.stroke();
+                    this._drawGhostArrowhead(source, target, ghostColor);
                 } else {
                     this.ctx.beginPath();
                     this.ctx.moveTo(source.x, source.y);
                     this.ctx.lineTo(target.x, target.y);
                     this.ctx.stroke();
                 }
-
-                this.ctx.setLineDash([]);
                 this.ctx.restore();
+
                 this.ctx.globalAlpha = prevAlpha;
                 continue;
             }
@@ -702,22 +725,17 @@ export class GraphRenderer {
     }
 
     /**
-     * Renders a dashed stepped path for cross-lane ghost links with a small
-     * arrowhead at the target. Expects setLineDash and strokeStyle to already
-     * be configured by the caller.
+     * Traces (but does not stroke) the stepped path geometry for a cross-lane
+     * ghost link. Reused by both the glow casing and main dashed stroke.
      *
      * @param {import("../types.js").GraphNode} source Ghost merge node.
      * @param {import("../types.js").GraphNode} target Target commit node.
      */
-    renderGhostSteppedArrow(source, target) {
-        const targetRadius = NODE_RADIUS;
+    _traceGhostSteppedPath(source, target) {
         const goingDown = target.y >= source.y;
         const dir = goingDown ? 1 : -1;
-
-        // Route the horizontal segment near the source (ghost merge node),
-        // matching how normal cross-lane arrows route from merge commits.
         const midY = source.y + dir * (NODE_RADIUS + 10);
-        const endY = target.y - dir * (targetRadius + ARROW_LENGTH);
+        const endY = target.y - dir * (NODE_RADIUS + ARROW_LENGTH);
 
         const maxV = Math.min(
             Math.abs(midY - source.y),
@@ -726,16 +744,25 @@ export class GraphRenderer {
         const maxH = Math.abs(target.x - source.x) / 2;
         const r = Math.max(0, Math.min(LANE_CORNER_RADIUS, maxV, maxH));
 
-        // Stepped path: vertical → horizontal → vertical
         this.ctx.beginPath();
         this.ctx.moveTo(source.x, source.y);
         this.ctx.arcTo(source.x, midY, target.x, midY, r);
         this.ctx.arcTo(target.x, midY, target.x, endY, r);
         this.ctx.lineTo(target.x, endY);
-        this.ctx.stroke();
+    }
 
-        // Small arrowhead at target
-        const arrowTipY = target.y - dir * targetRadius;
+    /**
+     * Draws a small arrowhead at the target end of a ghost stepped link.
+     *
+     * @param {import("../types.js").GraphNode} source Ghost merge node.
+     * @param {import("../types.js").GraphNode} target Target commit node.
+     * @param {string} color Fill color for the arrowhead.
+     */
+    _drawGhostArrowhead(source, target, color) {
+        const goingDown = target.y >= source.y;
+        const dir = goingDown ? 1 : -1;
+        const arrowTipY = target.y - dir * NODE_RADIUS;
+
         this.ctx.save();
         this.ctx.setLineDash([]);
         this.ctx.translate(target.x, arrowTipY);
@@ -745,7 +772,7 @@ export class GraphRenderer {
         this.ctx.lineTo(-ARROW_LENGTH, ARROW_WIDTH / 2);
         this.ctx.lineTo(-ARROW_LENGTH, -ARROW_WIDTH / 2);
         this.ctx.closePath();
-        this.ctx.fillStyle = this.palette.mergeNode;
+        this.ctx.fillStyle = color;
         this.ctx.fill();
         this.ctx.restore();
     }
@@ -793,45 +820,64 @@ export class GraphRenderer {
     }
 
     /**
-     * Renders a ghost merge preview node as a dashed diamond outline.
+     * Renders a ghost merge preview node with a spectral projection effect:
+     * soft radial glow, gradient-filled diamond, and refined dashed outline.
      *
      * @param {{ x: number, y: number }} node Ghost merge node position.
      */
     renderGhostMergeNode(node) {
         const ctx = this.ctx;
-        const size = 10;
+        const size = MERGE_NODE_RADIUS + 1;
+        const color = this.palette.mergeNode;
+        const rgb = this._colorRGB(color);
 
         ctx.save();
-        ctx.globalAlpha = 0.4;
 
-        // Diamond shape
+        // 1. Radial glow — soft halo that gives the ghost a projected quality.
+        //    Slightly stronger in dark mode where glows read more naturally.
+        const glowRadius = size * 3;
+        const baseGlow = this.palette.isDark ? 0.18 : 0.12;
+        const glow = ctx.createRadialGradient(
+            node.x, node.y, size * 0.5,
+            node.x, node.y, glowRadius,
+        );
+        glow.addColorStop(0, `rgba(${rgb}, ${baseGlow})`);
+        glow.addColorStop(0.6, `rgba(${rgb}, ${baseGlow * 0.3})`);
+        glow.addColorStop(1, `rgba(${rgb}, 0)`);
+        ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.moveTo(node.x, node.y - size);
-        ctx.lineTo(node.x + size, node.y);
-        ctx.lineTo(node.x, node.y + size);
-        ctx.lineTo(node.x - size, node.y);
-        ctx.closePath();
-
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = this.palette.mergeNode;
-        ctx.stroke();
-
-        ctx.fillStyle = this.palette.background;
-        ctx.globalAlpha = 0.25;
+        ctx.arc(node.x, node.y, glowRadius, 0, Math.PI * 2);
         ctx.fill();
+
+        // 2. Diamond fill — radial gradient for a colored-glass look.
+        const fillGrad = ctx.createRadialGradient(
+            node.x, node.y, 0,
+            node.x, node.y, size,
+        );
+        fillGrad.addColorStop(0, `rgba(${rgb}, 0.22)`);
+        fillGrad.addColorStop(1, `rgba(${rgb}, 0.06)`);
+        ctx.fillStyle = fillGrad;
+        this.drawDiamond(node.x, node.y, size);
+        ctx.fill();
+
+        // 3. Dashed stroke — fine, deliberate outline.
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = `rgba(${rgb}, 0.55)`;
+        this.drawDiamond(node.x, node.y, size);
+        ctx.stroke();
 
         ctx.setLineDash([]);
         ctx.restore();
 
-        // Label
+        // 4. Label
         ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.font = "9px 'Geist', sans-serif";
+        ctx.globalAlpha = 0.4;
+        ctx.font = "600 8px -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillStyle = this.palette.mergeNode;
-        ctx.fillText("merge preview", node.x, node.y + size + 4);
+        ctx.fillStyle = color;
+        ctx.fillText("MERGE PREVIEW", node.x, node.y + size + 5);
         ctx.restore();
     }
 
@@ -1377,5 +1423,20 @@ export class GraphRenderer {
         this.ctx.lineTo(cx, cy + radius);
         this.ctx.lineTo(cx - radius, cy);
         this.ctx.closePath();
+    }
+
+    /**
+     * Extracts the "r, g, b" components from a hex color string
+     * for use in rgba() expressions on canvas gradients.
+     *
+     * @param {string} hex Hex color (e.g., "#1a7f37").
+     * @returns {string} RGB components (e.g., "26, 127, 55").
+     */
+    _colorRGB(hex) {
+        const h = hex.replace("#", "");
+        const r = parseInt(h.slice(0, 2), 16) || 0;
+        const g = parseInt(h.slice(2, 4), 16) || 0;
+        const b = parseInt(h.slice(4, 6), 16) || 0;
+        return `${r}, ${g}, ${b}`;
     }
 }
