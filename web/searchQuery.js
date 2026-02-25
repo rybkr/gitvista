@@ -13,6 +13,15 @@
  *   merge:only           — show only merge commits (2+ parents)
  *   merge:exclude        — exclude merge commits
  *   branch:<name>        — commits reachable from the named branch (BFS)
+ *   message:<value>      — match commit message only (substring, OR among multiples)
+ *   tag:<value>          — commits pointed at by a tag matching the value (substring)
+ *
+ * Negation: any qualifier or bare term can be prefixed with `-` to invert it.
+ *   -author:bot          — exclude commits by authors matching "bot"
+ *   -merge:only          — equivalent to merge:exclude
+ *   -fix                 — exclude commits matching "fix" in message/author/hash
+ * Negating date qualifiers (-after:, -before:) is not supported and produces a
+ * parse error.
  *
  * Bare (unqualified) tokens are treated as message/author/hash substrings.
  * Multiple values for the same qualifier are OR'd; different qualifiers AND.
@@ -22,15 +31,31 @@
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 /**
+ * @typedef {Object} ParseError
+ * @property {string} token The raw token that caused the issue.
+ * @property {string} message Human-readable explanation with guidance.
+ */
+
+/**
  * @typedef {Object} SearchQuery
  * @property {string} raw Original unmodified input string.
  * @property {string[]} textTerms Bare text terms (implicit message/author/hash search).
+ * @property {string[]} negatedTextTerms Negated bare text terms.
  * @property {string[]} authors Normalized author: qualifier values.
+ * @property {string[]} negatedAuthors Negated author: qualifier values.
  * @property {string[]} hashes Normalized hash: qualifier values.
+ * @property {string[]} negatedHashes Negated hash: qualifier values.
  * @property {Date | null} after Resolved lower date bound, or null.
  * @property {Date | null} before Resolved upper date bound, or null.
  * @property {'only' | 'exclude' | null} merge Merge commit filter mode.
+ * @property {boolean} negateMerge When true, inverts the merge filter logic.
  * @property {string | null} branch Branch name for reachability filtering.
+ * @property {boolean} negateBranch When true, inverts branch reachability.
+ * @property {string[]} messages Positive message: qualifier values.
+ * @property {string[]} negatedMessages Negated message: qualifier values.
+ * @property {string[]} tags Positive tag: qualifier patterns.
+ * @property {string[]} negatedTags Negated tag: qualifier patterns.
+ * @property {ParseError[]} errors Parse-time warnings for malformed qualifiers.
  * @property {boolean} isEmpty True when no meaningful criteria are present.
  */
 
@@ -140,7 +165,7 @@ function tokenize(raw) {
 // ── Known qualifiers ──────────────────────────────────────────────────────────
 
 /** Set of recognized qualifier prefixes (lowercase, without colon). */
-const KNOWN_QUALIFIERS = new Set(["author", "hash", "after", "before", "merge", "branch"]);
+const KNOWN_QUALIFIERS = new Set(["author", "hash", "after", "before", "merge", "branch", "message", "tag"]);
 
 // ── parseSearchQuery ──────────────────────────────────────────────────────────
 
@@ -157,12 +182,22 @@ export function parseSearchQuery(raw) {
     const query = {
         raw: trimmed,
         textTerms: [],
+        negatedTextTerms: [],
         authors: [],
+        negatedAuthors: [],
         hashes: [],
+        negatedHashes: [],
         after: null,
         before: null,
         merge: null,
+        negateMerge: false,
         branch: null,
+        negateBranch: false,
+        messages: [],
+        negatedMessages: [],
+        tags: [],
+        negatedTags: [],
+        errors: [],
         isEmpty: false,
     };
 
@@ -174,35 +209,110 @@ export function parseSearchQuery(raw) {
     const tokens = tokenize(trimmed);
 
     for (const token of tokens) {
-        // Check for qualifier: prefix
-        const colonIdx = token.indexOf(":");
+        // ── Detect negation prefix ──────────────────────────────────────────
+        let negated = false;
+        let workingToken = token;
+
+        if (workingToken.startsWith("-") && workingToken.length > 1) {
+            const rest = workingToken.slice(1);
+            const colonIdx = rest.indexOf(":");
+            if (colonIdx > 0) {
+                const maybeQualifier = rest.slice(0, colonIdx).toLowerCase();
+                if (KNOWN_QUALIFIERS.has(maybeQualifier)) {
+                    negated = true;
+                    workingToken = rest;
+                }
+            } else if (!rest.includes(":")) {
+                // Bare negated text: "-word" (no colon)
+                negated = true;
+                workingToken = rest;
+            }
+        }
+
+        // ── Check for qualifier: prefix ─────────────────────────────────────
+        const colonIdx = workingToken.indexOf(":");
         if (colonIdx > 0) {
-            const qualifier = token.slice(0, colonIdx).toLowerCase();
-            const value = token.slice(colonIdx + 1);
+            const qualifier = workingToken.slice(0, colonIdx).toLowerCase();
+            const value = workingToken.slice(colonIdx + 1);
 
             if (KNOWN_QUALIFIERS.has(qualifier)) {
                 switch (qualifier) {
                     case "author":
-                        if (value) query.authors.push(value.toLowerCase());
+                        if (value) {
+                            if (negated) query.negatedAuthors.push(value.toLowerCase());
+                            else query.authors.push(value.toLowerCase());
+                        }
                         break;
                     case "hash":
-                        if (value) query.hashes.push(value.toLowerCase());
+                        if (value) {
+                            if (negated) query.negatedHashes.push(value.toLowerCase());
+                            else query.hashes.push(value.toLowerCase());
+                        }
                         break;
                     case "after":
-                        // Last after: wins if multiple are specified
-                        query.after = parseDate(value) ?? query.after;
+                        if (negated) {
+                            query.errors.push({
+                                token: token,
+                                message: `Negating date qualifiers is not supported — use before: instead`,
+                            });
+                        } else if (value) {
+                            const parsed = parseDate(value);
+                            if (parsed) {
+                                query.after = parsed;
+                            } else {
+                                query.errors.push({
+                                    token: token,
+                                    message: `Invalid date "${value}" — use ISO (2024-01-15) or relative (7d, 2w, 3m, 1y)`,
+                                });
+                            }
+                        }
                         break;
                     case "before":
-                        query.before = parseDate(value) ?? query.before;
+                        if (negated) {
+                            query.errors.push({
+                                token: token,
+                                message: `Negating date qualifiers is not supported — use after: instead`,
+                            });
+                        } else if (value) {
+                            const parsed = parseDate(value);
+                            if (parsed) {
+                                query.before = parsed;
+                            } else {
+                                query.errors.push({
+                                    token: token,
+                                    message: `Invalid date "${value}" — use ISO (2024-01-15) or relative (7d, 2w, 3m, 1y)`,
+                                });
+                            }
+                        }
                         break;
                     case "merge":
-                        if (value === "only") query.merge = "only";
-                        else if (value === "exclude") query.merge = "exclude";
-                        else query.textTerms.push(token.toLowerCase()); // unrecognized value → bare text
+                        if (value === "only" || value === "exclude") {
+                            query.merge = value;
+                            query.negateMerge = negated;
+                        } else {
+                            query.errors.push({
+                                token: token,
+                                message: `Unknown merge filter "${value}" — use merge:only or merge:exclude`,
+                            });
+                        }
                         break;
                     case "branch":
-                        // Last branch: wins
-                        if (value) query.branch = value;
+                        if (value) {
+                            query.branch = value;
+                            query.negateBranch = negated;
+                        }
+                        break;
+                    case "message":
+                        if (value) {
+                            if (negated) query.negatedMessages.push(value.toLowerCase());
+                            else query.messages.push(value.toLowerCase());
+                        }
+                        break;
+                    case "tag":
+                        if (value) {
+                            if (negated) query.negatedTags.push(value.toLowerCase());
+                            else query.tags.push(value.toLowerCase());
+                        }
                         break;
                 }
                 continue;
@@ -210,20 +320,30 @@ export function parseSearchQuery(raw) {
             // Unrecognized qualifier (e.g. "foo:bar") → treat as bare text (forgiving)
         }
 
-        // Bare text term
-        const lower = token.toLowerCase();
-        if (lower) query.textTerms.push(lower);
+        // Bare text term (positive or negated)
+        const lower = workingToken.toLowerCase();
+        if (lower) {
+            if (negated) query.negatedTextTerms.push(lower);
+            else query.textTerms.push(lower);
+        }
     }
 
-    // Consider empty if nothing meaningful was parsed
+    // Consider empty if nothing meaningful was parsed (errors alone don't count)
     const hasContent =
         query.textTerms.length > 0 ||
+        query.negatedTextTerms.length > 0 ||
         query.authors.length > 0 ||
+        query.negatedAuthors.length > 0 ||
         query.hashes.length > 0 ||
+        query.negatedHashes.length > 0 ||
         query.after !== null ||
         query.before !== null ||
         query.merge !== null ||
-        query.branch !== null;
+        query.branch !== null ||
+        query.messages.length > 0 ||
+        query.negatedMessages.length > 0 ||
+        query.tags.length > 0 ||
+        query.negatedTags.length > 0;
 
     query.isEmpty = !hasContent;
     return query;
@@ -277,21 +397,20 @@ function buildReachableSet(tipHash, commits) {
  *
  * Multiple values for the same qualifier are OR'd (e.g. two author: tokens
  * mean "match either author"). Different qualifiers are AND'd (e.g. author:
- * and after: both must pass).
+ * and after: both must pass). Negated qualifiers exclude matching commits.
  *
  * @param {SearchQuery} query Parsed query.
  * @param {Map<string, string>} [branches] Live branch map (name → hash). Required for branch: qualifier.
  * @param {Map<string, import("./graph/types.js").GraphCommit>} [commits] All known commits. Required for branch: qualifier.
+ * @param {Map<string, string>} [tags] Tag map (name → commit hash). Required for tag: qualifier.
  * @returns {((commit: import("./graph/types.js").GraphCommit) => boolean) | null}
  */
-export function createSearchMatcher(query, branches, commits) {
+export function createSearchMatcher(query, branches, commits, tags) {
     if (query.isEmpty) return null;
 
     // Pre-compute the branch reachability set once (not per-commit).
     let reachableSet = null;
     if (query.branch !== null && branches && commits) {
-        // Resolve the branch name to a tip hash. Attempt both bare name and
-        // refs/heads/<name> so users can write "branch:main" without the prefix.
         const branchName = query.branch;
         const tipHash =
             branches.get(branchName) ??
@@ -299,6 +418,35 @@ export function createSearchMatcher(query, branches, commits) {
             branches.get("refs/remotes/" + branchName) ??
             null;
         reachableSet = tipHash ? buildReachableSet(tipHash, commits) : new Set();
+    }
+
+    // Pre-compute tag → commit hash sets for tag: qualifier.
+    let taggedCommits = null;
+    let negatedTaggedCommits = null;
+    if (query.tags.length > 0 || query.negatedTags.length > 0) {
+        if (tags) {
+            if (query.tags.length > 0) {
+                taggedCommits = new Set();
+                for (const [tagName, commitHash] of tags) {
+                    const lowerTag = tagName.toLowerCase();
+                    if (query.tags.some((t) => lowerTag.includes(t))) {
+                        taggedCommits.add(commitHash);
+                    }
+                }
+            }
+            if (query.negatedTags.length > 0) {
+                negatedTaggedCommits = new Set();
+                for (const [tagName, commitHash] of tags) {
+                    const lowerTag = tagName.toLowerCase();
+                    if (query.negatedTags.some((t) => lowerTag.includes(t))) {
+                        negatedTaggedCommits.add(commitHash);
+                    }
+                }
+            }
+        } else {
+            // No tags data — positive tag: matches nothing; negated tag: excludes nothing
+            if (query.tags.length > 0) taggedCommits = new Set();
+        }
     }
 
     /**
@@ -319,7 +467,7 @@ export function createSearchMatcher(query, branches, commits) {
         if (!commit) return false;
 
         // ── Text terms (implicit message/author/hash search) ──────────────────
-        // All text terms must match at least one of the commit fields (AND among terms).
+        // All positive text terms must match at least one field (AND among terms).
         if (query.textTerms.length > 0) {
             const msg = (commit.message ?? "").toLowerCase();
             const authorName = (commit.author?.name ?? commit.author?.Name ?? "").toLowerCase();
@@ -330,9 +478,22 @@ export function createSearchMatcher(query, branches, commits) {
                 const inMsg = msg.includes(term);
                 const inName = authorName.includes(term);
                 const inEmail = authorEmail.includes(term);
-                // Hash prefix match: only check start of hash (canonical Git behavior)
                 const inHash = hash.startsWith(term);
                 if (!inMsg && !inName && !inEmail && !inHash) return false;
+            }
+        }
+
+        // Negated text terms: exclude if ANY negated term matches any field.
+        if (query.negatedTextTerms.length > 0) {
+            const msg = (commit.message ?? "").toLowerCase();
+            const authorName = (commit.author?.name ?? commit.author?.Name ?? "").toLowerCase();
+            const authorEmail = (commit.author?.email ?? commit.author?.Email ?? "").toLowerCase();
+            const hash = (commit.hash ?? "").toLowerCase();
+
+            for (const term of query.negatedTextTerms) {
+                if (msg.includes(term) || authorName.includes(term) || authorEmail.includes(term) || hash.startsWith(term)) {
+                    return false;
+                }
             }
         }
 
@@ -346,11 +507,28 @@ export function createSearchMatcher(query, branches, commits) {
             if (!matchesAny) return false;
         }
 
+        // -author: any match → exclude
+        if (query.negatedAuthors.length > 0) {
+            const authorName = (commit.author?.name ?? commit.author?.Name ?? "").toLowerCase();
+            const authorEmail = (commit.author?.email ?? commit.author?.Email ?? "").toLowerCase();
+            const matchesAny = query.negatedAuthors.some(
+                (a) => authorName.includes(a) || authorEmail.includes(a),
+            );
+            if (matchesAny) return false;
+        }
+
         // ── hash: (OR among values) ───────────────────────────────────────────
         if (query.hashes.length > 0) {
             const hash = (commit.hash ?? "").toLowerCase();
             const matchesAny = query.hashes.some((h) => hash.startsWith(h));
             if (!matchesAny) return false;
+        }
+
+        // -hash: any match → exclude
+        if (query.negatedHashes.length > 0) {
+            const hash = (commit.hash ?? "").toLowerCase();
+            const matchesAny = query.negatedHashes.some((h) => hash.startsWith(h));
+            if (matchesAny) return false;
         }
 
         // ── after: (inclusive of the day boundary) ────────────────────────────
@@ -365,17 +543,50 @@ export function createSearchMatcher(query, branches, commits) {
             if (ts === null || ts > query.before.getTime()) return false;
         }
 
-        // ── merge: only | exclude ─────────────────────────────────────────────
+        // ── message: (OR among values) ────────────────────────────────────────
+        if (query.messages.length > 0) {
+            const msg = (commit.message ?? "").toLowerCase();
+            const matchesAny = query.messages.some((m) => msg.includes(m));
+            if (!matchesAny) return false;
+        }
+
+        // -message: any match → exclude
+        if (query.negatedMessages.length > 0) {
+            const msg = (commit.message ?? "").toLowerCase();
+            const matchesAny = query.negatedMessages.some((m) => msg.includes(m));
+            if (matchesAny) return false;
+        }
+
+        // ── merge: only | exclude (with negation inversion) ───────────────────
         if (query.merge !== null) {
             const parentCount = commit.parents?.length ?? 0;
             const isMerge = parentCount > 1;
-            if (query.merge === "only" && !isMerge) return false;
-            if (query.merge === "exclude" && isMerge) return false;
+            let mergeMode = query.merge;
+            // Negation inverts: -merge:only → exclude, -merge:exclude → only
+            if (query.negateMerge) {
+                mergeMode = mergeMode === "only" ? "exclude" : "only";
+            }
+            if (mergeMode === "only" && !isMerge) return false;
+            if (mergeMode === "exclude" && isMerge) return false;
         }
 
-        // ── branch: reachability ──────────────────────────────────────────────
+        // ── tag: (commit must be pointed at by a matching tag) ────────────────
+        if (taggedCommits !== null) {
+            if (!taggedCommits.has(commit.hash)) return false;
+        }
+
+        // -tag: exclude commits pointed at by a matching tag
+        if (negatedTaggedCommits !== null) {
+            if (negatedTaggedCommits.has(commit.hash)) return false;
+        }
+
+        // ── branch: reachability (with negation inversion) ────────────────────
         if (reachableSet !== null) {
-            if (!reachableSet.has(commit.hash)) return false;
+            if (query.negateBranch) {
+                if (reachableSet.has(commit.hash)) return false;
+            } else {
+                if (!reachableSet.has(commit.hash)) return false;
+            }
         }
 
         return true;
