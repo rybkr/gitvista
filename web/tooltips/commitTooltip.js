@@ -73,6 +73,13 @@ export class CommitTooltip extends Tooltip {
         this.metaEl = createTooltipElement("div", "commit-tooltip-meta");
         this.headerEl.append(this.hashRowEl, this.metaEl);
 
+        this.stashBadgeEl = createTooltipElement("div", "commit-tooltip-stash-badge");
+        this.stashBadgeEl.style.cssText = `
+            display:none;font-size:11px;font-weight:600;color:#a67c00;
+            background:rgba(212,160,23,0.12);border-radius:4px;padding:2px 6px;
+            margin-bottom:4px;width:fit-content;
+        `;
+
         this.messageEl = createTooltipElement("pre", "commit-tooltip-message");
 
         // Navigation row — CSS restores pointer-events so buttons are clickable
@@ -103,7 +110,7 @@ export class CommitTooltip extends Tooltip {
         });
 
         this.navEl.append(this.prevBtn, this.nextBtn);
-        tooltip.append(this.headerEl, this.messageEl, this.navEl);
+        tooltip.append(this.headerEl, this.stashBadgeEl, this.messageEl, this.navEl);
         document.body.appendChild(tooltip);
 
         this._wireCopyButton();
@@ -156,6 +163,14 @@ export class CommitTooltip extends Tooltip {
 
         this.hashEl.textContent = commit.hash.slice(0, 7);
         this.hashEl.title = commit.hash;
+
+        // Stash badge — shown prominently when hovering a stash node.
+        if (node.isStash && node.stashMessage) {
+            this.stashBadgeEl.textContent = node.stashMessage;
+            this.stashBadgeEl.style.display = "block";
+        } else {
+            this.stashBadgeEl.style.display = "none";
+        }
 
         const metaParts = [];
         if (commit.author?.name) {

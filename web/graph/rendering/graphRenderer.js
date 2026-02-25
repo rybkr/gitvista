@@ -441,6 +441,16 @@ export class GraphRenderer {
     }
 
     /**
+     * Returns the effective fill color for a stash node.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Stash commit node.
+     * @returns {string} CSS color string.
+     */
+    getStashColor(node) {
+        return this.palette.stashNode;
+    }
+
+    /**
      * Draws all links connecting commit and branch nodes.
      *
      * @param {Array<{source: string | import("../types.js").GraphNode, target: string | import("../types.js").GraphNode, kind?: string}>} links Link definitions from the force simulation.
@@ -785,6 +795,7 @@ export class GraphRenderer {
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
         const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
+        const isStash = !!node.isStash;
         // dimPhase: 0 = fully visible, 1 = fully dimmed. Lerped per-frame by
         // graphController for smooth transitions when search results change.
         const dimPhase = typeof node.dimPhase === "number" ? node.dimPhase : 0;
@@ -818,7 +829,13 @@ export class GraphRenderer {
         const previousAlpha = this.ctx.globalAlpha;
         const dimMultiplier = 1 - dimPhase * 0.85;
         this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01) * dimMultiplier;
-        if (isHighlighted) {
+        if (isStash) {
+            if (isHighlighted) {
+                this.renderHighlightedStash(node, drawRadius);
+            } else {
+                this.renderNormalStash(node, drawRadius);
+            }
+        } else if (isHighlighted) {
             if (isMerge) {
                 this.renderHighlightedMerge(node, drawRadius);
             } else {
@@ -848,9 +865,11 @@ export class GraphRenderer {
         // HEAD accent ring — rendered even when dimmed so HEAD is always
         // identifiable during search. Alpha scaled by dimMultiplier.
         if (isHead) {
-            const headColor = isMerge
-                ? this.getMergeColor(node)
-                : this.getCommitColor(node);
+            const headColor = isStash
+                ? this.getStashColor(node)
+                : isMerge
+                    ? this.getMergeColor(node)
+                    : this.getCommitColor(node);
             this.ctx.save();
             this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.45 * dimMultiplier;
             this.ctx.lineWidth = 1.5;
@@ -990,6 +1009,78 @@ export class GraphRenderer {
     }
 
     /**
+     * Renders a non-highlighted stash node with a dashed border ring.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Stash commit node.
+     * @param {number} radius Node radius.
+     */
+    renderNormalStash(node, radius) {
+        this.ctx.fillStyle = this.getStashColor(node);
+        this.applyShadow();
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.clearShadow();
+
+        // Dashed outer ring to distinguish stash nodes from regular commits.
+        this.ctx.save();
+        this.ctx.lineWidth = 1.5;
+        this.ctx.strokeStyle = this.palette.stashNodeBorder;
+        this.ctx.setLineDash([3, 3]);
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, radius + 2, 0, Math.PI * 2);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        this.ctx.restore();
+    }
+
+    /**
+     * Renders a highlighted stash node with glow, gradient, and dashed ring.
+     *
+     * @param {import("../types.js").GraphNodeCommit} node Stash commit node.
+     * @param {number} radius Node radius.
+     */
+    renderHighlightedStash(node, radius) {
+        const baseColor = this.getStashColor(node);
+        const hl = computeHighlightColors(baseColor, this.palette.isDark);
+
+        this.ctx.save();
+        this.ctx.fillStyle = hl.glow;
+        this.ctx.globalAlpha = 0.35;
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, radius + 7, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
+
+        const gradient = this.ctx.createRadialGradient(
+            node.x, node.y, radius * 0.2,
+            node.x, node.y, radius,
+        );
+        gradient.addColorStop(0, hl.core);
+        gradient.addColorStop(0.7, hl.highlight);
+        gradient.addColorStop(1, hl.ring);
+
+        this.ctx.fillStyle = gradient;
+        this.applyShadow();
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.clearShadow();
+
+        // Dashed highlight ring.
+        this.ctx.save();
+        this.ctx.lineWidth = 1.25;
+        this.ctx.strokeStyle = hl.highlight;
+        this.ctx.globalAlpha = 0.8;
+        this.ctx.setLineDash([3, 3]);
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, radius + 2, 0, Math.PI * 2);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        this.ctx.restore();
+    }
+
+    /**
      * Draws the text label alongside a commit node.
      *
      * @param {import("../types.js").GraphNodeCommit} node Commit node to annotate.
@@ -1022,9 +1113,12 @@ export class GraphRenderer {
         // Progressive detail: each tier adds text below the previous, tracking Y with detailY.
         let detailY = labelY + 14;
 
-        // Tier 1 (zoom >= 1.5): first line of commit message
-        if (zoomK >= COMMIT_MESSAGE_ZOOM_THRESHOLD && node.commit.message) {
-            const firstLine = node.commit.message.split("\n")[0].trim();
+        // Tier 1 (zoom >= 1.5): first line of commit message (or stash message)
+        const messageSource = node.isStash && node.stashMessage
+            ? node.stashMessage
+            : node.commit.message;
+        if (zoomK >= COMMIT_MESSAGE_ZOOM_THRESHOLD && messageSource) {
+            const firstLine = messageSource.split("\n")[0].trim();
             const maxChars = layoutMode === "lane" ? 30 : COMMIT_MESSAGE_MAX_CHARS;
             const truncated = firstLine.length > maxChars
                 ? firstLine.slice(0, maxChars) + "…"
