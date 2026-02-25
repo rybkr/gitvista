@@ -404,6 +404,7 @@ export class LaneStrategy {
 		// Internal children (index commit, untracked commit) go to a side lane.
 		const stashParentLane = new Map();  // stash hash → lane of first parent
 		const stashInternalHashes = new Set();
+		const stashInternalAvoidLanes = new Map(); // internal hash → Set of lanes to skip
 		for (const node of commitNodes) {
 			if (!node.isStash) continue;
 			const c = commits.get(node.hash);
@@ -415,6 +416,9 @@ export class LaneStrategy {
 			for (let i = 1; i < c.parents.length; i++) {
 				if (commitHashes.has(c.parents[i])) {
 					stashInternalHashes.add(c.parents[i]);
+					const skip = new Set([0]);
+					if (parentLane !== undefined) skip.add(parentLane);
+					stashInternalAvoidLanes.set(c.parents[i], skip);
 				}
 			}
 		}
@@ -442,12 +446,13 @@ export class LaneStrategy {
 				const isInternal = stashInternalHashes.has(hash);
 				for (let i = 0; i < activeLanes.length; i++) {
 					if (activeLanes[i] === hash) {
+						if (isInternal && stashInternalAvoidLanes.get(hash)?.has(i)) continue;
 						lane = i;
 						break;
 					}
 				}
 				if (lane === -1) {
-					lane = this._findFreeLane(activeLanes, isInternal);
+					lane = this._findFreeLane(activeLanes, isInternal ? stashInternalAvoidLanes.get(hash) : null);
 				}
 				this.commitToLane.set(hash, lane);
 			}
@@ -489,7 +494,7 @@ export class LaneStrategy {
 						}
 					}
 					if (!alreadyExpected) {
-						const mergeLane = this._findFreeLane(activeLanes, stashInternalHashes.has(parentHash));
+						const mergeLane = this._findFreeLane(activeLanes, stashInternalAvoidLanes.get(parentHash) ?? null);
 						activeLanes[mergeLane] = parentHash;
 					}
 				}
@@ -521,12 +526,12 @@ export class LaneStrategy {
 	 * Appends a new slot if none are free.
 	 *
 	 * @param {Array<string|null>} activeLanes Active lane tracking array
-	 * @param {boolean} [skipMainLane=false] When true, skip lane 0 (reserved for main).
+	 * @param {Set<number>|null} [skipLanes=null] Lane indices to skip.
 	 * @returns {number} Index of the free lane
 	 */
-	_findFreeLane(activeLanes, skipMainLane = false) {
-		const start = skipMainLane ? 1 : 0;
-		for (let i = start; i < activeLanes.length; i++) {
+	_findFreeLane(activeLanes, skipLanes = null) {
+		for (let i = 0; i < activeLanes.length; i++) {
+			if (skipLanes?.has(i)) continue;
 			if (activeLanes[i] === null) return i;
 		}
 		activeLanes.push(null);
