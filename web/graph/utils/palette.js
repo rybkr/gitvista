@@ -69,6 +69,10 @@ export function buildPalette(element) {
         tagLink: read("--tag-link-color", "#9a6700"),
         stashNode: read("--stash-node-color", "#d4a017"),
         stashNodeBorder: read("--stash-node-border-color", "#a67c00"),
+        indexNode: read("--index-node-color", "#5e8ca0"),
+        indexNodeBorder: read("--index-node-border-color", "#3d6b80"),
+        untrackedNode: read("--untracked-node-color", "#c47a6c"),
+        untrackedNodeBorder: read("--untracked-node-border-color", "#a05a4c"),
         gridDot: read("--grid-dot-color", "rgba(15, 20, 25, 0.06)"),
     };
 }
