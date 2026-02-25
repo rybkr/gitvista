@@ -441,8 +441,11 @@ export class LaneStrategy {
 			} else {
 				const firstParent = parents[0];
 
-				// First parent continues this lane only if it isn't owned by a different lane
-				if (!commitOwner.has(firstParent) || commitOwner.get(firstParent) === lane) {
+				// If this commit was assigned by Phase 1, its first parent is on
+				// the same chain — always continue the lane.
+				if (commitOwner.get(hash) === lane) {
+					activeLanes[lane] = firstParent;
+				} else if (!commitOwner.has(firstParent) || commitOwner.get(firstParent) === lane) {
 					activeLanes[lane] = firstParent;
 				} else {
 					activeLanes[lane] = null; // Parent belongs to another branch's lane
