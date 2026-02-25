@@ -389,9 +389,13 @@ type FileDiff struct {
 type ConflictType string
 
 const (
-	ConflictNone         ConflictType = "none"
-	ConflictConflicting  ConflictType = "conflicting"
-	ConflictBothAdded    ConflictType = "both_added"
+	// ConflictNone represents no merge conflict.
+	ConflictNone ConflictType = "none"
+	// ConflictConflicting represents multiple conflicting edits.
+	ConflictConflicting ConflictType = "conflicting"
+	// ConflictBothAdded represents areas that were both added in a merge.
+	ConflictBothAdded ConflictType = "both_added"
+	// ConflictDeleteModify represents a hunk that was removed in one branch and modded in another.
 	ConflictDeleteModify ConflictType = "delete_modify"
 )
 

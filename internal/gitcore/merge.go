@@ -92,9 +92,9 @@ func MergePreview(repo *Repository, oursHash, theirsHash Hash) (*MergePreviewRes
 
 	var baseTree Hash
 	if baseHash != "" {
-		baseCommit, err := repo.GetCommit(baseHash)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get base commit: %w", err)
+		baseCommit, _err := repo.GetCommit(baseHash)
+		if _err != nil {
+			return nil, fmt.Errorf("failed to get base commit: %w", _err)
 		}
 		baseTree = baseCommit.Tree
 	}
