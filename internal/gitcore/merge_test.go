@@ -14,12 +14,12 @@ func addCommit(repo *Repository, c *Commit) {
 // makeCommit creates a minimal Commit with the given hash, parents, tree, and a fixed timestamp offset.
 func makeCommit(hash Hash, parents []Hash, tree Hash, minutesAgo int) *Commit {
 	return &Commit{
-		ID:      hash,
-		Tree:    tree,
-		Parents: parents,
-		Author:  Signature{Name: "Test", Email: "test@test.com", When: time.Now().Add(-time.Duration(minutesAgo) * time.Minute)},
+		ID:        hash,
+		Tree:      tree,
+		Parents:   parents,
+		Author:    Signature{Name: "Test", Email: "test@test.com", When: time.Now().Add(-time.Duration(minutesAgo) * time.Minute)},
 		Committer: Signature{Name: "Test", Email: "test@test.com", When: time.Now().Add(-time.Duration(minutesAgo) * time.Minute)},
-		Message: "commit " + string(hash[:7]),
+		Message:   "commit " + string(hash[:7]),
 	}
 }
 
