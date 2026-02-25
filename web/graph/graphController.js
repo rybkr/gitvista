@@ -1105,11 +1105,6 @@ export function createGraphController(rootElement, options = {}) {
             hideTooltip();
         }
 
-        // Apply the active compound predicate (A2 search + A3 filters) to set
-        // node.dimmed.  This runs after reconciliation so newly-created nodes are
-        // included, and rebuilds the predicate so BFS data is never stale.
-        applyDimmingFromPredicate();
-
         const linkStructureChanged = previousLinkCount !== allLinks.length;
         const structureChanged =
             commitReconciliation.changed ||
@@ -1130,6 +1125,11 @@ export function createGraphController(rootElement, options = {}) {
         // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
         snapBranchesToTargets(branchReconciliation.alignments);
         snapTagsToTargets(tagReconciliation.alignments);
+
+        // Apply the active compound predicate (A2 search + A3 filters) to set
+        // node.dimmed.  This runs after layout so lane segments are rebuilt and
+        // newly-created nodes are correctly included in isolation predicates.
+        applyDimmingFromPredicate();
 
         // Center on latest commit if auto-centering is requested
         if (layoutStrategy.shouldAutoCenter()) {
