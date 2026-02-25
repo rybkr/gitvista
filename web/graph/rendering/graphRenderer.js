@@ -71,6 +71,7 @@ export class GraphRenderer {
         const tags = state.tags ?? new Map();
 
         const laneInfo = state.laneInfo ?? [];
+        const mergeBaseHash = state.mergePreview?.mergeBaseHash ?? "";
 
         this.clear(viewportWidth, viewportHeight);
         this.renderDotGrid(viewportWidth, viewportHeight, zoomTransform);
@@ -82,7 +83,7 @@ export class GraphRenderer {
 
         this.renderLinks(links, nodes);
         const layoutMode = state.layoutMode ?? "force";
-        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode);
+        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash);
 
         if (laneInfo.length > 0) {
             this.renderLaneHeaders(laneInfo);
@@ -693,7 +694,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode) {
+    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash) {
         // Build a reverse map: commit hash -> array of tag names pointing at it.
         const tagsByCommit = new Map();
         if (tags) {
@@ -709,7 +710,7 @@ export class GraphRenderer {
 
         for (const node of nodes) {
             if (node.type === "commit") {
-                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode);
+                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, mergeBaseHash);
             }
         }
         for (const node of nodes) {
@@ -778,10 +779,11 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNodeCommit} node Commit node to paint.
      * @param {string|null} highlightKey Current highlight identifier.
      */
-    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode) {
+    renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, mergeBaseHash) {
         const isHighlighted = highlightKey && node.hash === highlightKey;
         const isHead = headHash && node.hash === headHash;
         const isHovered = hoverNode && node === hoverNode;
+        const isMergeBase = mergeBaseHash && node.hash === mergeBaseHash;
         const isMerge = (node.commit?.parents?.length ?? 0) >= 2;
         // node.dimmed is set by applyDimmingFromPredicate() in graphController
         // when a search/filter is active. We reduce alpha to 15% so non-matching
@@ -858,6 +860,24 @@ export class GraphRenderer {
             this.ctx.beginPath();
             this.ctx.arc(node.x, node.y, drawRadius + 3.5, 0, Math.PI * 2);
             this.ctx.stroke();
+            this.ctx.restore();
+        }
+
+        // Merge base dashed ring — highlights the common ancestor during merge
+        // preview. Uses a dashed stroke to distinguish from HEAD's solid ring.
+        if (isMergeBase) {
+            const baseColor = isMerge
+                ? this.getMergeColor(node)
+                : this.getCommitColor(node);
+            this.ctx.save();
+            this.ctx.globalAlpha = previousAlpha * spawnAlpha * 0.6 * dimMultiplier;
+            this.ctx.lineWidth = 1.5;
+            this.ctx.strokeStyle = baseColor;
+            this.ctx.setLineDash([3, 3]);
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, drawRadius + 5, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
             this.ctx.restore();
         }
 

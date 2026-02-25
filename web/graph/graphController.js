@@ -1375,6 +1375,7 @@ export function createGraphController(rootElement, options = {}) {
                 tags: state.tags,
                 layoutMode: state.layoutMode,
                 laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
+                mergePreview: state.mergePreview,
             });
         });
     }

@@ -393,6 +393,8 @@ const (
 	ConflictConflicting  ConflictType = "conflicting"
 	ConflictBothAdded    ConflictType = "both_added"
 	ConflictDeleteModify ConflictType = "delete_modify"
+	ConflictRenameModify ConflictType = "rename_modify"
+	ConflictRenameRename ConflictType = "rename_rename"
 )
 
 // MergePreviewEntry represents a single file in the merge preview.

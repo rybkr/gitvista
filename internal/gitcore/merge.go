@@ -119,7 +119,96 @@ func MergePreview(repo *Repository, oursHash, theirsHash Hash) (*MergePreviewRes
 		theirsMap[e.Path] = e
 	}
 
-	// Union of all changed paths.
+	entries := make([]MergePreviewEntry, 0, len(oursMap)+len(theirsMap))
+	conflicts := 0
+
+	// Build secondary indexes: OldPath → DiffEntry for renamed entries.
+	// These allow detecting rename-vs-modify and rename-vs-rename conflicts
+	// that the primary path-based index misses.
+	oursOldPaths := make(map[string]DiffEntry)
+	for _, e := range oursDiff {
+		if e.Status == DiffStatusRenamed {
+			oursOldPaths[e.OldPath] = e
+		}
+	}
+	theirsOldPaths := make(map[string]DiffEntry)
+	for _, e := range theirsDiff {
+		if e.Status == DiffStatusRenamed {
+			theirsOldPaths[e.OldPath] = e
+		}
+	}
+
+	// Rename-vs-rename: both sides renamed the same original path.
+	for oldPath, oursEntry := range oursOldPaths {
+		theirsEntry, ok := theirsOldPaths[oldPath]
+		if !ok {
+			continue
+		}
+		// Same target and same content — trivial merge, let the main loop handle it.
+		if oursEntry.Path == theirsEntry.Path && oursEntry.NewHash == theirsEntry.NewHash {
+			continue
+		}
+		entries = append(entries, MergePreviewEntry{
+			Path:         oursEntry.Path,
+			ConflictType: ConflictRenameRename,
+			OursStatus:   oursEntry.Status.String(),
+			TheirsStatus: theirsEntry.Status.String(),
+			OursHash:     oursEntry.NewHash,
+			TheirsHash:   theirsEntry.NewHash,
+			BaseHash:     oursEntry.OldHash,
+		})
+		conflicts++
+		delete(oursMap, oursEntry.Path)
+		delete(theirsMap, theirsEntry.Path)
+	}
+
+	// Rename-vs-modify: ours renamed a file, theirs modified the original path.
+	for oldPath, oursEntry := range oursOldPaths {
+		if _, gone := oursMap[oursEntry.Path]; !gone {
+			continue // already handled by rename-vs-rename
+		}
+		theirsEntry, ok := theirsMap[oldPath]
+		if !ok || theirsEntry.Status == DiffStatusRenamed {
+			continue
+		}
+		entries = append(entries, MergePreviewEntry{
+			Path:         oursEntry.Path,
+			ConflictType: ConflictRenameModify,
+			OursStatus:   oursEntry.Status.String(),
+			TheirsStatus: theirsEntry.Status.String(),
+			OursHash:     oursEntry.NewHash,
+			TheirsHash:   theirsEntry.NewHash,
+			BaseHash:     oursEntry.OldHash,
+		})
+		conflicts++
+		delete(oursMap, oursEntry.Path)
+		delete(theirsMap, oldPath)
+	}
+
+	// Rename-vs-modify: theirs renamed a file, ours modified the original path.
+	for oldPath, theirsEntry := range theirsOldPaths {
+		if _, gone := theirsMap[theirsEntry.Path]; !gone {
+			continue // already handled by rename-vs-rename
+		}
+		oursEntry, ok := oursMap[oldPath]
+		if !ok || oursEntry.Status == DiffStatusRenamed {
+			continue
+		}
+		entries = append(entries, MergePreviewEntry{
+			Path:         theirsEntry.Path,
+			ConflictType: ConflictRenameModify,
+			OursStatus:   oursEntry.Status.String(),
+			TheirsStatus: theirsEntry.Status.String(),
+			OursHash:     oursEntry.NewHash,
+			TheirsHash:   theirsEntry.NewHash,
+			BaseHash:     theirsEntry.OldHash,
+		})
+		conflicts++
+		delete(oursMap, oldPath)
+		delete(theirsMap, theirsEntry.Path)
+	}
+
+	// Union of remaining changed paths.
 	allPaths := make(map[string]struct{})
 	for p := range oursMap {
 		allPaths[p] = struct{}{}
@@ -127,9 +216,6 @@ func MergePreview(repo *Repository, oursHash, theirsHash Hash) (*MergePreviewRes
 	for p := range theirsMap {
 		allPaths[p] = struct{}{}
 	}
-
-	entries := make([]MergePreviewEntry, 0, len(allPaths))
-	conflicts := 0
 
 	for path := range allPaths {
 		oursEntry, inOurs := oursMap[path]
