@@ -277,6 +277,69 @@ func TestComputeThreeWayDiff_LargeFile(t *testing.T) {
 	}
 }
 
+// TestComputeThreeWayDiff_MultiBlockOverlap tests that a large ours block
+// overlapping with multiple theirs blocks produces a single conflict region
+// with all content from both sides, without double-counting base lines.
+func TestComputeThreeWayDiff_MultiBlockOverlap(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	baseContent := "a\nb\nc\nd\ne\nf\n"
+	// Ours replaces lines b-e (large block).
+	oursContent := "a\nX\nY\nf\n"
+	// Theirs makes two small changes within that range.
+	theirsContent := "a\nB-theirs\nc\nD-theirs\ne\nf\n"
+
+	base := createBlob(t, repo, []byte(baseContent))
+	ours := createBlob(t, repo, []byte(oursContent))
+	theirs := createBlob(t, repo, []byte(theirsContent))
+
+	result, err := ComputeThreeWayDiff(repo, base, ours, theirs, "multi.txt")
+	if err != nil {
+		t.Fatalf("ComputeThreeWayDiff failed: %v", err)
+	}
+
+	// Should have exactly 1 conflict region (not multiple with double-counted lines).
+	if result.Stats.ConflictRegions != 1 {
+		t.Errorf("expected 1 conflict region, got %d", result.Stats.ConflictRegions)
+	}
+
+	// Verify no base line appears in multiple regions.
+	coveredLines := make(map[int]bool)
+	for _, r := range result.Regions {
+		for i := 0; i < len(r.BaseLines); i++ {
+			line := r.BaseStart - 1 + i // convert 1-based to 0-based
+			if coveredLines[line] {
+				t.Errorf("base line %d appears in multiple regions", line)
+			}
+			coveredLines[line] = true
+		}
+	}
+}
+
+// TestComputeThreeWayDiff_ConflictTypeDeferred tests that ConflictType
+// is set based on actual diff results, not pre-classified for normal cases.
+func TestComputeThreeWayDiff_ConflictTypeDeferred(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	// Non-overlapping changes should NOT be classified as conflicting.
+	baseContent := "line1\nline2\nline3\nline4\n"
+	oursContent := "OURS\nline2\nline3\nline4\n"
+	theirsContent := "line1\nline2\nline3\nTHEIRS\n"
+
+	base := createBlob(t, repo, []byte(baseContent))
+	ours := createBlob(t, repo, []byte(oursContent))
+	theirs := createBlob(t, repo, []byte(theirsContent))
+
+	result, err := ComputeThreeWayDiff(repo, base, ours, theirs, "clean.txt")
+	if err != nil {
+		t.Fatalf("ComputeThreeWayDiff failed: %v", err)
+	}
+
+	if result.ConflictType != ConflictNone {
+		t.Errorf("expected ConflictNone for non-overlapping changes, got %s", result.ConflictType)
+	}
+}
+
 func TestEditsToBlocks_PureInsert(t *testing.T) {
 	// Test that pure inserts (no deletes) produce valid blocks.
 	oldLines := []string{"a", "b", "c"}

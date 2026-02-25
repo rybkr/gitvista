@@ -72,7 +72,8 @@ func ComputeThreeWayDiff(repo *Repository, baseHash, oursHash, theirsHash Hash, 
 		Regions: make([]MergeRegion, 0),
 	}
 
-	// Determine conflict type based on hash patterns.
+	// Pre-classify conflict type based on hash patterns for structural conflicts.
+	// For the normal case (all hashes present), defer to after the merge walk.
 	switch {
 	case baseHash == "" && oursHash != "" && theirsHash != "":
 		result.ConflictType = ConflictBothAdded
@@ -80,8 +81,6 @@ func ComputeThreeWayDiff(repo *Repository, baseHash, oursHash, theirsHash Hash, 
 		result.ConflictType = ConflictDeleteModify
 	case oursHash != "" && theirsHash == "":
 		result.ConflictType = ConflictDeleteModify
-	default:
-		result.ConflictType = ConflictConflicting
 	}
 
 	// Load blob contents — empty hash means empty content (added/deleted file).
@@ -137,6 +136,15 @@ func ComputeThreeWayDiff(repo *Repository, baseHash, oursHash, theirsHash Hash, 
 	// Compute stats.
 	result.Stats = computeThreeWayStats(result.Regions)
 
+	// Set ConflictType based on actual diff results when not pre-classified.
+	if result.ConflictType == "" {
+		if result.Stats.ConflictRegions > 0 {
+			result.ConflictType = ConflictConflicting
+		} else {
+			result.ConflictType = ConflictNone
+		}
+	}
+
 	return result, nil
 }
 
@@ -180,22 +188,50 @@ func mergeWalk(baseLines []string, blocksOurs, blocksTheirs []editBlock) []Merge
 					basePos = overlapStart
 				}
 
-				// Determine the combined range.
+				// Determine the combined range, consuming ALL overlapping
+				// blocks from both sides (not just one from each).
 				overlapEnd := nextOurs.baseEnd
 				if nextTheirs.baseEnd > overlapEnd {
 					overlapEnd = nextTheirs.baseEnd
 				}
 
+				var combinedOurs []string
+				combinedOurs = append(combinedOurs, blocksOurs[idxOurs].newLines...)
+				oursStart := blocksOurs[idxOurs].baseStart
+				oursEnd := blocksOurs[idxOurs].baseEnd
+				idxOurs++
+				for idxOurs < len(blocksOurs) && blockInRange(blocksOurs[idxOurs], overlapEnd) {
+					combinedOurs = append(combinedOurs, blocksOurs[idxOurs].newLines...)
+					if blocksOurs[idxOurs].baseEnd > overlapEnd {
+						overlapEnd = blocksOurs[idxOurs].baseEnd
+					}
+					oursEnd = blocksOurs[idxOurs].baseEnd
+					idxOurs++
+				}
+
+				var combinedTheirs []string
+				combinedTheirs = append(combinedTheirs, blocksTheirs[idxTheirs].newLines...)
+				theirsStart := blocksTheirs[idxTheirs].baseStart
+				theirsEnd := blocksTheirs[idxTheirs].baseEnd
+				idxTheirs++
+				for idxTheirs < len(blocksTheirs) && blockInRange(blocksTheirs[idxTheirs], overlapEnd) {
+					combinedTheirs = append(combinedTheirs, blocksTheirs[idxTheirs].newLines...)
+					if blocksTheirs[idxTheirs].baseEnd > overlapEnd {
+						overlapEnd = blocksTheirs[idxTheirs].baseEnd
+					}
+					theirsEnd = blocksTheirs[idxTheirs].baseEnd
+					idxTheirs++
+				}
+
 				// Check if both sides made identical changes.
-				if slicesEqual(nextOurs.newLines, nextTheirs.newLines) &&
-					nextOurs.baseStart == nextTheirs.baseStart &&
-					nextOurs.baseEnd == nextTheirs.baseEnd {
+				if slicesEqual(combinedOurs, combinedTheirs) &&
+					oursStart == theirsStart && oursEnd == theirsEnd {
 					// Identical change — emit as ours (clean).
 					regions = append(regions, MergeRegion{
 						Type:      MergeRegionOurs,
 						BaseStart: basePos + 1,
 						BaseLines: copySlice(baseLines, basePos, overlapEnd),
-						OursLines: nextOurs.newLines,
+						OursLines: combinedOurs,
 					})
 				} else {
 					// True conflict.
@@ -203,14 +239,12 @@ func mergeWalk(baseLines []string, blocksOurs, blocksTheirs []editBlock) []Merge
 						Type:        MergeRegionConflict,
 						BaseStart:   basePos + 1,
 						BaseLines:   copySlice(baseLines, basePos, overlapEnd),
-						OursLines:   nextOurs.newLines,
-						TheirsLines: nextTheirs.newLines,
+						OursLines:   combinedOurs,
+						TheirsLines: combinedTheirs,
 					})
 				}
 
 				basePos = overlapEnd
-				idxOurs++
-				idxTheirs++
 				continue
 			}
 
@@ -288,6 +322,13 @@ func blocksOverlap(a, b editBlock) bool {
 		(b.baseStart == b.baseEnd && b.baseStart >= a.baseStart && b.baseStart <= a.baseEnd)
 }
 
+// blockInRange reports whether an edit block falls within or touches the given
+// overlap end position. Used to consume all blocks that belong to an overlap.
+func blockInRange(b editBlock, overlapEnd int) bool {
+	return b.baseStart < overlapEnd ||
+		(b.baseStart == b.baseEnd && b.baseStart <= overlapEnd)
+}
+
 // appendContext appends a context region for base lines [from, to).
 func appendContext(regions []MergeRegion, baseLines []string, from, to int) []MergeRegion {
 	if from >= to {
@@ -339,6 +380,10 @@ func computeThreeWayStats(regions []MergeRegion) ThreeWayDiffStats {
 			stats.TheirsAdded += len(r.TheirsLines)
 		case MergeRegionConflict:
 			stats.ConflictRegions++
+			stats.OursDeleted += len(r.BaseLines)
+			stats.OursAdded += len(r.OursLines)
+			stats.TheirsDeleted += len(r.BaseLines)
+			stats.TheirsAdded += len(r.TheirsLines)
 		}
 	}
 	return stats

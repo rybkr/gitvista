@@ -327,7 +327,7 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleBulkDiffStats(w, r)
 	case remainder == "/working-tree/diff" && r.Method == http.MethodGet:
 		s.handleWorkingTreeDiff(w, r)
-	case strings.HasPrefix(remainder, "/merge-preview/file") && r.Method == http.MethodGet:
+	case remainder == "/merge-preview/file" && r.Method == http.MethodGet:
 		s.handleMergePreviewFileDiff(w, r)
 	case remainder == "/merge-preview" && r.Method == http.MethodGet:
 		s.handleMergePreview(w, r)

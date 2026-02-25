@@ -4319,17 +4319,17 @@ canvas {
     gap: 8px;
     padding: 6px 14px;
     border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
-    cursor: default;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
 }
 
 .merge-preview-file-item:hover {
-    background: rgba(14, 165, 233, 0.05);
+    background: color-mix(in srgb, var(--node-color) 8%, transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-    .merge-preview-file-item:hover {
-        background: rgba(88, 166, 255, 0.06);
-    }
+.merge-preview-file-item.is-selected {
+    background: color-mix(in srgb, var(--node-color) 15%, transparent);
+    border-left: 2px solid var(--node-color);
 }
 
 .merge-preview-badge {
@@ -4445,21 +4445,6 @@ canvas {
     background: rgba(209, 36, 47, 0.08);
     border: 1px solid rgba(209, 36, 47, 0.2);
     border-radius: 6px;
-}
-
-/* Clickable file items */
-.merge-preview-file-item {
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-}
-
-.merge-preview-file-item:hover {
-    background: color-mix(in srgb, var(--node-color) 8%, transparent);
-}
-
-.merge-preview-file-item.is-selected {
-    background: color-mix(in srgb, var(--node-color) 15%, transparent);
-    border-left: 2px solid var(--node-color);
 }
 
 /* Three-way diff viewer */

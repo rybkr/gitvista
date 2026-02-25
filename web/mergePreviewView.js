@@ -38,6 +38,7 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
         loading: false,
         error: null,
         generation: 0,
+        fileClickGeneration: 0,
         // Preview commit hashes from the API response
         previewHashes: null,
         // Detail view state
@@ -56,6 +57,7 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
     async function handleFileClick(entry) {
         if (!state.previewHashes) return;
 
+        const gen = ++state.fileClickGeneration;
         state.selectedPath = entry.path;
         state.showingDetail = true;
         render();
@@ -82,11 +84,13 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
 
         try {
             const resp = await apiFetch(url);
+            if (gen !== state.fileClickGeneration) return;
             if (!resp.ok) {
                 const text = await resp.text();
                 throw new Error(text || `HTTP ${resp.status}`);
             }
             const data = await resp.json();
+            if (gen !== state.fileClickGeneration) return;
 
             if (data.mode === "three-way") {
                 unifiedViewer.close();
@@ -98,6 +102,7 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
                 unifiedViewer.show(data);
             }
         } catch (err) {
+            if (gen !== state.fileClickGeneration) return;
             if (isThreeWay) {
                 threeWayViewer.showError(`Failed to load diff: ${err.message}`);
             } else {
@@ -240,7 +245,6 @@ export function createMergePreviewView({ getBranches, onPreviewResult }) {
                 item.classList.add("is-selected");
             }
 
-            item.style.cursor = "pointer";
             item.addEventListener("click", () => handleFileClick(entry));
 
             const config = CONFLICT_CONFIG[entry.conflictType] || CONFLICT_CONFIG.none;

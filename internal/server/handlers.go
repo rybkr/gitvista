@@ -714,11 +714,16 @@ func (s *Server) handleMergePreviewFileDiff(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Determine mode: if only one side changed, use unified diff.
+	// Determine mode: unified when only one side changed (same hash as base),
+	// three-way when both sides changed or one side deleted (empty hash != base).
+	oursUnchanged := oursHash == baseHash // includes both-empty (root add)
+	theirsUnchanged := theirsHash == baseHash
+
 	var response any
-	if oursHash == "" || oursHash == baseHash {
-		// Only theirs changed.
-		fileDiff, err := gitcore.ComputeFileDiff(repo, baseHash, theirsHash, filePath, gitcore.DefaultContextLines)
+	if oursUnchanged && !theirsUnchanged {
+		// Only theirs changed — unified diff from base to theirs.
+		oldHash, newHash := baseHash, theirsHash
+		fileDiff, err := gitcore.ComputeFileDiff(repo, oldHash, newHash, filePath, gitcore.DefaultContextLines)
 		if err != nil {
 			s.logger.Error("Failed to compute merge file diff", "path", filePath, "err", err)
 			http.Error(w, "Merge file diff computation failed", http.StatusInternalServerError)
@@ -733,9 +738,10 @@ func (s *Server) handleMergePreviewFileDiff(w http.ResponseWriter, r *http.Reque
 			"truncated": fileDiff.Truncated,
 			"hunks":     fileDiff.Hunks,
 		}
-	} else if theirsHash == "" || theirsHash == baseHash {
-		// Only ours changed.
-		fileDiff, err := gitcore.ComputeFileDiff(repo, baseHash, oursHash, filePath, gitcore.DefaultContextLines)
+	} else if theirsUnchanged && !oursUnchanged {
+		// Only ours changed — unified diff from base to ours.
+		oldHash, newHash := baseHash, oursHash
+		fileDiff, err := gitcore.ComputeFileDiff(repo, oldHash, newHash, filePath, gitcore.DefaultContextLines)
 		if err != nil {
 			s.logger.Error("Failed to compute merge file diff", "path", filePath, "err", err)
 			http.Error(w, "Merge file diff computation failed", http.StatusInternalServerError)
@@ -751,7 +757,7 @@ func (s *Server) handleMergePreviewFileDiff(w http.ResponseWriter, r *http.Reque
 			"hunks":     fileDiff.Hunks,
 		}
 	} else {
-		// Both sides changed — three-way diff.
+		// Both sides changed (including delete/modify) — three-way diff.
 		threeWay, err := gitcore.ComputeThreeWayDiff(repo, baseHash, oursHash, theirsHash, filePath)
 		if err != nil {
 			s.logger.Error("Failed to compute three-way diff", "path", filePath, "err", err)
