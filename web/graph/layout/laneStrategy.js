@@ -405,6 +405,7 @@ export class LaneStrategy {
 		const stashParentLane = new Map();  // stash hash → lane of first parent
 		const stashInternalHashes = new Set();
 		const stashInternalAvoidLanes = new Map(); // internal hash → Set of lanes to skip
+		const stashInternalLabels = new Map(); // internal hash → label from parent stash message
 		for (const node of commitNodes) {
 			if (!node.isStash) continue;
 			const c = commits.get(node.hash);
@@ -419,6 +420,11 @@ export class LaneStrategy {
 					const skip = new Set([0]);
 					if (parentLane !== undefined) skip.add(parentLane);
 					stashInternalAvoidLanes.set(c.parents[i], skip);
+					const internalCommit = commits.get(c.parents[i]);
+					if (internalCommit?.message) {
+						const firstLine = internalCommit.message.split("\n")[0];
+						stashInternalLabels.set(c.parents[i], firstLine.split(":")[0]);
+					}
 				}
 			}
 		}
@@ -512,7 +518,14 @@ export class LaneStrategy {
 			node.laneColor = LANE_COLORS[laneIndex % LANE_COLORS.length];
 		}
 
-		// Pad laneOwners for Phase-2 lanes (no named branch owner)
+		// Map stash internal labels to assigned lanes
+		this._stashLaneLabels = new Map(); // lane index → label
+		for (const [hash, label] of stashInternalLabels) {
+			const lane = this.commitToLane.get(hash);
+			if (lane !== undefined && !this._stashLaneLabels.has(lane)) {
+				this._stashLaneLabels.set(lane, label);
+			}
+		}
 		const maxLane = Math.max(0, ...Array.from(this.commitToLane.values()));
 		while (newLaneOwners.length < maxLane + 1) {
 			newLaneOwners.push("");
@@ -892,7 +905,7 @@ export class LaneStrategy {
 				const ownsLane = groupHashes.some(
 					(h) => this._phase1Commits?.get(h) === laneIndex,
 				);
-				const branchOwner = ownsLane ? laneOwner : "";
+				const branchOwner = ownsLane ? laneOwner : (this._stashLaneLabels?.get(laneIndex) ?? "");
 				let minY = Infinity, maxY = -Infinity;
 				for (const h of groupHashes) {
 					const y = hashToY.get(h);
