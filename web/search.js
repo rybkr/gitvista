@@ -3,15 +3,18 @@
  *
  * Renders a debounced search input with:
  *   - Structured query parsing via searchQuery.js (qualifiers: author:, hash:,
- *     after:, before:, merge:, branch:)
+ *     after:, before:, merge:, branch:, message:, tag:; negation via - prefix)
  *   - Inline "N / M" result count badge updated after each search
+ *   - Inline parse-error hints for malformed qualifiers
  *   - Search dropdown: qualifier suggestions + recent searches (localStorage)
+ *   - Full keyboard navigation (ArrowUp/Down/Enter) through dropdown items
+ *   - "Searching N commits" scope indicator in dropdown footer
  *   - Input expands on focus (CSS transition via .is-focused class)
  *   - Click-outside / Escape dismisses the dropdown
  *
  * The component is intentionally stateless with respect to graph data — the
- * caller supplies getCommits() and getCommitCount() accessors so the Search
- * instance never holds a stale reference to graph state.
+ * caller supplies getCommits(), getCommitCount(), and getTags() accessors so
+ * the Search instance never holds a stale reference to graph state.
  */
 
 import { parseSearchQuery, createSearchMatcher } from "./searchQuery.js";
@@ -34,9 +37,11 @@ const RECENT_SEARCHES_KEY = "gitvista-recent-searches";
  */
 const QUALIFIERS = [
     { text: "author:", description: "Search by author name or email" },
+    { text: "message:", description: "Search strictly in commit message" },
     { text: "after:",  description: "Commits after date (e.g. 7d, 2w, 2024-01-01)" },
     { text: "before:", description: "Commits before date" },
     { text: "hash:",   description: "Search by commit hash" },
+    { text: "tag:",    description: "Commits pointed at by a matching tag" },
     { text: "merge:only",    description: "Show only merge commits" },
     { text: "merge:exclude", description: "Exclude merge commits" },
     { text: "branch:", description: "Commits reachable from branch" },
@@ -80,6 +85,7 @@ function saveRecentSearch(query) {
  *   getBranches: () => Map<string, string>,
  *   getCommits: () => Map<string, import("./graph/types.js").GraphCommit>,
  *   getCommitCount: () => { matching: number, total: number },
+ *   getTags: () => Map<string, string>,
  *   onSearch: (result: {
  *     searchState: { query: import("./searchQuery.js").SearchQuery, matcher: ((commit: any) => boolean) | null } | null
  *   }) => void,
@@ -91,7 +97,7 @@ function saveRecentSearch(query) {
  *   destroy(): void,
  * }}
  */
-export function createSearch(container, { getBranches, getCommits, getCommitCount, onSearch }) {
+export function createSearch(container, { getBranches, getCommits, getCommitCount, getTags, onSearch }) {
     // ── DOM construction ───────────────────────────────────────────────────────
 
     // Outer positioning wrapper — provides the relative context for the dropdown.
@@ -119,8 +125,10 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
     input.setAttribute("aria-label", "Search commits by message, author, hash, or qualifier");
     input.setAttribute("autocomplete", "off");
     input.setAttribute("spellcheck", "false");
+    input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
     input.setAttribute("aria-haspopup", "listbox");
+    input.setAttribute("aria-expanded", "false");
 
     // Result count badge — shown between input and clear button when a query is active.
     const resultCount = document.createElement("span");
@@ -142,15 +150,26 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
     wrapper.appendChild(resultCount);
     wrapper.appendChild(clearBtn);
 
-    // ── Dropdown panel ─────────────────────────────────────────────────────────
+    // ── Parse-error hint ──────────────────────────────────────────────────────
+    const parseHint = document.createElement("div");
+    parseHint.className = "commit-search-parse-hint";
+    parseHint.setAttribute("role", "alert");
+    parseHint.setAttribute("aria-live", "assertive");
+    parseHint.style.display = "none";
 
+    // ── Dropdown panel ─────────────────────────────────────────────────────────
+    const DROPDOWN_ID = "commit-search-listbox";
     const dropdown = document.createElement("div");
+    dropdown.id = DROPDOWN_ID;
     dropdown.className = "commit-search-dropdown";
     dropdown.setAttribute("role", "listbox");
     dropdown.setAttribute("aria-label", "Search suggestions");
     dropdown.style.display = "none";
 
+    input.setAttribute("aria-controls", DROPDOWN_ID);
+
     positionWrapper.appendChild(wrapper);
+    positionWrapper.appendChild(parseHint);
     positionWrapper.appendChild(dropdown);
     container.appendChild(positionWrapper);
 
@@ -158,6 +177,7 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
 
     let debounceTimer = null;
     let isDropdownOpen = false;
+    let activeDescendantIndex = -1; // -1 = no item focused, 0..N = item index
 
     // ── Dropdown rendering ─────────────────────────────────────────────────────
 
@@ -167,7 +187,10 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
      */
     function renderDropdown() {
         dropdown.innerHTML = "";
+        activeDescendantIndex = -1;
+        input.removeAttribute("aria-activedescendant");
         const recent = loadRecentSearches();
+        let itemIndex = 0;
 
         // Qualifier suggestions section
         const qualifierSection = document.createElement("div");
@@ -181,6 +204,7 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
         for (const q of QUALIFIERS) {
             const item = document.createElement("div");
             item.className = "commit-search-suggestion";
+            item.id = `search-option-${itemIndex++}`;
             item.setAttribute("role", "option");
             item.setAttribute("tabindex", "-1");
 
@@ -195,9 +219,8 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
             item.appendChild(kw);
             item.appendChild(desc);
 
-            // Clicking a suggestion appends the qualifier text to the current input value.
             item.addEventListener("mousedown", (e) => {
-                e.preventDefault(); // Prevent blur on input
+                e.preventDefault();
                 insertQualifier(q.text);
             });
 
@@ -219,10 +242,10 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
             for (const recentQuery of recent) {
                 const item = document.createElement("div");
                 item.className = "commit-search-recent";
+                item.id = `search-option-${itemIndex++}`;
                 item.setAttribute("role", "option");
                 item.setAttribute("tabindex", "-1");
 
-                // Clock icon
                 const clockIcon = document.createElement("span");
                 clockIcon.className = "commit-search-recent-icon";
                 clockIcon.setAttribute("aria-hidden", "true");
@@ -241,7 +264,7 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
                 item.appendChild(text);
 
                 item.addEventListener("mousedown", (e) => {
-                    e.preventDefault(); // Prevent blur
+                    e.preventDefault();
                     applyRecentSearch(recentQuery);
                 });
 
@@ -250,6 +273,14 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
 
             dropdown.appendChild(recentSection);
         }
+
+        // Scope indicator footer
+        const footer = document.createElement("div");
+        footer.className = "commit-search-dropdown-footer";
+        const { total } = getCommitCount();
+        footer.textContent = `Searching ${total.toLocaleString()} commit${total !== 1 ? "s" : ""}`;
+        footer.setAttribute("aria-hidden", "true");
+        dropdown.appendChild(footer);
     }
 
     /** Inserts a qualifier keyword at the end of the current input value. */
@@ -283,8 +314,10 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
     function openDropdown() {
         if (isDropdownOpen) return;
         isDropdownOpen = true;
+        activeDescendantIndex = -1;
         renderDropdown();
         dropdown.style.display = "block";
+        input.setAttribute("aria-expanded", "true");
         wrapper.classList.add("is-focused");
         document.addEventListener("pointerdown", onOutsidePointerDown, true);
     }
@@ -292,9 +325,46 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
     function closeDropdown() {
         if (!isDropdownOpen) return;
         isDropdownOpen = false;
+        activeDescendantIndex = -1;
         dropdown.style.display = "none";
+        input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-activedescendant");
         wrapper.classList.remove("is-focused");
         document.removeEventListener("pointerdown", onOutsidePointerDown, true);
+    }
+
+    /** Updates the visually active dropdown item and aria-activedescendant. */
+    function setActiveDescendant(index) {
+        const items = dropdown.querySelectorAll('[role="option"]');
+        const count = items.length;
+        if (count === 0) {
+            activeDescendantIndex = -1;
+            input.removeAttribute("aria-activedescendant");
+            return;
+        }
+
+        // Remove highlight from previous
+        if (activeDescendantIndex >= 0 && activeDescendantIndex < count) {
+            items[activeDescendantIndex].classList.remove("is-active");
+            items[activeDescendantIndex].removeAttribute("aria-selected");
+        }
+
+        // Clamp index
+        activeDescendantIndex = index;
+        if (activeDescendantIndex < 0) activeDescendantIndex = -1;
+        if (activeDescendantIndex >= count) activeDescendantIndex = count - 1;
+
+        if (activeDescendantIndex === -1) {
+            input.removeAttribute("aria-activedescendant");
+            return;
+        }
+
+        // Apply highlight to new
+        const activeItem = items[activeDescendantIndex];
+        activeItem.classList.add("is-active");
+        activeItem.setAttribute("aria-selected", "true");
+        input.setAttribute("aria-activedescendant", activeItem.id);
+        activeItem.scrollIntoView({ block: "nearest" });
     }
 
     /**
@@ -339,6 +409,15 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
     function executeSearch(rawQuery) {
         const query = parseSearchQuery(rawQuery);
 
+        // Show parse errors as inline hint (first error only to avoid clutter).
+        if (query.errors.length > 0) {
+            parseHint.textContent = query.errors[0].message;
+            parseHint.style.display = "block";
+        } else {
+            parseHint.style.display = "none";
+            parseHint.textContent = "";
+        }
+
         if (query.isEmpty) {
             onSearch({ searchState: null });
             updateResultCount(false);
@@ -346,19 +425,16 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
         }
 
         // Build the matcher with live graph data (called at search time so it
-        // always captures the current branches/commits maps).
-        const matcher = createSearchMatcher(query, getBranches(), getCommits());
+        // always captures the current branches/commits/tags maps).
+        const matcher = createSearchMatcher(query, getBranches(), getCommits(), getTags());
 
         const searchState = { query, matcher };
         onSearch({ searchState });
 
-        // Update result count on the next tick after the graph has applied dimming.
-        // The 0ms timeout gives the graph controller time to run applyDimmingFromPredicate.
         requestAnimationFrame(() => {
             updateResultCount(true);
         });
 
-        // Persist to recent searches if the query has meaningful content.
         if (rawQuery.trim()) {
             saveRecentSearch(rawQuery.trim());
         }
@@ -388,6 +464,8 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
         input.value = "";
         clearBtn.style.display = "none";
         resultCount.style.display = "none";
+        parseHint.style.display = "none";
+        parseHint.textContent = "";
         clearTimeout(debounceTimer);
         onSearch({ searchState: null });
         closeDropdown();
@@ -396,28 +474,91 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
 
     /**
      * Keydown handler on the search input.
-     * Escape blurs/clears but lets the event bubble to global shortcuts.
+     * Provides full arrow-key navigation through dropdown items, Enter to
+     * activate, Escape to close/blur, and Tab to advance focus.
      */
     function onKeyDown(event) {
-        if (event.key === "Escape") {
-            // Close dropdown first; if already closed, let global handler run
-            if (isDropdownOpen) {
+        if (!isDropdownOpen) {
+            if (event.key === "Escape") {
+                input.blur();
+                return;
+            }
+            if (event.key === "ArrowDown") {
+                openDropdown();
+                event.preventDefault();
+                return;
+            }
+            return;
+        }
+
+        switch (event.key) {
+            case "ArrowDown":
+                event.preventDefault();
+                setActiveDescendant(activeDescendantIndex + 1);
+                break;
+
+            case "ArrowUp":
+                event.preventDefault();
+                if (activeDescendantIndex <= 0) {
+                    setActiveDescendant(-1);
+                } else {
+                    setActiveDescendant(activeDescendantIndex - 1);
+                }
+                break;
+
+            case "Enter": {
+                event.preventDefault();
+                if (activeDescendantIndex >= 0) {
+                    const items = dropdown.querySelectorAll('[role="option"]');
+                    const activeItem = items[activeDescendantIndex];
+                    if (activeItem) {
+                        activeItem.dispatchEvent(
+                            new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+                        );
+                    }
+                } else {
+                    const val = input.value.trim();
+                    if (val) {
+                        saveRecentSearch(val);
+                        if (isDropdownOpen) renderDropdown();
+                    }
+                    closeDropdown();
+                }
+                break;
+            }
+
+            case "Escape":
                 closeDropdown();
                 event.stopPropagation();
-            } else {
-                input.blur();
-                // Do NOT stopPropagation: let the global Escape handler fire onDismiss.
-            }
-        } else if (event.key === "Enter") {
-            // On Enter, persist current query to recent searches immediately.
-            const val = input.value.trim();
-            if (val) {
-                saveRecentSearch(val);
-                // Re-render dropdown with updated recents (if open)
-                if (isDropdownOpen) renderDropdown();
-            }
+                break;
+
+            case "Home":
+                if (activeDescendantIndex >= 0) {
+                    event.preventDefault();
+                    setActiveDescendant(0);
+                }
+                break;
+
+            case "End":
+                if (activeDescendantIndex >= 0) {
+                    event.preventDefault();
+                    const items = dropdown.querySelectorAll('[role="option"]');
+                    setActiveDescendant(items.length - 1);
+                }
+                break;
+
+            case "Tab":
+                closeDropdown();
+                break;
+
+            default:
+                // Typing resets active descendant (the list may re-render)
+                if (event.key.length === 1) {
+                    activeDescendantIndex = -1;
+                    input.removeAttribute("aria-activedescendant");
+                }
+                break;
         }
-        // All printable keys are handled naturally by the input.
     }
 
     input.addEventListener("input", onInputChange);

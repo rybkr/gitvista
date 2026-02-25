@@ -241,6 +241,7 @@ function bootstrapGraph(root, repoId) {
         getBranches: () => graph.getBranches(),
         getCommits: () => graph.getCommits(),
         getCommitCount: () => graph.getCommitCount(),
+        getTags: () => graph.getTags?.() ?? new Map(),
         onSearch: ({ searchState }) => {
             graph.setSearchState(searchState ?? null);
         },
