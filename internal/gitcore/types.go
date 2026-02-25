@@ -397,7 +397,9 @@ const (
 	ConflictBothAdded ConflictType = "both_added"
 	// ConflictDeleteModify represents a hunk that was removed in one branch and modded in another.
 	ConflictDeleteModify ConflictType = "delete_modify"
+	// ConflictRenameModify represents a hunk that was renamed in one branch and modded in another.
 	ConflictRenameModify ConflictType = "rename_modify"
+	// ConflictRenameRename represents a hunk that was renamed in both branches.
 	ConflictRenameRename ConflictType = "rename_rename"
 )
 
@@ -433,9 +435,13 @@ type MergePreviewResult struct {
 type MergeRegionType string
 
 const (
-	MergeRegionContext  MergeRegionType = "context"
-	MergeRegionOurs     MergeRegionType = "ours"
-	MergeRegionTheirs   MergeRegionType = "theirs"
+	// MergeRegionContext represents parts of a file that are context.
+	MergeRegionContext MergeRegionType = "context"
+	// MergeRegionOurs represents parts of a file that are ours.
+	MergeRegionOurs MergeRegionType = "ours"
+	// MergeRegionTheirs represents parts of a file that are theirs.
+	MergeRegionTheirs MergeRegionType = "theirs"
+	// MergeRegionConflict represents parts of a file that are in conflict.
 	MergeRegionConflict MergeRegionType = "conflict"
 )
 
