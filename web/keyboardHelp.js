@@ -12,6 +12,8 @@ const SHORTCUTS = [
     { keys: ["G", "H"], description: "Jump to HEAD commit" },
     { keys: ["J"], description: "Navigate to next (newer) commit" },
     { keys: ["K"], description: "Navigate to previous (older) commit" },
+    { keys: ["N"], description: "Jump to next search result" },
+    { keys: ["Shift+N"], description: "Jump to previous search result" },
     { keys: ["/"], description: "Focus search" },
     { keys: ["?"], description: "Toggle this help overlay" },
     { keys: ["Esc"], description: "Dismiss overlay / deselect" },

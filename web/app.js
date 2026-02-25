@@ -249,6 +249,7 @@ function bootstrapGraph(root, repoId) {
         },
         onSearch: ({ searchState }) => {
             graph.setSearchState(searchState ?? null);
+            search.clearPosition();
         },
     });
 
@@ -288,6 +289,14 @@ function bootstrapGraph(root, repoId) {
         },
         onNavigateNext: () => graph.navigateCommits("next"),
         onNavigatePrev: () => graph.navigateCommits("prev"),
+        onSearchResultNext: () => {
+            const pos = graph.navigateSearchResults("next");
+            if (pos) search.updatePosition(pos.index, pos.total);
+        },
+        onSearchResultPrev: () => {
+            const pos = graph.navigateSearchResults("prev");
+            if (pos) search.updatePosition(pos.index, pos.total);
+        },
     });
 
     /** If the file explorer has no commit loaded, open HEAD. */

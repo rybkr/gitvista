@@ -17,6 +17,8 @@ const SEQUENCE_TIMEOUT_MS = 500;
  *   onDismiss?: () => void,
  *   onNavigatePrev?: () => void,
  *   onNavigateNext?: () => void,
+ *   onSearchResultNext?: () => void,
+ *   onSearchResultPrev?: () => void,
  * }} callbacks Named action callbacks. Any omitted callback is silently ignored.
  * @returns {{ destroy(): void }} Handle to remove the listener and cancel any pending timer.
  */
@@ -27,6 +29,8 @@ export function createKeyboardShortcuts({
     onDismiss,
     onNavigatePrev,
     onNavigateNext,
+    onSearchResultNext,
+    onSearchResultPrev,
 } = {}) {
     // True when the user has pressed G and is within the timeout window for H.
     let awaitingH = false;
@@ -123,6 +127,18 @@ export function createKeyboardShortcuts({
             case "K":
                 event.preventDefault();
                 onNavigatePrev?.();
+                break;
+
+            // N = next search result; Shift+N = previous search result.
+            // Mirrors vim's n/N for cycling through matches.
+            case "n":
+                event.preventDefault();
+                onSearchResultNext?.();
+                break;
+
+            case "N":
+                event.preventDefault();
+                onSearchResultPrev?.();
                 break;
 
             default:

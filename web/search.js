@@ -610,6 +610,24 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
             onClear();
         },
 
+        /**
+         * Updates the badge to show the current search-result position
+         * (e.g. "3 of 12"). Uses "of" to distinguish from the default "N / M" format.
+         *
+         * @param {number} index Zero-based index of the current result.
+         * @param {number} total Total number of matching results.
+         */
+        updatePosition(index, total) {
+            resultCount.textContent = `${index + 1} of ${total}`;
+            resultCount.style.display = "inline-flex";
+            resultCount.classList.toggle("is-empty", total === 0);
+        },
+
+        /** Resets the badge back to the default "N / M" format. */
+        clearPosition() {
+            updateResultCount(input.value.trim().length > 0);
+        },
+
         /** Removes DOM nodes and event listeners. */
         destroy() {
             clearTimeout(debounceTimer);

@@ -232,6 +232,8 @@ export function createGraphController(rootElement, options = {}) {
 
     let selectedHash = null;
     let sortedCommitCache = null;
+    let searchResultCache = null;   // filtered subset matching search
+    let searchResultIndex = -1;     // current position (-1 = unset)
     let rafId = null;
 
     // Create both layout strategies
@@ -482,6 +484,12 @@ export function createGraphController(rootElement, options = {}) {
         showTooltip(node);
         options.onCommitSelect?.(hash);
         centerOnCommit(hash);
+
+        // Keep search-result index in sync when navigating via click or J/K.
+        if (searchResultCache) {
+            const idx = searchResultCache.findIndex((n) => n.hash === hash);
+            searchResultIndex = idx; // -1 if not a search result
+        }
     };
 
     /**
@@ -534,6 +542,61 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         selectAndCenterCommit(commitNodes[nextIndex].hash);
+    };
+
+    /**
+     * Moves the selection to the next or previous search result.
+     * Only operates when a search matcher is active; otherwise returns null.
+     *
+     * @param {'next' | 'prev'} direction
+     * @returns {{ index: number, total: number } | null}
+     */
+    const navigateSearchResults = (direction) => {
+        if (!state.searchState?.matcher) return null;
+
+        // Lazily build sortedCommitCache (same sort as navigateCommits).
+        if (!sortedCommitCache) {
+            sortedCommitCache = nodes
+                .filter((n) => n.type === "commit")
+                .sort((a, b) => {
+                    const aTime = getCommitTimestamp(a.commit);
+                    const bTime = getCommitTimestamp(b.commit);
+                    if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                    return bTime - aTime;
+                });
+        }
+
+        // Lazily build searchResultCache by filtering with the active matcher.
+        if (!searchResultCache) {
+            searchResultCache = sortedCommitCache.filter((n) =>
+                state.searchState.matcher(n.commit),
+            );
+            searchResultIndex = -1;
+        }
+
+        const results = searchResultCache;
+        if (results.length === 0) return null;
+
+        // On first call: if current selection is a result, start there.
+        if (searchResultIndex === -1) {
+            const currentIdx = results.findIndex((n) => n.hash === selectedHash);
+            if (currentIdx !== -1) {
+                searchResultIndex = currentIdx;
+            } else {
+                // Start at first result.
+                searchResultIndex = 0;
+                selectAndCenterCommit(results[0].hash);
+                return { index: 0, total: results.length };
+            }
+        }
+
+        // Step with wrapping.
+        const delta = direction === "next" ? 1 : -1;
+        searchResultIndex =
+            (searchResultIndex + delta + results.length) % results.length;
+
+        selectAndCenterCommit(results[searchResultIndex].hash);
+        return { index: searchResultIndex, total: results.length };
     };
 
     // Wire Prev/Next buttons now that navigateCommits is defined.
@@ -1076,6 +1139,7 @@ export function createGraphController(rootElement, options = {}) {
      */
     function updateGraph() {
         sortedCommitCache = null; // Invalidate on every structural update
+        searchResultCache = null;
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
         const existingTagNodes = new Map();
@@ -1504,6 +1568,14 @@ export function createGraphController(rootElement, options = {}) {
          */
         navigateCommits,
         /**
+         * Moves the selection to the next/previous search result (N / Shift+N).
+         * Returns { index, total } for badge updates, or null if no active search.
+         *
+         * @param {'next' | 'prev'} direction
+         * @returns {{ index: number, total: number } | null}
+         */
+        navigateSearchResults,
+        /**
          * Selects the commit with the given hash, shows its tooltip, fires
          * onCommitSelect, and centers the viewport on it.
          *
@@ -1534,6 +1606,8 @@ export function createGraphController(rootElement, options = {}) {
          */
         setSearchState: (searchState) => {
             state.searchState = searchState ?? null;
+            searchResultCache = null;
+            searchResultIndex = -1;
             rebuildAndApplyPredicate();
         },
         /**
@@ -1561,6 +1635,8 @@ export function createGraphController(rootElement, options = {}) {
          */
         setFilterState: (filterState) => {
             state.filterState = { ...filterState };
+            searchResultCache = null;
+            searchResultIndex = -1;
             rebuildAndApplyPredicate();
         },
         /**
