@@ -1343,6 +1343,20 @@ export function createGraphController(rootElement, options = {}) {
             n.x = t.x;
             n.y = t.y + NODE_RADIUS + 14 + bc * 25 + (bc > 0 ? 4 : 0) + i * 25;
         }
+        // Pass 3: snap ghost merge node to ours lane
+        if (state.mergePreview) {
+            const ours = commitMap.get(state.mergePreview.oursHash);
+            if (ours) {
+                for (const n of nodes) {
+                    if (n.type !== "ghost-merge") continue;
+                    n.x = ours.x;
+                    n.fx = ours.x;
+                    n.laneIndex = ours.laneIndex;
+                    n.laneColor = ours.laneColor;
+                    break;
+                }
+            }
+        }
     }
 
     function snapTagsToTargets(pairs) {
