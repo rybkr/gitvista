@@ -184,7 +184,7 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id s
 			"state":   p.State,
 			"error":   p.Error,
 		})
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		fmt.Fprintf(w, "data: %s\n\n", data) //nolint:errcheck
 		flusher.Flush()
 	}
 
