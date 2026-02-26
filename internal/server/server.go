@@ -290,10 +290,13 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 		remainder = path[idx:]
 	}
 
-	// Non-session routes: status and delete operate on the repo ID directly.
+	// Non-session routes: status, progress, and delete operate on the repo ID directly.
 	switch {
 	case remainder == "/status" && r.Method == http.MethodGet:
 		s.handleRepoStatus(w, r, id)
+		return
+	case remainder == "/progress" && r.Method == http.MethodGet:
+		s.handleRepoProgress(w, r, id)
 		return
 	case remainder == "" && r.Method == http.MethodDelete:
 		s.handleRemoveRepo(w, r, id)

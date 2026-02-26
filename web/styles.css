@@ -3603,6 +3603,28 @@ canvas {
     color: var(--text-secondary);
 }
 
+.repo-landing__clone-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+}
+
+.repo-landing__progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.repo-landing__progress-fill {
+    height: 100%;
+    background: var(--node-color);
+    border-radius: 2px;
+    transition: width 150ms ease;
+}
+
 /* ── Try Your Own (form + list) ── */
 
 .repo-landing__form {

@@ -1,5 +1,3 @@
-const STATUS_POLL_INTERVAL = 2000;
-
 const FEATURED_REPOS = [
     { url: "https://github.com/jqlang/jq", name: "jqlang/jq", description: "Command-line JSON processor" },
     { url: "https://github.com/expressjs/express", name: "expressjs/express", description: "Fast, unopinionated web framework for Node.js" },
@@ -51,42 +49,61 @@ export function createRepoLanding({ onRepoSelect }) {
     el.className = "repo-landing";
 
     let repos = [];
-    let pollTimers = new Map();
+    let activeStreams = new Map();
     let destroyed = false;
 
-    /** @type {Map<string, { id: string|null, state: string, error: string|null }>} keyed by URL */
+    /** @type {Map<string, { id: string|null, state: string, error: string|null, phase: string, percent: number }>} keyed by URL */
     const featuredState = new Map();
 
     // ── Shared helpers ────────────────────────────────────────────────────
 
-    function startPolling(id, onUpdate) {
-        if (pollTimers.has(id)) return;
+    function startProgressStream(id, onUpdate) {
+        if (activeStreams.has(id)) return;
 
-        const timerId = setInterval(async () => {
+        const es = new EventSource(`/api/repos/${id}/progress`);
+        activeStreams.set(id, es);
+
+        es.onmessage = (event) => {
             if (destroyed) {
-                clearInterval(timerId);
+                es.close();
+                activeStreams.delete(id);
                 return;
             }
 
             try {
-                const resp = await fetch(`/api/repos/${id}/status`);
-                if (!resp.ok) return;
-                const data = await resp.json();
+                const data = JSON.parse(event.data);
+
+                if (data.done) {
+                    if (onUpdate) {
+                        onUpdate({ id, state: data.state, error: data.error || "", phase: "", percent: 0 });
+                    }
+                    es.close();
+                    activeStreams.delete(id);
+                    return;
+                }
 
                 if (onUpdate) {
-                    onUpdate({ id, state: data.state, error: data.error });
-                }
-
-                if (data.state !== "cloning" && data.state !== "pending") {
-                    clearInterval(timerId);
-                    pollTimers.delete(id);
+                    onUpdate({ id, state: "cloning", error: "", phase: data.phase || "", percent: data.percent || 0 });
                 }
             } catch {
-                // Silently retry on next interval
+                // Ignore malformed events
             }
-        }, STATUS_POLL_INTERVAL);
+        };
 
-        pollTimers.set(id, timerId);
+        es.onerror = () => {
+            es.close();
+            activeStreams.delete(id);
+
+            // Fallback: single status fetch to get final state
+            fetch(`/api/repos/${id}/status`)
+                .then((resp) => resp.ok ? resp.json() : null)
+                .then((data) => {
+                    if (data && onUpdate && !destroyed) {
+                        onUpdate({ id, state: data.state, error: data.error || "", phase: data.phase || "", percent: data.percent || 0 });
+                    }
+                })
+                .catch(() => {});
+        };
     }
 
     function addOrUpdateRepo(repo) {
@@ -161,7 +178,7 @@ export function createRepoLanding({ onRepoSelect }) {
     featuredSection.appendChild(featuredGrid);
 
     function renderFeaturedCard(entry) {
-        const s = featuredState.get(entry.url) || { id: null, state: "pending", error: null };
+        const s = featuredState.get(entry.url) || { id: null, state: "pending", error: null, phase: "", percent: 0 };
         const existing = featuredGrid.querySelector(`[data-url="${entry.url}"]`);
 
         const card = existing || document.createElement("div");
@@ -222,10 +239,30 @@ export function createRepoLanding({ onRepoSelect }) {
             }
             cardAction.appendChild(retry);
         } else {
-            const progress = document.createElement("span");
-            progress.className = "repo-landing__card-progress";
-            progress.textContent = s.state === "cloning" ? "Cloning..." : "Loading...";
-            cardAction.appendChild(progress);
+            if (s.state === "cloning" && s.percent > 0) {
+                const progressContainer = document.createElement("div");
+                progressContainer.className = "repo-landing__clone-progress";
+
+                const progressText = document.createElement("span");
+                progressText.className = "repo-landing__card-progress";
+                progressText.textContent = `${s.phase} ${s.percent}%`;
+                progressContainer.appendChild(progressText);
+
+                const progressBar = document.createElement("div");
+                progressBar.className = "repo-landing__progress-bar";
+                const progressFill = document.createElement("div");
+                progressFill.className = "repo-landing__progress-fill";
+                progressFill.style.width = `${s.percent}%`;
+                progressBar.appendChild(progressFill);
+                progressContainer.appendChild(progressBar);
+
+                cardAction.appendChild(progressContainer);
+            } else {
+                const progress = document.createElement("span");
+                progress.className = "repo-landing__card-progress";
+                progress.textContent = s.state === "cloning" ? "Cloning..." : "Loading...";
+                cardAction.appendChild(progress);
+            }
         }
 
         card.appendChild(cardHeader);
@@ -244,7 +281,7 @@ export function createRepoLanding({ onRepoSelect }) {
     }
 
     async function initSingleFeatured(entry) {
-        featuredState.set(entry.url, { id: null, state: "pending", error: null });
+        featuredState.set(entry.url, { id: null, state: "pending", error: null, phase: "", percent: 0 });
         renderFeaturedCard(entry);
 
         try {
@@ -262,19 +299,19 @@ export function createRepoLanding({ onRepoSelect }) {
             const repo = await resp.json();
             if (destroyed) return;
 
-            featuredState.set(entry.url, { id: repo.id, state: repo.state, error: null });
+            featuredState.set(entry.url, { id: repo.id, state: repo.state, error: null, phase: repo.phase || "", percent: repo.percent || 0 });
             renderFeaturedCard(entry);
 
             if (repo.state === "cloning" || repo.state === "pending") {
-                startPolling(repo.id, (update) => {
+                startProgressStream(repo.id, (update) => {
                     if (destroyed) return;
-                    featuredState.set(entry.url, { id: update.id, state: update.state, error: update.error });
+                    featuredState.set(entry.url, { id: update.id, state: update.state, error: update.error, phase: update.phase || "", percent: update.percent || 0 });
                     renderFeaturedCard(entry);
                 });
             }
         } catch (err) {
             if (destroyed) return;
-            featuredState.set(entry.url, { id: null, state: "error", error: err.message });
+            featuredState.set(entry.url, { id: null, state: "error", error: err.message, phase: "", percent: 0 });
             renderFeaturedCard(entry);
         }
     }
@@ -368,9 +405,9 @@ export function createRepoLanding({ onRepoSelect }) {
             renderUserRepos();
 
             if (repo.state === "cloning" || repo.state === "pending") {
-                startPolling(repo.id, (update) => {
+                startProgressStream(repo.id, (update) => {
                     if (destroyed) return;
-                    addOrUpdateRepo(update);
+                    addOrUpdateRepo({ ...update, url: repo.url });
                     renderUserRepos();
                 });
             }
@@ -394,9 +431,9 @@ export function createRepoLanding({ onRepoSelect }) {
         try {
             await fetch(`/api/repos/${id}`, { method: "DELETE" });
             repos = repos.filter((r) => r.id !== id);
-            if (pollTimers.has(id)) {
-                clearInterval(pollTimers.get(id));
-                pollTimers.delete(id);
+            if (activeStreams.has(id)) {
+                activeStreams.get(id).close();
+                activeStreams.delete(id);
             }
             renderUserRepos();
         } catch {
@@ -448,6 +485,26 @@ export function createRepoLanding({ onRepoSelect }) {
                 info.appendChild(errText);
             }
 
+            if (repo.state === "cloning" && repo.percent > 0) {
+                const progressContainer = document.createElement("div");
+                progressContainer.className = "repo-landing__clone-progress";
+
+                const progressText = document.createElement("span");
+                progressText.className = "repo-landing__card-progress";
+                progressText.textContent = `${repo.phase} ${repo.percent}%`;
+                progressContainer.appendChild(progressText);
+
+                const progressBar = document.createElement("div");
+                progressBar.className = "repo-landing__progress-bar";
+                const progressFill = document.createElement("div");
+                progressFill.className = "repo-landing__progress-fill";
+                progressFill.style.width = `${repo.percent}%`;
+                progressBar.appendChild(progressFill);
+                progressContainer.appendChild(progressBar);
+
+                info.appendChild(progressContainer);
+            }
+
             item.appendChild(info);
 
             const deleteBtn = document.createElement("button");
@@ -487,7 +544,7 @@ export function createRepoLanding({ onRepoSelect }) {
     codeBlock.className = "repo-landing__code-block";
 
     const codeText = document.createElement("code");
-    codeText.textContent = "go install github.com/AmoghShet/gitvista/cmd/vista@latest && vista";
+    codeText.textContent = "go install github.com/rybkr/gitvista/cmd/vista@latest && vista";
 
     const copyBtn = document.createElement("button");
     copyBtn.className = "repo-landing__copy-btn";
@@ -520,7 +577,7 @@ export function createRepoLanding({ onRepoSelect }) {
 
     const ghLink = document.createElement("a");
     ghLink.className = "repo-landing__footer-link";
-    ghLink.href = "https://github.com/AmoghShet/gitvista";
+    ghLink.href = "https://github.com/rybkr/gitvista";
     ghLink.target = "_blank";
     ghLink.rel = "noopener noreferrer";
     ghLink.innerHTML = `${GITHUB_SVG} GitHub`;
@@ -565,7 +622,7 @@ export function createRepoLanding({ onRepoSelect }) {
             for (const repo of list) {
                 addOrUpdateRepo(repo);
                 if (repo.state === "cloning" || repo.state === "pending") {
-                    startPolling(repo.id, (update) => {
+                    startProgressStream(repo.id, (update) => {
                         if (destroyed) return;
                         addOrUpdateRepo(update);
                         renderUserRepos();
@@ -580,10 +637,10 @@ export function createRepoLanding({ onRepoSelect }) {
 
     function destroy() {
         destroyed = true;
-        for (const [, timerId] of pollTimers) {
-            clearInterval(timerId);
+        for (const [, es] of activeStreams) {
+            es.close();
         }
-        pollTimers.clear();
+        activeStreams.clear();
     }
 
     return { el, destroy };

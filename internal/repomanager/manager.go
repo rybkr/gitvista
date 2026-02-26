@@ -84,6 +84,15 @@ func (c *Config) defaults() {
 	}
 }
 
+// CloneProgress tracks the current phase and completion percentage of a clone.
+type CloneProgress struct {
+	Phase   string
+	Percent int
+	Done    bool   // true when clone has reached a terminal state
+	State   string // terminal state: "ready" or "error"
+	Error   string // non-empty when State is "error"
+}
+
 // ManagedRepo tracks a single remote repository through its lifecycle.
 type ManagedRepo struct {
 	mu         sync.RWMutex
@@ -92,6 +101,7 @@ type ManagedRepo struct {
 	NormURL    string // canonicalized URL
 	State      RepoState
 	Error      string
+	Progress   CloneProgress
 	DiskPath   string
 	Repo       *gitcore.Repository // non-nil when Ready
 	CreatedAt  time.Time
@@ -112,14 +122,15 @@ type RepoInfo struct {
 
 // RepoManager manages the lifecycle of cloned remote repositories.
 type RepoManager struct {
-	cfg        Config
-	logger     *slog.Logger
-	mu         sync.RWMutex
-	repos      map[string]*ManagedRepo
-	cloneQueue chan *ManagedRepo
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
+	cfg          Config
+	logger       *slog.Logger
+	mu           sync.RWMutex
+	repos        map[string]*ManagedRepo
+	progressSubs map[string][]chan CloneProgress
+	cloneQueue   chan *ManagedRepo
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 }
 
 // New creates a RepoManager and ensures the data directory exists.
@@ -133,12 +144,13 @@ func New(cfg Config) (*RepoManager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &RepoManager{
-		cfg:        cfg,
-		logger:     cfg.Logger,
-		repos:      make(map[string]*ManagedRepo),
-		cloneQueue: make(chan *ManagedRepo, cfg.MaxRepos),
-		ctx:        ctx,
-		cancel:     cancel,
+		cfg:          cfg,
+		logger:       cfg.Logger,
+		repos:        make(map[string]*ManagedRepo),
+		progressSubs: make(map[string][]chan CloneProgress),
+		cloneQueue:   make(chan *ManagedRepo, cfg.MaxRepos),
+		ctx:          ctx,
+		cancel:       cancel,
 	}, nil
 }
 
@@ -259,19 +271,81 @@ func (rm *RepoManager) GetRepo(id string) (*gitcore.Repository, error) {
 	}
 }
 
-// Status returns the current state and error message for a repo.
-func (rm *RepoManager) Status(id string) (RepoState, string, error) {
+// Status returns the current state, error message, and clone progress for a repo.
+func (rm *RepoManager) Status(id string) (RepoState, string, CloneProgress, error) {
 	rm.mu.RLock()
 	managed, exists := rm.repos[id]
 	rm.mu.RUnlock()
 
 	if !exists {
-		return 0, "", fmt.Errorf("repo not found: %s", id)
+		return 0, "", CloneProgress{}, fmt.Errorf("repo not found: %s", id)
 	}
 
 	managed.mu.RLock()
 	defer managed.mu.RUnlock()
-	return managed.State, managed.Error, nil
+	return managed.State, managed.Error, managed.Progress, nil
+}
+
+// SubscribeProgress registers a channel that receives clone progress updates
+// for the given repo ID. Returns the channel and an unsubscribe function.
+// The channel is buffered (size 1) so slow consumers only miss intermediate
+// updates, never the final one.
+func (rm *RepoManager) SubscribeProgress(id string) (<-chan CloneProgress, func()) {
+	ch := make(chan CloneProgress, 1)
+
+	rm.mu.Lock()
+	rm.progressSubs[id] = append(rm.progressSubs[id], ch)
+	rm.mu.Unlock()
+
+	unsubscribe := func() {
+		rm.mu.Lock()
+		defer rm.mu.Unlock()
+		subs := rm.progressSubs[id]
+		for i, s := range subs {
+			if s == ch {
+				rm.progressSubs[id] = append(subs[:i], subs[i+1:]...)
+				break
+			}
+		}
+		if len(rm.progressSubs[id]) == 0 {
+			delete(rm.progressSubs, id)
+		}
+	}
+
+	return ch, unsubscribe
+}
+
+// notifyProgressSubs sends a progress update to all subscribers for the given
+// repo ID. Uses non-blocking send — if a subscriber's buffer is full, the old
+// value is drained and replaced with the new one.
+func (rm *RepoManager) notifyProgressSubs(id string, p CloneProgress) {
+	rm.mu.RLock()
+	subs := rm.progressSubs[id]
+	rm.mu.RUnlock()
+
+	for _, ch := range subs {
+		// Drain any stale value so the latest update is always available.
+		select {
+		case <-ch:
+		default:
+		}
+		select {
+		case ch <- p:
+		default:
+		}
+	}
+}
+
+// cleanupProgressSubs removes and closes all subscriber channels for a repo.
+func (rm *RepoManager) cleanupProgressSubs(id string) {
+	rm.mu.Lock()
+	subs := rm.progressSubs[id]
+	delete(rm.progressSubs, id)
+	rm.mu.Unlock()
+
+	for _, ch := range subs {
+		close(ch)
+	}
 }
 
 // List returns a snapshot of all managed repositories.
@@ -351,22 +425,36 @@ func (rm *RepoManager) processClone(managed *ManagedRepo) {
 		rm.logger.Warn("failed to clean stale directory before clone", "id", managed.ID, "path", diskPath, "error", err)
 	}
 
-	if err := cloneRepo(rm.ctx, repoURL, diskPath, rm.cfg.CloneTimeout); err != nil {
+	onProgress := func(p CloneProgress) {
+		managed.mu.Lock()
+		managed.Progress = p
+		managed.mu.Unlock()
+		rm.notifyProgressSubs(managed.ID, p)
+	}
+
+	if err := cloneRepo(rm.ctx, repoURL, diskPath, rm.cfg.CloneTimeout, onProgress); err != nil {
 		managed.mu.Lock()
 		managed.State = StateError
 		managed.Error = err.Error()
+		managed.Progress = CloneProgress{}
 		managed.mu.Unlock()
 		rm.logger.Error("clone failed", "id", managed.ID, "error", err)
+		rm.notifyProgressSubs(managed.ID, CloneProgress{Done: true, State: "error", Error: err.Error()})
+		rm.cleanupProgressSubs(managed.ID)
 		return
 	}
 
 	repo, err := gitcore.NewRepository(diskPath)
 	if err != nil {
+		errMsg := fmt.Sprintf("failed to load repository: %v", err)
 		managed.mu.Lock()
 		managed.State = StateError
-		managed.Error = fmt.Sprintf("failed to load repository: %v", err)
+		managed.Error = errMsg
+		managed.Progress = CloneProgress{}
 		managed.mu.Unlock()
 		rm.logger.Error("repo load failed after clone", "id", managed.ID, "error", err)
+		rm.notifyProgressSubs(managed.ID, CloneProgress{Done: true, State: "error", Error: errMsg})
+		rm.cleanupProgressSubs(managed.ID)
 		return
 	}
 
@@ -374,10 +462,27 @@ func (rm *RepoManager) processClone(managed *ManagedRepo) {
 	managed.mu.Lock()
 	managed.State = StateReady
 	managed.Error = ""
+	managed.Progress = CloneProgress{}
 	managed.Repo = repo
 	managed.LastFetch = now
 	managed.LastAccess = now
 	managed.mu.Unlock()
 
 	rm.logger.Info("repo ready", "id", managed.ID)
+	rm.notifyProgressSubs(managed.ID, CloneProgress{Done: true, State: "ready"})
+	rm.cleanupProgressSubs(managed.ID)
+}
+
+// ForceStateForTest sets a repo's state directly. Intended for use in tests only.
+func (rm *RepoManager) ForceStateForTest(id string, state RepoState) {
+	rm.mu.RLock()
+	managed, exists := rm.repos[id]
+	rm.mu.RUnlock()
+	if !exists {
+		return
+	}
+	managed.mu.Lock()
+	managed.State = state
+	managed.Error = ""
+	managed.mu.Unlock()
 }

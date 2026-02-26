@@ -220,6 +220,75 @@ func TestHandleRemoveRepo_Success(t *testing.T) {
 	}
 }
 
+func TestHandleRepoProgress_AlreadyReady(t *testing.T) {
+	s := newTestSaaSServer(t)
+
+	// Add a repo
+	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
+	addReq := httptest.NewRequest("POST", "/api/repos", body)
+	addReq.Header.Set("Content-Type", "application/json")
+	addW := httptest.NewRecorder()
+	s.handleAddRepo(addW, addReq)
+
+	var addResp repoResponse
+	if err := json.NewDecoder(addW.Body).Decode(&addResp); err != nil {
+		t.Fatalf("failed to decode add response: %v", err)
+	}
+
+	// Force the repo to ready state for testing
+	s.repoManager.ForceStateForTest(addResp.ID, repomanager.StateReady)
+
+	// Request SSE progress — should get a single "done" event and close
+	req := httptest.NewRequest("GET", "/api/repos/"+addResp.ID+"/progress", nil)
+	w := httptest.NewRecorder()
+
+	s.handleRepoProgress(w, req, addResp.ID)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	// Parse the SSE data line
+	output := w.Body.String()
+	if !strings.Contains(output, `"done":true`) {
+		t.Errorf("expected done:true in SSE output, got: %s", output)
+	}
+	if !strings.Contains(output, `"state":"ready"`) {
+		t.Errorf("expected state:ready in SSE output, got: %s", output)
+	}
+}
+
+func TestHandleRepoProgress_NotFound(t *testing.T) {
+	s := newTestSaaSServer(t)
+
+	req := httptest.NewRequest("GET", "/api/repos/nonexistent/progress", nil)
+	w := httptest.NewRecorder()
+
+	s.handleRepoProgress(w, req, "nonexistent")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleRepoProgress_LocalMode(t *testing.T) {
+	s := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/repos/test/progress", nil)
+	w := httptest.NewRecorder()
+
+	s.handleRepoProgress(w, req, "test")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
 func TestRepoHandlers_LocalMode(t *testing.T) {
 	// In local mode, all repo management endpoints return 404
 	s := newTestServer(t)

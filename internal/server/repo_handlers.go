@@ -2,8 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/rybkr/gitvista/internal/repomanager"
 )
 
 type addRepoRequest struct {
@@ -15,6 +18,8 @@ type repoResponse struct {
 	URL       string    `json:"url"`
 	State     string    `json:"state"`
 	Error     string    `json:"error,omitempty"`
+	Phase     string    `json:"phase,omitempty"`
+	Percent   int       `json:"percent,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -44,13 +49,15 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state, errMsg, _ := s.repoManager.Status(id)
+	state, errMsg, progress, _ := s.repoManager.Status(id)
 
 	resp := repoResponse{
-		ID:    id,
-		URL:   req.URL,
-		State: state.String(),
-		Error: errMsg,
+		ID:      id,
+		URL:     req.URL,
+		State:   state.String(),
+		Error:   errMsg,
+		Phase:   progress.Phase,
+		Percent: progress.Percent,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -93,16 +100,18 @@ func (s *Server) handleRepoStatus(w http.ResponseWriter, _ *http.Request, id str
 		return
 	}
 
-	state, errMsg, err := s.repoManager.Status(id)
+	state, errMsg, progress, err := s.repoManager.Status(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	resp := repoResponse{
-		ID:    id,
-		State: state.String(),
-		Error: errMsg,
+		ID:      id,
+		State:   state.String(),
+		Error:   errMsg,
+		Phase:   progress.Phase,
+		Percent: progress.Percent,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -128,4 +137,77 @@ func (s *Server) handleRemoveRepo(w http.ResponseWriter, _ *http.Request, id str
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRepoProgress streams clone progress as Server-Sent Events.
+// If the repo is already in a terminal state, it sends a single event and returns.
+func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id string) {
+	if s.repoManager == nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	state, errMsg, progress, err := s.repoManager.Status(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Clear any write deadline set by the writeDeadline middleware —
+	// SSE connections are long-lived like WebSockets.
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	writeEvent := func(p repomanager.CloneProgress) {
+		data, _ := json.Marshal(map[string]interface{}{
+			"phase":   p.Phase,
+			"percent": p.Percent,
+			"done":    p.Done,
+			"state":   p.State,
+			"error":   p.Error,
+		})
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	// If already in a terminal state, send one event and close.
+	if state == repomanager.StateReady || state == repomanager.StateError {
+		writeEvent(repomanager.CloneProgress{
+			Done:  true,
+			State: state.String(),
+			Error: errMsg,
+		})
+		return
+	}
+
+	// Send current progress snapshot immediately.
+	writeEvent(progress)
+
+	ch, unsubscribe := s.repoManager.SubscribeProgress(id)
+	defer unsubscribe()
+
+	for {
+		select {
+		case p, ok := <-ch:
+			if !ok {
+				return
+			}
+			writeEvent(p)
+			if p.Done {
+				return
+			}
+		case <-r.Context().Done():
+			return
+		}
+	}
 }

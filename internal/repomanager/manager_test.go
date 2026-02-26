@@ -178,7 +178,7 @@ func TestStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, _, err := rm.Status(id)
+	state, _, _, err := rm.Status(id)
 	if err != nil {
 		t.Fatalf("Status() error: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestStatus(t *testing.T) {
 		t.Errorf("state = %v, want %v", state, StatePending)
 	}
 
-	_, _, err = rm.Status("nonexistent")
+	_, _, _, err = rm.Status("nonexistent")
 	if err == nil {
 		t.Error("Status() should fail for unknown ID")
 	}
@@ -242,6 +242,131 @@ func TestList(t *testing.T) {
 	repos := rm.List()
 	if len(repos) != 3 {
 		t.Errorf("List() returned %d repos, want 3", len(repos))
+	}
+}
+
+func TestSubscribeProgress(t *testing.T) {
+	cfg := testConfig(t)
+	rm, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rm.Close()
+
+	id, err := rm.AddRepo("https://github.com/user/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ch, unsub := rm.SubscribeProgress(id)
+	defer unsub()
+
+	// Simulate progress updates
+	rm.notifyProgressSubs(id, CloneProgress{Phase: "Receiving objects", Percent: 50})
+
+	select {
+	case p := <-ch:
+		if p.Phase != "Receiving objects" || p.Percent != 50 {
+			t.Errorf("got %+v, want Phase=Receiving objects, Percent=50", p)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for progress")
+	}
+
+	// Latest-value semantics: send two updates rapidly, only the latest
+	// should remain in the buffer.
+	rm.notifyProgressSubs(id, CloneProgress{Phase: "Receiving objects", Percent: 70})
+	rm.notifyProgressSubs(id, CloneProgress{Phase: "Receiving objects", Percent: 80})
+
+	select {
+	case p := <-ch:
+		if p.Percent != 80 {
+			t.Errorf("got Percent=%d, want 80 (latest value)", p.Percent)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for progress")
+	}
+
+	// Final event with Done=true
+	rm.notifyProgressSubs(id, CloneProgress{Done: true, State: "ready"})
+
+	select {
+	case p := <-ch:
+		if !p.Done || p.State != "ready" {
+			t.Errorf("got %+v, want Done=true, State=ready", p)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for final progress")
+	}
+}
+
+func TestSubscribeProgress_Unsubscribe(t *testing.T) {
+	cfg := testConfig(t)
+	rm, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rm.Close()
+
+	id, err := rm.AddRepo("https://github.com/user/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ch, unsub := rm.SubscribeProgress(id)
+
+	// Unsubscribe and verify no more updates arrive
+	unsub()
+
+	rm.notifyProgressSubs(id, CloneProgress{Phase: "test", Percent: 99})
+
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Error("received update after unsubscribe")
+		}
+	default:
+		// Expected: nothing in channel
+	}
+
+	// Verify the subscriber list is cleaned up
+	rm.mu.RLock()
+	subs := rm.progressSubs[id]
+	rm.mu.RUnlock()
+	if len(subs) != 0 {
+		t.Errorf("expected empty subscriber list after unsubscribe, got %d", len(subs))
+	}
+}
+
+func TestCleanupProgressSubs(t *testing.T) {
+	cfg := testConfig(t)
+	rm, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rm.Close()
+
+	id, err := rm.AddRepo("https://github.com/user/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ch, _ := rm.SubscribeProgress(id)
+
+	rm.cleanupProgressSubs(id)
+
+	// Channel should be closed
+	_, ok := <-ch
+	if ok {
+		t.Error("expected channel to be closed after cleanup")
+	}
+
+	// Subscriber list should be empty
+	rm.mu.RLock()
+	_, exists := rm.progressSubs[id]
+	rm.mu.RUnlock()
+	if exists {
+		t.Error("expected subscriber list to be deleted after cleanup")
 	}
 }
 

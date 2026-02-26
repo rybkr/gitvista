@@ -168,7 +168,7 @@ func TestHashURL(t *testing.T) {
 func TestCloneRepo_InvalidURL(t *testing.T) {
 	destPath := t.TempDir() + "/should-not-exist"
 
-	err := cloneRepo(context.Background(), "https://invalid.invalid/no/such/repo.git", destPath, 10*time.Second)
+	err := cloneRepo(context.Background(), "https://invalid.invalid/no/such/repo.git", destPath, 10*time.Second, nil)
 	if err == nil {
 		t.Fatal("cloneRepo() with invalid URL should return error")
 	}
@@ -176,5 +176,113 @@ func TestCloneRepo_InvalidURL(t *testing.T) {
 	// Verify cleanup happened
 	if _, statErr := os.Stat(destPath); statErr == nil {
 		t.Error("destPath should have been cleaned up after failed clone")
+	}
+}
+
+func TestParseProgressLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantOK  bool
+		phase   string
+		percent int
+	}{
+		{
+			name:    "receiving objects",
+			input:   "Receiving objects:  45% (123/456)",
+			wantOK:  true,
+			phase:   "Receiving objects",
+			percent: 45,
+		},
+		{
+			name:    "resolving deltas",
+			input:   "Resolving deltas: 100% (789/789), done.",
+			wantOK:  true,
+			phase:   "Resolving deltas",
+			percent: 100,
+		},
+		{
+			name:    "counting objects",
+			input:   "Counting objects: 12% (5/42)",
+			wantOK:  true,
+			phase:   "Counting objects",
+			percent: 12,
+		},
+		{
+			name:   "no match plain text",
+			input:  "Cloning into bare repository...",
+			wantOK: false,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, ok := parseProgressLine(tt.input)
+			if ok != tt.wantOK {
+				t.Fatalf("parseProgressLine(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if p.Phase != tt.phase {
+				t.Errorf("phase = %q, want %q", p.Phase, tt.phase)
+			}
+			if p.Percent != tt.percent {
+				t.Errorf("percent = %d, want %d", p.Percent, tt.percent)
+			}
+		})
+	}
+}
+
+func TestSplitProgressLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "carriage return separated",
+			input: "Receiving objects:  10% (1/10)\rReceiving objects:  20% (2/10)",
+			want:  []string{"Receiving objects:  10% (1/10)", "Receiving objects:  20% (2/10)"},
+		},
+		{
+			name:  "newline separated",
+			input: "line1\nline2",
+			want:  []string{"line1", "line2"},
+		},
+		{
+			name:  "mixed separators",
+			input: "a\rb\nc\rd",
+			want:  []string{"a", "b", "c", "d"},
+		},
+		{
+			name:  "empty chunks filtered",
+			input: "\r\n\r",
+			want:  nil,
+		},
+		{
+			name:  "single line",
+			input: "hello",
+			want:  []string{"hello"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitProgressLines(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("splitProgressLines(%q) = %v (len %d), want %v (len %d)", tt.input, got, len(got), tt.want, len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("splitProgressLines(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
 	}
 }
