@@ -50,6 +50,16 @@ archives:
       - goos: windows
         format: zip
 
+dockers:
+  - image_templates:
+      - "ghcr.io/rybkr/gitvista:{{ .Version }}"
+      - "ghcr.io/rybkr/gitvista:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--build-arg=VERSION={{.Version}}"
+      - "--build-arg=COMMIT={{.ShortCommit}}"
+      - "--build-arg=BUILD_DATE={{.Date}}"
+
 changelog:
   sort: asc
   filters:
