@@ -78,6 +78,18 @@ export class GraphRenderer {
         const laneInfo = state.laneInfo ?? [];
         const mergeBaseHash = state.mergePreview?.mergeBaseHash ?? "";
 
+        // Graph-space viewport bounds for render culling. Nodes and links
+        // outside these bounds are skipped, avoiding draw calls for the
+        // thousands of off-screen elements in large repositories.
+        const k = zoomTransform.k;
+        const cullMargin = 200;
+        const vpBounds = {
+            left: -zoomTransform.x / k - cullMargin,
+            top: -zoomTransform.y / k - cullMargin,
+            right: (-zoomTransform.x + viewportWidth) / k + cullMargin,
+            bottom: (-zoomTransform.y + viewportHeight) / k + cullMargin,
+        };
+
         this.clear(viewportWidth, viewportHeight);
         this.renderDotGrid(viewportWidth, viewportHeight, zoomTransform);
         this.setupTransform(zoomTransform);
@@ -86,9 +98,9 @@ export class GraphRenderer {
             this.renderLaneBackgrounds(laneInfo, viewportHeight, zoomTransform);
         }
 
-        this.renderLinks(links, nodes);
+        this.renderLinks(links, nodes, vpBounds);
         const layoutMode = state.layoutMode ?? "force";
-        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash);
+        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash, vpBounds);
 
         if (laneInfo.length > 0) {
             this.renderLaneHeaders(laneInfo);
@@ -482,7 +494,7 @@ export class GraphRenderer {
      * @param {Array<{source: string | import("../types.js").GraphNode, target: string | import("../types.js").GraphNode, kind?: string}>} links Link definitions from the force simulation.
      * @param {import("../types.js").GraphNode[]} nodes Node collection used to resolve string references.
      */
-    renderLinks(links, nodes) {
+    renderLinks(links, nodes, vpBounds) {
         this.ctx.lineWidth = LINK_THICKNESS;
 
         // Build a hash-to-node lookup map once per frame: O(n) instead of
@@ -502,6 +514,15 @@ export class GraphRenderer {
                 ? link.target
                 : nodeMap.get(link.target);
             if (!source || !target) continue;
+
+            // Viewport culling: skip links whose endpoint bounding box
+            // is entirely outside the visible area.
+            if (vpBounds) {
+                if (source.x < vpBounds.left && target.x < vpBounds.left) continue;
+                if (source.x > vpBounds.right && target.x > vpBounds.right) continue;
+                if (source.y < vpBounds.top && target.y < vpBounds.top) continue;
+                if (source.y > vpBounds.bottom && target.y > vpBounds.bottom) continue;
+            }
 
             const warmup =
                 typeof link.warmup === "number"
@@ -820,7 +841,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash) {
+    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash, vpBounds) {
         // Build a reverse map: commit hash -> array of tag names pointing at it.
         const tagsByCommit = new Map();
         if (tags) {
@@ -835,24 +856,28 @@ export class GraphRenderer {
         }
 
         for (const node of nodes) {
-            if (node.type === "commit") {
-                this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, mergeBaseHash);
-            }
+            if (node.type !== "commit") continue;
+            if (vpBounds && (node.x < vpBounds.left || node.x > vpBounds.right ||
+                node.y < vpBounds.top || node.y > vpBounds.bottom)) continue;
+            this.renderCommitNode(node, highlightKey, zoomTransform, headHash, hoverNode, layoutMode, mergeBaseHash);
         }
         for (const node of nodes) {
-            if (node.type === "branch") {
-                this.renderBranchNode(node, highlightKey);
-            }
+            if (node.type !== "branch") continue;
+            if (vpBounds && (node.x < vpBounds.left || node.x > vpBounds.right ||
+                node.y < vpBounds.top || node.y > vpBounds.bottom)) continue;
+            this.renderBranchNode(node, highlightKey);
         }
         for (const node of nodes) {
-            if (node.type === "tag") {
-                this.renderTagNode(node, highlightKey);
-            }
+            if (node.type !== "tag") continue;
+            if (vpBounds && (node.x < vpBounds.left || node.x > vpBounds.right ||
+                node.y < vpBounds.top || node.y > vpBounds.bottom)) continue;
+            this.renderTagNode(node, highlightKey);
         }
         for (const node of nodes) {
-            if (node.type === "ghost-merge") {
-                this.renderGhostMergeNode(node);
-            }
+            if (node.type !== "ghost-merge") continue;
+            if (vpBounds && (node.x < vpBounds.left || node.x > vpBounds.right ||
+                node.y < vpBounds.top || node.y > vpBounds.bottom)) continue;
+            this.renderGhostMergeNode(node);
         }
     }
 
