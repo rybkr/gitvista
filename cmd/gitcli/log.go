@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-func runLog(repo *gitcore.Repository, args []string) int {
+func runLog(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
 	maxCount := 0
 	oneline := false
 
@@ -50,21 +51,21 @@ func runLog(repo *gitcore.Repository, args []string) int {
 	headRef := repo.HeadRef()
 
 	// Build commit hash -> decoration strings
-	decorations := buildDecorations(repo, branches, tags, headRef)
+	decorations := buildDecorations(repo, branches, tags, headRef, cw)
 
 	for i, c := range commits {
 		decor := ""
 		if d, ok := decorations[c.ID]; ok {
-			decor = " (" + d + ")"
+			decor = " " + cw.Yellow("(") + d + cw.Yellow(")")
 		}
 
 		if oneline {
-			fmt.Printf("%s%s %s\n", c.ID.Short(), decor, firstLine(c.Message))
+			fmt.Printf("%s%s %s\n", cw.Yellow(c.ID.Short()), decor, firstLine(c.Message))
 		} else {
 			if i > 0 {
 				fmt.Println()
 			}
-			fmt.Printf("commit %s%s\n", c.ID, decor)
+			fmt.Printf("%s %s%s\n", cw.Yellow("commit"), cw.Yellow(string(c.ID)), decor)
 			if len(c.Parents) > 1 {
 				parentStrs := make([]string, len(c.Parents))
 				for j, p := range c.Parents {
@@ -84,7 +85,7 @@ func runLog(repo *gitcore.Repository, args []string) int {
 	return 0
 }
 
-func buildDecorations(repo *gitcore.Repository, branches map[string]gitcore.Hash, tags map[string]string, headRef string) map[gitcore.Hash]string {
+func buildDecorations(repo *gitcore.Repository, branches map[string]gitcore.Hash, tags map[string]string, headRef string, cw *termcolor.Writer) map[gitcore.Hash]string {
 	result := make(map[gitcore.Hash]string)
 
 	// Determine the branch name HEAD points to
@@ -113,20 +114,20 @@ func buildDecorations(repo *gitcore.Repository, branches map[string]gitcore.Hash
 	for name, hash := range branches {
 		info := getInfo(hash)
 		if name == headBranch {
-			info.headArrow = "HEAD -> " + name
+			info.headArrow = cw.BoldCyan("HEAD -> ") + cw.Green(name)
 		} else {
-			info.branches = append(info.branches, name)
+			info.branches = append(info.branches, cw.Green(name))
 		}
 	}
 
 	for name, hashStr := range tags {
 		info := getInfo(gitcore.Hash(hashStr))
-		info.tags = append(info.tags, "tag: "+name)
+		info.tags = append(info.tags, cw.Yellow("tag: "+name))
 	}
 
 	if headBranch == "" && repo.HeadDetached() {
 		info := getInfo(repo.Head())
-		info.headArrow = "HEAD"
+		info.headArrow = cw.BoldCyan("HEAD")
 	}
 
 	for hash, info := range byHash {
@@ -137,7 +138,7 @@ func buildDecorations(repo *gitcore.Repository, branches map[string]gitcore.Hash
 		parts = append(parts, info.branches...)
 		parts = append(parts, info.tags...)
 		if len(parts) > 0 {
-			result[hash] = strings.Join(parts, ", ")
+			result[hash] = strings.Join(parts, cw.Yellow(", "))
 		}
 	}
 

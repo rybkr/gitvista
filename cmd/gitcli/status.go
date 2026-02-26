@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
 const (
@@ -13,7 +14,7 @@ const (
 	statusDeleted  = "deleted"
 )
 
-func runStatus(repo *gitcore.Repository, args []string) int {
+func runStatus(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
 	porcelain := false
 	for _, arg := range args {
 		if arg == "-s" || arg == "--porcelain" {
@@ -35,7 +36,7 @@ func runStatus(repo *gitcore.Repository, args []string) int {
 	if porcelain {
 		return printPorcelain(status)
 	}
-	return printLongStatus(repo, status)
+	return printLongStatus(repo, status, cw)
 }
 
 func printPorcelain(status *gitcore.WorkingTreeStatus) int {
@@ -73,16 +74,16 @@ func statusCodes(f gitcore.FileStatus) (x, y byte) {
 	return x, y
 }
 
-func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus) int {
+func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus, cw *termcolor.Writer) int {
 	headRef := repo.HeadRef()
 	if headRef != "" {
 		branch := headRef
 		if idx := len("refs/heads/"); len(headRef) > idx {
 			branch = headRef[idx:]
 		}
-		fmt.Printf("On branch %s\n", branch)
+		fmt.Printf("On branch %s\n", cw.Green(branch))
 	} else {
-		fmt.Printf("HEAD detached at %s\n", repo.Head().Short())
+		fmt.Printf("HEAD detached at %s\n", cw.Red(repo.Head().Short()))
 	}
 
 	var staged, unstaged, untracked []gitcore.FileStatus
@@ -112,7 +113,7 @@ func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus
 			case statusDeleted:
 				prefix = "deleted:    "
 			}
-			fmt.Printf("\t%s%s\n", prefix, f.Path)
+			fmt.Printf("\t%s\n", cw.Green(prefix+f.Path))
 		}
 		fmt.Println()
 	}
@@ -128,7 +129,7 @@ func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus
 			case statusDeleted:
 				prefix = "deleted:    "
 			}
-			fmt.Printf("\t%s%s\n", prefix, f.Path)
+			fmt.Printf("\t%s\n", cw.Red(prefix+f.Path))
 		}
 		fmt.Println()
 	}
@@ -137,7 +138,7 @@ func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus
 		fmt.Println("Untracked files:")
 		fmt.Println("  (use \"git add <file>...\" to include in what will be committed)")
 		for _, f := range untracked {
-			fmt.Printf("\t%s\n", f.Path)
+			fmt.Printf("\t%s\n", cw.Red(f.Path))
 		}
 		fmt.Println()
 	}

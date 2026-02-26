@@ -6,9 +6,10 @@ import (
 	"strings"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-func runDiff(repo *gitcore.Repository, args []string) int {
+func runDiff(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
 	stat := false
 	var revs []string
 
@@ -57,10 +58,10 @@ func runDiff(repo *gitcore.Repository, args []string) int {
 		return printDiffStat(entries)
 	}
 
-	return printUnifiedDiff(repo, entries)
+	return printUnifiedDiff(repo, entries, cw)
 }
 
-func printUnifiedDiff(repo *gitcore.Repository, entries []gitcore.DiffEntry) int {
+func printUnifiedDiff(repo *gitcore.Repository, entries []gitcore.DiffEntry, cw *termcolor.Writer) int {
 	for _, entry := range entries {
 		path := entry.Path
 		oldPath := entry.OldPath
@@ -68,7 +69,7 @@ func printUnifiedDiff(repo *gitcore.Repository, entries []gitcore.DiffEntry) int
 			oldPath = path
 		}
 
-		fmt.Printf("diff --git a/%s b/%s\n", oldPath, path)
+		fmt.Println(cw.Bold(fmt.Sprintf("diff --git a/%s b/%s", oldPath, path)))
 
 		// index line
 		oldHash := entry.OldHash.Short()
@@ -82,18 +83,18 @@ func printUnifiedDiff(repo *gitcore.Repository, entries []gitcore.DiffEntry) int
 
 		switch entry.Status {
 		case gitcore.DiffStatusAdded:
-			fmt.Printf("new file mode %s\n", normalizeMode(entry.NewMode))
-			fmt.Printf("index %s..%s\n", oldHash, newHash)
+			fmt.Println(cw.Bold(fmt.Sprintf("new file mode %s", normalizeMode(entry.NewMode))))
+			fmt.Println(cw.Bold(fmt.Sprintf("index %s..%s", oldHash, newHash)))
 		case gitcore.DiffStatusDeleted:
-			fmt.Printf("deleted file mode %s\n", normalizeMode(entry.OldMode))
-			fmt.Printf("index %s..%s\n", oldHash, newHash)
+			fmt.Println(cw.Bold(fmt.Sprintf("deleted file mode %s", normalizeMode(entry.OldMode))))
+			fmt.Println(cw.Bold(fmt.Sprintf("index %s..%s", oldHash, newHash)))
 		case gitcore.DiffStatusRenamed:
-			fmt.Printf("similarity index 100%%\n")
-			fmt.Printf("rename from %s\n", oldPath)
-			fmt.Printf("rename to %s\n", path)
+			fmt.Println(cw.Bold("similarity index 100%"))
+			fmt.Println(cw.Bold(fmt.Sprintf("rename from %s", oldPath)))
+			fmt.Println(cw.Bold(fmt.Sprintf("rename to %s", path)))
 			continue // No content diff for exact renames
 		default:
-			fmt.Printf("index %s..%s\n", oldHash, newHash)
+			fmt.Println(cw.Bold(fmt.Sprintf("index %s..%s", oldHash, newHash)))
 		}
 
 		if entry.IsBinary {
@@ -114,26 +115,26 @@ func printUnifiedDiff(repo *gitcore.Repository, entries []gitcore.DiffEntry) int
 
 		// --- / +++ headers
 		if entry.Status == gitcore.DiffStatusAdded {
-			fmt.Printf("--- /dev/null\n")
+			fmt.Println(cw.Bold("--- /dev/null"))
 		} else {
-			fmt.Printf("--- a/%s\n", oldPath)
+			fmt.Println(cw.Bold(fmt.Sprintf("--- a/%s", oldPath)))
 		}
 		if entry.Status == gitcore.DiffStatusDeleted {
-			fmt.Printf("+++ /dev/null\n")
+			fmt.Println(cw.Bold("+++ /dev/null"))
 		} else {
-			fmt.Printf("+++ b/%s\n", path)
+			fmt.Println(cw.Bold(fmt.Sprintf("+++ b/%s", path)))
 		}
 
 		for _, hunk := range fileDiff.Hunks {
-			fmt.Printf("@@ -%d,%d +%d,%d @@\n", hunk.OldStart, hunk.OldLines, hunk.NewStart, hunk.NewLines)
+			fmt.Println(cw.Cyan(fmt.Sprintf("@@ -%d,%d +%d,%d @@", hunk.OldStart, hunk.OldLines, hunk.NewStart, hunk.NewLines)))
 			for _, line := range hunk.Lines {
 				switch line.Type {
 				case gitcore.LineTypeContext:
 					fmt.Printf(" %s\n", line.Content)
 				case gitcore.LineTypeAddition:
-					fmt.Printf("+%s\n", line.Content)
+					fmt.Println(cw.Green(fmt.Sprintf("+%s", line.Content)))
 				case gitcore.LineTypeDeletion:
-					fmt.Printf("-%s\n", line.Content)
+					fmt.Println(cw.Red(fmt.Sprintf("-%s", line.Content)))
 				}
 			}
 		}

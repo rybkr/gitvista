@@ -42,18 +42,18 @@ func main() {
 		os.Exit(128)
 	}
 
-	_ = termcolor.NewWriter(os.Stdout, gf.colorMode) // Phase 2 wires this into output
+	cw := termcolor.NewWriter(os.Stdout, gf.colorMode)
 
 	var exitCode int
 	switch args[0] {
 	case "log":
-		exitCode = runLog(repo, args[1:])
+		exitCode = runLog(repo, args[1:], cw)
 	case "cat-file":
 		exitCode = runCatFile(repo, args[1:])
 	case "diff":
-		exitCode = runDiff(repo, args[1:])
+		exitCode = runDiff(repo, args[1:], cw)
 	case "status":
-		exitCode = runStatus(repo, args[1:])
+		exitCode = runStatus(repo, args[1:], cw)
 	default:
 		fmt.Fprintf(os.Stderr, "gitvista-cli: %q is not a command\n", args[0]) //nolint:gosec // G705: CLI stderr, not web; %q quotes safely
 		exitCode = 1
