@@ -53,7 +53,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	_ = termcolor.NewWriter(os.Stdout, colorMode) // Phase 2 wires this into output
+	cw := termcolor.NewWriter(os.Stdout, colorMode)
 
 	portNum, err := strconv.Atoi(*port)
 	if err != nil || portNum < 1 || portNum > 65535 {
@@ -67,7 +67,7 @@ func main() {
 	}
 
 	if *showHelp {
-		printHelp()
+		printHelp(cw)
 		os.Exit(0)
 	}
 
@@ -188,43 +188,43 @@ func printVersion() {
 	fmt.Printf("  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
 }
 
-func printHelp() {
+func printHelp(cw *termcolor.Writer) {
 	fmt.Println("GitVista - Real-time Git repository visualization")
 	fmt.Printf("Version: %s\n\n", version)
-	fmt.Println("Usage:")
+	fmt.Println(cw.Bold("Usage:"))
 	fmt.Println("  gitvista [flags]")
 	fmt.Println()
-	fmt.Println("Flags:")
-	fmt.Println("  -repo string")
+	fmt.Println(cw.Bold("Flags:"))
+	fmt.Printf("  %s string\n", cw.Yellow("-repo"))
 	fmt.Println("        Path to git repository (local mode)")
 	fmt.Println("        Environment: GITVISTA_REPO")
 	fmt.Println()
-	fmt.Println("  -data-dir string")
+	fmt.Printf("  %s string\n", cw.Yellow("-data-dir"))
 	fmt.Println("        Data directory for managed repos (SaaS mode, default: /data/repos)")
 	fmt.Println("        Environment: GITVISTA_DATA_DIR")
 	fmt.Println()
-	fmt.Println("  -port string")
+	fmt.Printf("  %s string\n", cw.Yellow("-port"))
 	fmt.Println("        Port to listen on (default: 8080)")
 	fmt.Println("        Environment: GITVISTA_PORT")
 	fmt.Println()
-	fmt.Println("  -host string")
+	fmt.Printf("  %s string\n", cw.Yellow("-host"))
 	fmt.Println("        Host to bind to (default: all interfaces)")
 	fmt.Println("        Environment: GITVISTA_HOST")
 	fmt.Println()
-	fmt.Println("  -version")
+	fmt.Printf("  %s\n", cw.Yellow("-version"))
 	fmt.Println("        Show version and exit")
 	fmt.Println()
-	fmt.Println("  -help")
+	fmt.Printf("  %s\n", cw.Yellow("-help"))
 	fmt.Println("        Show this help message")
 	fmt.Println()
-	fmt.Println("Examples:")
+	fmt.Println(cw.Bold("Examples:"))
 	fmt.Println("  gitvista -repo .              # local mode: current directory")
 	fmt.Println("  gitvista -repo /path/to/repo  # local mode: specific repo")
 	fmt.Println("  gitvista                      # SaaS mode: manage repos via API")
 	fmt.Println("  gitvista -port 3000")
 	fmt.Println("  gitvista -host localhost -port 9090")
 	fmt.Println()
-	fmt.Println("Environment Variables:")
+	fmt.Println(cw.Bold("Environment Variables:"))
 	fmt.Println("  GITVISTA_REPO         Repository path (sets local mode)")
 	fmt.Println("  GITVISTA_DATA_DIR     Data directory for SaaS mode")
 	fmt.Println("  GITVISTA_PORT         Default port")
