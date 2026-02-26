@@ -147,8 +147,8 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	state, errMsg, progress, err := s.repoManager.Status(id)
-	if err != nil {
+	// Guard: verify repo exists before setting up SSE.
+	if _, _, _, err := s.repoManager.Status(id); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -158,6 +158,14 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id s
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
+
+	// Subscribe BEFORE re-checking state so we never miss the final Done
+	// event if the clone finishes between the state check and subscribe.
+	ch, unsubscribe := s.repoManager.SubscribeProgress(id)
+	defer unsubscribe()
+
+	// Re-check state after subscribing — if already terminal, send one event.
+	state, errMsg, _, _ := s.repoManager.Status(id)
 
 	// Clear any write deadline set by the writeDeadline middleware —
 	// SSE connections are long-lived like WebSockets.
@@ -180,7 +188,6 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id s
 		flusher.Flush()
 	}
 
-	// If already in a terminal state, send one event and close.
 	if state == repomanager.StateReady || state == repomanager.StateError {
 		writeEvent(repomanager.CloneProgress{
 			Done:  true,
@@ -190,11 +197,8 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	// Send current progress snapshot immediately.
-	writeEvent(progress)
-
-	ch, unsubscribe := s.repoManager.SubscribeProgress(id)
-	defer unsubscribe()
+	// Flush headers immediately so the browser establishes the SSE connection.
+	flusher.Flush()
 
 	for {
 		select {

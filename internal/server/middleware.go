@@ -58,6 +58,14 @@ func (sr *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
 }
 
+// Flush implements http.Flusher, delegating to the underlying ResponseWriter.
+// This is required for SSE (Server-Sent Events) to work through the logging middleware.
+func (sr *statusRecorder) Flush() {
+	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // requestLogger logs method, path, status, and duration for each HTTP request.
 func requestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
