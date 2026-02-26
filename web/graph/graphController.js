@@ -26,6 +26,7 @@ import { LaneStrategy } from "./layout/laneStrategy.js";
 import { buildPalette } from "./utils/palette.js";
 import { getCommitTimestamp } from "./utils/time.js";
 import { createGraphState, setZoomTransform } from "./state/graphState.js";
+import { loadSettings, saveSettings, getDefaults } from "../graphSettingsDefaults.js";
 
 // ── A3 Filter helpers ─────────────────────────────────────────────────────────
 //
@@ -136,13 +137,19 @@ function getReachableCommits(branchTipHash, commits) {
  * @param {Array<Object>} segments Segments array from laneStrategy (used for isolation).
  * @returns {((node: import("./types.js").GraphNode) => boolean) | null}
  */
-function buildFilterPredicate(searchState, filterState, branches, commits, stashes, isolatedLanePosition, segments) {
+function buildFilterPredicate(searchState, filterState, branches, commits, stashes, isolatedLanePosition, segments, scopeSettings) {
     // The matcher is null when the query is empty (parseSearchQuery sets isEmpty).
     const matcher = searchState?.matcher ?? null;
     const hasSearch = matcher !== null;
     const { hideRemotes, hideMerges, hideStashes, focusBranch } = filterState;
     const hasIsolation = isolatedLanePosition !== null && isolatedLanePosition !== undefined;
-    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch || hasIsolation;
+
+    // Scope filtering
+    const scope = scopeSettings || {};
+    const hasDepthLimit = typeof scope.depthLimit === "number" && scope.depthLimit !== Infinity;
+    const hasTimeWindow = scope.timeWindow && scope.timeWindow !== "all";
+    const hasScope = hasDepthLimit || hasTimeWindow;
+    const hasAnyFilter = hideRemotes || hideMerges || hideStashes || !!focusBranch || hasIsolation || hasScope;
 
     // Short-circuit: nothing active → caller skips the dimming loop entirely.
     if (!hasSearch && !hasAnyFilter) return null;
@@ -163,6 +170,45 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
     if (focusBranch) {
         const tipHash = branches.get(focusBranch);
         reachableSet = tipHash ? getReachableCommits(tipHash, commits) : new Set();
+    }
+
+    // Pre-compute depth map for scope depth limit (BFS from HEAD).
+    let depthMap = null;
+    if (hasDepthLimit) {
+        depthMap = new Map();
+        // Find HEAD hash — prefer state.headHash but it's not passed here,
+        // so we look for the commit pointed to by HEAD/main/master.
+        let headHash = null;
+        for (const [name, hash] of branches.entries()) {
+            if (name === "HEAD" || name === "refs/heads/main" || name === "refs/heads/master") {
+                headHash = hash;
+                if (name === "HEAD") break;
+            }
+        }
+        if (headHash) {
+            const queue = [{ hash: headHash, depth: 0 }];
+            while (queue.length > 0) {
+                const { hash, depth } = queue.shift();
+                if (!hash || depthMap.has(hash)) continue;
+                depthMap.set(hash, depth);
+                const commit = commits.get(hash);
+                if (!commit) continue;
+                for (const parent of commit.parents ?? []) {
+                    if (!depthMap.has(parent)) {
+                        queue.push({ hash: parent, depth: depth + 1 });
+                    }
+                }
+            }
+        }
+    }
+
+    // Pre-compute time cutoff for scope time window.
+    let timeCutoff = 0;
+    if (hasTimeWindow) {
+        const now = Date.now() / 1000;
+        const windows = { "7d": 7, "30d": 30, "90d": 90, "1y": 365 };
+        const days = windows[scope.timeWindow];
+        if (days) timeCutoff = now - days * 86400;
     }
 
     return (node) => {
@@ -196,6 +242,18 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
         // Lane isolation: only commits in segments at the isolated position pass.
         if (isolatedHashes !== null && !isolatedHashes.has(node.hash)) return false;
 
+        // Scope: depth limit — dim commits beyond the configured depth from HEAD.
+        if (depthMap !== null && node.type === "commit") {
+            const depth = depthMap.get(node.hash);
+            if (depth === undefined || depth > scope.depthLimit) return false;
+        }
+
+        // Scope: time window — dim commits older than the cutoff.
+        if (timeCutoff > 0 && node.type === "commit") {
+            const ts = node.commit?.committer?.date || node.commit?.author?.date || 0;
+            if (ts < timeCutoff) return false;
+        }
+
         return true;
     };
 }
@@ -224,6 +282,10 @@ export function createGraphController(rootElement, options = {}) {
 
     const state = createGraphState();
     const { commits, branches, nodes, links } = state;
+
+    // Graph settings (physics + scope) — loaded from localStorage.
+    state.graphSettings = loadSettings();
+    let minimapCallback = null;
 
     let zoomTransform = state.zoomTransform;
     let dragState = null;
@@ -1144,6 +1206,7 @@ export function createGraphController(rootElement, options = {}) {
             state.stashes,
             state.isolatedLanePosition,
             laneStrategy._segments,
+            state.graphSettings?.scope,
         );
         const predicate = state.filterPredicate;
         for (const node of nodes) {
@@ -1544,6 +1607,10 @@ export function createGraphController(rootElement, options = {}) {
                 laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
                 mergePreview: state.mergePreview,
             });
+            // Notify minimap after every main canvas render.
+            if (minimapCallback) {
+                minimapCallback();
+            }
             // Keep the animation loop alive while transitions are in flight,
             // even if the D3 simulation has cooled.
             if (dimTransitionsActive) {
@@ -1775,6 +1842,75 @@ export function createGraphController(rootElement, options = {}) {
             state.mergePreview = preview || null;
             updateGraph();
             render();
+        },
+        /** Returns the live nodes array for the minimap. */
+        getNodes: () => nodes,
+        /** Returns the live links array for the minimap. */
+        getLinks: () => links,
+        /** Returns the current D3 zoom transform. */
+        getZoomTransform: () => zoomTransform,
+        /** Returns current viewport dimensions. */
+        getViewport: () => ({ width: viewportWidth, height: viewportHeight }),
+        /**
+         * Returns navigation position info for the breadcrumb bar.
+         * @returns {{ selectedHash: string|null, headHash: string|null, index: number, total: number, layoutMode: string }}
+         */
+        getNavigationPosition: () => {
+            if (!sortedCommitCache) {
+                sortedCommitCache = nodes
+                    .filter((n) => n.type === "commit")
+                    .sort((a, b) => {
+                        const aTime = getCommitTimestamp(a.commit);
+                        const bTime = getCommitTimestamp(b.commit);
+                        if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                        return bTime - aTime;
+                    });
+            }
+            const total = sortedCommitCache.length;
+            let index = -1;
+            if (selectedHash) {
+                index = sortedCommitCache.findIndex((n) => n.hash === selectedHash);
+            }
+            return {
+                selectedHash,
+                headHash: state.headHash || null,
+                index: index >= 0 ? index + 1 : -1,
+                total,
+                layoutMode: state.layoutMode,
+            };
+        },
+        /**
+         * Registers a callback invoked after every render for minimap updates.
+         * @param {Function} cb
+         */
+        setMinimapCallback: (cb) => {
+            minimapCallback = cb;
+        },
+        /**
+         * Updates graph settings (physics + scope), persists to localStorage,
+         * and applies changes live.
+         * @param {{ scope?: object, physics?: object }} settings
+         */
+        setGraphSettings: (settings) => {
+            if (settings.physics) {
+                state.graphSettings.physics = { ...state.graphSettings.physics, ...settings.physics };
+                if (state.layoutMode === "force") {
+                    forceStrategy.applyPhysics(state.graphSettings.physics);
+                }
+            }
+            if (settings.scope) {
+                state.graphSettings.scope = { ...state.graphSettings.scope, ...settings.scope };
+                rebuildAndApplyPredicate();
+            }
+            saveSettings(state.graphSettings);
+        },
+        /** Returns the current graph settings. */
+        getGraphSettings: () => state.graphSettings,
+        /** Returns current layout mode ("force" or "lane"). */
+        getLayoutMode: () => state.layoutMode,
+        /** Programmatic access to the zoom behavior for minimap click-to-jump. */
+        zoomTo: (x, y) => {
+            select(canvas).call(zoom.translateTo, x, y);
         },
     };
 }

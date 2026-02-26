@@ -20,6 +20,10 @@ import { createRepoLanding } from "./repoLanding.js";
 import { setConnectionState as setErrorConnectionState, setRepositoryAvailable } from "./errorState.js";
 import { createConnectionBanner } from "./connectionBanner.js";
 import { createRepoUnavailableOverlay } from "./repoUnavailableOverlay.js";
+import { createGraphBreadcrumb } from "./graphBreadcrumb.js";
+import { createGraphMinimap } from "./graphMinimap.js";
+import { createGraphSettings } from "./graphSettings.js";
+import { loadSettings } from "./graphSettingsDefaults.js";
 
 const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
 const REPO_HASH_RE = /^repo\/([^/]+)(?:\/([0-9a-f]{40}))?$/i;
@@ -235,6 +239,8 @@ function bootstrapGraph(root, repoId) {
                     history.replaceState(null, "", location.pathname);
                 }
             }
+            // Update breadcrumb on commit selection.
+            refreshBreadcrumb();
         },
     });
 
@@ -283,6 +289,69 @@ function bootstrapGraph(root, repoId) {
 
     graph.setFilterState(graphFilters.getState());
 
+    // ── Breadcrumb bar ────────────────────────────────────────────────
+    const breadcrumb = createGraphBreadcrumb({
+        onBranchClick: (branch) => {
+            const tip = graph.getBranches().get(branch);
+            if (tip) graph.selectAndCenter(tip);
+        },
+    });
+    const canvasEl2 = root.querySelector("canvas");
+    if (canvasEl2) {
+        root.insertBefore(breadcrumb.el, canvasEl2);
+    }
+
+    /** Helper to refresh breadcrumb from current graph state. */
+    function refreshBreadcrumb() {
+        const pos = graph.getNavigationPosition();
+        if (!pos.selectedHash) {
+            breadcrumb.update({ hash: null });
+            return;
+        }
+        const commit = graph.getCommits().get(pos.selectedHash);
+        // Find branch pointing at this commit
+        let branch = null;
+        for (const [name, hash] of graph.getBranches().entries()) {
+            if (hash === pos.selectedHash && !name.startsWith("refs/remotes/")) {
+                branch = name;
+                break;
+            }
+        }
+        breadcrumb.update({
+            branch,
+            hash: pos.selectedHash,
+            message: commit?.message?.split("\n")[0] ?? null,
+            index: pos.index,
+            total: pos.total,
+        });
+    }
+
+    // ── Minimap ───────────────────────────────────────────────────────
+    const minimap = createGraphMinimap({
+        getNodes: () => graph.getNodes(),
+        getLinks: () => graph.getLinks(),
+        getZoomTransform: () => graph.getZoomTransform(),
+        getViewport: () => graph.getViewport(),
+        onJump: (x, y) => graph.zoomTo(x, y),
+    });
+    root.appendChild(minimap.el);
+
+    // Hook minimap rendering into the graph render loop.
+    graph.setMinimapCallback(() => minimap.render());
+
+    // ── Settings overlay ──────────────────────────────────────────────
+    const graphSettings = createGraphSettings({
+        initialSettings: loadSettings(),
+        onChange: (partial) => graph.setGraphSettings(partial),
+        getBranches: () => graph.getBranches(),
+        getLayoutMode: () => graph.getLayoutMode(),
+    });
+    canvasToolbar.appendChild(graphSettings.triggerEl);
+    root.appendChild(graphSettings.overlayEl);
+
+    // Apply initial settings to the graph controller.
+    graph.setGraphSettings(loadSettings());
+
     const keyboardHelp = createKeyboardHelp();
 
     createKeyboardShortcuts({
@@ -295,17 +364,27 @@ function bootstrapGraph(root, repoId) {
             keyboardHelp.hide();
             search.clear();
             graph.clearIsolation();
+            if (graphSettings.isVisible()) graphSettings.hide();
         },
-        onNavigateNext: () => graph.navigateCommits("next"),
-        onNavigatePrev: () => graph.navigateCommits("prev"),
+        onNavigateNext: () => {
+            graph.navigateCommits("next");
+            refreshBreadcrumb();
+        },
+        onNavigatePrev: () => {
+            graph.navigateCommits("prev");
+            refreshBreadcrumb();
+        },
         onSearchResultNext: () => {
             const pos = graph.navigateSearchResults("next");
             if (pos) search.updatePosition(pos.index, pos.total);
+            refreshBreadcrumb();
         },
         onSearchResultPrev: () => {
             const pos = graph.navigateSearchResults("prev");
             if (pos) search.updatePosition(pos.index, pos.total);
+            refreshBreadcrumb();
         },
+        onToggleSettings: () => graphSettings.toggle(),
     });
 
     /** If the file explorer has no commit loaded, open HEAD. */
@@ -348,6 +427,7 @@ function bootstrapGraph(root, repoId) {
 
             graphFilters.updateBranches(graph.getBranches());
             mergePreviewView.updateBranches();
+            if (graphSettings.isVisible()) graphSettings.updateBranches();
 
             // If a selected branch tip moved, refresh the merge preview.
             if (delta.amendedBranches) {
@@ -393,6 +473,7 @@ function bootstrapGraph(root, repoId) {
             }
             graph.setHeadHash(headInfo?.hash ?? null);
             openHeadInExplorerIfEmpty();
+            refreshBreadcrumb();
         },
         onRepoMetadata: (metadata) => {
             setRepositoryAvailable(true);

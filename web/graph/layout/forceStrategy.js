@@ -304,4 +304,29 @@ export class ForceStrategy {
 	disableAutoCenter() {
 		this.layoutManager?.disableAutoCenter();
 	}
+
+	/**
+	 * Dynamically updates D3 simulation forces from settings.
+	 * Called when the user adjusts physics sliders in the settings overlay.
+	 *
+	 * @param {{ chargeStrength: number, linkDistance: number, collisionRadius: number, velocityDecay: number }} physics
+	 */
+	applyPhysics(physics) {
+		if (!this.simulation) return;
+
+		if (typeof physics.chargeStrength === "number") {
+			this.simulation.force("charge")?.strength(physics.chargeStrength);
+		}
+		if (typeof physics.linkDistance === "number") {
+			this.simulation.force("link")?.distance(physics.linkDistance);
+		}
+		if (typeof physics.collisionRadius === "number") {
+			this.simulation.force("collision")?.radius(physics.collisionRadius);
+		}
+		if (typeof physics.velocityDecay === "number") {
+			this.simulation.velocityDecay(physics.velocityDecay);
+		}
+
+		this.simulation.alpha(0.3).restart();
+	}
 }

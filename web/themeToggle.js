@@ -22,7 +22,7 @@ const LABELS = {
 
 function getCurrentMode() {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return MODES.includes(stored) ? stored : "system";
+    return MODES.includes(stored) ? stored : "dark";
 }
 
 function applyMode(mode) {

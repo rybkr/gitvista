@@ -19,6 +19,7 @@ const SEQUENCE_TIMEOUT_MS = 500;
  *   onNavigateNext?: () => void,
  *   onSearchResultNext?: () => void,
  *   onSearchResultPrev?: () => void,
+ *   onToggleSettings?: () => void,
  * }} callbacks Named action callbacks. Any omitted callback is silently ignored.
  * @returns {{ destroy(): void }} Handle to remove the listener and cancel any pending timer.
  */
@@ -31,6 +32,7 @@ export function createKeyboardShortcuts({
     onNavigateNext,
     onSearchResultNext,
     onSearchResultPrev,
+    onToggleSettings,
 } = {}) {
     // True when the user has pressed G and is within the timeout window for H.
     let awaitingH = false;
@@ -139,6 +141,11 @@ export function createKeyboardShortcuts({
             case "N":
                 event.preventDefault();
                 onSearchResultPrev?.();
+                break;
+
+            case ",":
+                event.preventDefault();
+                onToggleSettings?.();
                 break;
 
             default:
