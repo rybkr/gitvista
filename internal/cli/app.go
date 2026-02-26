@@ -21,9 +21,9 @@ type Command struct {
 
 // App is a lightweight CLI application with subcommand dispatch.
 type App struct {
-	Name    string
-	Version string
-	Stderr  io.Writer
+	Name     string
+	Version  string
+	Stderr   io.Writer
 	commands map[string]*Command
 	order    []string // insertion order preserved for help
 }

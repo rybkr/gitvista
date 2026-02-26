@@ -40,6 +40,14 @@ func main() {
 	var repo *gitcore.Repository
 
 	app.Register(&cli.Command{
+		Name:      "branch",
+		Summary:   "List branches",
+		Usage:     "gitvista-cli branch",
+		NeedsRepo: true,
+		Run:       func(args []string) int { return runBranch(repo, args, cw) },
+	})
+
+	app.Register(&cli.Command{
 		Name:      "log",
 		Summary:   "Show commit log",
 		Usage:     "gitvista-cli log [--oneline] [-n <count>]",
@@ -67,12 +75,48 @@ func main() {
 	})
 
 	app.Register(&cli.Command{
+		Name:      "show",
+		Summary:   "Show commit details and diff",
+		Usage:     "gitvista-cli show [--stat] [<commit>]",
+		Examples:  []string{"gitvista-cli show", "gitvista-cli show --stat HEAD"},
+		NeedsRepo: true,
+		Run:       func(args []string) int { return runShow(repo, args, cw) },
+	})
+
+	app.Register(&cli.Command{
+		Name:      "stash",
+		Summary:   "List stash entries",
+		Usage:     "gitvista-cli stash list",
+		NeedsRepo: true,
+		Run:       func(args []string) int { return runStash(repo, args, cw) },
+	})
+
+	app.Register(&cli.Command{
 		Name:      "status",
 		Summary:   "Show working tree status",
 		Usage:     "gitvista-cli status [-s|--porcelain]",
 		Examples:  []string{"gitvista-cli status", "gitvista-cli status --porcelain"},
 		NeedsRepo: true,
 		Run:       func(args []string) int { return runStatus(repo, args, cw) },
+	})
+
+	app.Register(&cli.Command{
+		Name:      "tag",
+		Summary:   "List tags",
+		Usage:     "gitvista-cli tag",
+		NeedsRepo: true,
+		Run:       func(args []string) int { return runTag(repo, args, cw) },
+	})
+
+	app.Register(&cli.Command{
+		Name:    "update",
+		Summary: "Update to the latest release",
+		Usage:   "gitvista-cli update [--check]",
+		Examples: []string{
+			"gitvista-cli update",
+			"gitvista-cli update --check",
+		},
+		Run: func(args []string) int { return runUpdate(args) },
 	})
 
 	app.Register(&cli.Command{

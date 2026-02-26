@@ -15,6 +15,7 @@ import (
 	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"github.com/rybkr/gitvista/internal/repomanager"
+	"github.com/rybkr/gitvista/internal/selfupdate"
 	"github.com/rybkr/gitvista/internal/server"
 	"github.com/rybkr/gitvista/internal/termcolor"
 )
@@ -37,6 +38,7 @@ func main() {
 	colorFlag := flag.String("color", "auto", "Color output: auto, always, never")
 	noColor := flag.Bool("no-color", false, "Disable color output")
 	showVersion := flag.Bool("version", false, "Show version and exit")
+	checkUpdate := flag.Bool("check-update", false, "Check for a newer release and exit")
 	showHelp := flag.Bool("help", false, "Show help and exit")
 
 	flag.Parse()
@@ -63,6 +65,11 @@ func main() {
 
 	if *showVersion {
 		printVersion()
+		os.Exit(0)
+	}
+
+	if *checkUpdate {
+		runCheckUpdate()
 		os.Exit(0)
 	}
 
@@ -188,6 +195,32 @@ func printVersion() {
 	fmt.Printf("  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
 }
 
+func runCheckUpdate() {
+	const repo = "rybkr/gitvista"
+	fmt.Printf("Current version: %s\n", version)
+
+	latest, err := selfupdate.CheckLatest(repo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error checking for updates: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Latest version:  %s\n", latest)
+
+	if !selfupdate.NeedsUpdate(version, latest) {
+		if version == "dev" {
+			fmt.Println("Development build — skipping update check.")
+		} else {
+			fmt.Println("Already up to date.")
+		}
+		return
+	}
+
+	fmt.Printf("\nUpdate available: %s → %s\n", version, latest)
+	fmt.Println("To update, run one of:")
+	fmt.Println("  gitvista-cli update")
+	fmt.Println("  brew upgrade gitvista")
+}
+
 func printHelp(cw *termcolor.Writer) {
 	fmt.Println("GitVista - Real-time Git repository visualization")
 	fmt.Printf("Version: %s\n\n", version)
@@ -213,6 +246,9 @@ func printHelp(cw *termcolor.Writer) {
 	fmt.Println()
 	fmt.Printf("  %s\n", cw.Yellow("-version"))
 	fmt.Println("        Show version and exit")
+	fmt.Println()
+	fmt.Printf("  %s\n", cw.Yellow("-check-update"))
+	fmt.Println("        Check for a newer release and exit")
 	fmt.Println()
 	fmt.Printf("  %s\n", cw.Yellow("-help"))
 	fmt.Println("        Show this help message")

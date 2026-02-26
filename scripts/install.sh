@@ -57,6 +57,31 @@ install() {
     need curl
     curl -fSsL "$URL" -o "${TMPDIR}/${TARBALL}" || err "Download failed — does release ${VERSION} exist?"
 
+    # Checksum verification
+    if [ "${GITVISTA_SKIP_CHECKSUM:-}" != "true" ]; then
+        CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
+        info "Downloading checksums"
+        curl -fSsL "$CHECKSUMS_URL" -o "${TMPDIR}/checksums.txt" || err "Failed to download checksums file"
+
+        EXPECTED=$(grep "${TARBALL}" "${TMPDIR}/checksums.txt" | awk '{print $1}')
+        [ -n "$EXPECTED" ] || err "Checksum not found for ${TARBALL} in checksums.txt"
+
+        if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL=$(sha256sum "${TMPDIR}/${TARBALL}" | awk '{print $1}')
+        elif command -v shasum >/dev/null 2>&1; then
+            ACTUAL=$(shasum -a 256 "${TMPDIR}/${TARBALL}" | awk '{print $1}')
+        else
+            err "No SHA-256 tool found (need sha256sum or shasum)"
+        fi
+
+        if [ "$EXPECTED" != "$ACTUAL" ]; then
+            err "Checksum mismatch for ${TARBALL}\n  expected: ${EXPECTED}\n  actual:   ${ACTUAL}"
+        fi
+        ok "Checksum verified"
+    else
+        info "Skipping checksum verification (GITVISTA_SKIP_CHECKSUM=true)"
+    fi
+
     need tar
     tar -xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 

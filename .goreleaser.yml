@@ -50,6 +50,10 @@ archives:
       - goos: windows
         format: zip
 
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
 dockers:
   - image_templates:
       - "ghcr.io/rybkr/gitvista:{{ .Version }}"
@@ -59,6 +63,26 @@ dockers:
       - "--build-arg=VERSION={{.Version}}"
       - "--build-arg=COMMIT={{.ShortCommit}}"
       - "--build-arg=BUILD_DATE={{.Date}}"
+
+brews:
+  - name: gitvista
+    repository:
+      owner: rybkr
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/rybkr/gitvista"
+    description: "Real-time Git repository visualization"
+    license: "MIT"
+    ids:
+      - gitvista
+      - gitvista-cli
+    install: |
+      bin.install "gitvista"
+      bin.install "gitvista-cli"
+    test: |
+      system "#{bin}/gitvista", "-version"
+      system "#{bin}/gitvista-cli", "version"
 
 changelog:
   sort: asc

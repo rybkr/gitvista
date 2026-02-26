@@ -13,8 +13,8 @@ func TestLevenshtein(t *testing.T) {
 		{"abc", "abc", 0},
 		{"kitten", "sitting", 3},
 		{"saturday", "sunday", 3},
-		{"log", "lgo", 2},   // transposition
-		{"diff", "dif", 1},  // deletion
+		{"log", "lgo", 2},    // transposition
+		{"diff", "dif", 1},   // deletion
 		{"stat", "stats", 1}, // insertion
 	}
 
@@ -40,15 +40,15 @@ func TestSuggest(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"lgo", "log"},       // transposition
-		{"logg", "log"},      // extra char
-		{"lo", "log"},        // deletion
-		{"dif", "diff"},      // missing char
-		{"stauts", "status"}, // transposition
+		{"lgo", "log"},           // transposition
+		{"logg", "log"},          // extra char
+		{"lo", "log"},            // deletion
+		{"dif", "diff"},          // missing char
+		{"stauts", "status"},     // transposition
 		{"cat-flie", "cat-file"}, // transposition in compound
-		{"xxxxxx", ""},       // no match
-		{"", ""},             // empty input
-		{"version", "version"}, // exact match
+		{"xxxxxx", ""},           // no match
+		{"", ""},                 // empty input
+		{"version", "version"},   // exact match
 	}
 
 	for _, tt := range tests {

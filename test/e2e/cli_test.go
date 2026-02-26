@@ -167,6 +167,96 @@ func TestMergeCommit(t *testing.T) {
 	}
 }
 
+func TestBranch(t *testing.T) {
+	dir := setupStandardRepo(t)
+
+	// Create an extra branch
+	git(t, dir, "branch", "feature")
+
+	cliOut := runCLI(t, dir, "branch")
+	gitOut := git(t, dir, "branch", "--no-color")
+
+	compareOutput(t, "branch", cliOut, gitOut)
+}
+
+func TestTag(t *testing.T) {
+	dir := setupStandardRepo(t)
+
+	// Create two lightweight tags
+	git(t, dir, "tag", "v0.1.0")
+	git(t, dir, "tag", "v0.2.0")
+
+	cliOut := runCLI(t, dir, "tag")
+	gitOut := git(t, dir, "tag")
+
+	compareOutput(t, "tag", cliOut, gitOut)
+}
+
+func TestTagEmpty(t *testing.T) {
+	dir := setupStandardRepo(t)
+
+	cliOut := runCLI(t, dir, "tag")
+	if strings.TrimSpace(cliOut) != "" {
+		t.Errorf("expected empty tag output, got:\n%s", cliOut)
+	}
+}
+
+func TestShow(t *testing.T) {
+	dir := setupStandardRepo(t)
+
+	cliOut := runCLI(t, dir, "show")
+
+	if !strings.Contains(cliOut, "commit ") {
+		t.Error("show output missing 'commit ' line")
+	}
+	if !strings.Contains(cliOut, "Author:") {
+		t.Error("show output missing 'Author:' line")
+	}
+	if !strings.Contains(cliOut, "Date:") {
+		t.Error("show output missing 'Date:' line")
+	}
+	if !strings.Contains(cliOut, "diff --git") {
+		t.Error("show output missing 'diff --git' header")
+	}
+}
+
+func TestShowStat(t *testing.T) {
+	dir := setupStandardRepo(t)
+
+	cliOut := runCLI(t, dir, "show", "--stat")
+
+	if !strings.Contains(cliOut, "commit ") {
+		t.Error("show --stat output missing 'commit ' line")
+	}
+	if !strings.Contains(cliOut, "file(s) changed") {
+		t.Error("show --stat output missing 'file(s) changed' line")
+	}
+}
+
+func TestStashListEmpty(t *testing.T) {
+	dir := setupStandardRepo(t)
+
+	cliOut := runCLI(t, dir, "stash", "list")
+	if strings.TrimSpace(cliOut) != "" {
+		t.Errorf("expected empty stash list output, got:\n%s", cliOut)
+	}
+}
+
+func TestStashList(t *testing.T) {
+	dir := setupStandardRepo(t)
+
+	// Modify a file and stash it
+	if err := writeFile(dir, "main.go", "package main\n\n// stashed\nfunc main() {}\n"); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "stash", "push", "-m", "test stash")
+
+	cliOut := runCLI(t, dir, "stash", "list")
+	gitOut := git(t, dir, "stash", "list")
+
+	compareOutput(t, "stash list", cliOut, gitOut)
+}
+
 func writeFile(dir, name, content string) error {
 	return os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)
 }

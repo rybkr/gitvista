@@ -8,7 +8,7 @@ import (
 
 // IsTerminal reports whether the given file descriptor refers to a terminal.
 func IsTerminal(fd uintptr) bool {
-	return term.IsTerminal(int(fd)) //nolint:gosec // G115: fd comes from os.File.Fd(); safe on all supported platforms
+	return term.IsTerminal(int(fd)) // #nosec G115 -- fd comes from os.File.Fd(); safe on all supported platforms
 }
 
 // ShouldColorize reports whether color output should be enabled for f.
