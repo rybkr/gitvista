@@ -7,6 +7,7 @@ import (
 
 	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/progress"
 	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
@@ -134,8 +135,11 @@ func main() {
 			if repoPath == "" {
 				repoPath = "."
 			}
+			spin := progress.New("Loading repository...")
+			spin.Start()
 			var err error
 			repo, err = gitcore.NewRepository(repoPath)
+			spin.Stop()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 				os.Exit(128)

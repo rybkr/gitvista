@@ -16,6 +16,7 @@ import (
 
 	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/progress"
 	"github.com/rybkr/gitvista/internal/repomanager"
 	"github.com/rybkr/gitvista/internal/selfupdate"
 	"github.com/rybkr/gitvista/internal/server"
@@ -105,13 +106,16 @@ func main() {
 
 	if *repoPath != "" {
 		// LOCAL MODE: load repo, create local server
+		spin := progress.New("Loading repository...")
+		spin.Start()
 		repoLoadStart := time.Now()
 		repo, err := gitcore.NewRepository(*repoPath)
+		repoLoadDur = time.Since(repoLoadStart).Round(time.Millisecond)
+		spin.Stop()
 		if err != nil {
 			slog.Error("Failed to load repository", "path", *repoPath, "err", err)
 			os.Exit(1)
 		}
-		repoLoadDur = time.Since(repoLoadStart).Round(time.Millisecond)
 
 		serv = server.NewLocalServer(repo, addr, webFS)
 
