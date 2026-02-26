@@ -7,10 +7,34 @@ before:
     - go mod tidy
 
 builds:
-  - main: ./cmd/vista
+  - id: gitvista
+    main: ./cmd/vista
     binary: gitvista
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.buildDate={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+  - id: gitvista-cli
+    main: ./cmd/gitcli
+    binary: gitvista-cli
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.buildDate={{.Date}}
     goos:
       - linux
       - darwin

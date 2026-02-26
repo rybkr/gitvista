@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 
@@ -15,10 +16,15 @@ import (
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"github.com/rybkr/gitvista/internal/repomanager"
 	"github.com/rybkr/gitvista/internal/server"
+	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-// version is set at build time via -ldflags "-X main.version=<tag>".
-var version = "dev"
+// Build-time variables set via -ldflags.
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
 
 func main() {
 	initLogger()
@@ -28,10 +34,26 @@ func main() {
 	dataDir := flag.String("data-dir", getEnv("GITVISTA_DATA_DIR", "/data/repos"), "Data directory for managed repos (SaaS mode)")
 	port := flag.String("port", getEnv("GITVISTA_PORT", "8080"), "Port to listen on")
 	host := flag.String("host", getEnv("GITVISTA_HOST", ""), "Host to bind to (empty = all interfaces)")
+	colorFlag := flag.String("color", "auto", "Color output: auto, always, never")
+	noColor := flag.Bool("no-color", false, "Disable color output")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	showHelp := flag.Bool("help", false, "Show help and exit")
 
 	flag.Parse()
+
+	// Resolve color mode.
+	colorMode := termcolor.ColorAuto
+	if *noColor {
+		colorMode = termcolor.ColorNever
+	} else if *colorFlag != "auto" {
+		var err error
+		colorMode, err = termcolor.ParseColorMode(*colorFlag)
+		if err != nil {
+			slog.Error("Invalid color flag", "value", *colorFlag, "err", err)
+			os.Exit(1)
+		}
+	}
+	_ = termcolor.NewWriter(os.Stdout, colorMode) // Phase 2 wires this into output
 
 	portNum, err := strconv.Atoi(*port)
 	if err != nil || portNum < 1 || portNum > 65535 {
@@ -40,7 +62,7 @@ func main() {
 	}
 
 	if *showVersion {
-		fmt.Printf("GitVista %s\n", version)
+		printVersion()
 		os.Exit(0)
 	}
 
@@ -156,6 +178,14 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func printVersion() {
+	fmt.Printf("GitVista %s\n", version)
+	fmt.Printf("  commit:     %s\n", commit)
+	fmt.Printf("  built:      %s\n", buildDate)
+	fmt.Printf("  go version: %s\n", runtime.Version())
+	fmt.Printf("  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
 }
 
 func printHelp() {

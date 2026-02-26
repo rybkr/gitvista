@@ -7,6 +7,11 @@ GOTEST=$(GOCMD) test
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
+
 .DEFAULT_GOAL := help
 
 ## help: Display this informational message
@@ -122,12 +127,12 @@ validate-js:
 ## build: Build all binaries
 build: build-cli
 	@echo "Building main binary..."
-	$(GOBUILD) -v -o gitvista ./cmd/vista
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista ./cmd/vista
 
 ## build-cli: Build the gitvista-cli binary
 build-cli:
 	@echo "Building CLI binary..."
-	$(GOBUILD) -v -o gitvista-cli ./cmd/gitcli
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-cli ./cmd/gitcli
 
 ## docker-build: Build Docker image
 docker-build:
