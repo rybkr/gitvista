@@ -71,6 +71,10 @@ func (r *Repository) loadObjects() error {
 			}
 			r.tags = append(r.tags, tag)
 			stack = append(stack, tag.Object)
+		case TreeObject, BlobObject:
+			// Trees and blobs are terminal nodes in the ref traversal —
+			// they can appear when a tag points directly at a tree or blob.
+			continue
 		default:
 			return fmt.Errorf("unsupported object type: %d", object.Type())
 		}
@@ -98,6 +102,8 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 			return parseTagBody(content, id)
 		case strings.HasPrefix(header, objectTypeTree):
 			return parseTreeBody(content, id)
+		case strings.HasPrefix(header, objectTypeBlob):
+			return &Blob{ID: id}, nil
 		default:
 			return nil, fmt.Errorf("unrecognized loose object type: %q for %s", header, id)
 		}
@@ -215,6 +221,8 @@ func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (O
 		return parseTagBody(objectData, id)
 	case TreeObject:
 		return parseTreeBody(objectData, id)
+	case BlobObject:
+		return &Blob{ID: id}, nil
 	default:
 		return nil, fmt.Errorf("unknown object type: %d", objectType)
 	}

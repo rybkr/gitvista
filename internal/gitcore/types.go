@@ -141,6 +141,17 @@ func (t *Tree) Type() ObjectType {
 	return TreeObject
 }
 
+// Blob represents a Git blob object. Only the hash is stored since the
+// traversal does not need the content — blobs are terminal nodes.
+type Blob struct {
+	ID Hash `json:"hash"`
+}
+
+// Type returns the ObjectType for a Blob.
+func (b *Blob) Type() ObjectType {
+	return BlobObject
+}
+
 // Signature represents the author or committer of a Git commit.
 type Signature struct {
 	Name  string    `json:"name"`
