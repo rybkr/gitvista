@@ -209,6 +209,8 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/working-tree/diff", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
 		mux.HandleFunc("/api/merge-preview/file", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreviewFileDiff))))
 		mux.HandleFunc("/api/merge-preview", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreview))))
+		mux.HandleFunc("/api/graph/summary", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleGraphSummary))))
+		mux.HandleFunc("/api/graph/commits", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleGraphCommits))))
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
 		// Repo management endpoints (SaaS mode only)
@@ -328,6 +330,10 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleCommitDiff(w, r)
 	case remainder == "/commits/diffstats" && r.Method == http.MethodGet:
 		s.handleBulkDiffStats(w, r)
+	case remainder == "/graph/summary" && r.Method == http.MethodGet:
+		s.handleGraphSummary(w, r)
+	case remainder == "/graph/commits" && r.Method == http.MethodGet:
+		s.handleGraphCommits(w, r)
 	case remainder == "/working-tree/diff" && r.Method == http.MethodGet:
 		s.handleWorkingTreeDiff(w, r)
 	case remainder == "/merge-preview/file" && r.Method == http.MethodGet:

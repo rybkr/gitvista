@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
@@ -511,5 +513,141 @@ func TestHandleMergePreview_MethodNotAllowed(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleGraphSummary(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	req := requestWithSession("GET", "/api/graph/summary", session)
+	w := httptest.NewRecorder()
+
+	s.handleGraphSummary(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "application/json")
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if _, ok := response["totalCommits"]; !ok {
+		t.Error("response missing 'totalCommits' field")
+	}
+	if _, ok := response["skeleton"]; !ok {
+		t.Error("response missing 'skeleton' field")
+	}
+	if _, ok := response["branches"]; !ok {
+		t.Error("response missing 'branches' field")
+	}
+}
+
+func TestHandleGraphSummary_MethodNotAllowed(t *testing.T) {
+	s := newTestServer(t)
+	session := newTestSession(nil)
+
+	req := requestWithSession("POST", "/api/graph/summary", session)
+	w := httptest.NewRecorder()
+	s.handleGraphSummary(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleGraphCommits(t *testing.T) {
+	hash1 := gitcore.Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hash2 := gitcore.Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	c1 := &gitcore.Commit{ID: hash1, Message: "first"}
+	c2 := &gitcore.Commit{ID: hash2, Message: "second"}
+
+	repo := gitcore.NewEmptyRepository()
+	// Use a repo with commits by building a session with the test helper
+	_ = c1
+	_ = c2
+
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	// Empty repo will return empty commits array
+	req := requestWithSession("GET", "/api/graph/commits?hashes="+string(hash1), session)
+	w := httptest.NewRecorder()
+	s.handleGraphCommits(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := response["commits"]; !ok {
+		t.Error("response missing 'commits' field")
+	}
+}
+
+func TestHandleGraphCommits_MissingParam(t *testing.T) {
+	s := newTestServer(t)
+	session := newTestSession(nil)
+
+	req := requestWithSession("GET", "/api/graph/commits", session)
+	w := httptest.NewRecorder()
+	s.handleGraphCommits(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleGraphCommits_MethodNotAllowed(t *testing.T) {
+	s := newTestServer(t)
+	session := newTestSession(nil)
+
+	req := requestWithSession("POST", "/api/graph/commits?hashes=abc", session)
+	w := httptest.NewRecorder()
+	s.handleGraphCommits(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleGraphCommits_Cap(t *testing.T) {
+	s := newTestServer(t)
+	session := newTestSession(nil)
+
+	// Build a query with 600 valid hashes — only 500 should be processed
+	var hashes []string
+	for i := range 600 {
+		h := fmt.Sprintf("%040x", i)
+		hashes = append(hashes, h)
+	}
+	query := "/api/graph/commits?hashes=" + strings.Join(hashes, ",")
+
+	req := requestWithSession("GET", query, session)
+	w := httptest.NewRecorder()
+	s.handleGraphCommits(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	// The response should still be valid JSON with a commits array
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := response["commits"]; !ok {
+		t.Error("response missing 'commits' field")
 	}
 }

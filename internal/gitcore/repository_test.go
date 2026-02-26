@@ -570,6 +570,203 @@ func TestRepository_GetTag(t *testing.T) {
 	})
 }
 
+func TestBuildGraphSummary(t *testing.T) {
+	now := time.Now()
+
+	commit1 := &Commit{
+		ID:        Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Parents:   []Hash{},
+		Committer: Signature{When: now.Add(-2 * time.Hour)},
+		Message:   "first",
+	}
+	commit2 := &Commit{
+		ID:        Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		Parents:   []Hash{commit1.ID},
+		Committer: Signature{When: now.Add(-1 * time.Hour)},
+		Message:   "second",
+	}
+	commit3 := &Commit{
+		ID:        Hash("cccccccccccccccccccccccccccccccccccccccc"),
+		Parents:   []Hash{commit2.ID},
+		Committer: Signature{When: now},
+		Message:   "third",
+	}
+
+	tagObj := &Tag{
+		ID:     Hash("dddddddddddddddddddddddddddddddddddddddd"),
+		Object: commit1.ID,
+		Name:   "v1.0",
+	}
+
+	repo := &Repository{
+		head:      commit3.ID,
+		commits:   []*Commit{commit1, commit2, commit3},
+		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2, commit3.ID: commit3},
+		refs: map[string]Hash{
+			"refs/heads/main":  commit3.ID,
+			"refs/tags/v1.0":   tagObj.ID,
+		},
+		tags:    []*Tag{tagObj},
+		stashes: []*StashEntry{{Hash: commit1.ID, Message: "WIP"}},
+	}
+
+	summary := repo.BuildGraphSummary()
+
+	t.Run("total commits", func(t *testing.T) {
+		if summary.TotalCommits != 3 {
+			t.Errorf("TotalCommits = %d, want 3", summary.TotalCommits)
+		}
+	})
+
+	t.Run("skeleton count matches", func(t *testing.T) {
+		if len(summary.Skeleton) != 3 {
+			t.Fatalf("len(Skeleton) = %d, want 3", len(summary.Skeleton))
+		}
+	})
+
+	t.Run("skeleton data", func(t *testing.T) {
+		found := make(map[Hash]CommitSkeleton)
+		for _, s := range summary.Skeleton {
+			found[s.Hash] = s
+		}
+
+		s1, ok := found[commit1.ID]
+		if !ok {
+			t.Fatal("skeleton missing commit1")
+		}
+		if len(s1.Parents) != 0 {
+			t.Errorf("commit1 parents = %d, want 0", len(s1.Parents))
+		}
+		if s1.Timestamp != commit1.Committer.When.Unix() {
+			t.Errorf("commit1 timestamp = %d, want %d", s1.Timestamp, commit1.Committer.When.Unix())
+		}
+
+		s2, ok := found[commit2.ID]
+		if !ok {
+			t.Fatal("skeleton missing commit2")
+		}
+		if len(s2.Parents) != 1 || s2.Parents[0] != commit1.ID {
+			t.Errorf("commit2 parents = %v, want [%s]", s2.Parents, commit1.ID)
+		}
+	})
+
+	t.Run("time range", func(t *testing.T) {
+		if summary.OldestTimestamp != commit1.Committer.When.Unix() {
+			t.Errorf("OldestTimestamp = %d, want %d", summary.OldestTimestamp, commit1.Committer.When.Unix())
+		}
+		if summary.NewestTimestamp != commit3.Committer.When.Unix() {
+			t.Errorf("NewestTimestamp = %d, want %d", summary.NewestTimestamp, commit3.Committer.When.Unix())
+		}
+	})
+
+	t.Run("branches", func(t *testing.T) {
+		if len(summary.Branches) != 1 {
+			t.Fatalf("len(Branches) = %d, want 1", len(summary.Branches))
+		}
+		if summary.Branches["main"] != commit3.ID {
+			t.Errorf("Branches[main] = %s, want %s", summary.Branches["main"], commit3.ID)
+		}
+	})
+
+	t.Run("tags", func(t *testing.T) {
+		if len(summary.Tags) != 1 {
+			t.Fatalf("len(Tags) = %d, want 1", len(summary.Tags))
+		}
+		// Annotated tag should be peeled to the commit
+		if summary.Tags["v1.0"] != string(commit1.ID) {
+			t.Errorf("Tags[v1.0] = %s, want %s", summary.Tags["v1.0"], commit1.ID)
+		}
+	})
+
+	t.Run("head hash", func(t *testing.T) {
+		if summary.HeadHash != string(commit3.ID) {
+			t.Errorf("HeadHash = %s, want %s", summary.HeadHash, commit3.ID)
+		}
+	})
+
+	t.Run("stashes", func(t *testing.T) {
+		if len(summary.Stashes) != 1 {
+			t.Fatalf("len(Stashes) = %d, want 1", len(summary.Stashes))
+		}
+		if summary.Stashes[0].Message != "WIP" {
+			t.Errorf("Stashes[0].Message = %q, want %q", summary.Stashes[0].Message, "WIP")
+		}
+	})
+}
+
+func TestBuildGraphSummary_Empty(t *testing.T) {
+	repo := NewEmptyRepository()
+	summary := repo.BuildGraphSummary()
+
+	if summary.TotalCommits != 0 {
+		t.Errorf("TotalCommits = %d, want 0", summary.TotalCommits)
+	}
+	if len(summary.Skeleton) != 0 {
+		t.Errorf("len(Skeleton) = %d, want 0", len(summary.Skeleton))
+	}
+	if summary.HeadHash != "" {
+		t.Errorf("HeadHash = %q, want empty", summary.HeadHash)
+	}
+	if summary.OldestTimestamp != 0 {
+		t.Errorf("OldestTimestamp = %d, want 0", summary.OldestTimestamp)
+	}
+	if summary.NewestTimestamp != 0 {
+		t.Errorf("NewestTimestamp = %d, want 0", summary.NewestTimestamp)
+	}
+}
+
+func TestGetCommits(t *testing.T) {
+	hash1 := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hash2 := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	hash3 := Hash("cccccccccccccccccccccccccccccccccccccccc")
+
+	c1 := &Commit{ID: hash1, Message: "first"}
+	c2 := &Commit{ID: hash2, Message: "second"}
+
+	repo := &Repository{
+		commits:   []*Commit{c1, c2},
+		commitMap: map[Hash]*Commit{hash1: c1, hash2: c2},
+	}
+
+	t.Run("found all", func(t *testing.T) {
+		result := repo.GetCommits([]Hash{hash1, hash2})
+		if len(result) != 2 {
+			t.Fatalf("GetCommits() returned %d, want 2", len(result))
+		}
+	})
+
+	t.Run("skips unknown", func(t *testing.T) {
+		result := repo.GetCommits([]Hash{hash1, hash3})
+		if len(result) != 1 {
+			t.Fatalf("GetCommits() returned %d, want 1", len(result))
+		}
+		if result[0].ID != hash1 {
+			t.Errorf("result[0].ID = %s, want %s", result[0].ID, hash1)
+		}
+	})
+
+	t.Run("all unknown", func(t *testing.T) {
+		result := repo.GetCommits([]Hash{hash3})
+		if len(result) != 0 {
+			t.Errorf("GetCommits() returned %d, want 0", len(result))
+		}
+	})
+}
+
+func TestGetCommits_Empty(t *testing.T) {
+	hash1 := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	c1 := &Commit{ID: hash1, Message: "first"}
+	repo := &Repository{
+		commits:   []*Commit{c1},
+		commitMap: map[Hash]*Commit{hash1: c1},
+	}
+
+	result := repo.GetCommits([]Hash{})
+	if len(result) != 0 {
+		t.Errorf("GetCommits(empty) returned %d, want 0", len(result))
+	}
+}
+
 func TestRepository_CommitLog(t *testing.T) {
 	now := time.Now()
 

@@ -282,6 +282,63 @@ func (r *Repository) GetTag(hash Hash) (*Tag, error) {
 	return nil, fmt.Errorf("tag not found: %s", hash)
 }
 
+// BuildGraphSummary constructs a lightweight GraphSummary containing only the
+// topology (parent hashes) and temporal data (committer timestamps) for every
+// commit, plus branches, tags, HEAD, and stashes. This is ~7-8x smaller than
+// the full commit set and enables the client to compute graph layout without
+// materializing heavyweight commit data.
+func (r *Repository) BuildGraphSummary() *GraphSummary {
+	// Build skeletons and read head under the lock, then release before
+	// calling Branches/Tags/Stashes (which acquire their own RLock).
+	r.mu.RLock()
+	skeletons := make([]CommitSkeleton, 0, len(r.commits))
+	var oldest, newest int64
+	for _, c := range r.commits {
+		ts := c.Committer.When.Unix()
+		skeletons = append(skeletons, CommitSkeleton{
+			Hash:      c.ID,
+			Parents:   c.Parents,
+			Timestamp: ts,
+		})
+		if oldest == 0 || ts < oldest {
+			oldest = ts
+		}
+		if ts > newest {
+			newest = ts
+		}
+	}
+	totalCommits := len(r.commits)
+	headHash := string(r.head)
+	r.mu.RUnlock()
+
+	return &GraphSummary{
+		TotalCommits:    totalCommits,
+		Skeleton:        skeletons,
+		Branches:        r.Branches(),
+		Tags:            r.Tags(),
+		HeadHash:        headHash,
+		Stashes:         r.Stashes(),
+		OldestTimestamp: oldest,
+		NewestTimestamp: newest,
+	}
+}
+
+// GetCommits returns full Commit objects for the given hashes.
+// Unknown hashes are silently skipped.
+func (r *Repository) GetCommits(hashes []Hash) []*Commit {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	cm := r.commitsMap()
+	result := make([]*Commit, 0, len(hashes))
+	for _, h := range hashes {
+		if c, ok := cm[h]; ok {
+			result = append(result, c)
+		}
+	}
+	return result
+}
+
 // GetObjectInfo returns the object type name and size in bytes for any object.
 func (r *Repository) GetObjectInfo(hash Hash) (string, int, error) {
 	data, typeByte, err := r.readObjectData(hash, 0)

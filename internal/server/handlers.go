@@ -783,6 +783,70 @@ func (s *Server) handleMergePreviewFileDiff(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+func (s *Server) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+	repo := session.Repo()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusServiceUnavailable)
+		return
+	}
+	summary := repo.BuildGraphSummary()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(summary); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleGraphCommits(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+	repo := session.Repo()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	hashesParam := r.URL.Query().Get("hashes")
+	if hashesParam == "" {
+		http.Error(w, "Missing hashes parameter", http.StatusBadRequest)
+		return
+	}
+
+	rawHashes := strings.Split(hashesParam, ",")
+	const maxHashes = 500
+	hashes := make([]gitcore.Hash, 0, min(len(rawHashes), maxHashes))
+	for _, h := range rawHashes {
+		h = strings.TrimSpace(h)
+		if _, err := gitcore.NewHash(h); err == nil {
+			hashes = append(hashes, gitcore.Hash(h))
+		}
+		if len(hashes) >= maxHashes {
+			break
+		}
+	}
+
+	commits := repo.GetCommits(hashes)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string][]*gitcore.Commit{"commits": commits}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 // allDeletions reports whether every diff line across all hunks is a deletion.
 func allDeletions(hunks []gitcore.DiffHunk) bool {
 	for _, hunk := range hunks {
