@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/internal/gitcore"
@@ -18,6 +20,11 @@ import (
 	"github.com/rybkr/gitvista/internal/selfupdate"
 	"github.com/rybkr/gitvista/internal/server"
 	"github.com/rybkr/gitvista/internal/termcolor"
+)
+
+const (
+	modeLocal      = "local"
+	outputFormatJS = "json"
 )
 
 // Build-time variables set via -ldflags.
@@ -40,6 +47,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	checkUpdate := flag.Bool("check-update", false, "Check for a newer release and exit")
 	showHelp := flag.Bool("help", false, "Show help and exit")
+	outputFormat := flag.String("output", "", "Startup output format: json (default: human-readable)")
 
 	flag.Parse()
 
@@ -57,9 +65,9 @@ func main() {
 	}
 	cw := termcolor.NewWriter(os.Stdout, colorMode)
 
-	portNum, err := strconv.Atoi(*port)
-	if err != nil || portNum < 1 || portNum > 65535 {
-		slog.Error("Invalid port number", "port", *port)
+	portNum, _ := strconv.Atoi(*port)
+	if err := validateConfig(*repoPath, *dataDir, *outputFormat, portNum); err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("error:"), err) // #nosec G705 -- error message to stderr, not HTTP response
 		os.Exit(1)
 	}
 
@@ -93,18 +101,21 @@ func main() {
 	}
 
 	var rm *repomanager.RepoManager
+	var repoLoadDur time.Duration
 
 	if *repoPath != "" {
 		// LOCAL MODE: load repo, create local server
+		repoLoadStart := time.Now()
 		repo, err := gitcore.NewRepository(*repoPath)
 		if err != nil {
 			slog.Error("Failed to load repository", "path", *repoPath, "err", err)
 			os.Exit(1)
 		}
+		repoLoadDur = time.Since(repoLoadStart).Round(time.Millisecond)
 
 		serv = server.NewLocalServer(repo, addr, webFS)
 
-		slog.Info("Starting GitVista", "version", version, "mode", "local")
+		slog.Info("Starting GitVista", "version", version, "mode", modeLocal)
 		slog.Info("Repository loaded", "path", *repoPath)
 	} else {
 		// SAAS MODE: create RepoManager, start it, create SaaS server
@@ -127,6 +138,16 @@ func main() {
 	}
 
 	slog.Info("Listening", "addr", "http://"+addr)
+
+	mode := "saas"
+	if *repoPath != "" {
+		mode = modeLocal
+	}
+	if *outputFormat == outputFormatJS {
+		printStartupJSON(mode, addr, *repoPath, *dataDir, repoLoadDur)
+	} else {
+		printStartupBanner(cw, mode, addr, *repoPath, *dataDir, repoLoadDur)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -221,6 +242,64 @@ func runCheckUpdate() {
 	fmt.Println("  brew upgrade gitvista")
 }
 
+func validateConfig(repoPath, dataDir, outputFormat string, portNum int) error {
+	if portNum < 1 || portNum > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	if repoPath != "" && dataDir != "/data/repos" {
+		return fmt.Errorf("-repo and -data-dir are mutually exclusive")
+	}
+	if outputFormat != "" && outputFormat != outputFormatJS {
+		return fmt.Errorf("-output %q is not valid; only \"json\" is supported", outputFormat)
+	}
+	return nil
+}
+
+func printStartupBanner(cw *termcolor.Writer, mode, addr, repoPath, dataDir string, repoLoadDur time.Duration) {
+	fmt.Printf("%s %s\n", cw.BoldCyan("GitVista"), cw.Green(version))
+	fmt.Printf("  mode:    %s\n", mode)
+	if mode == modeLocal {
+		timing := fmt.Sprintf("(loaded in %s)", cw.Yellow(repoLoadDur.String()))
+		fmt.Printf("  repo:    %s  %s\n", repoPath, timing)
+	} else {
+		fmt.Printf("  data:    %s\n", dataDir)
+	}
+	fmt.Printf("  listen:  http://%s\n", addr)
+	fmt.Printf("  commit:  %s\n", commit)
+	if termcolor.IsTerminal(os.Stdout.Fd()) {
+		fmt.Printf("\n%s\n", cw.Bold("Press Ctrl+C to stop."))
+	}
+}
+
+type startupInfo struct {
+	Version    string `json:"version"`
+	Commit     string `json:"commit"`
+	BuildDate  string `json:"build_date"`
+	Mode       string `json:"mode"`
+	Listen     string `json:"listen"`
+	RepoPath   string `json:"repo_path,omitempty"`
+	DataDir    string `json:"data_dir,omitempty"`
+	RepoLoadMs int64  `json:"repo_load_ms,omitempty"`
+}
+
+func printStartupJSON(mode, addr, repoPath, dataDir string, repoLoadDur time.Duration) {
+	info := startupInfo{
+		Version:   version,
+		Commit:    commit,
+		BuildDate: buildDate,
+		Mode:      mode,
+		Listen:    "http://" + addr,
+	}
+	if mode == modeLocal {
+		info.RepoPath = repoPath
+		info.RepoLoadMs = repoLoadDur.Milliseconds()
+	} else {
+		info.DataDir = dataDir
+	}
+	data, _ := json.Marshal(info)
+	fmt.Println(string(data))
+}
+
 func printHelp(cw *termcolor.Writer) {
 	fmt.Println("GitVista - Real-time Git repository visualization")
 	fmt.Printf("Version: %s\n\n", version)
@@ -243,6 +322,9 @@ func printHelp(cw *termcolor.Writer) {
 	fmt.Printf("  %s string\n", cw.Yellow("-host"))
 	fmt.Println("        Host to bind to (default: all interfaces)")
 	fmt.Println("        Environment: GITVISTA_HOST")
+	fmt.Println()
+	fmt.Printf("  %s string\n", cw.Yellow("-output"))
+	fmt.Println("        Startup output format: json (default: human-readable)")
 	fmt.Println()
 	fmt.Printf("  %s\n", cw.Yellow("-version"))
 	fmt.Println("        Show version and exit")
