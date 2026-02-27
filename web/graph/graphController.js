@@ -13,6 +13,7 @@ import {
     LANE_MARGIN,
     LANE_VERTICAL_STEP,
     LANE_WIDTH,
+    LINK_DISTANCE,
     NODE_RADIUS,
     TAG_NODE_OFFSET_X,
     TAG_NODE_OFFSET_Y,
@@ -1348,14 +1349,19 @@ export function createGraphController(rootElement, options = {}) {
             if (!lazyLoadingActive) lazyLoadingActive = true;
             updateGraphLazy();
         } else if (state.layoutMode === "force") {
-            // Every data change triggers Phase A.
-            // If we were in Phase B, exit it.
-            if (lazyLoadingActive) {
-                lazyLoadingActive = false;
-                nodeMaterializer.clear();
+            if (lazyLoadingActive && forceStrategy.isSettled) {
+                // Phase B: handle delta incrementally without tearing down
+                // decorators. New commits get placed at smart positions in the
+                // converged snapshot and are materialized immediately.
+                updateGraphForcePhaseBIncremental();
+            } else {
+                // Phase A (initial load or simulation still running).
+                if (lazyLoadingActive) {
+                    exitForcePhaseB();
+                }
+                updateGraphForcePhaseA();
+                // Simulation settles naturally → onSettle → handleForceSettle → Phase B
             }
-            updateGraphForcePhaseA();
-            // Simulation settles naturally → onSettle → handleForceSettle → Phase B
         } else {
             updateGraphEager();
         }
@@ -1656,6 +1662,146 @@ export function createGraphController(rootElement, options = {}) {
         lazyLoadingActive = false;
         nodeMaterializer.clear();
         forceStrategy._clearSettled();
+    }
+
+    /**
+     * Incremental Phase B update — handles small deltas (new commits, branch
+     * moves) without tearing down Phase B. New commits are placed at smart
+     * positions in the converged snapshot and materialized immediately with
+     * full decorators.
+     */
+    function updateGraphForcePhaseBIncremental() {
+        const positions = forceStrategy.getConvergedPositions();
+        if (!positions) {
+            // No converged data — fall through to Phase A
+            exitForcePhaseB();
+            updateGraphForcePhaseA();
+            return;
+        }
+
+        // Add positions for any new commits not yet in the snapshot.
+        for (const [hash, commit] of commits) {
+            if (positions.has(hash)) continue;
+
+            // Find parent position from snapshot
+            let parentPos = null;
+            let firstParentHash = null;
+            for (const ph of commit.parents ?? []) {
+                const p = positions.get(ph);
+                if (p) { parentPos = p; firstParentHash = ph; break; }
+            }
+
+            // Find grandparent position for directional spawning
+            let grandparentPos = null;
+            if (parentPos && firstParentHash) {
+                const parentCommit = commits.get(firstParentHash);
+                for (const gph of parentCommit?.parents ?? []) {
+                    const gp = positions.get(gph);
+                    if (gp) { grandparentPos = gp; break; }
+                }
+            }
+
+            if (parentPos && grandparentPos) {
+                const dx = parentPos.x - grandparentPos.x;
+                const dy = parentPos.y - grandparentPos.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist > 1) {
+                    const scale = LINK_DISTANCE / dist;
+                    positions.set(hash, {
+                        x: parentPos.x + dx * scale + jitter(4),
+                        y: parentPos.y + dy * scale + jitter(4),
+                    });
+                } else {
+                    positions.set(hash, {
+                        x: parentPos.x + jitter(6),
+                        y: parentPos.y + jitter(6),
+                    });
+                }
+            } else if (parentPos) {
+                positions.set(hash, {
+                    x: parentPos.x + jitter(6),
+                    y: parentPos.y + jitter(6),
+                });
+            } else {
+                // Orphan commit — place at viewport center
+                const cx = (viewportWidth || canvas.width) / 2;
+                const cy = (viewportHeight || canvas.height) / 2;
+                positions.set(hash, { x: cx + jitter(35), y: cy + jitter(35) });
+            }
+        }
+
+        // Remove deleted commits from snapshot
+        for (const hash of positions.keys()) {
+            if (!commits.has(hash)) positions.delete(hash);
+        }
+
+        // Rebuild commitIndex from updated positions
+        commitIndex.rebuildFromPositions(positions, commits, state.stashes);
+
+        // Re-query viewport and rematerialize
+        viewportWindow.invalidate();
+        const { entries } = viewportWindow.update(
+            zoomTransform, viewportWidth, viewportHeight,
+        );
+        const { nodes: commitNodes } = nodeMaterializer.synchronize(entries, commits);
+
+        // Build links for materialized subgraph
+        const materializedHashes = new Set(commitNodes.map((n) => n.hash));
+        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
+
+        // Reconcile branch/tag nodes
+        const existingBranchNodes = new Map();
+        const existingTagNodes = new Map();
+        for (const node of nodes) {
+            if (node.type === "branch" && node.branch) {
+                existingBranchNodes.set(node.branch, node);
+            } else if (node.type === "tag" && node.tag) {
+                existingTagNodes.set(node.tag, node);
+            }
+        }
+
+        const commitNodeByHash = new Map(commitNodes.map((n) => [n.hash, n]));
+        const branchReconciliation = reconcileBranchNodes(
+            existingBranchNodes, branches, commitNodeByHash,
+        );
+        const tagReconciliation = reconcileTagNodes(
+            existingTagNodes, state.tags, commitNodeByHash,
+        );
+
+        // Assemble
+        const allNodes = [
+            ...commitNodes,
+            ...branchReconciliation.nodes,
+            ...tagReconciliation.nodes,
+        ];
+        const allLinks = [
+            ...commitLinks,
+            ...branchReconciliation.links,
+            ...tagReconciliation.links,
+        ];
+
+        nodes.splice(0, nodes.length, ...allNodes);
+        links.splice(0, links.length, ...allLinks);
+
+        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
+            releaseDrag();
+        }
+        const currentTarget = tooltipManager.getTargetData();
+        if (currentTarget && !nodes.includes(currentTarget)) {
+            hideTooltip();
+        }
+
+        // Snap decorators
+        snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
+
+        // Inject ghost merge node
+        injectGhostMergeNode(commitNodeByHash);
+
+        // Apply dimming
+        applyDimmingFromPredicate();
+
+        render();
     }
 
     /**
