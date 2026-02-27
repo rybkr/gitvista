@@ -86,7 +86,6 @@ export class ForceStrategy {
 	 */
 	_clearSettled() {
 		this._settled = false;
-		this._convergedPositions = null;
 	}
 
 	/**
@@ -124,6 +123,7 @@ export class ForceStrategy {
 		}
 
 		this._clearSettled();
+		this._convergedPositions = null;
 
 		// Create D3 force simulation
 		this.simulation = forceSimulation(this.nodes)
@@ -167,6 +167,7 @@ export class ForceStrategy {
 		}
 		this.layoutManager = null;
 		this._clearSettled();
+		this._convergedPositions = null;
 		this.nodes = [];
 		this.links = [];
 	}

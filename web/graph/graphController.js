@@ -1661,7 +1661,7 @@ export function createGraphController(rootElement, options = {}) {
     function exitForcePhaseB() {
         lazyLoadingActive = false;
         nodeMaterializer.clear();
-        forceStrategy._clearSettled();
+        // _clearSettled is called by updateGraph when structureChanged=true
     }
 
     /**
