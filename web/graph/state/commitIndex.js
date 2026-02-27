@@ -29,20 +29,13 @@ export class CommitIndex {
 	}
 
 	/**
-	 * Rebuilds the index from laneStrategy position data.
+	 * Builds stash lookup maps from commits and stash list.
 	 *
 	 * @param {Map<string, Object>} commits Full commit data map.
-	 * @param {Object} positionData From laneStrategy.getPositionData().
 	 * @param {Array<Object>} stashes Stash list from state.
+	 * @returns {{ stashMessages: Map<string, string>, stashInternalHashes: Set<string>, stashInternalKinds: Map<string, string> }}
 	 */
-	rebuild(commits, positionData, stashes) {
-		const {
-			transitionTargetPositions,
-			commitToLane,
-			commitToSegmentId,
-		} = positionData;
-
-		// Build stash lookups
+	_buildStashLookups(commits, stashes) {
 		const stashMessages = new Map();
 		const stashInternalHashes = new Set();
 		const stashInternalKinds = new Map();
@@ -58,6 +51,25 @@ export class CommitIndex {
 				}
 			}
 		}
+		return { stashMessages, stashInternalHashes, stashInternalKinds };
+	}
+
+	/**
+	 * Rebuilds the index from laneStrategy position data.
+	 *
+	 * @param {Map<string, Object>} commits Full commit data map.
+	 * @param {Object} positionData From laneStrategy.getPositionData().
+	 * @param {Array<Object>} stashes Stash list from state.
+	 */
+	rebuild(commits, positionData, stashes) {
+		const {
+			transitionTargetPositions,
+			commitToLane,
+			commitToSegmentId,
+		} = positionData;
+
+		const { stashMessages, stashInternalHashes, stashInternalKinds } =
+			this._buildStashLookups(commits, stashes);
 
 		this._entries = [];
 		this._byHash.clear();
@@ -71,6 +83,42 @@ export class CommitIndex {
 				laneIndex,
 				laneColor: LANE_COLORS[laneIndex % LANE_COLORS.length],
 				segmentId: commitToSegmentId.get(hash) ?? "",
+				isStash: stashMessages.has(hash),
+				isStashInternal: stashInternalHashes.has(hash),
+				stashInternalKind: stashInternalKinds.get(hash) ?? null,
+				stashMessage: stashMessages.get(hash) ?? null,
+			};
+			this._entries.push(entry);
+			this._byHash.set(hash, entry);
+		}
+
+		// Sort by Y ascending for binary search
+		this._entries.sort((a, b) => a.y - b.y);
+	}
+
+	/**
+	 * Rebuilds the index from a plain position map (force mode convergence).
+	 * Entries have no lane metadata (laneIndex: 0, laneColor: "", segmentId: "").
+	 *
+	 * @param {Map<string, {x: number, y: number}>} positionMap Hash → {x, y} from force simulation.
+	 * @param {Map<string, Object>} commits Full commit data map.
+	 * @param {Array<Object>} stashes Stash list from state.
+	 */
+	rebuildFromPositions(positionMap, commits, stashes) {
+		const { stashMessages, stashInternalHashes, stashInternalKinds } =
+			this._buildStashLookups(commits, stashes);
+
+		this._entries = [];
+		this._byHash.clear();
+
+		for (const [hash, pos] of positionMap) {
+			const entry = {
+				hash,
+				x: pos.x,
+				y: pos.y,
+				laneIndex: 0,
+				laneColor: "",
+				segmentId: "",
 				isStash: stashMessages.has(hash),
 				isStashInternal: stashInternalHashes.has(hash),
 				stashInternalKind: stashInternalKinds.get(hash) ?? null,

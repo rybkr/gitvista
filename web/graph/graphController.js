@@ -309,6 +309,7 @@ export function createGraphController(rootElement, options = {}) {
         viewportWidth,
         viewportHeight,
         onTick: tick,
+        onSettle: handleForceSettle,
     });
     const laneStrategy = new LaneStrategy({ onTick: tick });
 
@@ -319,7 +320,7 @@ export function createGraphController(rootElement, options = {}) {
     let layoutStrategy = initialMode === "lane" ? laneStrategy : forceStrategy;
     state.layoutMode = initialMode;
 
-    // ── Lazy loading pipeline (lane mode only) ──────────────────────────
+    // ── Lazy loading pipeline (lane mode + force Phase B) ──────────────
     const commitIndex = new CommitIndex();
     const viewportWindow = new ViewportWindow(commitIndex);
     const nodeMaterializer = new NodeMaterializer();
@@ -439,6 +440,11 @@ export function createGraphController(rootElement, options = {}) {
     laneBtn.addEventListener("click", () => switchLayout("lane"));
     rebalanceBtn.addEventListener("click", () => {
         if (layoutStrategy.supportsRebalance) {
+            // In force Phase B, exit to Phase A before rebalancing
+            if (state.layoutMode === "force" && lazyLoadingActive) {
+                exitForcePhaseB();
+                updateGraphForcePhaseA();
+            }
             layoutStrategy.rebalance();
             snapDecoratorNodesForLaneDrag();
             render();
@@ -858,17 +864,36 @@ export function createGraphController(rootElement, options = {}) {
         event.stopImmediatePropagation();
         event.preventDefault();
 
-        isDraggingNode = true;
-        dragState = {
-            node: targetNode,
-            pointerId: event.pointerId,
-            startX: x,
-            startY: y,
-            dragged: false,
-        };
-
-        // Delegate initial drag position to layout strategy
-        layoutStrategy.handleDrag(targetNode, x, y);
+        // In force Phase B, exit to Phase A before starting drag so the
+        // simulation can respond to the interaction.
+        if (state.layoutMode === "force" && lazyLoadingActive) {
+            exitForcePhaseB();
+            updateGraphForcePhaseA();
+            // Re-find the node in the rebuilt nodes array
+            const refreshed = nodes.find(
+                (n) => n.type === "commit" && n.hash === targetNode.hash,
+            ) || targetNode;
+            isDraggingNode = true;
+            dragState = {
+                node: refreshed,
+                pointerId: event.pointerId,
+                startX: x,
+                startY: y,
+                dragged: false,
+            };
+            layoutStrategy.handleDrag(refreshed, x, y);
+        } else {
+            isDraggingNode = true;
+            dragState = {
+                node: targetNode,
+                pointerId: event.pointerId,
+                startX: x,
+                startY: y,
+                dragged: false,
+            };
+            // Delegate initial drag position to layout strategy
+            layoutStrategy.handleDrag(targetNode, x, y);
+        }
 
         try {
             canvas.setPointerCapture(event.pointerId);
@@ -1304,14 +1329,26 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     /**
-     * Main graph update dispatcher. Routes to eager (force mode / all nodes)
-     * or lazy (lane mode / viewport-materialized nodes) pipeline.
+     * Main graph update dispatcher. Routes to the appropriate pipeline:
+     * - Lane mode: always lazy (viewport-materialized nodes)
+     * - Force mode: Phase A (sim-only) → settles → Phase B (lazy)
+     * - Fallback: eager (all nodes)
      */
     function updateGraph() {
         sortedCommitCache = null;
         searchResultCache = null;
-        if (state.layoutMode === "lane" && lazyLoadingActive) {
+        if (state.layoutMode === "lane") {
+            if (!lazyLoadingActive) lazyLoadingActive = true;
             updateGraphLazy();
+        } else if (state.layoutMode === "force") {
+            // Every data change triggers Phase A.
+            // If we were in Phase B, exit it.
+            if (lazyLoadingActive) {
+                lazyLoadingActive = false;
+                nodeMaterializer.clear();
+            }
+            updateGraphForcePhaseA();
+            // Simulation settles naturally → onSettle → handleForceSettle → Phase B
         } else {
             updateGraphEager();
         }
@@ -1416,6 +1453,166 @@ export function createGraphController(rootElement, options = {}) {
         if (layoutStrategy.shouldAutoCenter()) {
             centerOnLatestCommit();
         }
+    }
+
+    /**
+     * Force Phase A — lightweight sim-only path.
+     * Creates commit nodes for ALL commits (reusing existing where possible),
+     * builds links, and feeds them to the D3 simulation. Skips branch/tag
+     * reconciliation and stash decoration — those happen in Phase B after
+     * the simulation converges.
+     */
+    function updateGraphForcePhaseA() {
+        const existingCommitNodes = new Map();
+        for (const node of nodes) {
+            if (node.type === "commit" && node.hash) {
+                existingCommitNodes.set(node.hash, node);
+            }
+        }
+
+        const nextNodes = [];
+        let changed = existingCommitNodes.size !== commits.size;
+
+        for (const commit of commits.values()) {
+            const parentNode = (commit.parents ?? [])
+                .map((ph) => existingCommitNodes.get(ph))
+                .find((n) => n);
+            const node =
+                existingCommitNodes.get(commit.hash) ??
+                createCommitNode(commit.hash, parentNode);
+            node.type = "commit";
+            node.hash = commit.hash;
+            node.commit = commit;
+            node.radius = node.radius ?? NODE_RADIUS;
+            nextNodes.push(node);
+            if (!existingCommitNodes.has(commit.hash)) {
+                changed = true;
+            }
+        }
+
+        const commitHashes = new Set(nextNodes.map((n) => n.hash));
+        const commitLinks = buildLinks(commits, commitHashes);
+        const previousLinkCount = links.length;
+
+        nodes.splice(0, nodes.length, ...nextNodes);
+        links.splice(0, links.length, ...commitLinks);
+
+        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
+            releaseDrag();
+        }
+
+        const currentTarget = tooltipManager.getTargetData();
+        if (currentTarget && !nodes.includes(currentTarget)) {
+            hideTooltip();
+        }
+
+        const linkStructureChanged = previousLinkCount !== commitLinks.length;
+        const structureChanged = changed || linkStructureChanged;
+
+        layoutStrategy.updateGraph(
+            nodes,
+            links,
+            commits,
+            branches,
+            { width: viewportWidth, height: viewportHeight },
+            structureChanged,
+        );
+
+        // Clear dimming — no filters meaningful during settling
+        for (const node of nodes) {
+            node.dimmed = false;
+            node.dimTarget = 0;
+            node.dimPhase = 0;
+        }
+
+        if (layoutStrategy.shouldAutoCenter()) {
+            centerOnLatestCommit();
+        }
+    }
+
+    /**
+     * Handles the force simulation convergence event (Phase A → Phase B).
+     * Snapshots positions, builds CommitIndex, materializes visible nodes,
+     * and reconciles branch/tag decorators for the visible subset.
+     */
+    function handleForceSettle() {
+        if (state.layoutMode !== "force") return;
+
+        const positions = forceStrategy.getConvergedPositions();
+        if (!positions || positions.size === 0) return;
+
+        // Build CommitIndex from converged positions
+        commitIndex.rebuildFromPositions(positions, commits, state.stashes);
+
+        // Enter Phase B
+        lazyLoadingActive = true;
+
+        // Query viewport for visible entries
+        viewportWindow.invalidate();
+        const { entries } = viewportWindow.update(
+            zoomTransform, viewportWidth, viewportHeight,
+        );
+
+        // Materialize visible nodes
+        const { nodes: commitNodes } = nodeMaterializer.synchronize(entries, commits);
+
+        // Build links for materialized subgraph
+        const materializedHashes = new Set(commitNodes.map((n) => n.hash));
+        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
+
+        // Reconcile branch/tag nodes for visible commits only
+        const existingBranchNodes = new Map();
+        const existingTagNodes = new Map();
+        for (const node of nodes) {
+            if (node.type === "branch" && node.branch) {
+                existingBranchNodes.set(node.branch, node);
+            } else if (node.type === "tag" && node.tag) {
+                existingTagNodes.set(node.tag, node);
+            }
+        }
+
+        const commitNodeByHash = new Map(commitNodes.map((n) => [n.hash, n]));
+        const branchReconciliation = reconcileBranchNodes(
+            existingBranchNodes, branches, commitNodeByHash,
+        );
+        const tagReconciliation = reconcileTagNodes(
+            existingTagNodes, state.tags, commitNodeByHash,
+        );
+
+        // Assemble nodes and links
+        const allNodes = [
+            ...commitNodes,
+            ...branchReconciliation.nodes,
+            ...tagReconciliation.nodes,
+        ];
+        const allLinks = [
+            ...commitLinks,
+            ...branchReconciliation.links,
+            ...tagReconciliation.links,
+        ];
+
+        nodes.splice(0, nodes.length, ...allNodes);
+        links.splice(0, links.length, ...allLinks);
+
+        // Snap decorators
+        snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
+
+        // Inject ghost merge node
+        injectGhostMergeNode(commitNodeByHash);
+
+        // Apply dimming
+        applyDimmingFromPredicate();
+
+        render();
+    }
+
+    /**
+     * Exits force Phase B, clearing lazy state so Phase A can run.
+     */
+    function exitForcePhaseB() {
+        lazyLoadingActive = false;
+        nodeMaterializer.clear();
     }
 
     /**
@@ -2235,6 +2432,11 @@ export function createGraphController(rootElement, options = {}) {
             if (settings.physics) {
                 state.graphSettings.physics = { ...state.graphSettings.physics, ...settings.physics };
                 if (state.layoutMode === "force") {
+                    // Physics change during Phase B: exit to Phase A first
+                    if (lazyLoadingActive) {
+                        exitForcePhaseB();
+                        updateGraphForcePhaseA();
+                    }
                     forceStrategy.applyPhysics(state.graphSettings.physics);
                 }
             }

@@ -30,19 +30,63 @@ export class ForceStrategy {
 	 * @param {number} options.viewportWidth Initial viewport width in pixels.
 	 * @param {number} options.viewportHeight Initial viewport height in pixels.
 	 * @param {Function} options.onTick Callback invoked on each simulation tick.
+	 * @param {Function} [options.onSettle] Callback invoked when simulation converges.
 	 */
 	constructor(options = {}) {
 		this.viewportWidth = options.viewportWidth || 0;
 		this.viewportHeight = options.viewportHeight || 0;
 		this.onTick = options.onTick || (() => {});
+		this.onSettle = options.onSettle || null;
 
 		this.simulation = null;
 		this.layoutManager = null;
 		this.initialLayoutComplete = false;
 
+		// Two-phase lazy loading state
+		this._settled = false;
+		/** @type {Map<string, {x: number, y: number}>|null} */
+		this._convergedPositions = null;
+
 		// Arrays managed by the controller, we receive references
 		this.nodes = [];
 		this.links = [];
+	}
+
+	/**
+	 * Whether the simulation has converged and positions are stable.
+	 * @returns {boolean}
+	 */
+	get isSettled() {
+		return this._settled;
+	}
+
+	/**
+	 * Returns the converged position snapshot, or null if not settled.
+	 * @returns {Map<string, {x: number, y: number}>|null}
+	 */
+	getConvergedPositions() {
+		return this._convergedPositions;
+	}
+
+	/**
+	 * Snapshots current node positions into _convergedPositions.
+	 * Only captures commit-type nodes.
+	 */
+	_snapshotPositions() {
+		this._convergedPositions = new Map();
+		for (const node of this.nodes) {
+			if (node.type === "commit" && node.hash) {
+				this._convergedPositions.set(node.hash, { x: node.x, y: node.y });
+			}
+		}
+	}
+
+	/**
+	 * Clears settled state, forcing re-entry into Phase A.
+	 */
+	_clearSettled() {
+		this._settled = false;
+		this._convergedPositions = null;
 	}
 
 	/**
@@ -79,6 +123,8 @@ export class ForceStrategy {
 			this.viewportHeight = viewport.height || this.viewportHeight;
 		}
 
+		this._clearSettled();
+
 		// Create D3 force simulation
 		this.simulation = forceSimulation(this.nodes)
 			.velocityDecay(VELOCITY_DECAY)
@@ -92,7 +138,12 @@ export class ForceStrategy {
 					.distance(LINK_DISTANCE)
 					.strength(LINK_STRENGTH),
 			)
-			.on("tick", () => this.tick());
+			.on("tick", () => this.tick())
+			.on("end", () => {
+				this._settled = true;
+				this._snapshotPositions();
+				if (this.onSettle) this.onSettle();
+			});
 
 		// Create layout manager for timeline positioning and viewport management
 		this.layoutManager = new LayoutManager(
@@ -114,6 +165,7 @@ export class ForceStrategy {
 			this.simulation = null;
 		}
 		this.layoutManager = null;
+		this._clearSettled();
 		this.nodes = [];
 		this.links = [];
 	}
@@ -136,6 +188,11 @@ export class ForceStrategy {
 
 		this.nodes = nodes;
 		this.links = links;
+
+		// Any structural change resets convergence — simulation must re-settle.
+		if (this._settled && structureChanged) {
+			this._clearSettled();
+		}
 
 		// Update simulation with new nodes and links
 		this.simulation.nodes(this.nodes);
@@ -173,6 +230,8 @@ export class ForceStrategy {
 		if (!this.simulation) {
 			return false;
 		}
+
+		this._clearSettled();
 
 		// Set fixed position and zero velocity
 		node.fx = x;
@@ -242,6 +301,8 @@ export class ForceStrategy {
 		if (!this.simulation) {
 			return;
 		}
+
+		this._clearSettled();
 
 		// Clear all fixed positions
 		for (const node of this.nodes) {
@@ -313,6 +374,8 @@ export class ForceStrategy {
 	 */
 	applyPhysics(physics) {
 		if (!this.simulation) return;
+
+		this._clearSettled();
 
 		if (typeof physics.chargeStrength === "number") {
 			this.simulation.force("charge")?.strength(physics.chargeStrength);
