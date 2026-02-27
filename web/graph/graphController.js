@@ -1470,24 +1470,42 @@ export function createGraphController(rootElement, options = {}) {
             }
         }
 
+        // When re-entering Phase A from Phase B, the nodes array only has the
+        // viewport-visible materialized subset. Use the converged position
+        // snapshot to restore correct positions for off-screen commits instead
+        // of placing them randomly (which causes bunching).
+        const converged = forceStrategy.getConvergedPositions();
+
         const nextNodes = [];
         let changed = existingCommitNodes.size !== commits.size;
 
         for (const commit of commits.values()) {
-            const parentNode = (commit.parents ?? [])
-                .map((ph) => existingCommitNodes.get(ph))
-                .find((n) => n);
-            const node =
-                existingCommitNodes.get(commit.hash) ??
-                createCommitNode(commit.hash, parentNode);
+            let node = existingCommitNodes.get(commit.hash);
+            if (!node) {
+                const saved = converged?.get(commit.hash);
+                if (saved) {
+                    // Restore from converged position snapshot
+                    node = {
+                        type: "commit",
+                        hash: commit.hash,
+                        x: saved.x,
+                        y: saved.y,
+                        vx: 0,
+                        vy: 0,
+                    };
+                } else {
+                    const parentNode = (commit.parents ?? [])
+                        .map((ph) => existingCommitNodes.get(ph))
+                        .find((n) => n);
+                    node = createCommitNode(commit.hash, parentNode);
+                }
+                changed = true;
+            }
             node.type = "commit";
             node.hash = commit.hash;
             node.commit = commit;
             node.radius = node.radius ?? NODE_RADIUS;
             nextNodes.push(node);
-            if (!existingCommitNodes.has(commit.hash)) {
-                changed = true;
-            }
         }
 
         const commitHashes = new Set(nextNodes.map((n) => n.hash));
@@ -1613,6 +1631,7 @@ export function createGraphController(rootElement, options = {}) {
     function exitForcePhaseB() {
         lazyLoadingActive = false;
         nodeMaterializer.clear();
+        forceStrategy._clearSettled();
     }
 
     /**

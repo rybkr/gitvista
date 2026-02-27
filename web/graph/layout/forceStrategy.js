@@ -140,6 +140,7 @@ export class ForceStrategy {
 			)
 			.on("tick", () => this.tick())
 			.on("end", () => {
+				if (this.nodes.length === 0) return;
 				this._settled = true;
 				this._snapshotPositions();
 				if (this.onSettle) this.onSettle();
