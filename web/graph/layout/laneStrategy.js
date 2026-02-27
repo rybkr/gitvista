@@ -1287,6 +1287,28 @@ export class LaneStrategy {
 	}
 
 	/**
+	 * Exposes internal position data so CommitIndex can build its index
+	 * without duplicating layout logic.
+	 *
+	 * @returns {{
+	 *   transitionTargetPositions: Map<string, {x: number, y: number}>,
+	 *   commitToLane: Map<string, number>,
+	 *   commitToSegmentId: Map<string, string>,
+	 *   segments: Array<Object>,
+	 *   laneOwners: Array<string>,
+	 * }}
+	 */
+	getPositionData() {
+		return {
+			transitionTargetPositions: this.transitionTargetPositions,
+			commitToLane: this.commitToLane,
+			commitToSegmentId: this._commitToSegmentId,
+			segments: this._segments,
+			laneOwners: this._laneOwners,
+		};
+	}
+
+	/**
 	 * Starts the transition animation and kicks off the rAF render loop.
 	 */
 	startTransition() {

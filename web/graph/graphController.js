@@ -26,6 +26,9 @@ import { LaneStrategy } from "./layout/laneStrategy.js";
 import { buildPalette } from "./utils/palette.js";
 import { getCommitTimestamp } from "./utils/time.js";
 import { createGraphState, setZoomTransform } from "./state/graphState.js";
+import { CommitIndex } from "./state/commitIndex.js";
+import { ViewportWindow } from "./state/viewportWindow.js";
+import { NodeMaterializer } from "./state/nodeMaterializer.js";
 import { loadSettings, saveSettings, getDefaults } from "../graphSettingsDefaults.js";
 
 // ── A3 Filter helpers ─────────────────────────────────────────────────────────
@@ -316,6 +319,12 @@ export function createGraphController(rootElement, options = {}) {
     let layoutStrategy = initialMode === "lane" ? laneStrategy : forceStrategy;
     state.layoutMode = initialMode;
 
+    // ── Lazy loading pipeline (lane mode only) ──────────────────────────
+    const commitIndex = new CommitIndex();
+    const viewportWindow = new ViewportWindow(commitIndex);
+    const nodeMaterializer = new NodeMaterializer();
+    let lazyLoadingActive = initialMode === "lane";
+
     const zoom = d3Zoom()
         .filter((event) => !isDraggingNode || event.type === "wheel")
         .scaleExtent([ZOOM_MIN, ZOOM_MAX])
@@ -325,6 +334,12 @@ export function createGraphController(rootElement, options = {}) {
             }
             zoomTransform = event.transform;
             setZoomTransform(state, zoomTransform);
+            if (lazyLoadingActive) {
+                const { entries, changed } = viewportWindow.update(
+                    zoomTransform, viewportWidth, viewportHeight,
+                );
+                if (changed) rematerializeFromViewport(entries);
+            }
             render();
         });
 
@@ -387,8 +402,11 @@ export function createGraphController(rootElement, options = {}) {
         // Switch to new strategy
         if (newMode === "lane") {
             layoutStrategy = laneStrategy;
+            lazyLoadingActive = true;
         } else {
             layoutStrategy = forceStrategy;
+            lazyLoadingActive = false;
+            nodeMaterializer.clear();
         }
 
         // Update state and localStorage
@@ -487,13 +505,12 @@ export function createGraphController(rootElement, options = {}) {
         // timestamp" heuristic used by layout strategies often picks a
         // different commit, leaving the view stranded in the middle of history.
         if (state.headHash) {
+            // Check materialized nodes first
             const headNode = nodes.find(
                 (n) => n.type === "commit" && n.hash === state.headHash,
             );
             if (headNode) {
                 if (state.layoutMode === "lane") {
-                    // In lane mode, place HEAD in the upper third so the
-                    // commit history is visible below.
                     const vw = viewportWidth || canvas.width;
                     const vh = viewportHeight || canvas.height;
                     select(canvas).call(
@@ -506,6 +523,21 @@ export function createGraphController(rootElement, options = {}) {
                     select(canvas).call(zoom.translateTo, headNode.x, headNode.y);
                 }
                 return;
+            }
+            // In lazy mode, HEAD may not be materialized — use commitIndex
+            if (lazyLoadingActive) {
+                const entry = commitIndex.getByHash(state.headHash);
+                if (entry) {
+                    const vw = viewportWidth || canvas.width;
+                    const vh = viewportHeight || canvas.height;
+                    select(canvas).call(
+                        zoom.translateTo,
+                        entry.x,
+                        entry.y,
+                        [vw / 2, vh / 4],
+                    );
+                    return;
+                }
             }
         }
 
@@ -524,11 +556,22 @@ export function createGraphController(rootElement, options = {}) {
      */
     const centerOnCommit = (hash) => {
         if (hash) {
+            // Check materialized nodes first
             const target = nodes.find((n) => n.type === "commit" && n.hash === hash);
             if (target) {
                 layoutStrategy.disableAutoCenter();
                 select(canvas).call(zoom.translateTo, target.x, target.y);
                 return;
+            }
+            // In lazy mode, the commit may be off-screen — use commitIndex
+            if (lazyLoadingActive) {
+                const entry = commitIndex.getByHash(hash);
+                if (entry) {
+                    layoutStrategy.disableAutoCenter();
+                    select(canvas).call(zoom.translateTo, entry.x, entry.y);
+                    // The zoom handler will fire → ViewportWindow re-queries → rematerializes
+                    return;
+                }
             }
         }
         // Graceful fallback: center on whatever the latest commit is.
@@ -542,7 +585,15 @@ export function createGraphController(rootElement, options = {}) {
      * @param {string} hash 40-character commit hash to select.
      */
     const selectAndCenterCommit = (hash) => {
-        const node = nodes.find((n) => n.type === "commit" && n.hash === hash);
+        let node = nodes.find((n) => n.type === "commit" && n.hash === hash);
+        // In lazy mode, force-materialize if not currently in viewport
+        if (!node && lazyLoadingActive) {
+            const entry = commitIndex.getByHash(hash);
+            const commit = commits.get(hash);
+            if (entry && commit) {
+                node = nodeMaterializer.forceMaterialize(hash, entry, commit);
+            }
+        }
         if (!node) {
             return;
         }
@@ -568,15 +619,31 @@ export function createGraphController(rootElement, options = {}) {
      * @param {'prev' | 'next'} direction Direction to navigate.
      */
     const navigateCommits = (direction) => {
+        // In lazy mode, build sorted cache from commitIndex (all commits, not just materialized)
         if (!sortedCommitCache) {
-            sortedCommitCache = nodes
-                .filter((n) => n.type === "commit")
-                .sort((a, b) => {
-                    const aTime = getCommitTimestamp(a.commit);
-                    const bTime = getCommitTimestamp(b.commit);
-                    if (aTime === bTime) return a.hash.localeCompare(b.hash);
-                    return bTime - aTime;
-                });
+            if (lazyLoadingActive) {
+                // Use commitIndex entries sorted by Y (chronological in lane mode)
+                // but we need commit data for timestamp-based sort
+                const allEntries = commitIndex.getAllEntries();
+                sortedCommitCache = allEntries
+                    .map(e => ({ hash: e.hash, commit: commits.get(e.hash) }))
+                    .filter(e => e.commit)
+                    .sort((a, b) => {
+                        const aTime = getCommitTimestamp(a.commit);
+                        const bTime = getCommitTimestamp(b.commit);
+                        if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                        return bTime - aTime;
+                    });
+            } else {
+                sortedCommitCache = nodes
+                    .filter((n) => n.type === "commit")
+                    .sort((a, b) => {
+                        const aTime = getCommitTimestamp(a.commit);
+                        const bTime = getCommitTimestamp(b.commit);
+                        if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                        return bTime - aTime;
+                    });
+            }
         }
 
         const commitNodes = sortedCommitCache;
@@ -622,14 +689,27 @@ export function createGraphController(rootElement, options = {}) {
 
         // Lazily build sortedCommitCache (same sort as navigateCommits).
         if (!sortedCommitCache) {
-            sortedCommitCache = nodes
-                .filter((n) => n.type === "commit")
-                .sort((a, b) => {
-                    const aTime = getCommitTimestamp(a.commit);
-                    const bTime = getCommitTimestamp(b.commit);
-                    if (aTime === bTime) return a.hash.localeCompare(b.hash);
-                    return bTime - aTime;
-                });
+            if (lazyLoadingActive) {
+                const allEntries = commitIndex.getAllEntries();
+                sortedCommitCache = allEntries
+                    .map(e => ({ hash: e.hash, commit: commits.get(e.hash) }))
+                    .filter(e => e.commit)
+                    .sort((a, b) => {
+                        const aTime = getCommitTimestamp(a.commit);
+                        const bTime = getCommitTimestamp(b.commit);
+                        if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                        return bTime - aTime;
+                    });
+            } else {
+                sortedCommitCache = nodes
+                    .filter((n) => n.type === "commit")
+                    .sort((a, b) => {
+                        const aTime = getCommitTimestamp(a.commit);
+                        const bTime = getCommitTimestamp(b.commit);
+                        if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                        return bTime - aTime;
+                    });
+            }
         }
 
         // Lazily build searchResultCache by filtering with the active matcher.
@@ -1084,7 +1164,9 @@ export function createGraphController(rootElement, options = {}) {
             branchNode.branch = branchName;
             branchNode.targetHash = targetHash;
             if (isNewNode) {
-                branchNode.spawnPhase = 0;
+                // In lane mode there is no continuous simulation tick to
+                // drive the spawn animation, so start fully visible.
+                branchNode.spawnPhase = lazyLoadingActive ? 1 : 0;
                 changed = true;
             } else if (previousHash !== targetHash) {
                 changed = true;
@@ -1134,7 +1216,7 @@ export function createGraphController(rootElement, options = {}) {
             tagNode.tag = tagName;
             tagNode.targetHash = targetHash;
             if (isNewNode) {
-                tagNode.spawnPhase = 0;
+                tagNode.spawnPhase = lazyLoadingActive ? 1 : 0;
                 changed = true;
             } else if (previousHash !== targetHash) {
                 changed = true;
@@ -1222,12 +1304,24 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     /**
-     * Main graph update orchestrator. Reconciles nodes and links, updates simulation state,
-     * and triggers layout adjustments.
+     * Main graph update dispatcher. Routes to eager (force mode / all nodes)
+     * or lazy (lane mode / viewport-materialized nodes) pipeline.
      */
     function updateGraph() {
-        sortedCommitCache = null; // Invalidate on every structural update
+        sortedCommitCache = null;
         searchResultCache = null;
+        if (state.layoutMode === "lane" && lazyLoadingActive) {
+            updateGraphLazy();
+        } else {
+            updateGraphEager();
+        }
+    }
+
+    /**
+     * Eager graph update — creates GraphNode objects for ALL commits.
+     * Used in force mode and as the original code path.
+     */
+    function updateGraphEager() {
         const existingCommitNodes = new Map();
         const existingBranchNodes = new Map();
         const existingTagNodes = new Map();
@@ -1310,55 +1404,8 @@ export function createGraphController(rootElement, options = {}) {
         snapBranchesToTargets(branchReconciliation.alignments);
         snapTagsToTargets(tagReconciliation.alignments);
 
-        // Inject ghost merge node AFTER layout so positions reflect the
-        // current lane assignments (avoids stale positioning when branches
-        // re-arrange).  The render is deferred via rAF, so the ghost is
-        // included in the next paint.
-        if (state.mergePreview) {
-            const mp = state.mergePreview;
-            const oursNode = commitNodeByHash.get(mp.oursHash);
-            const theirsNode = commitNodeByHash.get(mp.theirsHash);
-            if (oursNode && theirsNode) {
-                // In lane mode, place the ghost where a real merge commit
-                // would land: in the ours lane, one step above the current
-                // topmost commit (since it would be the newest commit).
-                // In force mode, center between the two branch tips.
-                const useLane = state.layoutMode === "lane" &&
-                    oursNode.laneIndex !== undefined;
-                let ghostX, ghostY;
-                if (useLane) {
-                    ghostX = oursNode.x;
-                    const commitYs = nodes
-                        .filter(n => n.type === "commit")
-                        .map(n => n.y)
-                        .sort((a, b) => a - b);
-                    const minY = commitYs[0] ?? oursNode.y;
-                    const step = commitYs.length >= 2
-                        ? (commitYs[commitYs.length - 1] - commitYs[0]) /
-                          (commitYs.length - 1)
-                        : LANE_VERTICAL_STEP;
-                    ghostY = minY - step;
-                } else {
-                    ghostX = (oursNode.x + theirsNode.x) / 2;
-                    ghostY = Math.min(oursNode.y, theirsNode.y) - 60;
-                }
-                const ghostNode = {
-                    type: "ghost-merge",
-                    hash: "__ghost_merge__",
-                    x: ghostX,
-                    y: ghostY,
-                    fx: ghostX,
-                    fy: ghostY,
-                };
-                if (useLane) {
-                    ghostNode.laneIndex = oursNode.laneIndex;
-                    ghostNode.laneColor = oursNode.laneColor;
-                }
-                nodes.push(ghostNode);
-                links.push({ source: ghostNode, target: oursNode, kind: "ghost" });
-                links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
-            }
-        }
+        // Inject ghost merge node
+        injectGhostMergeNode(commitNodeByHash);
 
         // Apply the active compound predicate (A2 search + A3 filters) to set
         // node.dimmed.  This runs after layout so lane segments are rebuilt and
@@ -1369,6 +1416,251 @@ export function createGraphController(rootElement, options = {}) {
         if (layoutStrategy.shouldAutoCenter()) {
             centerOnLatestCommit();
         }
+    }
+
+    /**
+     * Builds links for a subset of materialized commit nodes.
+     * Only includes links where both endpoints are materialized.
+     *
+     * @param {Map<string, Object>} commits Full commit data map.
+     * @param {Set<string>} materializedHashes Hashes of materialized nodes.
+     * @returns {Array<{source: string, target: string}>}
+     */
+    function buildLinksForMaterialized(commits, materializedHashes) {
+        const result = [];
+        for (const hash of materializedHashes) {
+            const commit = commits.get(hash);
+            if (!commit?.parents) continue;
+            for (const parentHash of commit.parents) {
+                if (materializedHashes.has(parentHash)) {
+                    result.push({ source: parentHash, target: hash });
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Lazy graph update — runs laneStrategy on pseudo-nodes, then materializes
+     * only the viewport-visible subset as real GraphNode objects.
+     */
+    function updateGraphLazy() {
+        // 1. Build pseudo-nodes from commits + stash data
+        const stashSet = new Set((state.stashes ?? []).map(s => s?.hash).filter(Boolean));
+        const stashInternalSet = new Set();
+        const stashInternalKinds = new Map();
+        for (const s of state.stashes ?? []) {
+            const commit = commits.get(s?.hash);
+            if (commit?.parents) {
+                for (let i = 1; i < commit.parents.length; i++) {
+                    stashInternalSet.add(commit.parents[i]);
+                    stashInternalKinds.set(commit.parents[i], i === 1 ? "index" : "untracked");
+                }
+            }
+        }
+
+        const pseudoNodes = [];
+        for (const [hash, commit] of commits) {
+            pseudoNodes.push({
+                type: "commit",
+                hash,
+                isStash: stashSet.has(hash),
+                isStashInternal: stashInternalSet.has(hash),
+                stashInternalKind: stashInternalKinds.get(hash) ?? null,
+            });
+        }
+
+        // 2. Run laneStrategy on pseudo-nodes (computes layout into internal maps)
+        const viewport = { width: viewportWidth, height: viewportHeight };
+        layoutStrategy.updateGraph(pseudoNodes, [], commits, branches, viewport, true);
+
+        // 3. Build CommitIndex from laneStrategy position data
+        commitIndex.rebuild(commits, layoutStrategy.getPositionData(), state.stashes);
+
+        // 4. Query ViewportWindow
+        viewportWindow.invalidate();
+        const { entries } = viewportWindow.update(zoomTransform, viewportWidth, viewportHeight);
+
+        // 5. Materialize nodes for visible commits
+        const { nodes: commitNodes } = nodeMaterializer.synchronize(entries, commits);
+
+        // 6. Build links for materialized subgraph only
+        const materializedHashes = new Set(commitNodes.map(n => n.hash));
+        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
+
+        // 7. Reconcile branch/tag nodes (only for branches pointing at materialized commits)
+        const existingBranchNodes = new Map();
+        const existingTagNodes = new Map();
+        for (const node of nodes) {
+            if (node.type === "branch" && node.branch) {
+                existingBranchNodes.set(node.branch, node);
+            } else if (node.type === "tag" && node.tag) {
+                existingTagNodes.set(node.tag, node);
+            }
+        }
+
+        const commitNodeByHash = new Map(commitNodes.map(n => [n.hash, n]));
+        const branchReconciliation = reconcileBranchNodes(
+            existingBranchNodes,
+            branches,
+            commitNodeByHash,
+        );
+        const tagReconciliation = reconcileTagNodes(
+            existingTagNodes,
+            state.tags,
+            commitNodeByHash,
+        );
+
+        // 8. Assemble state.nodes and state.links
+        const allNodes = [
+            ...commitNodes,
+            ...branchReconciliation.nodes,
+            ...tagReconciliation.nodes,
+        ];
+        const allLinks = [
+            ...commitLinks,
+            ...branchReconciliation.links,
+            ...tagReconciliation.links,
+        ];
+
+        nodes.splice(0, nodes.length, ...allNodes);
+        links.splice(0, links.length, ...allLinks);
+
+        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
+            releaseDrag();
+        }
+
+        const currentTarget = tooltipManager.getTargetData();
+        if (currentTarget && !nodes.includes(currentTarget)) {
+            hideTooltip();
+        }
+
+        // Snap decorators AFTER materialization so positions are set
+        snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
+
+        // Inject ghost merge node
+        injectGhostMergeNode(commitNodeByHash);
+
+        // Apply dimming
+        applyDimmingFromPredicate();
+
+        // Center on latest commit if auto-centering is requested
+        if (layoutStrategy.shouldAutoCenter()) {
+            centerOnLatestCommit();
+        }
+    }
+
+    /**
+     * Re-materializes nodes when viewport changes during scroll/zoom in lazy mode.
+     * Only rebuilds the commit node set and links; does NOT re-run layout.
+     *
+     * @param {import("./state/commitIndex.js").CommitEntry[]} entries Visible entries from ViewportWindow.
+     */
+    function rematerializeFromViewport(entries) {
+        const { nodes: commitNodes, added, removed } = nodeMaterializer.synchronize(entries, commits);
+        if (added.length === 0 && removed.length === 0) return;
+
+        // Rebuild links for new materialized set
+        const materializedHashes = new Set(commitNodes.map(n => n.hash));
+        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
+
+        // Reconcile branch/tag nodes for currently-materialized commits
+        const existingBranchNodes = new Map();
+        const existingTagNodes = new Map();
+        for (const node of nodes) {
+            if (node.type === "branch" && node.branch) {
+                existingBranchNodes.set(node.branch, node);
+            } else if (node.type === "tag" && node.tag) {
+                existingTagNodes.set(node.tag, node);
+            }
+        }
+
+        const commitNodeByHash = new Map(commitNodes.map(n => [n.hash, n]));
+        const branchReconciliation = reconcileBranchNodes(
+            existingBranchNodes,
+            branches,
+            commitNodeByHash,
+        );
+        const tagReconciliation = reconcileTagNodes(
+            existingTagNodes,
+            state.tags,
+            commitNodeByHash,
+        );
+
+        // Assemble
+        const allNodes = [
+            ...commitNodes,
+            ...branchReconciliation.nodes,
+            ...tagReconciliation.nodes,
+        ];
+        const allLinks = [
+            ...commitLinks,
+            ...branchReconciliation.links,
+            ...tagReconciliation.links,
+        ];
+
+        nodes.splice(0, nodes.length, ...allNodes);
+        links.splice(0, links.length, ...allLinks);
+
+        // Snap decorators
+        snapBranchesToTargets(branchReconciliation.alignments);
+        snapTagsToTargets(tagReconciliation.alignments);
+
+        // Inject ghost merge node
+        injectGhostMergeNode(commitNodeByHash);
+
+        // Re-apply dimming for new nodes
+        applyDimmingFromPredicate();
+    }
+
+    /**
+     * Injects ghost merge node into the nodes/links arrays if mergePreview is active.
+     *
+     * @param {Map<string, Object>} commitNodeByHash Map of hash → commit node.
+     */
+    function injectGhostMergeNode(commitNodeByHash) {
+        if (!state.mergePreview) return;
+
+        const mp = state.mergePreview;
+        const oursNode = commitNodeByHash.get(mp.oursHash);
+        const theirsNode = commitNodeByHash.get(mp.theirsHash);
+        if (!oursNode || !theirsNode) return;
+
+        const useLane = state.layoutMode === "lane" &&
+            oursNode.laneIndex !== undefined;
+        let ghostX, ghostY;
+        if (useLane) {
+            ghostX = oursNode.x;
+            const commitYs = nodes
+                .filter(n => n.type === "commit")
+                .map(n => n.y)
+                .sort((a, b) => a - b);
+            const minY = commitYs[0] ?? oursNode.y;
+            const step = commitYs.length >= 2
+                ? (commitYs[commitYs.length - 1] - commitYs[0]) /
+                  (commitYs.length - 1)
+                : LANE_VERTICAL_STEP;
+            ghostY = minY - step;
+        } else {
+            ghostX = (oursNode.x + theirsNode.x) / 2;
+            ghostY = Math.min(oursNode.y, theirsNode.y) - 60;
+        }
+        const ghostNode = {
+            type: "ghost-merge",
+            hash: "__ghost_merge__",
+            x: ghostX,
+            y: ghostY,
+            fx: ghostX,
+            fy: ghostY,
+        };
+        if (useLane) {
+            ghostNode.laneIndex = oursNode.laneIndex;
+            ghostNode.laneColor = oursNode.laneColor;
+        }
+        nodes.push(ghostNode);
+        links.push({ source: ghostNode, target: oursNode, kind: "ghost" });
+        links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
     }
 
     function createCommitNode(hash, anchorNode) {
@@ -1639,9 +1931,11 @@ export function createGraphController(rootElement, options = {}) {
         window.removeEventListener("resize", resize);
         resizeObserver?.disconnect();
         select(canvas).on(".zoom", null);
-        // Deactivate both strategies to clean up resources
+        // Deactivate both strategies and clean up lazy loading
         forceStrategy.deactivate();
         laneStrategy.deactivate();
+        nodeMaterializer.clear();
+        lazyLoadingActive = false;
         removeThemeWatcher?.();
         themeAttrObserver.disconnect();
         releaseDrag();
@@ -1775,6 +2069,28 @@ export function createGraphController(rootElement, options = {}) {
          * @returns {{ matching: number, total: number }}
          */
         getCommitCount: () => {
+            if (lazyLoadingActive) {
+                // In lazy mode, count against all commits via commitIndex
+                const allTotal = commitIndex.size;
+                if (!state.filterPredicate) {
+                    return { matching: allTotal, total: allTotal };
+                }
+                // Evaluate predicate against lightweight objects from commitIndex
+                let matching = 0;
+                for (const entry of commitIndex.getAllEntries()) {
+                    const commit = commits.get(entry.hash);
+                    const pseudoNode = {
+                        type: "commit",
+                        hash: entry.hash,
+                        commit,
+                        isStash: entry.isStash,
+                        isStashInternal: entry.isStashInternal,
+                        stashInternalKind: entry.stashInternalKind,
+                    };
+                    if (state.filterPredicate(pseudoNode)) matching++;
+                }
+                return { matching, total: allTotal };
+            }
             let total = 0;
             let matching = 0;
             for (const node of nodes) {
@@ -1847,6 +2163,17 @@ export function createGraphController(rootElement, options = {}) {
         getNodes: () => nodes,
         /** Returns the live links array for the minimap. */
         getLinks: () => links,
+        /**
+         * Returns lightweight position data for the minimap in lazy mode.
+         * Falls back to nodes array in eager mode.
+         * @returns {Array<{hash: string, x: number, y: number, laneColor: string}>}
+         */
+        getMinimapData: () => {
+            if (lazyLoadingActive && commitIndex.size > 0) {
+                return commitIndex.getAllEntries();
+            }
+            return nodes.filter(n => n.type === "commit");
+        },
         /** Returns the current D3 zoom transform. */
         getZoomTransform: () => zoomTransform,
         /** Returns current viewport dimensions. */
@@ -1857,14 +2184,27 @@ export function createGraphController(rootElement, options = {}) {
          */
         getNavigationPosition: () => {
             if (!sortedCommitCache) {
-                sortedCommitCache = nodes
-                    .filter((n) => n.type === "commit")
-                    .sort((a, b) => {
-                        const aTime = getCommitTimestamp(a.commit);
-                        const bTime = getCommitTimestamp(b.commit);
-                        if (aTime === bTime) return a.hash.localeCompare(b.hash);
-                        return bTime - aTime;
-                    });
+                if (lazyLoadingActive) {
+                    const allEntries = commitIndex.getAllEntries();
+                    sortedCommitCache = allEntries
+                        .map(e => ({ hash: e.hash, commit: commits.get(e.hash) }))
+                        .filter(e => e.commit)
+                        .sort((a, b) => {
+                            const aTime = getCommitTimestamp(a.commit);
+                            const bTime = getCommitTimestamp(b.commit);
+                            if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                            return bTime - aTime;
+                        });
+                } else {
+                    sortedCommitCache = nodes
+                        .filter((n) => n.type === "commit")
+                        .sort((a, b) => {
+                            const aTime = getCommitTimestamp(a.commit);
+                            const bTime = getCommitTimestamp(b.commit);
+                            if (aTime === bTime) return a.hash.localeCompare(b.hash);
+                            return bTime - aTime;
+                        });
+                }
             }
             const total = sortedCommitCache.length;
             let index = -1;
