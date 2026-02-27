@@ -603,8 +603,8 @@ func TestBuildGraphSummary(t *testing.T) {
 		commits:   []*Commit{commit1, commit2, commit3},
 		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2, commit3.ID: commit3},
 		refs: map[string]Hash{
-			"refs/heads/main":  commit3.ID,
-			"refs/tags/v1.0":   tagObj.ID,
+			"refs/heads/main": commit3.ID,
+			"refs/tags/v1.0":  tagObj.ID,
 		},
 		tags:    []*Tag{tagObj},
 		stashes: []*StashEntry{{Hash: commit1.ID, Message: "WIP"}},

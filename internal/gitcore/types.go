@@ -304,14 +304,14 @@ type CommitSkeleton struct {
 // Sent on initial connect instead of the full commit set, enabling the
 // client to compute layout positions before loading commit details on demand.
 type GraphSummary struct {
-	TotalCommits    int              `json:"totalCommits"`
-	Skeleton        []CommitSkeleton `json:"skeleton"`
-	Branches        map[string]Hash  `json:"branches"`
+	TotalCommits    int               `json:"totalCommits"`
+	Skeleton        []CommitSkeleton  `json:"skeleton"`
+	Branches        map[string]Hash   `json:"branches"`
 	Tags            map[string]string `json:"tags"`
-	HeadHash        string           `json:"headHash"`
-	Stashes         []*StashEntry    `json:"stashes"`
-	OldestTimestamp int64            `json:"oldestTimestamp"`
-	NewestTimestamp int64            `json:"newestTimestamp"`
+	HeadHash        string            `json:"headHash"`
+	Stashes         []*StashEntry     `json:"stashes"`
+	OldestTimestamp int64             `json:"oldestTimestamp"`
+	NewestTimestamp int64             `json:"newestTimestamp"`
 }
 
 // IsEmpty reports whether the delta contains no changes.
