@@ -299,7 +299,7 @@ export class ForceStrategy {
 	 * Clears all fixed positions and reheats the simulation.
 	 */
 	rebalance() {
-		if (!this.simulation) {
+		if (!this.simulation || !this.layoutManager) {
 			return;
 		}
 
@@ -311,8 +311,13 @@ export class ForceStrategy {
 			node.fy = null;
 		}
 
-		// Reheat simulation to full alpha
-		this.simulation.alpha(0.8).restart();
+		// Re-apply timeline layout for a clean starting state, then restart
+		// at full alpha. Without this, reheating from arbitrary positions
+		// causes link forces to collapse the graph before charge can push
+		// it back out.
+		this.layoutManager.applyTimelineLayout(this.nodes);
+		this.layoutManager.requestAutoCenter();
+		this.layoutManager.restartSimulation(1.0);
 	}
 
 	/**

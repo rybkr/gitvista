@@ -1111,9 +1111,16 @@ export function createGraphController(rootElement, options = {}) {
             const parentNode = (commit.parents ?? [])
                 .map((parentHash) => existingNodes.get(parentHash))
                 .find((node) => node);
+            let grandparentNode = null;
+            if (parentNode && commit.parents?.[0]) {
+                const pc = commits.get(commit.parents[0]);
+                grandparentNode = (pc?.parents ?? [])
+                    .map((gph) => existingNodes.get(gph))
+                    .find((n) => n) ?? null;
+            }
             const node =
                 existingNodes.get(commit.hash) ??
-                createCommitNode(commit.hash, parentNode);
+                createCommitNode(commit.hash, parentNode, grandparentNode);
             node.type = "commit";
             node.hash = commit.hash;
             node.commit = commit;
@@ -1494,10 +1501,27 @@ export function createGraphController(rootElement, options = {}) {
                         vy: 0,
                     };
                 } else {
-                    const parentNode = (commit.parents ?? [])
-                        .map((ph) => existingCommitNodes.get(ph))
-                        .find((n) => n);
-                    node = createCommitNode(commit.hash, parentNode);
+                    // Find parent position (existing node or converged snapshot)
+                    let parentPos = null;
+                    let firstParentHash = null;
+                    for (const ph of commit.parents ?? []) {
+                        const existing = existingCommitNodes.get(ph);
+                        if (existing) { parentPos = existing; firstParentHash = ph; break; }
+                        const cv = converged?.get(ph);
+                        if (cv) { parentPos = cv; firstParentHash = ph; break; }
+                    }
+                    // Find grandparent position for directional spawning
+                    let grandparentPos = null;
+                    if (parentPos && firstParentHash) {
+                        const parentCommit = commits.get(firstParentHash);
+                        for (const gph of parentCommit?.parents ?? []) {
+                            const existing = existingCommitNodes.get(gph);
+                            if (existing) { grandparentPos = existing; break; }
+                            const cv = converged?.get(gph);
+                            if (cv) { grandparentPos = cv; break; }
+                        }
+                    }
+                    node = createCommitNode(commit.hash, parentPos, grandparentPos);
                 }
                 changed = true;
             }
@@ -1879,7 +1903,42 @@ export function createGraphController(rootElement, options = {}) {
         links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
     }
 
-    function createCommitNode(hash, anchorNode) {
+    /**
+     * Creates a new commit node at a best-guess position.
+     *
+     * @param {string} hash Commit hash.
+     * @param {{x: number, y: number}|null} anchorPos Parent node position.
+     * @param {{x: number, y: number}|null} [awayFrom] Grandparent position — new node
+     *   spawns at LINK_DISTANCE from anchorPos in the direction away from awayFrom.
+     */
+    function createCommitNode(hash, anchorPos, awayFrom) {
+        if (anchorPos) {
+            if (awayFrom) {
+                const dx = anchorPos.x - awayFrom.x;
+                const dy = anchorPos.y - awayFrom.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist > 1) {
+                    const scale = LINK_DISTANCE / dist;
+                    return {
+                        type: "commit",
+                        hash,
+                        x: anchorPos.x + dx * scale + jitter(4),
+                        y: anchorPos.y + dy * scale + jitter(4),
+                        vx: 0,
+                        vy: 0,
+                    };
+                }
+            }
+            return {
+                type: "commit",
+                hash,
+                x: anchorPos.x + jitter(6),
+                y: anchorPos.y + jitter(6),
+                vx: 0,
+                vy: 0,
+            };
+        }
+
         const centerX = (viewportWidth || canvas.width) / 2;
         const centerY = (viewportHeight || canvas.height) / 2;
         const maxRadius =
@@ -1889,17 +1948,6 @@ export function createGraphController(rootElement, options = {}) {
             ) * 0.18;
         const radius = Math.random() * maxRadius;
         const angle = Math.random() * Math.PI * 2;
-
-        if (anchorNode) {
-            return {
-                type: "commit",
-                hash,
-                x: anchorNode.x + jitter(6),
-                y: anchorNode.y + jitter(6),
-                vx: 0,
-                vy: 0,
-            };
-        }
 
         return {
             type: "commit",
