@@ -326,6 +326,8 @@ export function createGraphController(rootElement, options = {}) {
     const viewportWindow = new ViewportWindow(commitIndex);
     const nodeMaterializer = new NodeMaterializer();
     let lazyLoadingActive = initialMode === "lane";
+    /** @type {Map<string, {x: number, y: number}>|null} Temporary position seed for layout switching */
+    let _savedPositions = null;
 
     const zoom = d3Zoom()
         .filter((event) => !isDraggingNode || event.type === "wheel")
@@ -398,8 +400,27 @@ export function createGraphController(rootElement, options = {}) {
         // Clear lane isolation when switching modes
         state.isolatedLanePosition = null;
 
+        // When switching from lane → force, save lane positions so that
+        // createCommitNode can place nodes where they were in lane mode
+        // instead of spawning them randomly.  The nodes/links arrays are
+        // cleared so D3 doesn't choke on stale link references.
+        if (newMode === "force" && lazyLoadingActive) {
+            _savedPositions = new Map();
+            for (const entry of commitIndex.getAllEntries()) {
+                _savedPositions.set(entry.hash, { x: entry.x, y: entry.y });
+            }
+        }
+
         // Deactivate current strategy
         layoutStrategy.deactivate();
+        // Clear nodes/links when switching to force — D3 forceLink chokes
+        // on stale link objects that reference old node indices.  When
+        // switching to lane mode, keep existing nodes so the lane strategy
+        // can animate the transition from the current positions.
+        if (newMode === "force") {
+            nodes.length = 0;
+            links.length = 0;
+        }
 
         // Switch to new strategy
         if (newMode === "lane") {
@@ -429,10 +450,12 @@ export function createGraphController(rootElement, options = {}) {
 
         // Activate new strategy with current graph state
         const viewport = { width: viewportWidth, height: viewportHeight };
-        layoutStrategy.activate(nodes, links, commits, branches, viewport);
+        const activateOptions = _savedPositions ? { skipTimelineLayout: true } : undefined;
+        layoutStrategy.activate(nodes, links, commits, branches, viewport, activateOptions);
 
         // Force immediate reposition
         updateGraph();
+        _savedPositions = null;
         render();
     };
 
@@ -441,11 +464,6 @@ export function createGraphController(rootElement, options = {}) {
     laneBtn.addEventListener("click", () => switchLayout("lane"));
     rebalanceBtn.addEventListener("click", () => {
         if (layoutStrategy.supportsRebalance) {
-            // In force Phase B, exit to Phase A before rebalancing
-            if (state.layoutMode === "force" && lazyLoadingActive) {
-                exitForcePhaseB();
-                updateGraphForcePhaseA();
-            }
             layoutStrategy.rebalance();
             snapDecoratorNodesForLaneDrag();
             render();
@@ -841,60 +859,22 @@ export function createGraphController(rootElement, options = {}) {
 
         layoutStrategy.disableAutoCenter();
 
-        // Show/hide tooltip for selection feedback
-        const currentTarget = tooltipManager.getTargetData();
-        if (tooltipManager.isVisible() && currentTarget === targetNode) {
-            hideTooltip();
-            // Deselect: clear permalink and selection state.
-            selectedHash = null;
-            options.onCommitSelect?.(null);
-        } else {
-            showTooltip(targetNode);
-            // Track selection for permalink and keyboard navigation.
-            if (targetNode.type === "commit") {
-                selectedHash = targetNode.hash;
-                options.onCommitSelect?.(targetNode.hash);
-            }
-        }
-
-        // If clicking on a commit node, also open the file explorer
-        if (targetNode.type === "commit" && targetNode.commit && options.onCommitTreeClick) {
-            options.onCommitTreeClick(targetNode.commit);
-        }
-
         event.stopImmediatePropagation();
         event.preventDefault();
 
-        // In force Phase B, exit to Phase A before starting drag so the
-        // simulation can respond to the interaction.
-        if (state.layoutMode === "force" && lazyLoadingActive) {
-            exitForcePhaseB();
-            updateGraphForcePhaseA();
-            // Re-find the node in the rebuilt nodes array
-            const refreshed = nodes.find(
-                (n) => n.type === "commit" && n.hash === targetNode.hash,
-            ) || targetNode;
-            isDraggingNode = true;
-            dragState = {
-                node: refreshed,
-                pointerId: event.pointerId,
-                startX: x,
-                startY: y,
-                dragged: false,
-            };
-            layoutStrategy.handleDrag(refreshed, x, y);
-        } else {
-            isDraggingNode = true;
-            dragState = {
-                node: targetNode,
-                pointerId: event.pointerId,
-                startX: x,
-                startY: y,
-                dragged: false,
-            };
-            // Delegate initial drag position to layout strategy
-            layoutStrategy.handleDrag(targetNode, x, y);
-        }
+        // Record drag intent but don't call handleDrag() yet — that happens
+        // once the pointer moves past DRAG_ACTIVATION_DISTANCE.  This avoids
+        // reheating the simulation and triggering a Phase B → A rebuild on a
+        // simple click.  Tooltip/selection is deferred to pointerup so that
+        // drags don't flash the tooltip.
+        isDraggingNode = true;
+        dragState = {
+            node: targetNode,
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            dragged: false,
+        };
 
         try {
             canvas.setPointerCapture(event.pointerId);
@@ -929,9 +909,11 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (!dragState.dragged) {
+                // Compare in screen pixels so zoom level doesn't affect
+                // the drag activation threshold.
                 const distance = Math.hypot(
-                    x - dragState.startX,
-                    y - dragState.startY,
+                    event.clientX - dragState.startX,
+                    event.clientY - dragState.startY,
                 );
                 if (distance > DRAG_ACTIVATION_DISTANCE) {
                     dragState.dragged = true;
@@ -983,7 +965,28 @@ export function createGraphController(rootElement, options = {}) {
 
     const handlePointerUp = (event) => {
         if (dragState && event.pointerId === dragState.pointerId) {
+            const wasDragged = dragState.dragged;
+            const clickedNode = dragState.node;
             releaseDrag();
+
+            // Show tooltip / update selection only on click (no drag).
+            if (!wasDragged && clickedNode) {
+                const currentTarget = tooltipManager.getTargetData();
+                if (tooltipManager.isVisible() && currentTarget === clickedNode) {
+                    hideTooltip();
+                    selectedHash = null;
+                    options.onCommitSelect?.(null);
+                } else {
+                    showTooltip(clickedNode);
+                    if (clickedNode.type === "commit") {
+                        selectedHash = clickedNode.hash;
+                        options.onCommitSelect?.(clickedNode.hash);
+                    }
+                    if (clickedNode.type === "commit" && clickedNode.commit && options.onCommitTreeClick) {
+                        options.onCommitTreeClick(clickedNode.commit);
+                    }
+                }
+            }
         }
     };
 
@@ -1348,21 +1351,9 @@ export function createGraphController(rootElement, options = {}) {
         if (state.layoutMode === "lane") {
             if (!lazyLoadingActive) lazyLoadingActive = true;
             updateGraphLazy();
-        } else if (state.layoutMode === "force") {
-            if (lazyLoadingActive && forceStrategy.isSettled) {
-                // Phase B: handle delta incrementally without tearing down
-                // decorators. New commits get placed at smart positions in the
-                // converged snapshot and are materialized immediately.
-                updateGraphForcePhaseBIncremental();
-            } else {
-                // Phase A (initial load or simulation still running).
-                if (lazyLoadingActive) {
-                    exitForcePhaseB();
-                }
-                updateGraphForcePhaseA();
-                // Simulation settles naturally → onSettle → handleForceSettle → Phase B
-            }
         } else {
+            // Force mode uses the eager path — all commit, branch, and tag
+            // nodes are always present so the simulation has full context.
             updateGraphEager();
         }
     }
@@ -1469,339 +1460,13 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     /**
-     * Force Phase A — lightweight sim-only path.
-     * Creates commit nodes for ALL commits (reusing existing where possible),
-     * builds links, and feeds them to the D3 simulation. Skips branch/tag
-     * reconciliation and stash decoration — those happen in Phase B after
-     * the simulation converges.
-     */
-    function updateGraphForcePhaseA() {
-        const existingCommitNodes = new Map();
-        for (const node of nodes) {
-            if (node.type === "commit" && node.hash) {
-                existingCommitNodes.set(node.hash, node);
-            }
-        }
-
-        // When re-entering Phase A from Phase B, the nodes array only has the
-        // viewport-visible materialized subset. Use the converged position
-        // snapshot to restore correct positions for off-screen commits instead
-        // of placing them randomly (which causes bunching).
-        const converged = forceStrategy.getConvergedPositions();
-
-        const nextNodes = [];
-        let changed = existingCommitNodes.size !== commits.size;
-
-        for (const commit of commits.values()) {
-            let node = existingCommitNodes.get(commit.hash);
-            if (!node) {
-                const saved = converged?.get(commit.hash);
-                if (saved) {
-                    // Restore from converged position snapshot
-                    node = {
-                        type: "commit",
-                        hash: commit.hash,
-                        x: saved.x,
-                        y: saved.y,
-                        vx: 0,
-                        vy: 0,
-                    };
-                } else {
-                    // Find parent position (existing node or converged snapshot)
-                    let parentPos = null;
-                    let firstParentHash = null;
-                    for (const ph of commit.parents ?? []) {
-                        const existing = existingCommitNodes.get(ph);
-                        if (existing) { parentPos = existing; firstParentHash = ph; break; }
-                        const cv = converged?.get(ph);
-                        if (cv) { parentPos = cv; firstParentHash = ph; break; }
-                    }
-                    // Find grandparent position for directional spawning
-                    let grandparentPos = null;
-                    if (parentPos && firstParentHash) {
-                        const parentCommit = commits.get(firstParentHash);
-                        for (const gph of parentCommit?.parents ?? []) {
-                            const existing = existingCommitNodes.get(gph);
-                            if (existing) { grandparentPos = existing; break; }
-                            const cv = converged?.get(gph);
-                            if (cv) { grandparentPos = cv; break; }
-                        }
-                    }
-                    node = createCommitNode(commit.hash, parentPos, grandparentPos);
-                }
-                changed = true;
-            }
-            node.type = "commit";
-            node.hash = commit.hash;
-            node.commit = commit;
-            node.radius = node.radius ?? NODE_RADIUS;
-            nextNodes.push(node);
-        }
-
-        const commitHashes = new Set(nextNodes.map((n) => n.hash));
-        const commitLinks = buildLinks(commits, commitHashes);
-        const previousLinkCount = links.length;
-
-        nodes.splice(0, nodes.length, ...nextNodes);
-        links.splice(0, links.length, ...commitLinks);
-
-        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
-            releaseDrag();
-        }
-
-        const currentTarget = tooltipManager.getTargetData();
-        if (currentTarget && !nodes.includes(currentTarget)) {
-            hideTooltip();
-        }
-
-        const linkStructureChanged = previousLinkCount !== commitLinks.length;
-        const structureChanged = changed || linkStructureChanged;
-
-        layoutStrategy.updateGraph(
-            nodes,
-            links,
-            commits,
-            branches,
-            { width: viewportWidth, height: viewportHeight },
-            structureChanged,
-        );
-
-        // Clear dimming — no filters meaningful during settling
-        for (const node of nodes) {
-            node.dimmed = false;
-            node.dimTarget = 0;
-            node.dimPhase = 0;
-        }
-
-        if (layoutStrategy.shouldAutoCenter()) {
-            centerOnLatestCommit();
-        }
-    }
-
-    /**
-     * Handles the force simulation convergence event (Phase A → Phase B).
-     * Snapshots positions, builds CommitIndex, materializes visible nodes,
-     * and reconciles branch/tag decorators for the visible subset.
+     * Handles the force simulation convergence event.
+     * Force mode uses the eager path so no Phase B transition is needed.
+     * The onSettle callback is still wired so the settled flag and position
+     * snapshot are captured inside ForceStrategy.
      */
     function handleForceSettle() {
-        if (state.layoutMode !== "force") return;
-
-        const positions = forceStrategy.getConvergedPositions();
-        if (!positions || positions.size === 0) return;
-
-        // Build CommitIndex from converged positions
-        commitIndex.rebuildFromPositions(positions, commits, state.stashes);
-
-        // Enter Phase B
-        lazyLoadingActive = true;
-
-        // Query viewport for visible entries
-        viewportWindow.invalidate();
-        const { entries } = viewportWindow.update(
-            zoomTransform, viewportWidth, viewportHeight,
-        );
-
-        // Materialize visible nodes
-        const { nodes: commitNodes } = nodeMaterializer.synchronize(entries, commits);
-
-        // Build links for materialized subgraph
-        const materializedHashes = new Set(commitNodes.map((n) => n.hash));
-        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
-
-        // Reconcile branch/tag nodes for visible commits only
-        const existingBranchNodes = new Map();
-        const existingTagNodes = new Map();
-        for (const node of nodes) {
-            if (node.type === "branch" && node.branch) {
-                existingBranchNodes.set(node.branch, node);
-            } else if (node.type === "tag" && node.tag) {
-                existingTagNodes.set(node.tag, node);
-            }
-        }
-
-        const commitNodeByHash = new Map(commitNodes.map((n) => [n.hash, n]));
-        const branchReconciliation = reconcileBranchNodes(
-            existingBranchNodes, branches, commitNodeByHash,
-        );
-        const tagReconciliation = reconcileTagNodes(
-            existingTagNodes, state.tags, commitNodeByHash,
-        );
-
-        // Assemble nodes and links
-        const allNodes = [
-            ...commitNodes,
-            ...branchReconciliation.nodes,
-            ...tagReconciliation.nodes,
-        ];
-        const allLinks = [
-            ...commitLinks,
-            ...branchReconciliation.links,
-            ...tagReconciliation.links,
-        ];
-
-        nodes.splice(0, nodes.length, ...allNodes);
-        links.splice(0, links.length, ...allLinks);
-
-        // Snap decorators
-        snapBranchesToTargets(branchReconciliation.alignments);
-        snapTagsToTargets(tagReconciliation.alignments);
-
-        // Inject ghost merge node
-        injectGhostMergeNode(commitNodeByHash);
-
-        // Apply dimming
-        applyDimmingFromPredicate();
-
-        render();
-    }
-
-    /**
-     * Exits force Phase B, clearing lazy state so Phase A can run.
-     */
-    function exitForcePhaseB() {
-        lazyLoadingActive = false;
-        nodeMaterializer.clear();
-        // _clearSettled is called by updateGraph when structureChanged=true
-    }
-
-    /**
-     * Incremental Phase B update — handles small deltas (new commits, branch
-     * moves) without tearing down Phase B. New commits are placed at smart
-     * positions in the converged snapshot and materialized immediately with
-     * full decorators.
-     */
-    function updateGraphForcePhaseBIncremental() {
-        const positions = forceStrategy.getConvergedPositions();
-        if (!positions) {
-            // No converged data — fall through to Phase A
-            exitForcePhaseB();
-            updateGraphForcePhaseA();
-            return;
-        }
-
-        // Add positions for any new commits not yet in the snapshot.
-        for (const [hash, commit] of commits) {
-            if (positions.has(hash)) continue;
-
-            // Find parent position from snapshot
-            let parentPos = null;
-            let firstParentHash = null;
-            for (const ph of commit.parents ?? []) {
-                const p = positions.get(ph);
-                if (p) { parentPos = p; firstParentHash = ph; break; }
-            }
-
-            // Find grandparent position for directional spawning
-            let grandparentPos = null;
-            if (parentPos && firstParentHash) {
-                const parentCommit = commits.get(firstParentHash);
-                for (const gph of parentCommit?.parents ?? []) {
-                    const gp = positions.get(gph);
-                    if (gp) { grandparentPos = gp; break; }
-                }
-            }
-
-            if (parentPos && grandparentPos) {
-                const dx = parentPos.x - grandparentPos.x;
-                const dy = parentPos.y - grandparentPos.y;
-                const dist = Math.hypot(dx, dy);
-                if (dist > 1) {
-                    const scale = LINK_DISTANCE / dist;
-                    positions.set(hash, {
-                        x: parentPos.x + dx * scale + jitter(4),
-                        y: parentPos.y + dy * scale + jitter(4),
-                    });
-                } else {
-                    positions.set(hash, {
-                        x: parentPos.x + jitter(6),
-                        y: parentPos.y + jitter(6),
-                    });
-                }
-            } else if (parentPos) {
-                positions.set(hash, {
-                    x: parentPos.x + jitter(6),
-                    y: parentPos.y + jitter(6),
-                });
-            } else {
-                // Orphan commit — place at viewport center
-                const cx = (viewportWidth || canvas.width) / 2;
-                const cy = (viewportHeight || canvas.height) / 2;
-                positions.set(hash, { x: cx + jitter(35), y: cy + jitter(35) });
-            }
-        }
-
-        // Remove deleted commits from snapshot
-        for (const hash of positions.keys()) {
-            if (!commits.has(hash)) positions.delete(hash);
-        }
-
-        // Rebuild commitIndex from updated positions
-        commitIndex.rebuildFromPositions(positions, commits, state.stashes);
-
-        // Re-query viewport and rematerialize
-        viewportWindow.invalidate();
-        const { entries } = viewportWindow.update(
-            zoomTransform, viewportWidth, viewportHeight,
-        );
-        const { nodes: commitNodes } = nodeMaterializer.synchronize(entries, commits);
-
-        // Build links for materialized subgraph
-        const materializedHashes = new Set(commitNodes.map((n) => n.hash));
-        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
-
-        // Reconcile branch/tag nodes
-        const existingBranchNodes = new Map();
-        const existingTagNodes = new Map();
-        for (const node of nodes) {
-            if (node.type === "branch" && node.branch) {
-                existingBranchNodes.set(node.branch, node);
-            } else if (node.type === "tag" && node.tag) {
-                existingTagNodes.set(node.tag, node);
-            }
-        }
-
-        const commitNodeByHash = new Map(commitNodes.map((n) => [n.hash, n]));
-        const branchReconciliation = reconcileBranchNodes(
-            existingBranchNodes, branches, commitNodeByHash,
-        );
-        const tagReconciliation = reconcileTagNodes(
-            existingTagNodes, state.tags, commitNodeByHash,
-        );
-
-        // Assemble
-        const allNodes = [
-            ...commitNodes,
-            ...branchReconciliation.nodes,
-            ...tagReconciliation.nodes,
-        ];
-        const allLinks = [
-            ...commitLinks,
-            ...branchReconciliation.links,
-            ...tagReconciliation.links,
-        ];
-
-        nodes.splice(0, nodes.length, ...allNodes);
-        links.splice(0, links.length, ...allLinks);
-
-        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
-            releaseDrag();
-        }
-        const currentTarget = tooltipManager.getTargetData();
-        if (currentTarget && !nodes.includes(currentTarget)) {
-            hideTooltip();
-        }
-
-        // Snap decorators
-        snapBranchesToTargets(branchReconciliation.alignments);
-        snapTagsToTargets(tagReconciliation.alignments);
-
-        // Inject ghost merge node
-        injectGhostMergeNode(commitNodeByHash);
-
-        // Apply dimming
-        applyDimmingFromPredicate();
-
-        render();
+        // No-op
     }
 
     /**
@@ -2058,6 +1723,19 @@ export function createGraphController(rootElement, options = {}) {
      *   spawns at LINK_DISTANCE from anchorPos in the direction away from awayFrom.
      */
     function createCommitNode(hash, anchorPos, awayFrom) {
+        // Use saved positions from a prior layout (e.g. lane → force switch)
+        const saved = _savedPositions?.get(hash);
+        if (saved) {
+            return {
+                type: "commit",
+                hash,
+                x: saved.x,
+                y: saved.y,
+                vx: 0,
+                vy: 0,
+            };
+        }
+
         if (anchorPos) {
             if (awayFrom) {
                 const dx = anchorPos.x - awayFrom.x;
@@ -2322,10 +2000,6 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function tick() {
-        // Auto-centering is handled in updateGraph now
-        if (layoutStrategy.shouldAutoCenter()) {
-            centerOnLatestCommit();
-        }
         render();
     }
 
@@ -2645,11 +2319,6 @@ export function createGraphController(rootElement, options = {}) {
             if (settings.physics) {
                 state.graphSettings.physics = { ...state.graphSettings.physics, ...settings.physics };
                 if (state.layoutMode === "force") {
-                    // Physics change during Phase B: exit to Phase A first
-                    if (lazyLoadingActive) {
-                        exitForcePhaseB();
-                        updateGraphForcePhaseA();
-                    }
                     forceStrategy.applyPhysics(state.graphSettings.physics);
                 }
             }

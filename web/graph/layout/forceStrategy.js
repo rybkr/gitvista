@@ -106,7 +106,18 @@ export class ForceStrategy {
 	 * @param {Map<string, Object>} branches Map of branch name to target hash.
 	 * @param {Object} viewport Current viewport state {width, height}.
 	 */
-	activate(nodes, links, commits, branches, viewport) {
+	/**
+	 * @param {Array<Object>} nodes Array of graph nodes.
+	 * @param {Array<Object>} links Array of graph links.
+	 * @param {Map<string, Object>} commits Commit data map.
+	 * @param {Map<string, Object>} branches Branch data map.
+	 * @param {Object} viewport Current viewport state.
+	 * @param {Object} [options] Extra options.
+	 * @param {boolean} [options.skipTimelineLayout] When true, the first
+	 *   updateGraph call will not overwrite node positions with a timeline
+	 *   layout — the simulation starts from wherever nodes already sit.
+	 */
+	activate(nodes, links, commits, branches, viewport, options) {
 		this.nodes = nodes;
 		this.links = links;
 
@@ -122,6 +133,7 @@ export class ForceStrategy {
 			this.viewportHeight = viewport.height || this.viewportHeight;
 		}
 
+		this._skipTimelineLayout = options?.skipTimelineLayout ?? false;
 		this._clearSettled();
 		this._convergedPositions = null;
 
@@ -204,18 +216,20 @@ export class ForceStrategy {
 		const commitNodes = this.nodes.filter((n) => n.type === "commit");
 		const hasCommits = commitNodes.length > 0;
 
-		// On first update with commits, apply timeline layout and center
+		// On first update with commits, apply timeline layout and center.
+		// When switching from lane mode, skipTimelineLayout is set so the
+		// simulation starts from the existing lane positions.
 		if (!this.initialLayoutComplete && hasCommits) {
-			this.layoutManager.applyTimelineLayout(this.nodes);
+			if (!this._skipTimelineLayout) {
+				this.layoutManager.applyTimelineLayout(this.nodes);
+			}
+			this._skipTimelineLayout = false;
 			this.layoutManager.requestAutoCenter();
 			this.initialLayoutComplete = true;
 			this.layoutManager.restartSimulation(1.0);
 		} else {
 			// Incremental update: boost simulation if structure changed
 			this.layoutManager.boostSimulation(structureChanged);
-			if (structureChanged && hasCommits) {
-				this.layoutManager.requestAutoCenter();
-			}
 		}
 	}
 
@@ -300,7 +314,7 @@ export class ForceStrategy {
 	 * Clears all fixed positions and reheats the simulation.
 	 */
 	rebalance() {
-		if (!this.simulation || !this.layoutManager) {
+		if (!this.simulation) {
 			return;
 		}
 
@@ -312,13 +326,8 @@ export class ForceStrategy {
 			node.fy = null;
 		}
 
-		// Re-apply timeline layout for a clean starting state, then restart
-		// at full alpha. Without this, reheating from arbitrary positions
-		// causes link forces to collapse the graph before charge can push
-		// it back out.
-		this.layoutManager.applyTimelineLayout(this.nodes);
-		this.layoutManager.requestAutoCenter();
-		this.layoutManager.restartSimulation(1.0);
+		// Reheat simulation to full alpha
+		this.simulation.alpha(0.8).restart();
 	}
 
 	/**
