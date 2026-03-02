@@ -526,32 +526,31 @@ export function createGraphController(rootElement, options = {}) {
     };
 
     const centerOnLatestCommit = () => {
-        // Prefer centering on HEAD when available — the "latest commit by
-        // timestamp" heuristic used by layout strategies often picks a
-        // different commit, leaving the view stranded in the middle of history.
-        if (state.headHash) {
-            // Check materialized nodes first
-            const headNode = nodes.find(
-                (n) => n.type === "commit" && n.hash === state.headHash,
+        // Prefer the currently selected commit, then HEAD, then the layout
+        // strategy's best guess (latest by timestamp).
+        const preferredHash = selectedHash || state.headHash;
+        if (preferredHash) {
+            const targetNode = nodes.find(
+                (n) => n.type === "commit" && n.hash === preferredHash,
             );
-            if (headNode) {
+            if (targetNode) {
                 if (state.layoutMode === "lane") {
                     const vw = viewportWidth || canvas.width;
                     const vh = viewportHeight || canvas.height;
                     select(canvas).call(
                         zoom.translateTo,
-                        headNode.x,
-                        headNode.y,
+                        targetNode.x,
+                        targetNode.y,
                         [vw / 2, vh / 4],
                     );
                 } else {
-                    select(canvas).call(zoom.translateTo, headNode.x, headNode.y);
+                    select(canvas).call(zoom.translateTo, targetNode.x, targetNode.y);
                 }
                 return;
             }
-            // In lazy mode, HEAD may not be materialized — use commitIndex
+            // In lazy mode, the commit may not be materialized — use commitIndex
             if (lazyLoadingActive) {
-                const entry = commitIndex.getByHash(state.headHash);
+                const entry = commitIndex.getByHash(preferredHash);
                 if (entry) {
                     const vw = viewportWidth || canvas.width;
                     const vh = viewportHeight || canvas.height;
