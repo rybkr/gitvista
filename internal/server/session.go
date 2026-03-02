@@ -16,7 +16,10 @@ import (
 const broadcastChannelSize = 256
 
 const (
-	initialBootstrapWindowDays = 30
+	initialBootstrapWindowDays  = 30
+	bootstrapFirstBatchTarget   = 450 * 1024 // bytes (estimated JSON payload)
+	bootstrapBatchTarget        = 300 * 1024 // bytes (estimated JSON payload)
+	bootstrapMaxCommitsPerBatch = 300
 )
 
 // ReloadFunc returns a freshly-loaded repository, used by updateRepository to
@@ -401,44 +404,86 @@ func planInitialCommitBatches(delta *gitcore.RepositoryDelta) [][]*gitcore.Commi
 			continue
 		}
 		if _, ok := priority[c.ID]; ok {
-			priorityOrdered = append(priorityOrdered, c)
+			priorityOrdered = append(priorityOrdered, makeBootstrapCommit(c, false))
 			continue
 		}
-		remaining = append(remaining, c)
+		// Non-priority history is sent as lightweight stubs (hash/parents/time)
+		// to keep initial bootstrap payloads bounded on very large repositories.
+		remaining = append(remaining, makeBootstrapCommit(c, true))
 	}
 
-	const firstBatchMax = 800
-	mainBatchSize := chooseBootstrapBatchSize(len(ordered))
-	batches := make([][]*gitcore.Commit, 0, int(math.Ceil(float64(len(ordered))/float64(mainBatchSize)))+1)
+	batches := make([][]*gitcore.Commit, 0, int(math.Ceil(float64(len(ordered))/float64(bootstrapMaxCommitsPerBatch)))+1)
 
-	emit := func(commits []*gitcore.Commit, capSize int) {
-		if capSize <= 0 {
-			capSize = mainBatchSize
+	appendBatches := func(commits []*gitcore.Commit, firstTarget int, defaultTarget int) {
+		if len(commits) == 0 {
+			return
 		}
-		for len(commits) > 0 {
-			n := min(len(commits), capSize)
-			batches = append(batches, commits[:n])
-			commits = commits[n:]
-			capSize = mainBatchSize
+		target := firstTarget
+		batch := make([]*gitcore.Commit, 0, bootstrapMaxCommitsPerBatch)
+		estimated := 0
+		for _, c := range commits {
+			size := estimateBootstrapCommitSize(c)
+			// Flush when adding this commit would exceed target and current batch
+			// already has data, or when commit cap is reached.
+			if len(batch) > 0 && (estimated+size > target || len(batch) >= bootstrapMaxCommitsPerBatch) {
+				batches = append(batches, batch)
+				batch = make([]*gitcore.Commit, 0, bootstrapMaxCommitsPerBatch)
+				estimated = 0
+				target = defaultTarget
+			}
+			batch = append(batch, c)
+			estimated += size
+		}
+		if len(batch) > 0 {
+			batches = append(batches, batch)
 		}
 	}
 
-	emit(priorityOrdered, firstBatchMax)
-	emit(remaining, mainBatchSize)
+	appendBatches(priorityOrdered, bootstrapFirstBatchTarget, bootstrapBatchTarget)
+	appendBatches(remaining, bootstrapBatchTarget, bootstrapBatchTarget)
 	return batches
 }
 
-func chooseBootstrapBatchSize(total int) int {
-	switch {
-	case total > 100000:
-		return 4000
-	case total > 50000:
-		return 2500
-	case total > 10000:
-		return 1200
-	default:
-		return 500
+func makeBootstrapCommit(c *gitcore.Commit, lightweight bool) *gitcore.Commit {
+	if c == nil {
+		return nil
 	}
+	parents := append([]gitcore.Hash(nil), c.Parents...)
+	if !lightweight {
+		return &gitcore.Commit{
+			ID:        c.ID,
+			Tree:      c.Tree,
+			Parents:   parents,
+			Author:    c.Author,
+			Committer: c.Committer,
+			Message:   c.Message,
+		}
+	}
+	// Lightweight stub: keep only topology + timestamps needed for layout.
+	return &gitcore.Commit{
+		ID:      c.ID,
+		Parents: parents,
+		Author: gitcore.Signature{
+			When: c.Author.When,
+		},
+		Committer: gitcore.Signature{
+			When: c.Committer.When,
+		},
+	}
+}
+
+func estimateBootstrapCommitSize(c *gitcore.Commit) int {
+	if c == nil {
+		return 0
+	}
+	// Rough JSON size estimate to bound WS frame size.
+	// hash+tree+field names base
+	size := 180
+	size += len(c.Message)
+	size += len(c.Author.Name) + len(c.Author.Email)
+	size += len(c.Committer.Name) + len(c.Committer.Email)
+	size += len(c.Parents) * 44 // hash + quotes/comma
+	return size
 }
 
 func collectRefTipHashes(delta *gitcore.RepositoryDelta) []gitcore.Hash {

@@ -169,8 +169,9 @@ function bootstrapGraph(root, repoId) {
     const analyticsView = createAnalyticsView({
         getCommits: () => graph.getCommits(),
         getTags: () => graph.getTags?.() ?? new Map(),
-        fetchDiffStats: async () => {
-            const resp = await apiFetch(apiUrl("/commits/diffstats"));
+        fetchDiffStats: async ({ limit } = {}) => {
+            const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
+            const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
             if (!resp.ok) throw new Error("Failed to fetch diff stats");
             return resp.json();
         },
@@ -257,8 +258,9 @@ function bootstrapGraph(root, repoId) {
         getCommits: () => graph.getCommits(),
         getCommitCount: () => graph.getCommitCount(),
         getTags: () => graph.getTags?.() ?? new Map(),
-        fetchDiffStats: async () => {
-            const resp = await apiFetch(apiUrl("/commits/diffstats"));
+        fetchDiffStats: async ({ limit } = {}) => {
+            const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
+            const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
             if (!resp.ok) throw new Error("Failed to fetch diff stats");
             return resp.json();
         },

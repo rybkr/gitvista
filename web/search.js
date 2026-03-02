@@ -88,7 +88,7 @@ function saveRecentSearch(query) {
  *   getCommits: () => Map<string, import("./graph/types.js").GraphCommit>,
  *   getCommitCount: () => { matching: number, total: number },
  *   getTags: () => Map<string, string>,
- *   fetchDiffStats: () => Promise<Object>,
+ *   fetchDiffStats: (opts?: { limit?: number }) => Promise<Object>,
  *   onSearch: (result: {
  *     searchState: { query: import("./searchQuery.js").SearchQuery, matcher: ((commit: any) => boolean) | null } | null
  *   }) => void,
@@ -433,7 +433,9 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
         const needsDiffStats = query.files.length > 0 || query.negatedFiles.length > 0 ||
                                query.paths.length > 0 || query.negatedPaths.length > 0;
         if (needsDiffStats && !diffStatsCache && fetchDiffStats && !diffStatsFetchPromise) {
-            diffStatsFetchPromise = fetchDiffStats()
+            const { total } = getCommitCount();
+            const limit = Math.min(Math.max(total, 1), 10000);
+            diffStatsFetchPromise = fetchDiffStats({ limit })
                 .then((raw) => {
                     diffStatsCache = new Map();
                     for (const [hash, entry] of Object.entries(raw)) {

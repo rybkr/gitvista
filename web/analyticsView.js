@@ -400,7 +400,11 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
         updateDiffStatsUI();
 
         try {
-            const raw = await fetchDiffStats();
+            // Keep diffstats bounded on very large repositories.
+            const commits = getCommits();
+            const commitCount = commits?.size ?? 0;
+            const limit = Math.min(Math.max(commitCount, 1), 3000);
+            const raw = await fetchDiffStats({ limit });
             diffStatsCache = new Map(Object.entries(raw));
             diffStatsLoading = false;
             updateDiffStatsUI();
@@ -1169,6 +1173,11 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
 
     /** Main update — re-reads commits and redraws everything. */
     function update() {
+        // Avoid expensive chart/diff computations while analytics panel is hidden.
+        if (!el.isConnected || el.offsetParent === null) {
+            return;
+        }
+
         const commits = getCommits();
         const period = PERIODS.find((p) => p.label === selectedPeriod) || PERIODS[3];
 

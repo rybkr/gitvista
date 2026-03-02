@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -359,7 +360,8 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	const cacheKey = "bulk-diffstats"
+	limit := parseBulkDiffStatsLimit(r)
+	cacheKey := "bulk-diffstats:limit:" + strconv.Itoa(limit)
 	if cached, ok := session.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(cached); err != nil {
@@ -370,22 +372,43 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 
 	commits := repo.Commits()
 
+	sortedCommits := make([]*gitcore.Commit, 0, len(commits))
+	for _, commit := range commits {
+		if commit != nil {
+			sortedCommits = append(sortedCommits, commit)
+		}
+	}
+	slices.SortFunc(sortedCommits, func(a, b *gitcore.Commit) int {
+		if a.Committer.When.Equal(b.Committer.When) {
+			return strings.Compare(string(a.ID), string(b.ID))
+		}
+		if a.Committer.When.After(b.Committer.When) {
+			return -1
+		}
+		return 1
+	})
+	if limit > 0 && len(sortedCommits) > limit {
+		sortedCommits = sortedCommits[:limit]
+	}
+
 	type diffStatEntry struct {
 		FilesChanged int      `json:"filesChanged"`
 		Files        []string `json:"files"`
 	}
 
 	var mu sync.Mutex
-	result := make(map[string]diffStatEntry, len(commits))
+	result := make(map[string]diffStatEntry, len(sortedCommits))
+	tooLargeErrors := 0
+	otherErrors := 0
 
 	// Bounded concurrency: 10-goroutine semaphore
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
 
-	for hash, commit := range commits {
+	for _, commit := range sortedCommits {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(h gitcore.Hash, c *gitcore.Commit) {
+		go func(c *gitcore.Commit) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
@@ -398,7 +421,13 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 
 			entries, err := gitcore.TreeDiff(repo, parentTreeHash, c.Tree, "")
 			if err != nil {
-				s.logger.Error("Bulk diff stats: failed to compute diff", "hash", h, "err", err)
+				mu.Lock()
+				if strings.Contains(err.Error(), "diff too large") {
+					tooLargeErrors++
+				} else {
+					otherErrors++
+				}
+				mu.Unlock()
 				return
 			}
 
@@ -408,14 +437,22 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 			}
 
 			mu.Lock()
-			result[string(h)] = diffStatEntry{
+			result[string(c.ID)] = diffStatEntry{
 				FilesChanged: len(entries),
 				Files:        files,
 			}
 			mu.Unlock()
-		}(hash, commit)
+		}(commit)
 	}
 	wg.Wait()
+
+	if tooLargeErrors > 0 || otherErrors > 0 {
+		s.logger.Warn("Bulk diff stats: skipped commits due to diff errors",
+			"tooLarge", tooLargeErrors,
+			"other", otherErrors,
+			"analyzed", len(sortedCommits),
+		)
+	}
 
 	session.diffCache.Put(cacheKey, result)
 
@@ -423,6 +460,25 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
+}
+
+func parseBulkDiffStatsLimit(r *http.Request) int {
+	const (
+		defaultLimit = 3000
+		maxLimit     = 20000
+	)
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw == "" {
+		return defaultLimit
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return defaultLimit
+	}
+	if n > maxLimit {
+		return maxLimit
+	}
+	return n
 }
 
 func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gitcore.Repository, commitHash gitcore.Hash, session *RepoSession) {
