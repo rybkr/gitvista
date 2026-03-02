@@ -137,11 +137,22 @@ function getReachableCommits(branchTipHash, commits) {
  * @param {Map<string, string>} branches Live branch map.
  * @param {Map<string, import("./types.js").GraphCommit>} commits All known commits.
  * @param {Array<{hash: string}>} stashes Live stash list from delta.
+ * @param {string|null} headHash Current HEAD commit hash.
  * @param {number|null} isolatedLanePosition When non-null, only commits at this lane position pass.
  * @param {Array<Object>} segments Segments array from laneStrategy (used for isolation).
  * @returns {((node: import("./types.js").GraphNode) => boolean) | null}
  */
-function buildFilterPredicate(searchState, filterState, branches, commits, stashes, isolatedLanePosition, segments, scopeSettings) {
+function buildFilterPredicate(
+    searchState,
+    filterState,
+    branches,
+    commits,
+    stashes,
+    headHash,
+    isolatedLanePosition,
+    segments,
+    scopeSettings,
+) {
     // The matcher is null when the query is empty (parseSearchQuery sets isEmpty).
     const matcher = searchState?.matcher ?? null;
     const hasSearch = matcher !== null;
@@ -180,17 +191,19 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
     let depthMap = null;
     if (hasDepthLimit) {
         depthMap = new Map();
-        // Find HEAD hash — prefer state.headHash but it's not passed here,
-        // so we look for the commit pointed to by HEAD/main/master.
-        let headHash = null;
-        for (const [name, hash] of branches.entries()) {
-            if (name === "HEAD" || name === "refs/heads/main" || name === "refs/heads/master") {
-                headHash = hash;
-                if (name === "HEAD") break;
+        // Start from actual HEAD hash when available.
+        let depthStartHash = headHash || "";
+        // Fallbacks for older states where headHash may not be available yet.
+        if (!depthStartHash) {
+            for (const [name, hash] of branches.entries()) {
+                if (name === "HEAD" || name === "refs/heads/main" || name === "refs/heads/master") {
+                    depthStartHash = hash;
+                    if (name === "HEAD") break;
+                }
             }
         }
-        if (headHash) {
-            const queue = [{ hash: headHash, depth: 0 }];
+        if (depthStartHash) {
+            const queue = [{ hash: depthStartHash, depth: 0 }];
             while (queue.length > 0) {
                 const { hash, depth } = queue.shift();
                 if (!hash || depthMap.has(hash)) continue;
@@ -289,7 +302,7 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
  */
 /** Returns a random value in the range [-range/2, range/2]. */
 const jitter = (range) => (Math.random() - 0.5) * range;
-const LARGE_REPO_FORCE_LAYOUT_LIMIT = 12000;
+const FORCE_MODE_MAX_COMMITS = 10000;
 
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
@@ -397,6 +410,17 @@ export function createGraphController(rootElement, options = {}) {
     controls.appendChild(laneBtn);
     controls.appendChild(rebalanceBtn);
 
+    const updateForceButtonAvailability = () => {
+        const forceAllowed = commits.size < FORCE_MODE_MAX_COMMITS;
+        forceBtn.disabled = !forceAllowed;
+        if (forceAllowed) {
+            forceBtn.title = "Switch to force-directed layout";
+        } else {
+            forceBtn.title = `Force layout is available only for repositories under ${FORCE_MODE_MAX_COMMITS.toLocaleString()} commits`;
+        }
+    };
+    updateForceButtonAvailability();
+
     // "Jump to HEAD" button — centers the view on the current HEAD commit.
     const headBtn = document.createElement("button");
     headBtn.textContent = "\u2302 HEAD";
@@ -416,6 +440,9 @@ export function createGraphController(rootElement, options = {}) {
     const switchLayout = (newMode) => {
         if (state.layoutMode === newMode) {
             return; // Already in this mode
+        }
+        if (newMode === "force" && commits.size >= FORCE_MODE_MAX_COMMITS) {
+            return;
         }
 
         // Clear lane isolation when switching modes
@@ -467,6 +494,7 @@ export function createGraphController(rootElement, options = {}) {
             laneBtn.classList.add("is-active");
             forceBtn.classList.remove("is-active");
         }
+        updateForceButtonAvailability();
 
         // Enable/disable rebalance button based on strategy support
         rebalanceBtn.disabled = !layoutStrategy.supportsRebalance;
@@ -504,6 +532,9 @@ export function createGraphController(rootElement, options = {}) {
         render();
     };
     const showTooltip = (node) => {
+        if (lazyLoadingActive && node?.type === "commit" && node.hash) {
+            enqueueHydration([node.hash, ...(node.commit?.parents ?? [])]);
+        }
         tooltipManager.show(node, zoomTransform);
         render();
     };
@@ -595,13 +626,53 @@ export function createGraphController(rootElement, options = {}) {
     };
 
     function commitNeedsHydration(commit) {
-        if (!commit) return false;
+        // Missing commit in the map should also trigger hydration so we can
+        // recover from stale summaries/bootstrap ordering.
+        if (!commit) return true;
         const hasMessage = typeof commit.message === "string" && commit.message.length > 0;
         const hasTree = typeof commit.tree === "string" && commit.tree.length > 0;
         const hasAuthorIdentity =
             !!(commit.author?.name || commit.author?.Name || commit.author?.email || commit.author?.Email);
         // Lightweight bootstrap stubs contain topology + timestamps only.
         return !hasMessage && !hasTree && !hasAuthorIdentity;
+    }
+
+    function mergeCommitData(existing, incoming) {
+        if (!existing) return incoming;
+        if (!incoming) return existing;
+
+        const merged = { ...existing, ...incoming };
+        merged.parents = Array.isArray(incoming.parents) && incoming.parents.length > 0
+            ? incoming.parents
+            : (Array.isArray(existing.parents) ? existing.parents : []);
+
+        const existingAuthor = existing.author ?? {};
+        const incomingAuthor = incoming.author ?? {};
+        merged.author = {
+            ...existingAuthor,
+            ...incomingAuthor,
+            name: incomingAuthor.name || existingAuthor.name || "",
+            email: incomingAuthor.email || existingAuthor.email || "",
+            when: incomingAuthor.when || existingAuthor.when || "",
+        };
+
+        const existingCommitter = existing.committer ?? {};
+        const incomingCommitter = incoming.committer ?? {};
+        merged.committer = {
+            ...existingCommitter,
+            ...incomingCommitter,
+            name: incomingCommitter.name || existingCommitter.name || "",
+            email: incomingCommitter.email || existingCommitter.email || "",
+            when: incomingCommitter.when || existingCommitter.when || "",
+        };
+
+        if (!incoming.message && existing.message) {
+            merged.message = existing.message;
+        }
+        if (!incoming.tree && existing.tree) {
+            merged.tree = existing.tree;
+        }
+        return merged;
     }
 
     function searchQueryNeedsHydration(query) {
@@ -668,7 +739,7 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function enqueueHydration(hashes) {
-        if (!options.fetchGraphCommits || !Array.isArray(hashes) || hashes.length === 0) return;
+        if (!lazyLoadingActive || !options.fetchGraphCommits || !Array.isArray(hashes) || hashes.length === 0) return;
         for (const hash of hashes) {
             if (!hash || hydrationInflight.has(hash)) continue;
             const commit = commits.get(hash);
@@ -701,18 +772,34 @@ export function createGraphController(rootElement, options = {}) {
         try {
             const hydrated = await options.fetchGraphCommits(batch);
             let updated = 0;
+            let structureChanged = false;
+            const followupHydration = [];
             for (const commit of hydrated ?? []) {
                 if (!commit?.hash) continue;
-                commits.set(commit.hash, commit);
+                const existing = commits.get(commit.hash);
+                if (!existing) {
+                    structureChanged = true;
+                }
+                const mergedCommit = mergeCommitData(existing, commit);
+                commits.set(commit.hash, mergedCommit);
                 for (const node of nodes) {
                     if (node.type === "commit" && node.hash === commit.hash) {
-                        node.commit = commit;
+                        node.commit = mergedCommit;
                     }
+                }
+                for (const parent of mergedCommit?.parents ?? []) {
+                    followupHydration.push(parent);
                 }
                 updated++;
             }
             hydrationFetched += updated;
             if (updated > 0) {
+                if (followupHydration.length > 0) {
+                    enqueueHydration(followupHydration);
+                }
+                if (structureChanged) {
+                    updateGraph();
+                }
                 // Search/filter matchers depend on commit message/author fields.
                 if (state.searchState || state.filterState?.focusBranch) {
                     applyDimmingFromPredicate();
@@ -1140,6 +1227,9 @@ export function createGraphController(rootElement, options = {}) {
                 } else {
                     showTooltip(clickedNode);
                     if (clickedNode.type === "commit") {
+                        if (lazyLoadingActive) {
+                            enqueueHydration([clickedNode.hash, ...(clickedNode.commit?.parents ?? [])]);
+                        }
                         selectedHash = clickedNode.hash;
                         options.onCommitSelect?.(clickedNode.hash);
                     }
@@ -1192,6 +1282,31 @@ export function createGraphController(rootElement, options = {}) {
 
         layoutStrategy.updateViewport(cssWidth, cssHeight);
         render();
+
+        // In lane/lazy mode, viewport changes must rematerialize the visible
+        // commit window; otherwise an off-screen init can leave stale subsets.
+        if (lazyLoadingActive) {
+            viewportWindow.invalidate();
+            const { entries, changed } = viewportWindow.update(
+                zoomTransform,
+                viewportWidth,
+                viewportHeight,
+            );
+            if (changed) {
+                rematerializeFromViewport(entries);
+            } else {
+                // Keep hydration progressing even if the window key is unchanged.
+                const hashesToHydrate = [];
+                for (const entry of entries) {
+                    hashesToHydrate.push(entry.hash);
+                    const commit = commits.get(entry.hash);
+                    for (const parent of commit?.parents ?? []) {
+                        hashesToHydrate.push(parent);
+                    }
+                }
+                enqueueHydration(hashesToHydrate);
+            }
+        }
     };
 
     window.addEventListener("resize", resize);
@@ -1483,6 +1598,7 @@ export function createGraphController(rootElement, options = {}) {
             branches,
             commits,
             state.stashes,
+            state.headHash || null,
             state.isolatedLanePosition,
             laneStrategy._segments,
             state.graphSettings?.scope,
@@ -1618,6 +1734,7 @@ export function createGraphController(rootElement, options = {}) {
         if (layoutStrategy.shouldAutoCenter()) {
             centerOnLatestCommit();
         }
+
     }
 
     /**
@@ -2226,7 +2343,8 @@ export function createGraphController(rootElement, options = {}) {
 
         for (const commit of delta.addedCommits || []) {
             if (commit?.hash) {
-                commits.set(commit.hash, commit);
+                const existing = commits.get(commit.hash);
+                commits.set(commit.hash, mergeCommitData(existing, commit));
             }
         }
         for (const commit of delta.deletedCommits || []) {
@@ -2254,12 +2372,17 @@ export function createGraphController(rootElement, options = {}) {
         // Sync HEAD, tags, and stashes from every delta.
         if (delta.headHash) {
             state.headHash = delta.headHash;
+            enqueueHydration([delta.headHash]);
         }
         if (delta.tags) {
             state.tags = new Map(Object.entries(delta.tags));
         }
         if (Array.isArray(delta.stashes)) {
             state.stashes = delta.stashes;
+        }
+        updateForceButtonAvailability();
+        if (state.layoutMode === "force" && commits.size >= FORCE_MODE_MAX_COMMITS) {
+            switchLayout("lane");
         }
 
         // Bootstrap deltas arrive in batches. Applying layout reconciliation on
@@ -2278,6 +2401,7 @@ export function createGraphController(rootElement, options = {}) {
             return;
         }
 
+        const previousCommits = new Map(commits);
         commits.clear();
         branches.clear();
         state.tags = new Map();
@@ -2295,12 +2419,22 @@ export function createGraphController(rootElement, options = {}) {
             const unix = Number.isFinite(item?.timestamp) ? item.timestamp : item?.t;
             const when = Number.isFinite(unix) && unix > 0 ? new Date(unix * 1000).toISOString() : "";
 
-            commits.set(hash, {
+            const skeletonCommit = {
                 hash,
                 parents,
                 author: { when },
                 committer: { when },
-            });
+            };
+            const existing = previousCommits.get(hash);
+            commits.set(hash, mergeCommitData(existing, skeletonCommit));
+        }
+
+        // If a stale summary omits commits we've already materialized,
+        // keep them until a future delta/snapshot reconciles explicitly.
+        for (const [hash, commit] of previousCommits.entries()) {
+            if (!commits.has(hash)) {
+                commits.set(hash, commit);
+            }
         }
 
         for (const [name, hash] of Object.entries(summary.branches || {})) {
@@ -2312,8 +2446,9 @@ export function createGraphController(rootElement, options = {}) {
         state.tags = new Map(Object.entries(summary.tags || {}));
         state.stashes = Array.isArray(summary.stashes) ? summary.stashes : [];
         state.headHash = summary.headHash || "";
+        updateForceButtonAvailability();
 
-        if (state.layoutMode === "force" && commits.size > LARGE_REPO_FORCE_LAYOUT_LIMIT) {
+        if (state.layoutMode === "force" && commits.size >= FORCE_MODE_MAX_COMMITS) {
             switchLayout("lane");
             return;
         }
@@ -2372,6 +2507,9 @@ export function createGraphController(rootElement, options = {}) {
          */
         setHeadHash: (hash) => {
             state.headHash = hash || "";
+            if (state.headHash) {
+                enqueueHydration([state.headHash]);
+            }
         },
         /**
          * Updates the active structured search state and immediately re-applies
@@ -2591,6 +2729,19 @@ export function createGraphController(rootElement, options = {}) {
         },
         /** Returns the current graph settings. */
         getGraphSettings: () => state.graphSettings,
+        /** Re-reads CSS theme variables and re-renders the graph canvas. */
+        refreshPalette: () => {
+            refreshPalette();
+        },
+        /** Recomputes canvas size from layout and re-renders. */
+        refreshViewport: () => {
+            resize();
+        },
+        /** Rebuilds graph state against current viewport and active layout mode. */
+        rebuildVisibleGraph: () => {
+            updateGraph();
+            render();
+        },
         /** Returns current layout mode ("force" or "lane"). */
         getLayoutMode: () => state.layoutMode,
         /** Programmatic access to the zoom behavior for minimap click-to-jump. */

@@ -21,6 +21,7 @@ const (
 	bootstrapBatchTarget        = 300 * 1024 // bytes (estimated JSON payload)
 	bootstrapMaxCommitsPerBatch = 300
 	bootstrapBatchPause         = 8 * time.Millisecond
+	forceModeMaxCommits         = 10000
 )
 
 // ReloadFunc returns a freshly-loaded repository, used by updateRepository to
@@ -321,6 +322,7 @@ func planInitialCommitBatches(delta *gitcore.RepositoryDelta) [][]*gitcore.Commi
 
 	priorityOrdered := make([]*gitcore.Commit, 0, len(priority))
 	remaining := make([]*gitcore.Commit, 0, len(ordered)-len(priority))
+	lightweightRemaining := len(ordered) > forceModeMaxCommits
 	for _, c := range ordered {
 		if c == nil {
 			continue
@@ -329,7 +331,7 @@ func planInitialCommitBatches(delta *gitcore.RepositoryDelta) [][]*gitcore.Commi
 			priorityOrdered = append(priorityOrdered, makeBootstrapCommit(c, false))
 			continue
 		}
-		remaining = append(remaining, makeBootstrapCommit(c, true))
+		remaining = append(remaining, makeBootstrapCommit(c, lightweightRemaining))
 	}
 
 	batches := make([][]*gitcore.Commit, 0, int(math.Ceil(float64(len(ordered))/float64(bootstrapMaxCommitsPerBatch)))+1)
