@@ -933,7 +933,7 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	cacheKey := analyticsCacheKey(repo, query.cacheKey)
 	if cached, ok := session.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(cached); err != nil {
+		if encodeErr := json.NewEncoder(w).Encode(cached); encodeErr != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		}
 		return

@@ -254,7 +254,14 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
 
         // Scope: time window — dim commits older than the cutoff.
         if (timeCutoff > 0 && node.type === "commit") {
-            const ts = node.commit?.committer?.date || node.commit?.author?.date || 0;
+            const ts =
+                Date.parse(
+                    node.commit?.committer?.when ??
+                    node.commit?.author?.when ??
+                    node.commit?.committer?.When ??
+                    node.commit?.author?.When ??
+                    0,
+                ) || 0;
             if (ts < timeCutoff) return false;
         }
 
@@ -311,6 +318,9 @@ export function createGraphController(rootElement, options = {}) {
     const hydrationPending = new Set();
     const hydrationInflight = new Set();
     let hydrationFlushTimer = null;
+    let searchHydrationEntries = [];
+    let searchHydrationCursor = 0;
+    let searchHydrationTimer = null;
 
     // Create both layout strategies
     const forceStrategy = new ForceStrategy({
@@ -437,10 +447,12 @@ export function createGraphController(rootElement, options = {}) {
         if (newMode === "lane") {
             layoutStrategy = laneStrategy;
             lazyLoadingActive = true;
+            queueSearchHydration(state.searchState);
         } else {
             layoutStrategy = forceStrategy;
             lazyLoadingActive = false;
             nodeMaterializer.clear();
+            clearSearchHydrationScan();
         }
 
         // Update state and localStorage
@@ -590,6 +602,69 @@ export function createGraphController(rootElement, options = {}) {
             !!(commit.author?.name || commit.author?.Name || commit.author?.email || commit.author?.Email);
         // Lightweight bootstrap stubs contain topology + timestamps only.
         return !hasMessage && !hasTree && !hasAuthorIdentity;
+    }
+
+    function searchQueryNeedsHydration(query) {
+        if (!query) return false;
+        return (
+            (query.textTerms?.length ?? 0) > 0 ||
+            (query.negatedTextTerms?.length ?? 0) > 0 ||
+            (query.authors?.length ?? 0) > 0 ||
+            (query.negatedAuthors?.length ?? 0) > 0 ||
+            (query.messages?.length ?? 0) > 0 ||
+            (query.negatedMessages?.length ?? 0) > 0
+        );
+    }
+
+    function clearSearchHydrationScan() {
+        searchHydrationEntries = [];
+        searchHydrationCursor = 0;
+        if (searchHydrationTimer !== null) {
+            clearTimeout(searchHydrationTimer);
+            searchHydrationTimer = null;
+        }
+    }
+
+    function pumpSearchHydration() {
+        searchHydrationTimer = null;
+        if (!options.fetchGraphCommits || searchHydrationCursor >= searchHydrationEntries.length) {
+            return;
+        }
+
+        const enqueue = [];
+        let scanned = 0;
+        const SCAN_BUDGET = 2000;
+        while (searchHydrationCursor < searchHydrationEntries.length && scanned < SCAN_BUDGET) {
+            const entry = searchHydrationEntries[searchHydrationCursor++];
+            scanned++;
+            const commit = commits.get(entry.hash);
+            if (commitNeedsHydration(commit)) {
+                enqueue.push(entry.hash);
+            }
+        }
+        if (enqueue.length > 0) {
+            enqueueHydration(enqueue);
+        }
+        if (searchHydrationCursor < searchHydrationEntries.length) {
+            searchHydrationTimer = setTimeout(pumpSearchHydration, 25);
+        }
+    }
+
+    function queueSearchHydration(searchState) {
+        if (!lazyLoadingActive || !options.fetchGraphCommits) {
+            clearSearchHydrationScan();
+            return;
+        }
+        if (!searchState?.query || !searchQueryNeedsHydration(searchState.query)) {
+            clearSearchHydrationScan();
+            return;
+        }
+        // Hydrate commit metadata in the background so global search/counts converge.
+        searchHydrationEntries = commitIndex.getAllEntries();
+        searchHydrationCursor = 0;
+        if (searchHydrationTimer === null) {
+            searchHydrationTimer = setTimeout(pumpSearchHydration, 0);
+        }
     }
 
     function enqueueHydration(hashes) {
@@ -2131,6 +2206,7 @@ export function createGraphController(rootElement, options = {}) {
         forceStrategy.deactivate();
         laneStrategy.deactivate();
         nodeMaterializer.clear();
+        clearSearchHydrationScan();
         lazyLoadingActive = false;
         removeThemeWatcher?.();
         themeAttrObserver.disconnect();
@@ -2311,6 +2387,7 @@ export function createGraphController(rootElement, options = {}) {
             state.searchState = searchState ?? null;
             searchResultCache = null;
             searchResultIndex = -1;
+            queueSearchHydration(state.searchState);
             rebuildAndApplyPredicate();
         },
         /**
@@ -2325,12 +2402,14 @@ export function createGraphController(rootElement, options = {}) {
                 // In lazy mode, count against all commits via commitIndex
                 const allTotal = commitIndex.size;
                 if (!state.filterPredicate) {
-                    return { matching: allTotal, total: allTotal };
+                    return { matching: allTotal, total: allTotal, pendingHydration: 0 };
                 }
                 // Evaluate predicate against lightweight objects from commitIndex
                 let matching = 0;
+                let pendingHydration = 0;
                 for (const entry of commitIndex.getAllEntries()) {
                     const commit = commits.get(entry.hash);
+                    if (commitNeedsHydration(commit)) pendingHydration++;
                     const pseudoNode = {
                         type: "commit",
                         hash: entry.hash,
@@ -2341,7 +2420,7 @@ export function createGraphController(rootElement, options = {}) {
                     };
                     if (state.filterPredicate(pseudoNode)) matching++;
                 }
-                return { matching, total: allTotal };
+                return { matching, total: allTotal, pendingHydration };
             }
             let total = 0;
             let matching = 0;
@@ -2350,7 +2429,7 @@ export function createGraphController(rootElement, options = {}) {
                 total++;
                 if (!node.dimmed) matching++;
             }
-            return { matching, total };
+            return { matching, total, pendingHydration: 0 };
         },
         /**
          * Updates the A3 structural filter state and immediately re-applies the
