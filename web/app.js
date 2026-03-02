@@ -24,6 +24,7 @@ import { createGraphBreadcrumb } from "./graphBreadcrumb.js";
 import { createGraphMinimap } from "./graphMinimap.js";
 import { createGraphSettings } from "./graphSettings.js";
 import { loadSettings } from "./graphSettingsDefaults.js";
+import { createTelemetryHud, telemetryStore } from "./telemetry.js";
 
 const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
 const REPO_HASH_RE = /^repo\/([^/]+)(?:\/([0-9a-f]{40}))?$/i;
@@ -172,7 +173,11 @@ function bootstrapGraph(root, repoId) {
         fetchDiffStats: async ({ limit } = {}) => {
             const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
             const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
-            if (!resp.ok) throw new Error("Failed to fetch diff stats");
+            if (!resp.ok) {
+                telemetryStore.recordDiffStatsRequest(limit, false);
+                throw new Error("Failed to fetch diff stats");
+            }
+            telemetryStore.recordDiffStatsRequest(limit, true);
             return resp.json();
         },
     });
@@ -265,6 +270,11 @@ function bootstrapGraph(root, repoId) {
         },
     });
 
+    const telemetryHud = createTelemetryHud({
+        getGraphTelemetry: () => graph.getTelemetrySnapshot?.() ?? null,
+    });
+    root.appendChild(telemetryHud.el);
+
     // ── Canvas Toolbar ──────────────────────────────────────────────────────
     const canvasToolbar = document.createElement("div");
     canvasToolbar.className = "canvas-toolbar";
@@ -281,7 +291,11 @@ function bootstrapGraph(root, repoId) {
         fetchDiffStats: async ({ limit } = {}) => {
             const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
             const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
-            if (!resp.ok) throw new Error("Failed to fetch diff stats");
+            if (!resp.ok) {
+                telemetryStore.recordDiffStatsRequest(limit, false);
+                throw new Error("Failed to fetch diff stats");
+            }
+            telemetryStore.recordDiffStatsRequest(limit, true);
             return resp.json();
         },
         onSearch: ({ searchState }) => {
@@ -444,6 +458,7 @@ function bootstrapGraph(root, repoId) {
             setErrorConnectionState(state, attempt);
         },
         onDelta: (delta) => {
+            telemetryStore.recordDelta(delta);
             graph.applyDelta(delta);
             analyticsView.update();
 

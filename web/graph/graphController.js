@@ -275,6 +275,7 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
  *   applyDelta(delta: unknown): void,
  *   centerOnCommit(hash: string): void,
  *   navigateCommits(direction: 'prev' | 'next'): void,
+ *   getTelemetrySnapshot?: () => Object,
  *   destroy(): void,
  * }} Public graph API.
  */
@@ -332,6 +333,10 @@ export function createGraphController(rootElement, options = {}) {
     let lazyLoadingActive = initialMode === "lane";
     /** @type {Map<string, {x: number, y: number}>|null} Temporary position seed for layout switching */
     let _savedPositions = null;
+    let renderCount = 0;
+    let lastViewportEntryCount = 0;
+    let hydrationFetched = 0;
+    let hydrationErrors = 0;
 
     const zoom = d3Zoom()
         .filter((event) => !isDraggingNode || event.type === "wheel")
@@ -629,6 +634,7 @@ export function createGraphController(rootElement, options = {}) {
                 }
                 updated++;
             }
+            hydrationFetched += updated;
             if (updated > 0) {
                 // Search/filter matchers depend on commit message/author fields.
                 if (state.searchState || state.filterState?.focusBranch) {
@@ -638,6 +644,7 @@ export function createGraphController(rootElement, options = {}) {
             }
         } catch {
             // Keep UI responsive; failed hydrations can be retried by future viewport updates.
+            hydrationErrors++;
         } finally {
             for (const hash of batch) {
                 hydrationInflight.delete(hash);
@@ -1608,6 +1615,7 @@ export function createGraphController(rootElement, options = {}) {
         // 4. Query ViewportWindow
         viewportWindow.invalidate();
         const { entries } = viewportWindow.update(zoomTransform, viewportWidth, viewportHeight);
+        lastViewportEntryCount = entries.length;
         const hashesToHydrate = [];
         for (const entry of entries) {
             hashesToHydrate.push(entry.hash);
@@ -1695,6 +1703,7 @@ export function createGraphController(rootElement, options = {}) {
      * @param {import("./state/commitIndex.js").CommitEntry[]} entries Visible entries from ViewportWindow.
      */
     function rematerializeFromViewport(entries) {
+        lastViewportEntryCount = entries.length;
         const hashesToHydrate = [];
         for (const entry of entries) {
             hashesToHydrate.push(entry.hash);
@@ -2066,6 +2075,7 @@ export function createGraphController(rootElement, options = {}) {
         if (rafId !== null) return;
         rafId = requestAnimationFrame(() => {
             rafId = null;
+            renderCount++;
             // Advance dim transitions before rendering so the renderer sees
             // the updated dimPhase values for smooth opacity animation.
             const dimTransitionsActive = advanceDimTransitions();
@@ -2174,11 +2184,11 @@ export function createGraphController(rootElement, options = {}) {
             state.stashes = delta.stashes;
         }
 
-        // Bootstrap deltas arrive in batches. In force mode, applying each batch
-        // incrementally causes late-arriving commits to spawn near the center
-        // before their structural context exists, degrading chronological layout.
-        // Defer force-mode graph reconciliation until the final bootstrap batch.
-        if (delta.bootstrap && state.layoutMode === "force" && !delta.bootstrapComplete) {
+        // Bootstrap deltas arrive in batches. Applying layout reconciliation on
+        // every batch is too expensive for very large repositories (tens of
+        // thousands of commits), so ingest commits incrementally and build the
+        // graph once on bootstrapComplete.
+        if (delta.bootstrap && !delta.bootstrapComplete) {
             return;
         }
 
@@ -2418,6 +2428,20 @@ export function createGraphController(rootElement, options = {}) {
         setMinimapCallback: (cb) => {
             minimapCallback = cb;
         },
+        getTelemetrySnapshot: () => ({
+            layoutMode: state.layoutMode,
+            commitsCount: commits.size,
+            commitIndexSize: commitIndex.size,
+            materializedCommits: nodeMaterializer.getMaterializedNodes().length,
+            viewportEntries: lastViewportEntryCount,
+            hydrationPending: hydrationPending.size,
+            hydrationInflight: hydrationInflight.size,
+            hydrationFetched,
+            hydrationErrors,
+            nodesCount: nodes.length,
+            linksCount: links.length,
+            renderCount,
+        }),
         /**
          * Updates graph settings (physics + scope), persists to localStorage,
          * and applies changes live.

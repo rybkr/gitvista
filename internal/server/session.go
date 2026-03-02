@@ -20,6 +20,7 @@ const (
 	bootstrapFirstBatchTarget   = 450 * 1024 // bytes (estimated JSON payload)
 	bootstrapBatchTarget        = 300 * 1024 // bytes (estimated JSON payload)
 	bootstrapMaxCommitsPerBatch = 300
+	bootstrapBatchPause         = 8 * time.Millisecond
 )
 
 // ReloadFunc returns a freshly-loaded repository, used by updateRepository to
@@ -325,6 +326,11 @@ func (rs *RepoSession) sendInitialState(conn *websocket.Conn) {
 		if err := conn.WriteJSON(msg); err != nil {
 			rs.logger.Error("Failed to send initial state batch", "addr", conn.RemoteAddr(), "batch", i+1, "totalBatches", len(batches), "err", err)
 			return
+		}
+		if i < len(batches)-1 {
+			// Brief pacing prevents overwhelming the browser event loop during
+			// very large bootstraps (e.g., 50k+ commit histories).
+			time.Sleep(bootstrapBatchPause)
 		}
 	}
 

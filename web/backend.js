@@ -1,5 +1,6 @@
 import { apiUrl, wsUrl } from "./apiBase.js";
 import { apiFetch } from "./apiFetch.js";
+import { telemetryStore } from "./telemetry.js";
 
 // Reconnection backoff constants
 const RECONNECT_DELAY_INITIAL_MS = 1000;
@@ -34,6 +35,7 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
     let destroyed = false;
 
     function notifyState(state, attempt) {
+        telemetryStore.recordConnectionState(state, attempt || 0);
         onConnectionStateChange?.(state, attempt);
     }
 
@@ -66,8 +68,10 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
             const size = typeof event.data === "string" ? event.data.length : undefined;
             if (size !== undefined) {
                 logger?.info("WebSocket message received", { size });
+                telemetryStore.recordWsMessage(size);
             } else {
                 logger?.info("WebSocket message received");
+                telemetryStore.recordWsMessage(0);
             }
 
             if (typeof event.data !== "string") {
@@ -116,4 +120,3 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
 
     connect();
 }
-
