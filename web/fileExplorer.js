@@ -106,6 +106,16 @@ export function createFileExplorer() {
         return response.json();
     }
 
+    async function fetchCommit(hash) {
+        const response = await apiFetch(apiUrl(`/graph/commits?hashes=${encodeURIComponent(hash)}`));
+        if (!response.ok) {
+            throw new Error(`Failed to fetch commit ${hash}: ${response.status}`);
+        }
+        const payload = await response.json();
+        const commits = Array.isArray(payload?.commits) ? payload.commits : [];
+        return commits[0] || null;
+    }
+
     async function fetchBlame(commitHash, dirPath) {
         const url = apiUrl(`/tree/blame/${commitHash}?path=${encodeURIComponent(dirPath)}`);
         const response = await apiFetch(url);
@@ -843,10 +853,32 @@ export function createFileExplorer() {
     }
 
     async function openCommit(commit) {
+        if (!commit?.hash) {
+            return;
+        }
+
+        let resolvedCommit = commit;
+        const hasTree = typeof commit.tree === "string" && commit.tree.length > 0;
+        if (!hasTree) {
+            try {
+                const fetched = await fetchCommit(commit.hash);
+                if (fetched) {
+                    resolvedCommit = fetched;
+                }
+            } catch (err) {
+                console.error("Failed to hydrate commit for file explorer:", err);
+            }
+        }
+
+        if (typeof resolvedCommit.tree !== "string" || resolvedCommit.tree.length === 0) {
+            console.error("Failed to open commit in file explorer: missing tree hash", resolvedCommit.hash);
+            return;
+        }
+
         state.generation++;
-        state.commitHash = commit.hash;
-        state.commitMessage = commit.message;
-        state.rootTreeHash = commit.tree;
+        state.commitHash = resolvedCommit.hash;
+        state.commitMessage = resolvedCommit.message;
+        state.rootTreeHash = resolvedCommit.tree;
         state.expandedDirs.clear();
         state.treeCache.clear();
         state.blameCache.clear();
@@ -867,9 +899,9 @@ export function createFileExplorer() {
 
         try {
             const gen = state.generation;
-            const rootTree = await fetchTree(commit.tree);
+            const rootTree = await fetchTree(resolvedCommit.tree);
             if (state.generation !== gen) return;
-            state.treeCache.set(commit.tree, rootTree);
+            state.treeCache.set(resolvedCommit.tree, rootTree);
         } catch (err) {
             console.error("Failed to fetch root tree:", err);
             state.loading = false;

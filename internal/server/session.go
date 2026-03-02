@@ -52,6 +52,9 @@ type RepoSession struct {
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	clientWg sync.WaitGroup // tracks clientReadPump/clientWritePump goroutines
+
+	analyticsMu  sync.Mutex
+	analyticsGen uint64
 }
 
 // SessionConfig holds initialization parameters for a RepoSession.
@@ -86,6 +89,7 @@ func NewRepoSession(cfg SessionConfig) *RepoSession {
 		cancel:     cancel,
 	}
 	rs.cached.repo = cfg.InitialRepo
+	rs.scheduleAnalyticsPrewarm(cfg.InitialRepo)
 
 	return rs
 }
@@ -178,6 +182,7 @@ func (rs *RepoSession) updateRepository() {
 	rs.cacheMu.Lock()
 	rs.cached.repo = newRepo
 	rs.cacheMu.Unlock()
+	rs.scheduleAnalyticsPrewarm(newRepo)
 
 	status := getWorkingTreeStatus(newRepo)
 
@@ -195,6 +200,54 @@ func (rs *RepoSession) updateRepository() {
 	} else {
 		rs.logger.Debug("No changes detected after repository reload")
 	}
+}
+
+func (rs *RepoSession) scheduleAnalyticsPrewarm(repo *gitcore.Repository) {
+	if repo == nil {
+		return
+	}
+
+	rs.analyticsMu.Lock()
+	rs.analyticsGen++
+	gen := rs.analyticsGen
+	rs.analyticsMu.Unlock()
+
+	rs.wg.Add(1)
+	go func(repo *gitcore.Repository, gen uint64) {
+		defer rs.wg.Done()
+		periods := []string{"all", "3m", "6m", "1y"}
+		for _, period := range periods {
+			select {
+			case <-rs.ctx.Done():
+				return
+			default:
+			}
+			if !rs.analyticsGenCurrent(gen) {
+				return
+			}
+
+			key := analyticsCacheKey(repo, period)
+			if _, ok := rs.diffCache.Get(key); ok {
+				continue
+			}
+
+			analytics, err := buildAnalytics(repo, period)
+			if err != nil {
+				rs.logger.Warn("Analytics prewarm failed", "period", period, "err", err)
+				continue
+			}
+			if !rs.analyticsGenCurrent(gen) {
+				return
+			}
+			rs.diffCache.Put(key, analytics)
+		}
+	}(repo, gen)
+}
+
+func (rs *RepoSession) analyticsGenCurrent(gen uint64) bool {
+	rs.analyticsMu.Lock()
+	defer rs.analyticsMu.Unlock()
+	return rs.analyticsGen == gen
 }
 
 // handleBroadcast reads from the broadcast channel and sends messages to all

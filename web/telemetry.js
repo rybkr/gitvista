@@ -21,11 +21,19 @@ const state = {
     diffStatsFailures: 0,
     diffStatsLastLimit: 0,
 };
+const listeners = new Set();
+
+function emit() {
+    for (const listener of listeners) {
+        listener();
+    }
+}
 
 export const telemetryStore = {
     recordConnectionState(connectionState, attempt = 0) {
         state.connectionState = connectionState;
         state.reconnectAttempt = attempt;
+        emit();
     },
     recordWsMessage(bytes = 0) {
         const size = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
@@ -33,6 +41,7 @@ export const telemetryStore = {
         state.wsBytesTotal += size;
         state.wsLastBytes = size;
         if (size > state.wsMaxBytes) state.wsMaxBytes = size;
+        emit();
     },
     recordDelta(delta) {
         state.deltas++;
@@ -43,16 +52,24 @@ export const telemetryStore = {
             state.bootstrapCommits += added;
             if (delta.bootstrapComplete) state.bootstrapComplete = true;
         }
+        emit();
     },
     recordSummary(summary) {
         state.summaries++;
         const total = Number.isFinite(summary?.totalCommits) ? summary.totalCommits : 0;
         state.summaryCommits = Math.max(0, Math.floor(total));
+        emit();
     },
     recordDiffStatsRequest(limit = 0, ok = true) {
         state.diffStatsRequests++;
         state.diffStatsLastLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
         if (!ok) state.diffStatsFailures++;
+        emit();
+    },
+    subscribe(listener) {
+        if (typeof listener !== "function") return () => {};
+        listeners.add(listener);
+        return () => listeners.delete(listener);
     },
     snapshot() {
         return { ...state };
@@ -94,8 +111,12 @@ export function createTelemetryHud({ getGraphTelemetry }) {
 
     let lastRenderCount = 0;
     let lastAt = Date.now();
+    let rafId = null;
+    let loopId = null;
+    let queued = false;
 
-    const timer = setInterval(() => {
+    const renderHud = () => {
+        queued = false;
         const now = Date.now();
         const dt = Math.max(1, now - lastAt);
 
@@ -120,12 +141,26 @@ export function createTelemetryHud({ getGraphTelemetry }) {
             `diffstats req: ${snap.diffStatsRequests}  fail: ${snap.diffStatsFailures}  last limit: ${snap.diffStatsLastLimit}`,
         ];
         body.textContent = lines.join("\n");
-    }, 500);
+    };
+
+    const scheduleRender = () => {
+        if (queued) return;
+        queued = true;
+        rafId = requestAnimationFrame(renderHud);
+    };
+
+    // Event-driven updates for websocket/delta/summary/diffstats events.
+    const unsubscribe = telemetryStore.subscribe(scheduleRender);
+    // Lightweight periodic refresh for graph-side metrics (render count, hydration).
+    loopId = setInterval(scheduleRender, 120);
+    scheduleRender();
 
     return {
         el,
         destroy() {
-            clearInterval(timer);
+            unsubscribe();
+            if (loopId !== null) clearInterval(loopId);
+            if (rafId !== null) cancelAnimationFrame(rafId);
             el.remove();
         },
     };

@@ -651,3 +651,60 @@ func TestHandleGraphCommits_Cap(t *testing.T) {
 		t.Error("response missing 'commits' field")
 	}
 }
+
+func TestHandleAnalytics(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	req := requestWithSession("GET", "/api/analytics?period=all", session)
+	w := httptest.NewRecorder()
+	s.handleAnalytics(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", got, "application/json")
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := response["period"]; !ok {
+		t.Error("response missing 'period'")
+	}
+	if _, ok := response["velocity"]; !ok {
+		t.Error("response missing 'velocity'")
+	}
+	if _, ok := response["authors"]; !ok {
+		t.Error("response missing 'authors'")
+	}
+}
+
+func TestHandleAnalytics_InvalidPeriod(t *testing.T) {
+	session := newTestSession(nil)
+	s := newTestServer(t)
+
+	req := requestWithSession("GET", "/api/analytics?period=banana", session)
+	w := httptest.NewRecorder()
+	s.handleAnalytics(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleAnalytics_MethodNotAllowed(t *testing.T) {
+	session := newTestSession(nil)
+	s := newTestServer(t)
+
+	req := requestWithSession("POST", "/api/analytics", session)
+	w := httptest.NewRecorder()
+	s.handleAnalytics(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}

@@ -211,6 +211,7 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/blob/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBlob))))
 		mux.HandleFunc("/api/commit/diff/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff))))
 		mux.HandleFunc("/api/commits/diffstats", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBulkDiffStats))))
+		mux.HandleFunc("/api/analytics", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleAnalytics))))
 		mux.HandleFunc("/api/working-tree/diff", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
 		mux.HandleFunc("/api/merge-preview/file", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreviewFileDiff))))
 		mux.HandleFunc("/api/merge-preview", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreview))))
@@ -344,6 +345,8 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 		s.handleCommitDiff(w, r)
 	case remainder == "/commits/diffstats" && r.Method == http.MethodGet:
 		s.handleBulkDiffStats(w, r)
+	case remainder == "/analytics" && r.Method == http.MethodGet:
+		s.handleAnalytics(w, r)
 	case remainder == "/graph/summary" && r.Method == http.MethodGet:
 		s.handleGraphSummary(w, r)
 	case remainder == "/graph/commits" && r.Method == http.MethodGet:

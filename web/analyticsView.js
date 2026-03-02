@@ -2,7 +2,7 @@
  * Analytics view — commit velocity trend line chart, author contributions,
  * activity heatmap, merge statistics, change size distribution, and rework rate.
  *
- * Factory: createAnalyticsView({ getCommits, getTags, fetchDiffStats })
+ * Factory: createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetchGraphCommits, fetchAnalytics })
  * Returns: { el, update() }
  */
 
@@ -383,10 +383,63 @@ function computeReworkRate(commits, diffStats, periodMonths) {
 }
 
 /**
- * @param {{ getCommits: () => Map<string, object>, getTags: () => Map<string, string>, fetchDiffStats: () => Promise<object> }} deps
+ * @param {{ getCommits: () => Map<string, object>, getTags: () => Map<string, string>, fetchDiffStats: () => Promise<object>, fetchGraphCommits?: (hashes: string[]) => Promise<object[]>, fetchAnalytics?: (opts: {period: string}) => Promise<object> }} deps
  */
-export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
+export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetchGraphCommits, fetchAnalytics }) {
     let selectedPeriod = "All";
+    const ANALYTICS_HYDRATE_CHUNK = 200;
+    const ANALYTICS_HYDRATE_MAX = 5000;
+    let hydrationInFlight = false;
+    const attemptedHydration = new Set();
+
+    function commitNeedsIdentity(commit) {
+        if (!commit) return true;
+        return !(commit.author?.name || commit.author?.Name || commit.author?.email || commit.author?.Email);
+    }
+
+    async function hydrateAuthorsForPeriod(commits, periodMonths) {
+        if (!fetchGraphCommits || hydrationInFlight) return false;
+
+        let cutoff = 0;
+        if (periodMonths > 0) {
+            const d = new Date();
+            d.setUTCMonth(d.getUTCMonth() - periodMonths);
+            cutoff = d.getTime();
+        }
+
+        const missing = [];
+        for (const [hash, commit] of commits) {
+            if (!hash || attemptedHydration.has(hash)) continue;
+            const when = commit?.author?.when || commit?.author?.When || commit?.committer?.when || commit?.committer?.When;
+            if (!when) continue;
+            const ts = new Date(when).getTime();
+            if (cutoff > 0 && ts < cutoff) continue;
+            if (!commitNeedsIdentity(commit)) continue;
+            missing.push(hash);
+            if (missing.length >= ANALYTICS_HYDRATE_MAX) break;
+        }
+        if (missing.length === 0) return false;
+
+        hydrationInFlight = true;
+        let changed = false;
+        try {
+            for (let i = 0; i < missing.length; i += ANALYTICS_HYDRATE_CHUNK) {
+                const batch = missing.slice(i, i + ANALYTICS_HYDRATE_CHUNK);
+                for (const h of batch) attemptedHydration.add(h);
+                const fetched = await fetchGraphCommits(batch);
+                for (const commit of fetched ?? []) {
+                    if (!commit?.hash) continue;
+                    commits.set(commit.hash, commit);
+                    changed = true;
+                }
+            }
+        } catch {
+            // Keep analytics usable; failed hydration batches can retry on a later update.
+        } finally {
+            hydrationInFlight = false;
+        }
+        return changed;
+    }
 
     // ── Diff stats async cache ──
     let diffStatsCache = null;
@@ -828,7 +881,13 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
     function drawAuthorChart(data) {
         cachedAuthorData = data;
         const { authors } = data;
-        if (authors.length === 0) return;
+        if (authors.length === 0) {
+            authorCanvas.width = 1;
+            authorCanvas.height = 1;
+            authorCanvas.style.width = "100%";
+            authorCanvas.style.height = "1px";
+            return;
+        }
 
         const barHeight = 22;
         const gap = 6;
@@ -1050,7 +1109,13 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
     function drawReworkChart(data) {
         cachedReworkData = data;
         const { weeks } = data;
-        if (weeks.length < 2) return;
+        if (weeks.length < 2) {
+            reworkCanvas.width = 1;
+            reworkCanvas.height = 1;
+            reworkCanvas.style.width = "100%";
+            reworkCanvas.style.height = "1px";
+            return;
+        }
 
         const rect = reworkChartContainer.getBoundingClientRect();
         const width = Math.max(rect.width, 100);
@@ -1172,7 +1237,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
     }
 
     /** Main update — re-reads commits and redraws everything. */
-    function update() {
+    async function update() {
         // Avoid expensive chart/diff computations while analytics panel is hidden.
         if (!el.isConnected || el.offsetParent === null) {
             return;
@@ -1180,6 +1245,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
 
         const commits = getCommits();
         const period = PERIODS.find((p) => p.label === selectedPeriod) || PERIODS[3];
+        const periodKey = period.label === "All" ? "all" : period.label.toLowerCase();
 
         // Update period button states
         for (const { btn, period: p } of periodButtons) {
@@ -1208,6 +1274,48 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats }) {
         mergeSection.style.display = "";
         changeSizeSection.style.display = "";
         reworkSection.style.display = "";
+
+        if (fetchAnalytics) {
+            try {
+                const payload = await fetchAnalytics({ period: periodKey });
+                const velocity = payload?.velocity || { weeks: [], totalCommits: 0, avgPerWeek: 0, bestWeek: null };
+                totalStat.value.textContent = Number(velocity.totalCommits || 0).toLocaleString();
+                avgStat.value.textContent = Number(velocity.avgPerWeek || 0).toFixed(1);
+                bestStat.value.textContent = velocity.bestWeek
+                    ? `${velocity.bestWeek.count} (${formatMonthYear(velocity.bestWeek.ts)})`
+                    : "—";
+                drawChart(velocity);
+
+                drawAuthorChart(payload?.authors || { authors: [] });
+                drawHeatmap(payload?.heatmap || { grid: Array.from({ length: 7 }, () => Array(24).fill(0)), max: 0 });
+
+                const merges = payload?.merges || {};
+                mergeCountStat.value.textContent = Number(merges.mergeCount || 0).toLocaleString();
+                mergePercentStat.value.textContent = `${Number(merges.mergePercent || 0).toFixed(1)}%`;
+                mergesPerWeekStat.value.textContent = Number(merges.mergesPerWeek || 0).toFixed(1);
+
+                const changeSize = payload?.changeSize || { buckets: SIZE_BUCKETS.map((b) => ({ label: b.label, count: 0 })), median: 0, avgSize: 0 };
+                medianSizeStat.value.textContent = `${Number(changeSize.median || 0)} files`;
+                avgSizeStat.value.textContent = `${Number(changeSize.avgSize || 0).toFixed(1)} files`;
+                drawChangeSizeChart(changeSize);
+
+                const rework = payload?.rework || { weeks: [], avgRate: 0 };
+                avgReworkStat.value.textContent = `${Number(rework.avgRate || 0).toFixed(1)}%`;
+                drawReworkChart(rework);
+
+                diffStatsMsg.style.display = "none";
+                changeSizeChartContainer.style.display = "";
+                changeSizeSummary.style.display = "";
+                reworkChartContainer.style.display = "";
+                reworkSummary.style.display = "";
+                reworkSection.querySelector(".analytics-section-title").style.opacity = "";
+                return;
+            } catch {
+                // Fall back to local analytics path.
+            }
+        }
+
+        await hydrateAuthorsForPeriod(commits, period.months);
 
         const data = computeVelocity(commits, period.months);
 

@@ -166,10 +166,37 @@ function bootstrapGraph(root, repoId) {
     const infoBar = createInfoBar();
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
+    const fetchGraphCommits = async (hashes) => {
+        if (!Array.isArray(hashes) || hashes.length === 0) return [];
+        const batches = [];
+        const CHUNK = 200; // keep URL/query size safely bounded
+        for (let i = 0; i < hashes.length; i += CHUNK) {
+            batches.push(hashes.slice(i, i + CHUNK));
+        }
+
+        const all = [];
+        for (const batch of batches) {
+            const query = encodeURIComponent(batch.join(","));
+            const resp = await apiFetch(apiUrl(`/graph/commits?hashes=${query}`));
+            if (!resp.ok) throw new Error("Failed to fetch graph commits");
+            const payload = await resp.json();
+            if (Array.isArray(payload?.commits)) {
+                all.push(...payload.commits);
+            }
+        }
+        return all;
+    };
     const stagingView = createStagingView();
     const analyticsView = createAnalyticsView({
         getCommits: () => graph.getCommits(),
         getTags: () => graph.getTags?.() ?? new Map(),
+        fetchGraphCommits,
+        fetchAnalytics: async ({ period } = {}) => {
+            const p = typeof period === "string" && period ? period : "all";
+            const resp = await apiFetch(apiUrl(`/analytics?period=${encodeURIComponent(p)}`));
+            if (!resp.ok) throw new Error("Failed to fetch analytics");
+            return resp.json();
+        },
         fetchDiffStats: async ({ limit } = {}) => {
             const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
             const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
@@ -224,26 +251,7 @@ function bootstrapGraph(root, repoId) {
     let initialBootstrapApplied = false;
 
     const graph = createGraph(root, {
-        fetchGraphCommits: async (hashes) => {
-            if (!Array.isArray(hashes) || hashes.length === 0) return [];
-            const batches = [];
-            const CHUNK = 200; // keep URL/query size safely bounded
-            for (let i = 0; i < hashes.length; i += CHUNK) {
-                batches.push(hashes.slice(i, i + CHUNK));
-            }
-
-            const all = [];
-            for (const batch of batches) {
-                const query = encodeURIComponent(batch.join(","));
-                const resp = await apiFetch(apiUrl(`/graph/commits?hashes=${query}`));
-                if (!resp.ok) throw new Error("Failed to fetch graph commits");
-                const payload = await resp.json();
-                if (Array.isArray(payload?.commits)) {
-                    all.push(...payload.commits);
-                }
-            }
-            return all;
-        },
+        fetchGraphCommits,
         onCommitTreeClick: (commit) => {
             if (sidebar.getActivePanel() === "file-explorer") {
                 fileExplorer.openCommit(commit);

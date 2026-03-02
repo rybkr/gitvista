@@ -903,6 +903,53 @@ func (s *Server) handleGraphCommits(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+	repo := session.Repo()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	period := r.URL.Query().Get("period")
+	_, canonical, err := parseAnalyticsPeriod(period)
+	if err != nil {
+		http.Error(w, "Invalid period", http.StatusBadRequest)
+		return
+	}
+
+	cacheKey := analyticsCacheKey(repo, canonical)
+	if cached, ok := session.diffCache.Get(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(cached); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	analytics, err := buildAnalytics(repo, canonical)
+	if err != nil {
+		s.logger.Error("Failed to build analytics", "period", canonical, "err", err)
+		http.Error(w, "Failed to build analytics", http.StatusInternalServerError)
+		return
+	}
+	session.diffCache.Put(cacheKey, analytics)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(analytics); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 // allDeletions reports whether every diff line across all hunks is a deletion.
 func allDeletions(hunks []gitcore.DiffHunk) bool {
 	for _, hunk := range hunks {
