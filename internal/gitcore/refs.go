@@ -13,14 +13,16 @@ func (r *Repository) loadRefs() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Precedence must match git semantics: loose refs override packed refs.
+	// Load packed first, then overlay loose refs.
+	if err := r.loadPackedRefs(); err != nil {
+		return fmt.Errorf("failed to load packed refs: %w", err)
+	}
 	if err := r.loadLooseRefs("heads"); err != nil {
 		return fmt.Errorf("failed to load loose branches: %w", err)
 	}
 	if err := r.loadLooseRefs("tags"); err != nil {
 		return fmt.Errorf("failed to load loose tags: %w", err)
-	}
-	if err := r.loadPackedRefs(); err != nil {
-		return fmt.Errorf("failed to load packed refs: %w", err)
 	}
 	if err := r.loadHEAD(); err != nil {
 		return fmt.Errorf("failed to load head: %w", err)
@@ -99,7 +101,10 @@ func (r *Repository) loadPackedRefs() error {
 		}
 
 		refName := parts[1]
-		r.refs[refName] = hash
+		// Keep existing values (typically from loose refs) if present.
+		if _, exists := r.refs[refName]; !exists {
+			r.refs[refName] = hash
+		}
 	}
 
 	return scanner.Err()
