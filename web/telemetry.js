@@ -86,7 +86,7 @@ export function createTelemetryHud({ getGraphTelemetry }) {
     const triggerEl = document.createElement("button");
     triggerEl.className = "telemetry-trigger";
     triggerEl.type = "button";
-    triggerEl.title = "Telemetry";
+    triggerEl.title = "Metrics";
     const triggerIcon = document.createElement("span");
     triggerIcon.className = "telemetry-trigger__icon";
     triggerIcon.setAttribute("aria-hidden", "true");
@@ -96,7 +96,7 @@ export function createTelemetryHud({ getGraphTelemetry }) {
     </svg>`;
     const triggerLabel = document.createElement("span");
     triggerLabel.className = "telemetry-trigger__label";
-    triggerLabel.textContent = "Telemetry";
+    triggerLabel.textContent = "";
     triggerEl.appendChild(triggerIcon);
     triggerEl.appendChild(triggerLabel);
 
