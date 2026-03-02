@@ -152,38 +152,35 @@ func TestServerIntegration(t *testing.T) {
 		// Set read deadline
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-		// Read initial state messages. Bootstrap may arrive in multiple batches.
-		// Keep consuming until the final bootstrap batch (bootstrapComplete=true)
-		// or a non-bootstrap update arrives.
-		sawDelta := false
-		for i := 0; i < 128; i++ {
-			messageType, message, err := conn.ReadMessage()
-			if err != nil {
-				t.Fatalf("failed to read initial message batch %d: %v", i+1, err)
-			}
-
-			if messageType != websocket.TextMessage {
-				t.Errorf("message type = %d, want %d (TextMessage)", messageType, websocket.TextMessage)
-			}
-
-			var msg struct {
-				Delta  *gitcore.RepositoryDelta `json:"delta"`
-				Status any                      `json:"status"`
-			}
-			if err := json.Unmarshal(message, &msg); err != nil {
-				t.Fatalf("failed to unmarshal initial message batch %d: %v", i+1, err)
-			}
-
-			if msg.Delta == nil {
-				continue
-			}
-			sawDelta = true
-			if !msg.Delta.Bootstrap || msg.Delta.BootstrapComplete {
-				break
-			}
+		// Read initial state message. Bootstrap now uses a graph summary payload
+		// and omits full commit deltas on connect.
+		messageType, message, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("failed to read initial message: %v", err)
 		}
-		if !sawDelta {
-			t.Error("initial websocket bootstrap missing delta")
+		if messageType != websocket.TextMessage {
+			t.Errorf("message type = %d, want %d (TextMessage)", messageType, websocket.TextMessage)
+		}
+
+		var msg struct {
+			Summary *gitcore.GraphSummary `json:"summary"`
+			Status  any                   `json:"status"`
+			Head    any                   `json:"head"`
+		}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			t.Fatalf("failed to unmarshal initial message: %v", err)
+		}
+		if msg.Summary == nil {
+			t.Fatal("initial websocket bootstrap missing summary")
+		}
+		if msg.Summary.TotalCommits <= 0 {
+			t.Errorf("summary totalCommits = %d, want > 0", msg.Summary.TotalCommits)
+		}
+		if msg.Status == nil {
+			t.Error("initial websocket bootstrap missing status")
+		}
+		if msg.Head == nil {
+			t.Error("initial websocket bootstrap missing head")
 		}
 
 		// Send a ping to verify two-way communication

@@ -6,9 +6,9 @@ import { telemetryStore } from "./telemetry.js";
 const RECONNECT_DELAY_INITIAL_MS = 1000;
 const RECONNECT_DELAY_MAX_MS = 30000;
 
-export async function startBackend({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
+export async function startBackend({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
     await loadRepositoryMetadata(logger, onRepoMetadata);
-    return openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger });
+    return openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger });
 }
 
 async function loadRepositoryMetadata(logger, onRepoMetadata) {
@@ -26,7 +26,7 @@ async function loadRepositoryMetadata(logger, onRepoMetadata) {
     }
 }
 
-function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
+function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
     const url = wsUrl();
     logger?.info("Opening WebSocket connection", url);
 
@@ -80,6 +80,9 @@ function openWebSocket({ onDelta, onStatus, onHead, onRepoMetadata, onConnection
 
             try {
                 const payload = JSON.parse(event.data);
+                if (payload?.summary) {
+                    onSummary?.(payload.summary);
+                }
                 if (payload?.delta) {
                     onDelta?.(payload.delta);
                 }

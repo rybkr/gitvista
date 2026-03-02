@@ -6,9 +6,10 @@ import (
 
 // UpdateMessage is sent to clients via WebSocket.
 type UpdateMessage struct {
-	Delta  *gitcore.RepositoryDelta `json:"delta"`
-	Status *WorkingTreeStatus       `json:"status,omitempty"`
-	Head   *HeadInfo                `json:"head,omitempty"`
+	Delta   *gitcore.RepositoryDelta `json:"delta"`
+	Summary *gitcore.GraphSummary    `json:"summary,omitempty"`
+	Status  *WorkingTreeStatus       `json:"status,omitempty"`
+	Head    *HeadInfo                `json:"head,omitempty"`
 }
 
 // HeadInfo contains information about the current HEAD state.

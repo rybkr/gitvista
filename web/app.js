@@ -221,7 +221,7 @@ function bootstrapGraph(root, repoId) {
     root.parentElement.insertBefore(sidebar.activityBar, root);
     root.parentElement.insertBefore(sidebar.panel, root);
 
-    let initialDeltaApplied = false;
+    let initialBootstrapApplied = false;
 
     const graph = createGraph(root, {
         fetchGraphCommits: async (hashes) => {
@@ -457,6 +457,26 @@ function bootstrapGraph(root, repoId) {
             setConnectionState(state);
             setErrorConnectionState(state, attempt);
         },
+        onSummary: (summary) => {
+            telemetryStore.recordSummary(summary);
+            graph.applySummary(summary);
+            analyticsView.update();
+
+            graphFilters.updateBranches(graph.getBranches());
+            mergePreviewView.updateBranches();
+            if (graphSettings.isVisible()) graphSettings.updateBranches();
+
+            if (!initialBootstrapApplied) {
+                initialBootstrapApplied = true;
+                const permalinkHash = getPermalinkHash();
+                if (permalinkHash) {
+                    setTimeout(() => {
+                        graph.selectAndCenter(permalinkHash);
+                    }, 80);
+                }
+                openHeadInExplorerIfEmpty();
+            }
+        },
         onDelta: (delta) => {
             telemetryStore.recordDelta(delta);
             graph.applyDelta(delta);
@@ -486,8 +506,8 @@ function bootstrapGraph(root, repoId) {
                 showToast(label, { duration: 5000 });
             }
 
-            if (!initialDeltaApplied) {
-                initialDeltaApplied = true;
+            if (!initialBootstrapApplied) {
+                initialBootstrapApplied = true;
                 const permalinkHash = getPermalinkHash();
                 if (permalinkHash) {
                     setTimeout(() => {

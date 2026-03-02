@@ -273,6 +273,7 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
  * }} [options] Optional callbacks.
  * @returns {{
  *   applyDelta(delta: unknown): void,
+ *   applySummary(summary: unknown): void,
  *   centerOnCommit(hash: string): void,
  *   navigateCommits(direction: 'prev' | 'next'): void,
  *   getTelemetrySnapshot?: () => Object,
@@ -281,6 +282,7 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
  */
 /** Returns a random value in the range [-range/2, range/2]. */
 const jitter = (range) => (Math.random() - 0.5) * range;
+const LARGE_REPO_FORCE_LAYOUT_LIMIT = 12000;
 
 export function createGraphController(rootElement, options = {}) {
     const canvas = document.createElement("canvas");
@@ -2195,6 +2197,53 @@ export function createGraphController(rootElement, options = {}) {
         updateGraph();
     }
 
+    function applySummary(summary) {
+        if (!summary || !Array.isArray(summary.skeleton)) {
+            return;
+        }
+
+        commits.clear();
+        branches.clear();
+        state.tags = new Map();
+        state.stashes = [];
+        nodes.splice(0, nodes.length);
+        links.splice(0, links.length);
+        nodeMaterializer.clear();
+        sortedCommitCache = null;
+        searchResultCache = null;
+
+        for (const item of summary.skeleton) {
+            const hash = item?.hash ?? item?.h;
+            if (!hash) continue;
+            const parents = Array.isArray(item?.parents) ? item.parents : (Array.isArray(item?.p) ? item.p : []);
+            const unix = Number.isFinite(item?.timestamp) ? item.timestamp : item?.t;
+            const when = Number.isFinite(unix) && unix > 0 ? new Date(unix * 1000).toISOString() : "";
+
+            commits.set(hash, {
+                hash,
+                parents,
+                author: { when },
+                committer: { when },
+            });
+        }
+
+        for (const [name, hash] of Object.entries(summary.branches || {})) {
+            if (name && hash) {
+                branches.set(name, hash);
+            }
+        }
+
+        state.tags = new Map(Object.entries(summary.tags || {}));
+        state.stashes = Array.isArray(summary.stashes) ? summary.stashes : [];
+        state.headHash = summary.headHash || "";
+
+        if (state.layoutMode === "force" && commits.size > LARGE_REPO_FORCE_LAYOUT_LIMIT) {
+            switchLayout("lane");
+            return;
+        }
+        updateGraph();
+    }
+
     // Activate the layout strategy with initial empty state
     layoutStrategy.activate(
         nodes,
@@ -2206,6 +2255,7 @@ export function createGraphController(rootElement, options = {}) {
 
     return {
         applyDelta,
+        applySummary,
         destroy,
         /**
          * Centers the viewport on the commit with the given hash.

@@ -11,6 +11,8 @@ const state = {
     wsLastBytes: 0,
     wsMaxBytes: 0,
     deltas: 0,
+    summaries: 0,
+    summaryCommits: 0,
     bootstrapDeltas: 0,
     bootstrapComplete: false,
     bootstrapCommits: 0,
@@ -41,6 +43,11 @@ export const telemetryStore = {
             state.bootstrapCommits += added;
             if (delta.bootstrapComplete) state.bootstrapComplete = true;
         }
+    },
+    recordSummary(summary) {
+        state.summaries++;
+        const total = Number.isFinite(summary?.totalCommits) ? summary.totalCommits : 0;
+        state.summaryCommits = Math.max(0, Math.floor(total));
     },
     recordDiffStatsRequest(limit = 0, ok = true) {
         state.diffStatsRequests++;
@@ -103,6 +110,7 @@ export function createTelemetryHud({ getGraphTelemetry }) {
             `uptime: ${Math.floor((now - snap.startMs) / 1000)}s`,
             `connection: ${snap.connectionState}${snap.reconnectAttempt ? ` (#${snap.reconnectAttempt})` : ""}`,
             `ws msgs: ${snap.wsMessages}  last: ${formatBytes(snap.wsLastBytes)}  max: ${formatBytes(snap.wsMaxBytes)}  total: ${formatBytes(snap.wsBytesTotal)}`,
+            `summaries: ${snap.summaries}  summary commits: ${snap.summaryCommits}`,
             `deltas: ${snap.deltas}  added commits: ${snap.addedCommits}`,
             `bootstrap: ${snap.bootstrapDeltas} batches  commits ${snap.bootstrapCommits}  complete=${snap.bootstrapComplete}`,
             `layout: ${graph.layoutMode ?? "?"}  known commits: ${graph.commitsCount ?? 0}  index: ${graph.commitIndexSize ?? 0}`,
@@ -122,4 +130,3 @@ export function createTelemetryHud({ getGraphTelemetry }) {
         },
     };
 }
-

@@ -274,70 +274,31 @@ func (rs *RepoSession) broadcastUpdate(message UpdateMessage) {
 // sendInitialState sends the full repository state to a newly connected client.
 func (rs *RepoSession) sendInitialState(conn *websocket.Conn) {
 	repo := rs.Repo()
-
-	fullDelta := repo.Diff(gitcore.NewEmptyRepository())
-	status := getWorkingTreeStatus(repo)
-	headInfo := buildHeadInfo(repo)
-	batches := planInitialCommitBatches(fullDelta)
-
-	if len(batches) == 0 {
-		batches = [][]*gitcore.Commit{{}}
+	if repo == nil {
+		rs.logger.Error("Failed to send initial state: repository not available", "addr", conn.RemoteAddr())
+		return
 	}
 
-	sentHashes := make(map[gitcore.Hash]struct{})
-	branchRefs := fullDelta.AddedBranches
-
-	for i, commitsBatch := range batches {
-		for _, c := range commitsBatch {
-			if c != nil {
-				sentHashes[c.ID] = struct{}{}
-			}
-		}
-
-		delta := gitcore.NewRepositoryDelta()
-		delta.AddedCommits = commitsBatch
-		delta.HeadHash = fullDelta.HeadHash
-		delta.Bootstrap = true
-		if i == len(batches)-1 {
-			delta.BootstrapComplete = true
-		}
-
-		// Always send cumulative refs that point at commits already sent so
-		// the UI can label visible history without waiting for full bootstrap.
-		for name, hash := range branchRefs {
-			if _, ok := sentHashes[hash]; ok {
-				delta.AddedBranches[name] = hash
-			}
-		}
-
-		delta.Tags = filterTagsBySentHashes(fullDelta.Tags, sentHashes)
-		delta.Stashes = filterStashesBySentHashes(fullDelta.Stashes, sentHashes)
-
-		msg := UpdateMessage{Delta: delta}
-		if i == 0 {
-			msg.Status = status
-			msg.Head = headInfo
-		}
-
-		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-			rs.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err)
-			return
-		}
-		if err := conn.WriteJSON(msg); err != nil {
-			rs.logger.Error("Failed to send initial state batch", "addr", conn.RemoteAddr(), "batch", i+1, "totalBatches", len(batches), "err", err)
-			return
-		}
-		if i < len(batches)-1 {
-			// Brief pacing prevents overwhelming the browser event loop during
-			// very large bootstraps (e.g., 50k+ commit histories).
-			time.Sleep(bootstrapBatchPause)
-		}
+	summary := repo.BuildGraphSummary()
+	status := getWorkingTreeStatus(repo)
+	headInfo := buildHeadInfo(repo)
+	msg := UpdateMessage{
+		Summary: summary,
+		Status:  status,
+		Head:    headInfo,
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+		rs.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err)
+		return
+	}
+	if err := conn.WriteJSON(msg); err != nil {
+		rs.logger.Error("Failed to send initial state summary", "addr", conn.RemoteAddr(), "err", err)
+		return
 	}
 
 	rs.logger.Info("Initial state sent",
 		"addr", conn.RemoteAddr(),
-		"batches", len(batches),
-		"commits", len(fullDelta.AddedCommits),
+		"summaryCommits", summary.TotalCommits,
 	)
 }
 
