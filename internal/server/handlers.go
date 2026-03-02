@@ -361,7 +361,7 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseBulkDiffStatsLimit(r)
-	cacheKey := "bulk-diffstats:limit:" + strconv.Itoa(limit)
+	cacheKey := "bulk-diffstats:v2:limit:" + strconv.Itoa(limit)
 	if cached, ok := session.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(cached); err != nil {
@@ -371,6 +371,7 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	commits := repo.Commits()
+	totalCommits := len(commits)
 
 	sortedCommits := make([]*gitcore.Commit, 0, len(commits))
 	for _, commit := range commits {
@@ -394,6 +395,15 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 	type diffStatEntry struct {
 		FilesChanged int      `json:"filesChanged"`
 		Files        []string `json:"files"`
+	}
+	type bulkDiffStatsResponse struct {
+		Entries         map[string]diffStatEntry `json:"entries"`
+		AnalyzedCommits int                      `json:"analyzedCommits"`
+		TotalCommits    int                      `json:"totalCommits"`
+		Limit           int                      `json:"limit"`
+		Complete        bool                     `json:"complete"`
+		SkippedTooLarge int                      `json:"skippedTooLarge"`
+		SkippedOther    int                      `json:"skippedOther"`
 	}
 
 	var mu sync.Mutex
@@ -454,10 +464,19 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	session.diffCache.Put(cacheKey, result)
+	response := bulkDiffStatsResponse{
+		Entries:         result,
+		AnalyzedCommits: len(sortedCommits),
+		TotalCommits:    totalCommits,
+		Limit:           limit,
+		Complete:        len(sortedCommits) >= totalCommits && tooLargeErrors == 0 && otherErrors == 0,
+		SkippedTooLarge: tooLargeErrors,
+		SkippedOther:    otherErrors,
+	}
+	session.diffCache.Put(cacheKey, response)
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(result); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }

@@ -389,7 +389,6 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     let selectedPeriod = "All";
     let customRange = { start: "", end: "" };
     const ANALYTICS_HYDRATE_CHUNK = 200;
-    const ANALYTICS_HYDRATE_MAX = 5000;
     let hydrationInFlight = false;
     const attemptedHydration = new Set();
 
@@ -417,7 +416,6 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             if (cutoff > 0 && ts < cutoff) continue;
             if (!commitNeedsIdentity(commit)) continue;
             missing.push(hash);
-            if (missing.length >= ANALYTICS_HYDRATE_MAX) break;
         }
         if (missing.length === 0) return false;
 
@@ -446,6 +444,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     let diffStatsCache = null;
     let diffStatsLoading = false;
     let diffStatsError = false;
+    let diffStatsPartial = false;
+    let diffStatsCoverageLabel = "";
 
     async function loadDiffStats() {
         if (diffStatsCache || diffStatsLoading || !fetchDiffStats) return;
@@ -459,13 +459,26 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             const commitCount = commits?.size ?? 0;
             const limit = Math.min(Math.max(commitCount, 1), 3000);
             const raw = await fetchDiffStats({ limit });
-            diffStatsCache = new Map(Object.entries(raw));
+            const entries = raw && typeof raw === "object" && raw.entries && typeof raw.entries === "object"
+                ? raw.entries
+                : raw;
+            diffStatsCache = new Map(Object.entries(entries || {}));
+            diffStatsPartial = raw?.complete === false;
+            if (diffStatsPartial) {
+                const analyzed = Number.isFinite(raw?.analyzedCommits) ? raw.analyzedCommits : diffStatsCache.size;
+                const total = Number.isFinite(raw?.totalCommits) ? raw.totalCommits : commitCount;
+                diffStatsCoverageLabel = `Diff stats are partial (${analyzed} of ${total} commits analyzed).`;
+            } else {
+                diffStatsCoverageLabel = "";
+            }
             diffStatsLoading = false;
             updateDiffStatsUI();
             redrawDiffStatsCharts();
         } catch (err) {
             diffStatsLoading = false;
             diffStatsError = true;
+            diffStatsPartial = false;
+            diffStatsCoverageLabel = "";
             updateDiffStatsUI();
         }
     }
@@ -680,6 +693,14 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             reworkChartContainer.style.display = "none";
             reworkSummary.style.display = "none";
             reworkSection.querySelector(".analytics-section-title").style.opacity = "0.5";
+        } else if (diffStatsPartial) {
+            diffStatsMsg.textContent = diffStatsCoverageLabel || "Diff stats are partial for this repository.";
+            diffStatsMsg.style.display = "block";
+            changeSizeChartContainer.style.display = "";
+            changeSizeSummary.style.display = "";
+            reworkChartContainer.style.display = "";
+            reworkSummary.style.display = "";
+            reworkSection.querySelector(".analytics-section-title").style.opacity = "";
         } else {
             diffStatsMsg.style.display = "none";
             changeSizeChartContainer.style.display = "";

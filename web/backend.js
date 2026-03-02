@@ -8,6 +8,7 @@ const RECONNECT_DELAY_MAX_MS = 30000;
 
 export async function startBackend({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
     await loadRepositoryMetadata(logger, onRepoMetadata);
+    await loadGraphSummary(logger, onSummary);
     return openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger });
 }
 
@@ -23,6 +24,21 @@ async function loadRepositoryMetadata(logger, onRepoMetadata) {
         onRepoMetadata?.(metadata);
     } catch (error) {
         logger?.error("Failed to load repository metadata", error);
+    }
+}
+
+async function loadGraphSummary(logger, onSummary) {
+    logger?.info("Requesting graph summary");
+    try {
+        const response = await apiFetch(apiUrl("/graph/summary"));
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const summary = await response.json();
+        logger?.info("Graph summary loaded");
+        onSummary?.(summary);
+    } catch (error) {
+        logger?.error("Failed to load graph summary", error);
     }
 }
 

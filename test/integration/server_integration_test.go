@@ -136,6 +136,26 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("graph summary endpoint", func(t *testing.T) {
+		resp, err := http.Get(baseURL + "/api/graph/summary")
+		if err != nil {
+			t.Fatalf("graph summary request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status code = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var summary gitcore.GraphSummary
+		if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+			t.Fatalf("failed to decode graph summary response: %v", err)
+		}
+		if summary.TotalCommits <= 0 {
+			t.Errorf("summary totalCommits = %d, want > 0", summary.TotalCommits)
+		}
+	})
+
 	t.Run("websocket connection", func(t *testing.T) {
 		wsURL := "ws://" + addr + "/api/ws"
 		wsOrigin := "http://" + addr
@@ -152,8 +172,8 @@ func TestServerIntegration(t *testing.T) {
 		// Set read deadline
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-		// Read initial state message. Bootstrap now uses a graph summary payload
-		// and omits full commit deltas on connect.
+		// Read initial state message. Graph summary is fetched via HTTP bootstrap;
+		// websocket carries lightweight live state on connect.
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
 			t.Fatalf("failed to read initial message: %v", err)
@@ -170,17 +190,14 @@ func TestServerIntegration(t *testing.T) {
 		if err := json.Unmarshal(message, &msg); err != nil {
 			t.Fatalf("failed to unmarshal initial message: %v", err)
 		}
-		if msg.Summary == nil {
-			t.Fatal("initial websocket bootstrap missing summary")
-		}
-		if msg.Summary.TotalCommits <= 0 {
-			t.Errorf("summary totalCommits = %d, want > 0", msg.Summary.TotalCommits)
+		if msg.Summary != nil {
+			t.Error("initial websocket message unexpectedly included summary")
 		}
 		if msg.Status == nil {
-			t.Error("initial websocket bootstrap missing status")
+			t.Error("initial websocket message missing status")
 		}
 		if msg.Head == nil {
-			t.Error("initial websocket bootstrap missing head")
+			t.Error("initial websocket message missing head")
 		}
 
 		// Send a ping to verify two-way communication

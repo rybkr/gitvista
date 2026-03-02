@@ -182,6 +182,7 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
     let isDropdownOpen = false;
     let activeDescendantIndex = -1; // -1 = no item focused, 0..N = item index
     let diffStatsCache = null;       // Map<string, string[]> | null
+    let diffStatsPartial = false;    // true when backend reports incomplete coverage
     let diffStatsFetchPromise = null; // Promise | null (dedup concurrent fetches)
 
     // ── Dropdown rendering ─────────────────────────────────────────────────────
@@ -396,8 +397,10 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
             resultCount.textContent = "";
             return;
         }
-        const { matching, total } = getCommitCount();
-        resultCount.textContent = `${matching} / ${total}`;
+        const { matching, total, pendingHydration = 0 } = getCommitCount();
+        const loadingSuffix = pendingHydration > 0 ? ` (${pendingHydration} loading)` : "";
+        const partialSuffix = diffStatsPartial ? " (partial diffstats)" : "";
+        resultCount.textContent = `${matching} / ${total}${loadingSuffix}${partialSuffix}`;
         resultCount.style.display = "inline-flex";
         // Warning styling when zero results.
         resultCount.classList.toggle("is-empty", matching === 0);
@@ -432,18 +435,26 @@ export function createSearch(container, { getBranches, getCommits, getCommitCoun
         // Lazy-fetch diffstats when file: or path: qualifiers are used.
         const needsDiffStats = query.files.length > 0 || query.negatedFiles.length > 0 ||
                                query.paths.length > 0 || query.negatedPaths.length > 0;
+        if (!needsDiffStats) {
+            diffStatsPartial = false;
+        }
         if (needsDiffStats && !diffStatsCache && fetchDiffStats && !diffStatsFetchPromise) {
             const { total } = getCommitCount();
             const limit = Math.min(Math.max(total, 1), 10000);
             diffStatsFetchPromise = fetchDiffStats({ limit })
                 .then((raw) => {
                     diffStatsCache = new Map();
-                    for (const [hash, entry] of Object.entries(raw)) {
+                    const entries = raw && typeof raw === "object" && raw.entries && typeof raw.entries === "object"
+                        ? raw.entries
+                        : raw;
+                    diffStatsPartial = raw?.complete === false;
+                    for (const [hash, entry] of Object.entries(entries || {})) {
                         diffStatsCache.set(hash, entry.files ?? []);
                     }
                 })
                 .catch(() => {
                     // On error, cache stays null — file:/path: queries match nothing.
+                    diffStatsPartial = false;
                 })
                 .finally(() => {
                     diffStatsFetchPromise = null;
