@@ -597,6 +597,24 @@ export class LaneStrategy {
 			}
 		}
 
+		// If plain "main/master/trunk" is absent, prefer a branch whose tail
+		// segment is main-like (e.g. "origin/main").
+		if (!mainEntry) {
+			for (const target of mainNames) {
+				const candidates = [];
+				for (const [name, hash] of branches.entries()) {
+					const tail = name.split("/").pop();
+					if (tail === target) candidates.push([name, hash]);
+				}
+				if (candidates.length > 0) {
+					candidates.sort((a, b) => a[0].localeCompare(b[0]));
+					mainEntry = candidates[0][0];
+					result.push(candidates[0]);
+					break;
+				}
+			}
+		}
+
 		// Fallback: use the first branch if no main/master/trunk
 		if (!mainEntry && branches.size > 0) {
 			const [name, hash] = branches.entries().next().value;
@@ -920,7 +938,6 @@ export class LaneStrategy {
 
 			// Build segments from groups
 			const laneOwner = this._laneOwners[laneIndex] || "";
-			const isMain = laneIndex === 0;
 
 			for (const groupHashes of groups.values()) {
 				// Only inherit the lane's branch name if this segment actually
@@ -930,6 +947,9 @@ export class LaneStrategy {
 					(h) => this._phase1Commits?.get(h) === laneIndex,
 				);
 				const branchOwner = ownsLane ? laneOwner : (this._stashLaneLabels?.get(laneIndex) ?? "");
+				// Only the segment that actually belongs to the primary lane owner
+				// is treated as "main". Reused lane-0 segments must not pin to pos 0.
+				const isMain = laneIndex === 0 && ownsLane;
 				let minY = Infinity, maxY = -Infinity;
 				for (const h of groupHashes) {
 					const y = hashToY.get(h);
