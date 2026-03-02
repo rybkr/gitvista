@@ -5356,54 +5356,180 @@ canvas {
     accent-color: var(--slider-fill);
 }
 
-/* ── Telemetry HUD ───────────────────────────────────────────────────── */
-.telemetry-hud {
-    position: fixed;
-    right: 12px;
-    bottom: 12px;
-    width: min(460px, calc(100vw - 24px));
-    z-index: 10000;
-    background: color-mix(in srgb, var(--surface-color) 92%, transparent);
+/* ── Telemetry Overlay ───────────────────────────────────────────────── */
+.telemetry-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-    backdrop-filter: blur(6px);
-    pointer-events: auto;
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: 600 11px/1 "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
 }
 
-.telemetry-hud__header {
+.telemetry-trigger__icon {
+    width: 12px;
+    height: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: color-mix(in srgb, var(--node-color) 72%, var(--text-secondary) 28%);
+}
+
+.telemetry-trigger__icon svg {
+    display: block;
+}
+
+.telemetry-trigger__label {
+    line-height: 1;
+}
+
+.telemetry-trigger:hover {
+    background: var(--surface-recessed);
+    color: var(--text-color);
+}
+
+.telemetry-trigger:focus-visible {
+    outline: 2px solid var(--node-color);
+    outline-offset: 2px;
+}
+
+.telemetry-trigger.is-active {
+    background: var(--node-color);
+    color: #fff;
+    border-color: var(--node-color);
+}
+
+.telemetry-trigger.is-active .telemetry-trigger__icon {
+    color: #fff;
+}
+
+.telemetry-overlay {
+    position: absolute;
+    top: 44px;
+    right: 8px;
+    width: min(360px, calc(100vw - 16px));
+    max-height: calc(100vh - 160px);
+    overflow: hidden;
+    background: var(--overlay-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--overlay-border);
+    border-radius: 12px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+    z-index: 105;
+    display: none;
+}
+
+.telemetry-overlay.is-visible {
+    display: flex;
+    flex-direction: column;
+    animation: telemetry-pop 120ms ease-out;
+}
+
+@keyframes telemetry-pop {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.telemetry-overlay__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 6px 8px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--border-color);
-    font: 600 12px/1.2 "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
-    color: var(--text-primary);
+    color: var(--text-color);
+    font: 600 11px/1.2 "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
-.telemetry-hud__toggle {
+.telemetry-overlay__close {
     appearance: none;
     border: 1px solid var(--border-color);
     background: transparent;
     color: var(--text-secondary);
     border-radius: 6px;
-    font: 500 11px/1 "Geist", system-ui, sans-serif;
-    padding: 3px 8px;
+    font: 500 10px/1 "Geist", system-ui, sans-serif;
+    padding: 4px 8px;
     cursor: pointer;
 }
 
-.telemetry-hud__toggle:hover {
-    color: var(--text-primary);
+.telemetry-overlay__close:hover {
+    color: var(--text-color);
+    background: color-mix(in srgb, var(--surface-color) 72%, transparent);
 }
 
-.telemetry-hud__body {
-    margin: 0;
-    padding: 8px;
-    max-height: 220px;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font: 11px/1.35 "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+.telemetry-overlay__body {
+    overflow-y: auto;
+    padding: 10px 12px 12px;
+}
+
+.telemetry-overlay__metrics {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
+.telemetry-overlay__metric {
+    display: grid;
+    grid-template-columns: minmax(108px, 40%) 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface-color) 68%, transparent);
+}
+
+.telemetry-overlay__metric-key {
     color: var(--text-secondary);
+    font: 600 10px/1.25 "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.telemetry-overlay__metric-value {
+    color: var(--text-color);
+    font: 500 11px/1.35 "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    word-break: break-word;
+}
+
+.telemetry-overlay__metric-value.is-ok {
+    color: var(--success-color);
+}
+
+.telemetry-overlay__metric-value.is-warn {
+    color: var(--warning-color);
+}
+
+.telemetry-overlay__metric-value.is-error {
+    color: var(--danger-color);
+}
+
+@media (max-width: 760px) {
+    .telemetry-trigger {
+        padding: 0 8px;
+        font-size: 10px;
+    }
+
+    .telemetry-overlay {
+        top: 40px;
+        right: 6px;
+        width: min(94vw, 360px);
+        max-height: min(64vh, 540px);
+    }
 }

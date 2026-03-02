@@ -19,6 +19,7 @@ gosec-report.json
 
 # Tool caches
 .ruff_cache/
+.cache/
 
 # Claude artifacts
 .claude/

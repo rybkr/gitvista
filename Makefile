@@ -1,5 +1,5 @@
 .PHONY: test ci-local ci-remote lint integration e2e build build-cli clean help setup-hooks \
-         format format-check vet security validate-js test-js cover cover-html dev-check check-imports \
+         format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
          check-vuln docker-build deps-check deploy-staging deploy-production smoke-test
 
 GOCMD=go
@@ -11,6 +11,13 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
+GO_LOCAL_CACHE_DIR := $(CURDIR)/.cache
+GO_LOCAL_BUILD_CACHE := $(GO_LOCAL_CACHE_DIR)/go-build
+export GOCACHE := $(GO_LOCAL_BUILD_CACHE)
+
+## ensure-go-cache: Ensure local Go build cache directory exists
+ensure-go-cache:
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 
 .DEFAULT_GOAL := help
 
@@ -26,10 +33,12 @@ setup-hooks:
 
 ## test: Run all unit tests
 test:
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOTEST) -v -race -cover -timeout=60s ./...
 
 ## cover: Run tests with coverage
 cover:
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	@mkdir -p test/cover
 	$(GOTEST) -v -race -timeout=60s -covermode=atomic \
 		-coverprofile=test/cover/coverage.out -coverpkg=./internal/... ./...
@@ -46,22 +55,32 @@ cover-html: cover
 
 ## integration: Run integration tests
 integration:
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOTEST) -v -race -tags=integration -timeout=60s ./test/integration/...
 
 ## e2e: Run end-to-end tests (builds gitvista-cli, compares output against git)
 e2e:
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOTEST) -v -race -tags=e2e -timeout=60s ./test/e2e/...
 
 ## format: Auto-format the source code with gofmt
 format:
 	@echo "Formatting code with gofmt..."
-	@gofmt -w .
+	@find . -name '*.go' \
+		-not -path './vendor/*' \
+		-not -path './web/*' \
+		-not -path './.cache/*' \
+		-print0 | xargs -0 gofmt -w
 
 ## check-imports: Organize and format imports with goimports
 check-imports:
 	@echo "Checking and fixing imports..."
 	@if command -v goimports >/dev/null; then \
-		goimports -w .; \
+		find . -name '*.go' \
+			-not -path './vendor/*' \
+			-not -path './web/*' \
+			-not -path './.cache/*' \
+			-print0 | xargs -0 goimports -w; \
 	else \
 		echo "goimports not found - install with: go install golang.org/x/tools/cmd/goimports@latest"; \
 		exit 1; \
@@ -70,10 +89,29 @@ check-imports:
 ## vet: Run go vet static analysis
 vet:
 	@echo "Running go vet..."
-	@go vet ./...
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
+	@$(GOCMD) vet ./...
 
 ## security: Run security checks (govulncheck, gosec)
 security: check-vuln
+	@echo "Running gosec security scanner..."
+	@if command -v gosec >/dev/null; then \
+		gosec -quiet -exclude=G304,G204 ./internal/...; \
+	else \
+		echo "gosec not found - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
+		exit 1; \
+	fi
+
+## security-local: Run local-friendly security checks (best-effort govulncheck + gosec)
+security-local:
+	@echo "Checking for known vulnerabilities (best effort, offline-safe)..."
+	@if command -v govulncheck >/dev/null; then \
+		if ! govulncheck ./...; then \
+			echo "Warning: govulncheck failed (likely offline), continuing for ci-local"; \
+		fi; \
+	else \
+		echo "Warning: govulncheck not found - skipping for ci-local"; \
+	fi
 	@echo "Running gosec security scanner..."
 	@if command -v gosec >/dev/null; then \
 		gosec -quiet -exclude=G304,G204 ./internal/...; \
@@ -96,7 +134,9 @@ check-vuln:
 lint:
 	@echo "Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null; then \
-		golangci-lint run --config=.golangci.yml; \
+		mkdir -p "$(GO_LOCAL_BUILD_CACHE)"; \
+		GOCACHE="$(GO_LOCAL_BUILD_CACHE)" \
+			golangci-lint run --config=.golangci.yml ./...; \
 	else \
 		echo "golangci-lint not found - install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 		exit 1; \
@@ -127,11 +167,13 @@ validate-js:
 ## build: Build all binaries
 build: build-cli
 	@echo "Building main binary..."
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista ./cmd/vista
 
 ## build-cli: Build the gitvista-cli binary
 build-cli:
 	@echo "Building CLI binary..."
+	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-cli ./cmd/gitcli
 
 ## docker-build: Build Docker image
@@ -158,7 +200,11 @@ dev-check: format check-imports vet
 ## format-check: Verify all Go files are properly formatted (fails if not)
 format-check:
 	@echo "Checking gofmt compliance..."
-	@UNFORMATTED=$$(gofmt -l . | grep -v vendor || true); \
+	@UNFORMATTED=$$(find . -name '*.go' \
+		-not -path './vendor/*' \
+		-not -path './web/*' \
+		-not -path './.cache/*' \
+		-print0 | xargs -0 gofmt -l || true); \
 	if [ -n "$$UNFORMATTED" ]; then \
 		echo "Files not formatted:"; echo "$$UNFORMATTED"; \
 		echo "Run 'make format' to fix"; exit 1; \
@@ -166,11 +212,11 @@ format-check:
 	@echo "All files properly formatted"
 
 ## ci-local: Run CI checks that work offline (no Docker or network needed)
-ci-local: format-check check-imports vet lint security test integration e2e validate-js test-js build
+ci-local: ensure-go-cache format-check check-imports vet lint security-local test integration e2e validate-js test-js build
 	@echo "All local CI checks passed!"
 
 ## ci-remote: Run all CI checks including Docker build and dependency verification
-ci-remote: format-check check-imports vet lint security test integration e2e validate-js test-js build docker-build deps-check
+ci-remote: ensure-go-cache format-check check-imports vet lint security test integration e2e validate-js test-js build docker-build deps-check
 	@echo "All CI checks passed!"
 
 ## clean: Clean build artifacts

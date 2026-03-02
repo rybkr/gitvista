@@ -288,7 +288,6 @@ function bootstrapGraph(root, repoId) {
     const telemetryHud = createTelemetryHud({
         getGraphTelemetry: () => graph.getTelemetrySnapshot?.() ?? null,
     });
-    root.appendChild(telemetryHud.el);
 
     // ── Canvas Toolbar ──────────────────────────────────────────────────────
     const canvasToolbar = document.createElement("div");
@@ -399,6 +398,8 @@ function bootstrapGraph(root, repoId) {
     });
     canvasToolbar.appendChild(graphSettings.triggerEl);
     root.appendChild(graphSettings.overlayEl);
+    canvasToolbar.appendChild(telemetryHud.triggerEl);
+    root.appendChild(telemetryHud.panelEl);
 
     // Apply initial settings to the graph controller.
     graph.setGraphSettings(loadSettings());
@@ -416,6 +417,7 @@ function bootstrapGraph(root, repoId) {
             search.clear();
             graph.clearIsolation();
             if (graphSettings.isVisible()) graphSettings.hide();
+            if (telemetryHud.isVisible()) telemetryHud.hide();
         },
         onNavigateNext: () => {
             graph.navigateCommits("next");

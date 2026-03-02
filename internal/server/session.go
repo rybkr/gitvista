@@ -436,33 +436,6 @@ func filterBranchesBySentHashes(branches map[string]gitcore.Hash, sent map[gitco
 	return filtered
 }
 
-func filterTagsBySentHashes(tags map[string]string, sent map[gitcore.Hash]struct{}) map[string]string {
-	filtered := make(map[string]string)
-	for name, hash := range tags {
-		parsed, err := gitcore.NewHash(hash)
-		if err != nil {
-			continue
-		}
-		if _, ok := sent[parsed]; ok {
-			filtered[name] = hash
-		}
-	}
-	return filtered
-}
-
-func filterStashesBySentHashes(stashes []*gitcore.StashEntry, sent map[gitcore.Hash]struct{}) []*gitcore.StashEntry {
-	result := make([]*gitcore.StashEntry, 0, len(stashes))
-	for _, s := range stashes {
-		if s == nil {
-			continue
-		}
-		if _, ok := sent[s.Hash]; ok {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
 func absInt64(v int64) int64 {
 	if v < 0 {
 		return -v
