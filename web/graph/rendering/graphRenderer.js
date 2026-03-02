@@ -453,9 +453,10 @@ export class GraphRenderer {
      */
     getMergeColor(node) {
         const authorEmail = node.commit?.author?.email;
-        return authorEmail
+        return node.laneColor
+            || (authorEmail
             ? getAuthorColor(authorEmail)
-            : this.palette.mergeNode;
+            : this.palette.mergeNode);
     }
 
     /**
@@ -1163,9 +1164,7 @@ export class GraphRenderer {
      * @param {number} radius Half-diagonal of the diamond.
      */
     renderNormalMerge(node, radius) {
-        const authorEmail = node.commit?.author?.email;
-        this.ctx.fillStyle = node.laneColor
-            || (authorEmail ? getAuthorColor(authorEmail) : this.palette.mergeNode);
+        this.ctx.fillStyle = this.getMergeColor(node);
         this.applyShadow();
         this.drawDiamond(node.x, node.y, radius);
         this.ctx.fill();
