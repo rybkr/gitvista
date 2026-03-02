@@ -163,22 +163,51 @@ function bootstrapGraph(root, repoId) {
     const infoBar = createInfoBar();
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const fetchGraphCommits = async (hashes) => {
         if (!Array.isArray(hashes) || hashes.length === 0) return [];
+        const unique = [...new Set(hashes.filter((h) => typeof h === "string" && h.length > 0))];
+        if (unique.length === 0) return [];
         const batches = [];
-        const CHUNK = 200; // keep URL/query size safely bounded
-        for (let i = 0; i < hashes.length; i += CHUNK) {
-            batches.push(hashes.slice(i, i + CHUNK));
+        const CHUNK = 50; // smaller batches reduce 414/429 risks in busy sessions
+        for (let i = 0; i < unique.length; i += CHUNK) {
+            batches.push(unique.slice(i, i + CHUNK));
         }
 
         const all = [];
         for (const batch of batches) {
-            const query = encodeURIComponent(batch.join(","));
-            const resp = await apiFetch(apiUrl(`/graph/commits?hashes=${query}`));
-            if (!resp.ok) throw new Error("Failed to fetch graph commits");
-            const payload = await resp.json();
-            if (Array.isArray(payload?.commits)) {
-                all.push(...payload.commits);
+            const params = new URLSearchParams();
+            params.set("hashes", batch.join(","));
+
+            let lastError = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const resp = await apiFetch(apiUrl(`/graph/commits?${params.toString()}`));
+                if (resp.ok) {
+                    const payload = await resp.json();
+                    if (Array.isArray(payload?.commits)) {
+                        all.push(...payload.commits);
+                    }
+                    lastError = null;
+                    break;
+                }
+
+                const body = await resp.text().catch(() => "");
+                lastError = new Error(
+                    `Failed to fetch graph commits (status ${resp.status}) ${body.slice(0, 160)}`,
+                );
+                const retryable =
+                    resp.status === 429 ||
+                    resp.status === 500 ||
+                    resp.status === 502 ||
+                    resp.status === 503 ||
+                    resp.status === 504;
+                if (!retryable || attempt === 2) break;
+                await sleep(120 * (attempt + 1));
+            }
+
+            if (lastError) {
+                logger.error("Graph commit hydration failed", lastError);
+                throw lastError;
             }
         }
         return all;
@@ -242,11 +271,28 @@ function bootstrapGraph(root, repoId) {
     repoTabContent.appendChild(infoBar.el);
     repoTabContent.appendChild(indexView.el);
 
+    let graph = null;
+    let graphFirstShown = false;
+
     const graphHost = document.createElement("div");
     graphHost.className = "graph-host";
 
     const workbench = createWorkbench([
-        { name: "graph", tooltip: "Graph", content: graphHost },
+        {
+            name: "graph",
+            tooltip: "Graph",
+            content: graphHost,
+            onShow: () => {
+                graph?.refreshPalette?.();
+                graph?.refreshViewport?.();
+                graph?.rebuildVisibleGraph?.();
+                if (!graphFirstShown) {
+                    graphFirstShown = true;
+                    const head = graph?.getHeadHash?.();
+                    if (head) graph.centerOnCommit(head);
+                }
+            },
+        },
         { name: "repository", tooltip: "Repository", content: repoTabContent },
         { name: "file-explorer", tooltip: "File Explorer", content: fileExplorer.el },
         { name: "three-zones", tooltip: "Lifecycle", content: stagingView.el },
@@ -266,7 +312,7 @@ function bootstrapGraph(root, repoId) {
         });
     }
 
-    const graph = createGraph(graphHost, {
+    graph = createGraph(graphHost, {
         fetchGraphCommits,
         onCommitTreeClick: (commit) => {
             if (workbench.isViewVisible("file-explorer")) {
@@ -293,6 +339,8 @@ function bootstrapGraph(root, repoId) {
             refreshBreadcrumb();
         },
     });
+
+    graph.refreshPalette?.();
 
     const telemetryHud = createTelemetryHud({
         getGraphTelemetry: () => graph.getTelemetrySnapshot?.() ?? null,

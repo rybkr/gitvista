@@ -868,6 +868,9 @@ func (s *Server) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
 	}
+	// Force a repository refresh before serving the summary so hard refreshes
+	// don't get stuck on stale commit snapshots when watcher events were missed.
+	session.updateRepository()
 	repo := session.Repo()
 	if repo == nil {
 		http.Error(w, "Repository not available", http.StatusServiceUnavailable)

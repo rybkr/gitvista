@@ -992,7 +992,6 @@ export class GraphRenderer {
         // Compound alpha: context alpha × spawn fade-in × dimming multiplier.
         // dimMultiplier lerps smoothly from 1.0 (visible) to 0.15 (dimmed).
         const previousAlpha = this.ctx.globalAlpha;
-        const isDimmed = dimPhase > 0.5;
         const dimMultiplier = 1 - dimPhase * 0.85;
         this.ctx.globalAlpha = previousAlpha * (spawnAlpha || 0.01) * dimMultiplier;
         if (isStash) {
@@ -1089,11 +1088,9 @@ export class GraphRenderer {
             this.ctx.restore();
         }
 
-        // Skip label rendering for dimmed nodes — labels at 15% opacity would
-        // clutter the view without adding navigational value.
-        if (!isDimmed) {
-            this.renderCommitLabel(node, spawnAlpha, zoomTransform, layoutMode);
-        }
+        // Keep labels visible even when dimmed so hydration state remains
+        // legible under scope/search filtering.
+        this.renderCommitLabel(node, spawnAlpha * dimMultiplier, zoomTransform, layoutMode);
     }
 
     /**

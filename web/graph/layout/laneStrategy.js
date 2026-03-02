@@ -57,6 +57,14 @@ function parseMergeBranchName(message) {
 	const prMatch = first.match(/^Merge pull request #\d+ from [^/]+\/(.+)/);
 	if (prMatch) return prMatch[1].trim();
 
+	// Bitbucket/GitLab style: "Merge pull request #N in PROJ from user/branch to main"
+	const prInMatch = first.match(/^Merge pull request #\d+ in [^\s]+ from [^/]+\/(.+?) to /);
+	if (prInMatch) return prInMatch[1].trim();
+
+	// Bitbucket style: "Merged in feature/foo (pull request #123)"
+	const mergedInMatch = first.match(/^Merged in ([\w./-]+) \(pull request #\d+\)/);
+	if (mergedInMatch) return mergedInMatch[1].trim();
+
 	// Custom merge messages: "Merge feature/foo: ..." or "Merge dev into main"
 	const customMatch = first.match(/^Merge ([\w][\w./-]*\w)(?:\s+into\b|\s*:|$)/);
 	if (customMatch) return customMatch[1];
@@ -1045,11 +1053,11 @@ export class LaneStrategy {
 		for (const seg of this._segments) {
 			if (seg.branchOwner) continue;
 
-			for (const node of nodes) {
-				if (node.type !== "commit") continue;
-				if (seg.hashes.has(node.hash)) continue;
-				const commit = commits?.get(node.hash);
+			// Use the full commits map (not only rendered nodes) so name inference
+			// still works when merge commits are filtered out from the visible set.
+			for (const [hash, commit] of commits ?? new Map()) {
 				if (!commit?.parents || commit.parents.length < 2) continue;
+				if (seg.hashes.has(hash)) continue;
 				const mergesIntoSeg = commit.parents.some((ph) => seg.hashes.has(ph));
 				if (!mergesIntoSeg) continue;
 

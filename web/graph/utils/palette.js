@@ -10,10 +10,13 @@
  * @returns {import("../types.js").GraphPalette} Palette consumed by the renderer.
  */
 export function buildPalette(element) {
-    const styles = getComputedStyle(element);
+    const elementStyles = element ? getComputedStyle(element) : null;
+    const rootStyles = getComputedStyle(document.documentElement);
 
     const read = (name, fallback) =>
-        styles.getPropertyValue(name)?.trim() || fallback;
+        elementStyles?.getPropertyValue(name)?.trim() ||
+        rootStyles.getPropertyValue(name)?.trim() ||
+        fallback;
 
     const bg = read("--bg-color", "#ffffff");
     // Determine light vs dark theme from background luminance.
