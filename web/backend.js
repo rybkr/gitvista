@@ -77,6 +77,7 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
             // (new branches, changed HEAD, etc.) that occurred while disconnected.
             if (isReconnect) {
                 loadRepositoryMetadata(logger, onRepoMetadata);
+                loadGraphSummary(logger, onSummary);
             }
         });
 

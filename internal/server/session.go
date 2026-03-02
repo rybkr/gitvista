@@ -237,14 +237,16 @@ func (rs *RepoSession) broadcastInitialBootstrap(
 		batchDelta := gitcore.NewRepositoryDelta()
 		batchDelta.AddedCommits = batch
 		batchDelta.AddedBranches = filterBranchesBySentHashes(delta.AddedBranches, sent)
-		batchDelta.Tags = filterTagsBySentHashes(delta.Tags, sent)
-		batchDelta.Stashes = filterStashesBySentHashes(delta.Stashes, sent)
 		batchDelta.HeadHash = delta.HeadHash
 		batchDelta.Bootstrap = true
 		batchDelta.BootstrapComplete = i == len(batches)-1
 
 		msg := UpdateMessage{Delta: batchDelta}
 		if batchDelta.BootstrapComplete {
+			// tags/stashes are replace-style fields on the frontend; send full sets
+			// only on the final batch to avoid transient overwrite bugs.
+			batchDelta.Tags = delta.Tags
+			batchDelta.Stashes = delta.Stashes
 			msg.Status = status
 			msg.Head = headInfo
 		}
