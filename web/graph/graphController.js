@@ -2073,6 +2073,14 @@ export function createGraphController(rootElement, options = {}) {
             state.stashes = delta.stashes;
         }
 
+        // Bootstrap deltas arrive in batches. In force mode, applying each batch
+        // incrementally causes late-arriving commits to spawn near the center
+        // before their structural context exists, degrading chronological layout.
+        // Defer force-mode graph reconciliation until the final bootstrap batch.
+        if (delta.bootstrap && state.layoutMode === "force" && !delta.bootstrapComplete) {
+            return;
+        }
+
         updateGraph();
     }
 

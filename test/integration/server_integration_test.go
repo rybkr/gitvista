@@ -5,7 +5,10 @@ package integration
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,8 +55,18 @@ func TestServerIntegration(t *testing.T) {
 		"index.html": &fstest.MapFile{Data: []byte("<html></html>")},
 	}
 
-	// Create and start server (use port 0 for auto-assign, but hardcode 18080 for test predictability)
-	srv := server.NewServer(repo, ":18080", testFS)
+	// Preflight: integration test needs to bind a local TCP listener.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("local TCP listeners unavailable in this environment: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+
+	// Create and start server on an ephemeral localhost port to avoid collisions.
+	srv := server.NewServer(repo, addr, testFS)
 	if srv == nil {
 		t.Fatal("NewServer returned nil")
 	}
@@ -76,7 +89,7 @@ func TestServerIntegration(t *testing.T) {
 	default:
 	}
 
-	baseURL := "http://localhost:18080"
+	baseURL := "http://" + addr
 
 	// Cleanup
 	defer srv.Shutdown()
@@ -124,10 +137,13 @@ func TestServerIntegration(t *testing.T) {
 	})
 
 	t.Run("websocket connection", func(t *testing.T) {
-		wsURL := "ws://localhost:18080/api/ws"
+		wsURL := "ws://" + addr + "/api/ws"
+		wsOrigin := "http://" + addr
 
 		// Connect to WebSocket
-		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		headers := make(http.Header)
+		headers.Set(textproto.CanonicalMIMEHeaderKey("Origin"), wsOrigin)
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, headers)
 		if err != nil {
 			t.Fatalf("websocket dial failed: %v (status: %v)", err, resp)
 		}
@@ -136,27 +152,38 @@ func TestServerIntegration(t *testing.T) {
 		// Set read deadline
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-		// Read initial state message
-		messageType, message, err := conn.ReadMessage()
-		if err != nil {
-			t.Fatalf("failed to read initial message: %v", err)
-		}
+		// Read initial state messages. Bootstrap may arrive in multiple batches.
+		// Keep consuming until the final bootstrap batch (bootstrapComplete=true)
+		// or a non-bootstrap update arrives.
+		sawDelta := false
+		for i := 0; i < 128; i++ {
+			messageType, message, err := conn.ReadMessage()
+			if err != nil {
+				t.Fatalf("failed to read initial message batch %d: %v", i+1, err)
+			}
 
-		if messageType != websocket.TextMessage {
-			t.Errorf("message type = %d, want %d (TextMessage)", messageType, websocket.TextMessage)
-		}
+			if messageType != websocket.TextMessage {
+				t.Errorf("message type = %d, want %d (TextMessage)", messageType, websocket.TextMessage)
+			}
 
-		// Parse the update message
-		var initialMsg struct {
-			Delta  *gitcore.RepositoryDelta `json:"delta"`
-			Status any                      `json:"status"`
-		}
-		if err := json.Unmarshal(message, &initialMsg); err != nil {
-			t.Fatalf("failed to unmarshal initial message: %v", err)
-		}
+			var msg struct {
+				Delta  *gitcore.RepositoryDelta `json:"delta"`
+				Status any                      `json:"status"`
+			}
+			if err := json.Unmarshal(message, &msg); err != nil {
+				t.Fatalf("failed to unmarshal initial message batch %d: %v", i+1, err)
+			}
 
-		if initialMsg.Delta == nil {
-			t.Error("initial message missing delta")
+			if msg.Delta == nil {
+				continue
+			}
+			sawDelta = true
+			if !msg.Delta.Bootstrap || msg.Delta.BootstrapComplete {
+				break
+			}
+		}
+		if !sawDelta {
+			t.Error("initial websocket bootstrap missing delta")
 		}
 
 		// Send a ping to verify two-way communication
@@ -227,9 +254,79 @@ func TestServerIntegration(t *testing.T) {
 	})
 }
 
-// TestServerShutdown verifies graceful shutdown works correctly
-// Note: Skipped because server uses http.DefaultServeMux which can't be reused
-// between tests. Shutdown is already tested in TestServerIntegration.
+// TestServerShutdown verifies graceful shutdown works correctly.
 func TestServerShutdown(t *testing.T) {
-	t.Skip("Skipping separate shutdown test - server uses http.DefaultServeMux which conflicts with TestServerIntegration. Shutdown is tested in TestServerIntegration cleanup.")
+	// Find repository root
+	repoPath, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	for {
+		gitDir := filepath.Join(repoPath, ".git")
+		if _, err := os.Stat(gitDir); err == nil {
+			break
+		}
+		parent := filepath.Dir(repoPath)
+		if parent == repoPath {
+			t.Skip("not running in a git repository, skipping integration test")
+		}
+		repoPath = parent
+	}
+
+	repo, err := gitcore.NewRepository(repoPath)
+	if err != nil {
+		t.Fatalf("failed to create repository: %v", err)
+	}
+
+	testFS := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html></html>")},
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("local TCP listeners unavailable in this environment: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	baseURL := "http://" + addr
+
+	srv := server.NewServer(repo, addr, testFS)
+	if srv == nil {
+		t.Fatal("NewServer returned nil")
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case err := <-errCh:
+		t.Fatalf("server failed to start: %v", err)
+	default:
+	}
+
+	// Confirm server is reachable before shutdown.
+	resp, err := http.Get(baseURL + "/health")
+	if err != nil {
+		t.Fatalf("health check before shutdown failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("pre-shutdown health status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	srv.Shutdown()
+
+	// Server should stop accepting new connections.
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	_, err = client.Get(baseURL + "/health")
+	if err == nil {
+		t.Fatal("expected request error after shutdown, got nil")
+	}
 }

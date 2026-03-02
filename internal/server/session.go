@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"log/slog"
+	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,10 @@ import (
 )
 
 const broadcastChannelSize = 256
+
+const (
+	initialBootstrapWindowDays = 30
+)
 
 // ReloadFunc returns a freshly-loaded repository, used by updateRepository to
 // reload state from disk. For local mode this calls gitcore.NewRepository; for
@@ -265,22 +271,234 @@ func (rs *RepoSession) broadcastUpdate(message UpdateMessage) {
 func (rs *RepoSession) sendInitialState(conn *websocket.Conn) {
 	repo := rs.Repo()
 
-	message := UpdateMessage{
-		Delta:  repo.Diff(gitcore.NewEmptyRepository()),
-		Status: getWorkingTreeStatus(repo),
-		Head:   buildHeadInfo(repo),
+	fullDelta := repo.Diff(gitcore.NewEmptyRepository())
+	status := getWorkingTreeStatus(repo)
+	headInfo := buildHeadInfo(repo)
+	batches := planInitialCommitBatches(fullDelta)
+
+	if len(batches) == 0 {
+		batches = [][]*gitcore.Commit{{}}
 	}
 
-	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-		rs.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err)
-		return
-	}
-	if err := conn.WriteJSON(message); err != nil {
-		rs.logger.Error("Failed to send initial state", "addr", conn.RemoteAddr(), "err", err)
-		return
+	sentHashes := make(map[gitcore.Hash]struct{})
+	branchRefs := fullDelta.AddedBranches
+
+	for i, commitsBatch := range batches {
+		for _, c := range commitsBatch {
+			if c != nil {
+				sentHashes[c.ID] = struct{}{}
+			}
+		}
+
+		delta := gitcore.NewRepositoryDelta()
+		delta.AddedCommits = commitsBatch
+		delta.HeadHash = fullDelta.HeadHash
+		delta.Bootstrap = true
+		if i == len(batches)-1 {
+			delta.BootstrapComplete = true
+		}
+
+		// Always send cumulative refs that point at commits already sent so
+		// the UI can label visible history without waiting for full bootstrap.
+		for name, hash := range branchRefs {
+			if _, ok := sentHashes[hash]; ok {
+				delta.AddedBranches[name] = hash
+			}
+		}
+
+		delta.Tags = filterTagsBySentHashes(fullDelta.Tags, sentHashes)
+		delta.Stashes = filterStashesBySentHashes(fullDelta.Stashes, sentHashes)
+
+		msg := UpdateMessage{Delta: delta}
+		if i == 0 {
+			msg.Status = status
+			msg.Head = headInfo
+		}
+
+		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+			rs.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err)
+			return
+		}
+		if err := conn.WriteJSON(msg); err != nil {
+			rs.logger.Error("Failed to send initial state batch", "addr", conn.RemoteAddr(), "batch", i+1, "totalBatches", len(batches), "err", err)
+			return
+		}
 	}
 
-	rs.logger.Info("Initial state sent", "addr", conn.RemoteAddr())
+	rs.logger.Info("Initial state sent",
+		"addr", conn.RemoteAddr(),
+		"batches", len(batches),
+		"commits", len(fullDelta.AddedCommits),
+	)
+}
+
+func planInitialCommitBatches(delta *gitcore.RepositoryDelta) [][]*gitcore.Commit {
+	if delta == nil || len(delta.AddedCommits) == 0 {
+		return nil
+	}
+
+	ordered := slices.Clone(delta.AddedCommits)
+	slices.SortFunc(ordered, func(a, b *gitcore.Commit) int {
+		if a == nil || b == nil {
+			if a == nil && b == nil {
+				return 0
+			}
+			if a == nil {
+				return 1
+			}
+			return -1
+		}
+		if a.Committer.When.Equal(b.Committer.When) {
+			return strings.Compare(string(a.ID), string(b.ID))
+		}
+		if a.Committer.When.After(b.Committer.When) {
+			return -1
+		}
+		return 1
+	})
+
+	commitByHash := make(map[gitcore.Hash]*gitcore.Commit, len(ordered))
+	for _, c := range ordered {
+		if c != nil {
+			commitByHash[c.ID] = c
+		}
+	}
+
+	priority := make(map[gitcore.Hash]struct{})
+	for _, h := range collectRefTipHashes(delta) {
+		if _, ok := commitByHash[h]; ok {
+			priority[h] = struct{}{}
+		}
+	}
+
+	targetHash := gitcore.Hash(delta.HeadHash)
+	targetCommit, ok := commitByHash[targetHash]
+	if !ok && len(ordered) > 0 {
+		targetCommit = ordered[0]
+		targetHash = targetCommit.ID
+	}
+	if targetHash != "" {
+		priority[targetHash] = struct{}{}
+	}
+
+	if targetCommit != nil {
+		targetSec := targetCommit.Committer.When.Unix()
+		windowSec := int64(initialBootstrapWindowDays * 24 * 60 * 60)
+		for _, c := range ordered {
+			if c == nil {
+				continue
+			}
+			if absInt64(c.Committer.When.Unix()-targetSec) <= windowSec {
+				priority[c.ID] = struct{}{}
+			}
+		}
+	}
+
+	priorityOrdered := make([]*gitcore.Commit, 0, len(priority))
+	remaining := make([]*gitcore.Commit, 0, len(ordered)-len(priority))
+	for _, c := range ordered {
+		if c == nil {
+			continue
+		}
+		if _, ok := priority[c.ID]; ok {
+			priorityOrdered = append(priorityOrdered, c)
+			continue
+		}
+		remaining = append(remaining, c)
+	}
+
+	const firstBatchMax = 800
+	mainBatchSize := chooseBootstrapBatchSize(len(ordered))
+	batches := make([][]*gitcore.Commit, 0, int(math.Ceil(float64(len(ordered))/float64(mainBatchSize)))+1)
+
+	emit := func(commits []*gitcore.Commit, capSize int) {
+		if capSize <= 0 {
+			capSize = mainBatchSize
+		}
+		for len(commits) > 0 {
+			n := min(len(commits), capSize)
+			batches = append(batches, commits[:n])
+			commits = commits[n:]
+			capSize = mainBatchSize
+		}
+	}
+
+	emit(priorityOrdered, firstBatchMax)
+	emit(remaining, mainBatchSize)
+	return batches
+}
+
+func chooseBootstrapBatchSize(total int) int {
+	switch {
+	case total > 100000:
+		return 4000
+	case total > 50000:
+		return 2500
+	case total > 10000:
+		return 1200
+	default:
+		return 500
+	}
+}
+
+func collectRefTipHashes(delta *gitcore.RepositoryDelta) []gitcore.Hash {
+	if delta == nil {
+		return nil
+	}
+	out := make([]gitcore.Hash, 0, len(delta.AddedBranches)+len(delta.Tags)+len(delta.Stashes)+1)
+	if delta.HeadHash != "" {
+		if h, err := gitcore.NewHash(delta.HeadHash); err == nil {
+			out = append(out, h)
+		}
+	}
+	for _, h := range delta.AddedBranches {
+		out = append(out, h)
+	}
+	for _, h := range delta.Tags {
+		if parsed, err := gitcore.NewHash(h); err == nil {
+			out = append(out, parsed)
+		}
+	}
+	for _, s := range delta.Stashes {
+		if s != nil && s.Hash != "" {
+			out = append(out, s.Hash)
+		}
+	}
+	return out
+}
+
+func filterTagsBySentHashes(tags map[string]string, sent map[gitcore.Hash]struct{}) map[string]string {
+	filtered := make(map[string]string)
+	for name, hash := range tags {
+		parsed, err := gitcore.NewHash(hash)
+		if err != nil {
+			continue
+		}
+		if _, ok := sent[parsed]; ok {
+			filtered[name] = hash
+		}
+	}
+	return filtered
+}
+
+func filterStashesBySentHashes(stashes []*gitcore.StashEntry, sent map[gitcore.Hash]struct{}) []*gitcore.StashEntry {
+	result := make([]*gitcore.StashEntry, 0, len(stashes))
+	for _, s := range stashes {
+		if s == nil {
+			continue
+		}
+		if _, ok := sent[s.Hash]; ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+func absInt64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // registerClient adds a WebSocket connection to the session's client map and

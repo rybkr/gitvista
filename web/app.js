@@ -439,7 +439,7 @@ function bootstrapGraph(root, repoId) {
             }
 
             const addedCount = delta.addedCommits?.length ?? 0;
-            if (addedCount > 0 && currentBranchName) {
+            if (addedCount > 0 && currentBranchName && !delta.bootstrap) {
                 const branchName = (delta.addedBranches && Object.keys(delta.addedBranches).length > 0)
                     ? Object.keys(delta.addedBranches)[0]
                     : currentBranchName;

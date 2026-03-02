@@ -279,6 +279,11 @@ type RepositoryDelta struct {
 	HeadHash string            `json:"headHash"`
 	Tags     map[string]string `json:"tags"` // tag name -> target commit hash (annotated tags are peeled)
 	Stashes  []*StashEntry     `json:"stashes"`
+
+	// Bootstrap indicates this delta is part of initial history bootstrap.
+	// BootstrapComplete is true on the final bootstrap batch.
+	Bootstrap         bool `json:"bootstrap,omitempty"`
+	BootstrapComplete bool `json:"bootstrapComplete,omitempty"`
 }
 
 // NewRepositoryDelta creates a RepositoryDelta with all maps and slices initialized.
