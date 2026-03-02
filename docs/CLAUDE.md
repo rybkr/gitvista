@@ -173,7 +173,7 @@ Tests live alongside source code in `internal/gitcore/` and `internal/server/`. 
 
 - `GITVISTA_REPO` - Default repository path (default: current directory)
 - `GITVISTA_PORT` - Server port (default: 8080)
-- `GITVISTA_HOST` - Bind host (default: all interfaces)
+- `GITVISTA_HOST` - Bind host (default: local mode `127.0.0.1`; SaaS mode all interfaces)
 - `GITVISTA_LOG_LEVEL` - Log verbosity: `debug`, `info`, `warn`, `error` (default: `info`)
 - `GITVISTA_LOG_FORMAT` - Log output format: `text` or `json` (default: `text`)
 - `GITVISTA_CACHE_SIZE` - LRU cache capacity in entries (default: 500)

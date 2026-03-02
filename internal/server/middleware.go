@@ -93,20 +93,25 @@ func writeDeadline(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// corsMiddleware adds permissive CORS headers for SaaS mode, where the
-// frontend may be served from a different origin than the API.
-func corsMiddleware(next http.Handler) http.Handler {
+// corsMiddleware validates the request Origin against an allowlist and sets
+// CORS headers only for permitted origins. If the allowlist is empty or the
+// origin is not present, no Access-Control-Allow-Origin header is set and the
+// browser will enforce same-origin policy.
+func corsMiddleware(allowedOrigins map[string]bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" {
+			w.Header().Set("Vary", "Origin")
+		}
+		if origin != "" && allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			w.Header().Set("Access-Control-Max-Age", "86400")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

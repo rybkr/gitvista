@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -94,7 +95,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	addr := fmt.Sprintf("%s:%s", *host, *port)
+	bindHost := resolveBindHost(*repoPath, *host)
+	addr := fmt.Sprintf("%s:%s", bindHost, *port)
 
 	var serv interface {
 		Start() error
@@ -124,7 +126,8 @@ func main() {
 	} else {
 		// SAAS MODE: create RepoManager, start it, create SaaS server
 		var err error
-		rm, err = repomanager.New(repomanager.Config{DataDir: *dataDir})
+		allowedHosts := parseAllowedHosts(os.Getenv("GITVISTA_CLONE_ALLOWED_HOSTS"))
+		rm, err = repomanager.New(repomanager.Config{DataDir: *dataDir, AllowedHosts: allowedHosts})
 		if err != nil {
 			slog.Error("Failed to create repo manager", "err", err)
 			os.Exit(1)
@@ -135,7 +138,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		serv = server.NewSaaSServer(rm, addr, webFS)
+		corsOrigins := parseCORSOrigins(os.Getenv("GITVISTA_CORS_ORIGINS"))
+		serv = server.NewSaaSServer(rm, addr, webFS, corsOrigins)
 
 		slog.Info("Starting GitVista", "version", version, "mode", "saas")
 		slog.Info("Data directory", "path", *dataDir)
@@ -205,11 +209,55 @@ func initLogger() {
 	slog.SetDefault(slog.New(handler))
 }
 
+// parseCORSOrigins splits a comma-separated list of origins into a lookup map.
+// Returns an empty (non-nil) map if the input is empty, which means no cross-origin
+// requests will be allowed (same-origin only).
+func parseCORSOrigins(raw string) map[string]bool {
+	origins := make(map[string]bool)
+	for _, o := range strings.Split(raw, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			origins[o] = true
+		}
+	}
+	return origins
+}
+
+// parseAllowedHosts splits a comma-separated list of hostnames into a slice.
+// Returns nil if the input is empty, which causes the RepoManager to use its
+// default allowlist (github.com, gitlab.com, bitbucket.org).
+func parseAllowedHosts(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var hosts []string
+	for _, h := range strings.Split(raw, ",") {
+		h = strings.TrimSpace(strings.ToLower(h))
+		if h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}
+
 func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
 	return fallback
+}
+
+// resolveBindHost chooses a safe default bind host.
+// In local mode (repoPath set), default to loopback when host is empty.
+// In SaaS mode, preserve the existing empty-host behavior (all interfaces).
+func resolveBindHost(repoPath, host string) string {
+	if host != "" {
+		return host
+	}
+	if repoPath != "" {
+		return "127.0.0.1"
+	}
+	return ""
 }
 
 func printVersion() {

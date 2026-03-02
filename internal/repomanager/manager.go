@@ -53,6 +53,7 @@ type Config struct {
 	CloneTimeout        time.Duration
 	FetchTimeout        time.Duration
 	MaxRepos            int
+	AllowedHosts        []string // Hostnames permitted for cloning
 	Logger              *slog.Logger
 }
 
@@ -75,6 +76,9 @@ func (c *Config) defaults() {
 	}
 	if c.FetchTimeout <= 0 {
 		c.FetchTimeout = 2 * time.Minute
+	}
+	if len(c.AllowedHosts) == 0 {
+		c.AllowedHosts = []string{"github.com", "gitlab.com", "bitbucket.org"}
 	}
 	if c.MaxRepos <= 0 {
 		c.MaxRepos = 100
@@ -185,7 +189,7 @@ func (rm *RepoManager) Close() {
 // AddRepo normalizes the URL, deduplicates, and enqueues a clone if needed.
 // Returns the repo ID (derived from the normalized URL hash).
 func (rm *RepoManager) AddRepo(rawURL string) (string, error) {
-	normURL, err := normalizeURL(rawURL)
+	normURL, err := normalizeURL(rawURL, rm.cfg.AllowedHosts)
 	if err != nil {
 		return "", fmt.Errorf("invalid URL: %w", err)
 	}

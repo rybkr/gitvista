@@ -27,7 +27,7 @@ func newTestSaaSServer(t *testing.T) *Server {
 	t.Cleanup(rm.Close)
 
 	webFS := os.DirFS(t.TempDir())
-	s := NewSaaSServer(rm, "127.0.0.1:0", webFS)
+	s := NewSaaSServer(rm, "127.0.0.1:0", webFS, nil)
 	s.logger = silentLogger()
 	return s
 }
@@ -340,4 +340,42 @@ func TestRepoHandlers_LocalMode(t *testing.T) {
 			t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
 		}
 	})
+}
+
+func TestHandleRepoRoutes_InvalidID_GenericError(t *testing.T) {
+	s := newTestSaaSServer(t)
+
+	// Hit a session-scoped route with a nonexistent repo ID to trigger
+	// the getOrCreateSession error path.
+	req := httptest.NewRequest("GET", "/api/repos/nonexistent/repository", nil)
+	w := httptest.NewRecorder()
+
+	s.handleRepoRoutes(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
+	}
+	body := strings.TrimSpace(w.Body.String())
+	if body != "Repository not available" {
+		t.Errorf("body = %q, want %q", body, "Repository not available")
+	}
+}
+
+func TestHandleAddRepo_InvalidURL_GenericError(t *testing.T) {
+	s := newTestSaaSServer(t)
+
+	body := strings.NewReader(`{"url":"file:///etc/passwd"}`)
+	req := httptest.NewRequest("POST", "/api/repos", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	s.handleAddRepo(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	respBody := strings.TrimSpace(w.Body.String())
+	if respBody != "Invalid repository URL" {
+		t.Errorf("body = %q, want %q", respBody, "Invalid repository URL")
+	}
 }

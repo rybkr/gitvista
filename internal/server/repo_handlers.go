@@ -45,7 +45,8 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.repoManager.AddRepo(req.URL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.logger.Warn("Failed to add repo", "url", req.URL, "err", err)
+		http.Error(w, "Invalid repository URL", http.StatusBadRequest)
 		return
 	}
 
@@ -102,7 +103,8 @@ func (s *Server) handleRepoStatus(w http.ResponseWriter, _ *http.Request, id str
 
 	state, errMsg, progress, err := s.repoManager.Status(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.logger.Error("Failed to get repo status", "id", id, "err", err)
+		http.Error(w, "Repository not found", http.StatusNotFound)
 		return
 	}
 
@@ -132,7 +134,8 @@ func (s *Server) handleRemoveRepo(w http.ResponseWriter, _ *http.Request, id str
 	s.removeSession(id)
 
 	if err := s.repoManager.Remove(id); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.logger.Error("Failed to remove repo", "id", id, "err", err)
+		http.Error(w, "Repository not found", http.StatusNotFound)
 		return
 	}
 
@@ -149,7 +152,8 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id s
 
 	// Guard: verify repo exists before setting up SSE.
 	if _, _, _, err := s.repoManager.Status(id); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.logger.Error("Failed to get repo status for progress", "id", id, "err", err)
+		http.Error(w, "Repository not found", http.StatusNotFound)
 		return
 	}
 

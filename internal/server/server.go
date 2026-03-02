@@ -25,6 +25,9 @@ const (
 	ModeLocal Mode = iota
 	// ModeSaaS serves multiple cloned repositories via the repo manager.
 	ModeSaaS
+
+	readHeaderTimeout = 5 * time.Second
+	maxHeaderBytes    = 1 << 20 // 1 MiB
 )
 
 // Server contains all behavior for the GitVista application server.
@@ -35,13 +38,14 @@ type Server struct {
 	httpServer  *http.Server
 	logger      *slog.Logger
 
-	mode          Mode
-	localSession  *RepoSession             // non-nil in local mode
-	sessionsMu    sync.RWMutex             // guards sessions map
-	sessions      map[string]*RepoSession  // non-nil in SaaS mode
-	repoManager   *repomanager.RepoManager // non-nil in SaaS mode
-	cacheSize     int
-	fetchInterval time.Duration
+	mode           Mode
+	localSession   *RepoSession             // non-nil in local mode
+	sessionsMu     sync.RWMutex             // guards sessions map
+	sessions       map[string]*RepoSession  // non-nil in SaaS mode
+	repoManager    *repomanager.RepoManager // non-nil in SaaS mode
+	allowedOrigins map[string]bool          // CORS allowlist (SaaS mode)
+	cacheSize      int
+	fetchInterval  time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -86,24 +90,25 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 }
 
 // NewSaaSServer constructs a Server in SaaS mode backed by a RepoManager.
-func NewSaaSServer(rm *repomanager.RepoManager, addr string, webFS fs.FS) *Server {
+func NewSaaSServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowedOrigins map[string]bool) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
 
 	return &Server{
-		addr:          addr,
-		webFS:         webFS,
-		rateLimiter:   rl,
-		logger:        slog.Default(),
-		mode:          ModeSaaS,
-		sessions:      make(map[string]*RepoSession),
-		repoManager:   rm,
-		cacheSize:     cacheSize,
-		fetchInterval: 10 * time.Second,
-		ctx:           ctx,
-		cancel:        cancel,
+		addr:           addr,
+		webFS:          webFS,
+		rateLimiter:    rl,
+		logger:         slog.Default(),
+		mode:           ModeSaaS,
+		sessions:       make(map[string]*RepoSession),
+		repoManager:    rm,
+		allowedOrigins: allowedOrigins,
+		cacheSize:      cacheSize,
+		fetchInterval:  10 * time.Second,
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 }
 
@@ -222,19 +227,10 @@ func (s *Server) Start() error {
 	// logging in SaaS mode.
 	handler := requestLogger(s.logger, mux)
 	if s.mode == ModeSaaS {
-		handler = corsMiddleware(handler)
+		handler = corsMiddleware(s.allowedOrigins, handler)
 	}
 
-	// WriteTimeout must remain 0 because WebSocket connections are long-lived.
-	// Non-WebSocket handlers enforce per-response write deadlines via the
-	// writeDeadline middleware applied at the route level.
-	s.httpServer = &http.Server{
-		Addr:         s.addr,
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0,
-		IdleTimeout:  120 * time.Second,
-	}
+	s.httpServer = s.newHTTPServer(handler)
 
 	if s.mode == ModeLocal {
 		s.wg.Add(1)
@@ -259,6 +255,23 @@ func (s *Server) modeString() string {
 		return "local"
 	}
 	return "saas"
+}
+
+// newHTTPServer builds the net/http server with explicit production-safe
+// timeout and header size limits.
+func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
+	// WriteTimeout must remain 0 because WebSocket connections are long-lived.
+	// Non-WebSocket handlers enforce per-response write deadlines via the
+	// writeDeadline middleware applied at the route level.
+	return &http.Server{
+		Addr:              s.addr,
+		Handler:           handler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      0,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
 }
 
 // handleRepos dispatches /api/repos to the correct handler based on HTTP method.
@@ -310,7 +323,8 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 	// expect in local mode (e.g. /api/tree/{hash}).
 	session, err := s.getOrCreateSession(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.logger.Error("Failed to get or create session", "id", id, "err", err)
+		http.Error(w, "Repository not available", http.StatusNotFound)
 		return
 	}
 
