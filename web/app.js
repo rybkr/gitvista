@@ -219,6 +219,26 @@ function bootstrapGraph(root, repoId) {
     let initialDeltaApplied = false;
 
     const graph = createGraph(root, {
+        fetchGraphCommits: async (hashes) => {
+            if (!Array.isArray(hashes) || hashes.length === 0) return [];
+            const batches = [];
+            const CHUNK = 200; // keep URL/query size safely bounded
+            for (let i = 0; i < hashes.length; i += CHUNK) {
+                batches.push(hashes.slice(i, i + CHUNK));
+            }
+
+            const all = [];
+            for (const batch of batches) {
+                const query = encodeURIComponent(batch.join(","));
+                const resp = await apiFetch(apiUrl(`/graph/commits?hashes=${query}`));
+                if (!resp.ok) throw new Error("Failed to fetch graph commits");
+                const payload = await resp.json();
+                if (Array.isArray(payload?.commits)) {
+                    all.push(...payload.commits);
+                }
+            }
+            return all;
+        },
         onCommitTreeClick: (commit) => {
             if (sidebar.getActivePanel() === "file-explorer") {
                 fileExplorer.openCommit(commit);

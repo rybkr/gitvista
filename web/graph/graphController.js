@@ -267,6 +267,7 @@ function buildFilterPredicate(searchState, filterState, branches, commits, stash
  *
  * @param {HTMLElement} rootElement DOM node that hosts the canvas.
  * @param {{
+ *   fetchGraphCommits?: (hashes: string[]) => Promise<import("./types.js").GraphCommit[]>,
  *   onCommitTreeClick?: (commit: import("./types.js").GraphCommit) => void,
  *   onCommitSelect?: (hash: string | null) => void,
  * }} [options] Optional callbacks.
@@ -304,6 +305,9 @@ export function createGraphController(rootElement, options = {}) {
     let searchResultCache = null;   // filtered subset matching search
     let searchResultIndex = -1;     // current position (-1 = unset)
     let rafId = null;
+    const hydrationPending = new Set();
+    const hydrationInflight = new Set();
+    let hydrationFlushTimer = null;
 
     // Create both layout strategies
     const forceStrategy = new ForceStrategy({
@@ -571,6 +575,79 @@ export function createGraphController(rootElement, options = {}) {
         }
     };
 
+    function commitNeedsHydration(commit) {
+        if (!commit) return false;
+        const hasMessage = typeof commit.message === "string" && commit.message.length > 0;
+        const hasTree = typeof commit.tree === "string" && commit.tree.length > 0;
+        const hasAuthorIdentity =
+            !!(commit.author?.name || commit.author?.Name || commit.author?.email || commit.author?.Email);
+        // Lightweight bootstrap stubs contain topology + timestamps only.
+        return !hasMessage && !hasTree && !hasAuthorIdentity;
+    }
+
+    function enqueueHydration(hashes) {
+        if (!options.fetchGraphCommits || !Array.isArray(hashes) || hashes.length === 0) return;
+        for (const hash of hashes) {
+            if (!hash || hydrationInflight.has(hash)) continue;
+            const commit = commits.get(hash);
+            if (!commitNeedsHydration(commit)) continue;
+            hydrationPending.add(hash);
+        }
+        scheduleHydrationFlush();
+    }
+
+    function scheduleHydrationFlush() {
+        if (!options.fetchGraphCommits || hydrationPending.size === 0 || hydrationFlushTimer !== null) {
+            return;
+        }
+        hydrationFlushTimer = setTimeout(flushHydrationBatch, 50);
+    }
+
+    async function flushHydrationBatch() {
+        hydrationFlushTimer = null;
+        if (!options.fetchGraphCommits || hydrationPending.size === 0) return;
+
+        const batch = [];
+        for (const hash of hydrationPending) {
+            hydrationPending.delete(hash);
+            hydrationInflight.add(hash);
+            batch.push(hash);
+            if (batch.length >= 500) break;
+        }
+        if (batch.length === 0) return;
+
+        try {
+            const hydrated = await options.fetchGraphCommits(batch);
+            let updated = 0;
+            for (const commit of hydrated ?? []) {
+                if (!commit?.hash) continue;
+                commits.set(commit.hash, commit);
+                for (const node of nodes) {
+                    if (node.type === "commit" && node.hash === commit.hash) {
+                        node.commit = commit;
+                    }
+                }
+                updated++;
+            }
+            if (updated > 0) {
+                // Search/filter matchers depend on commit message/author fields.
+                if (state.searchState || state.filterState?.focusBranch) {
+                    applyDimmingFromPredicate();
+                }
+                render();
+            }
+        } catch {
+            // Keep UI responsive; failed hydrations can be retried by future viewport updates.
+        } finally {
+            for (const hash of batch) {
+                hydrationInflight.delete(hash);
+            }
+            if (hydrationPending.size > 0) {
+                scheduleHydrationFlush();
+            }
+        }
+    }
+
     /**
      * Centers the viewport on the commit node with the given hash.
      * If the hash is null/undefined or not found among current nodes, falls back
@@ -621,6 +698,7 @@ export function createGraphController(rootElement, options = {}) {
         if (!node) {
             return;
         }
+        enqueueHydration([hash, ...(node.commit?.parents ?? [])]);
         selectedHash = hash;
         showTooltip(node);
         options.onCommitSelect?.(hash);
@@ -1530,6 +1608,15 @@ export function createGraphController(rootElement, options = {}) {
         // 4. Query ViewportWindow
         viewportWindow.invalidate();
         const { entries } = viewportWindow.update(zoomTransform, viewportWidth, viewportHeight);
+        const hashesToHydrate = [];
+        for (const entry of entries) {
+            hashesToHydrate.push(entry.hash);
+            const commit = commits.get(entry.hash);
+            for (const parent of commit?.parents ?? []) {
+                hashesToHydrate.push(parent);
+            }
+        }
+        enqueueHydration(hashesToHydrate);
 
         // 5. Materialize nodes for visible commits
         const { nodes: commitNodes } = nodeMaterializer.synchronize(entries, commits);
@@ -1608,6 +1695,16 @@ export function createGraphController(rootElement, options = {}) {
      * @param {import("./state/commitIndex.js").CommitEntry[]} entries Visible entries from ViewportWindow.
      */
     function rematerializeFromViewport(entries) {
+        const hashesToHydrate = [];
+        for (const entry of entries) {
+            hashesToHydrate.push(entry.hash);
+            const commit = commits.get(entry.hash);
+            for (const parent of commit?.parents ?? []) {
+                hashesToHydrate.push(parent);
+            }
+        }
+        enqueueHydration(hashesToHydrate);
+
         const { nodes: commitNodes, added, removed } = nodeMaterializer.synchronize(entries, commits);
         if (added.length === 0 && removed.length === 0) return;
 
@@ -2003,6 +2100,10 @@ export function createGraphController(rootElement, options = {}) {
     }
 
     function destroy() {
+        if (hydrationFlushTimer !== null) {
+            clearTimeout(hydrationFlushTimer);
+            hydrationFlushTimer = null;
+        }
         if (rafId !== null) {
             cancelAnimationFrame(rafId);
             rafId = null;
