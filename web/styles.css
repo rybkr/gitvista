@@ -6123,3 +6123,362 @@ canvas {
         max-height: min(64vh, 540px);
     }
 }
+
+/* ── Cohesion + Smoothness pass (subtle, palette-preserving) ───────────── */
+
+:root {
+    --gv-radius-sm: 8px;
+    --gv-radius-md: 10px;
+    --gv-radius-lg: 12px;
+    --gv-ease: 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    --gv-focus: 0 0 0 2px color-mix(in srgb, var(--node-color) 22%, transparent);
+}
+
+body {
+    background:
+        radial-gradient(900px 360px at 15% -15%, color-mix(in srgb, var(--node-color) 8%, transparent), transparent 70%),
+        var(--bg-color);
+}
+
+#root {
+    background: color-mix(in srgb, var(--surface-color) 94%, var(--bg-color));
+}
+
+.activity-bar,
+.sidebar-panel,
+.workbench-tabbar,
+.canvas-toolbar,
+.graph-breadcrumb {
+    backdrop-filter: blur(4px);
+}
+
+.activity-bar-icon,
+.workbench-tab,
+.workbench-group-btn,
+.sidebar-dock-btn,
+.sidebar-panel-close,
+.commit-search,
+.commit-search-clear,
+.repo-landing__cta-primary,
+.repo-landing__cta-secondary,
+.repo-landing__card,
+.repo-landing__card-cta,
+.repo-landing__input,
+.repo-landing__add-btn,
+.repo-landing__item,
+.repo-landing__copy-btn,
+.back-to-repos {
+    transition:
+        color var(--gv-ease),
+        background-color var(--gv-ease),
+        border-color var(--gv-ease),
+        box-shadow var(--gv-ease),
+        transform var(--gv-ease),
+        opacity var(--gv-ease);
+}
+
+.workbench-tabbar {
+    min-height: 40px;
+    padding: 0 10px;
+    background: color-mix(in srgb, var(--surface-color) 92%, var(--bg-color));
+}
+
+.workbench-tab {
+    border-radius: var(--gv-radius-md) var(--gv-radius-md) 0 0;
+    padding: 0 10px;
+}
+
+.workbench-tab:hover {
+    transform: translateY(-1px);
+}
+
+.workbench-tab.is-active {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--node-color) 26%, transparent);
+}
+
+.sidebar-panel-header {
+    padding: 11px 12px;
+}
+
+.sidebar-panel-title {
+    letter-spacing: 0.05em;
+}
+
+.info-bar {
+    border-bottom-color: color-mix(in srgb, var(--border-color) 82%, transparent);
+}
+
+.info-bar-header {
+    min-height: 34px;
+}
+
+.info-bar-content {
+    gap: 3px;
+    padding: 0 12px 10px;
+}
+
+.info-bar-row {
+    border-radius: 6px;
+    padding: 4px 6px;
+}
+
+.commit-search {
+    border-radius: var(--gv-radius-md);
+    background: color-mix(in srgb, var(--surface-color) 92%, var(--bg-color));
+}
+
+.commit-search:focus-within,
+.commit-search.is-focused,
+.repo-landing__input:focus,
+.analytics-period-input:focus,
+.merge-preview-select:focus {
+    box-shadow: var(--gv-focus);
+}
+
+.commit-search-dropdown {
+    border-radius: var(--gv-radius-md);
+}
+
+.repo-landing {
+    padding: 0 28px 0;
+}
+
+.repo-landing__hero {
+    padding: 72px 0 56px;
+}
+
+.repo-landing__section {
+    padding: 42px 0;
+}
+
+.repo-landing__card,
+.repo-landing__item,
+.repo-landing__code-block {
+    border-radius: var(--gv-radius-md);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--surface-color) 70%, transparent);
+}
+
+.repo-landing__card--ready:hover,
+.repo-landing__item--ready:hover {
+    transform: translateY(-1px);
+}
+
+.repo-landing__cta-primary,
+.repo-landing__add-btn,
+.repo-landing__card-cta {
+    border-radius: var(--gv-radius-sm);
+}
+
+.repo-landing__cta-secondary,
+.repo-landing__input,
+.repo-landing__copy-btn,
+.back-to-repos {
+    border-radius: var(--gv-radius-sm);
+}
+
+.connection-banner {
+    border-radius: var(--gv-radius-lg);
+    border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
+}
+
+.graph-minimap {
+    border-radius: var(--gv-radius-md);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 480px) {
+    .repo-landing {
+        padding: 0 16px 0;
+    }
+
+    .repo-landing__hero {
+        padding: 44px 0 36px;
+    }
+
+    .repo-landing__section {
+        padding: 30px 0;
+    }
+}
+
+/* ── Hard theme sync for Dockview + key panels ─────────────────────────── */
+
+/*
+ * Dockview creates drag-preview/overlay elements that may be mounted outside
+ * .workbench-dock. Keep theme vars on :root so those elements inherit correctly.
+ */
+:root {
+    --dv-background-color: var(--surface-color);
+    --dv-separator-border: var(--border-color);
+    --dv-tab-divider-color: var(--border-color);
+    --dv-tabs-and-actions-container-background-color: color-mix(in srgb, var(--surface-color) 88%, var(--bg-color));
+    --dv-activegroup-visiblepanel-tab-background-color: var(--surface-color);
+    --dv-activegroup-visiblepanel-tab-color: var(--text-color);
+    --dv-activegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--surface-color) 90%, var(--bg-color));
+    --dv-activegroup-hiddenpanel-tab-color: var(--text-secondary);
+    --dv-inactivegroup-visiblepanel-tab-background-color: color-mix(in srgb, var(--surface-color) 90%, var(--bg-color));
+    --dv-inactivegroup-visiblepanel-tab-color: var(--text-secondary);
+    --dv-inactivegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--surface-color) 92%, var(--bg-color));
+    --dv-inactivegroup-hiddenpanel-tab-color: var(--text-secondary);
+}
+
+/* Ensure panel roots always paint with current theme surface */
+.index-view,
+.file-explorer,
+.staging-view,
+.merge-preview-view,
+.merge-preview-file-list,
+.merge-preview-branch-selectors,
+.sidebar-panel-content,
+.sidebar-panel-tab-content {
+    background: var(--surface-color);
+    color: var(--text-color);
+}
+
+/* Dockview theme variables (acts as source of truth for tab/panel chrome) */
+.workbench-dock {
+    --dv-background-color: var(--surface-color);
+    --dv-separator-border: var(--border-color);
+    --dv-tab-divider-color: var(--border-color);
+    --dv-tabs-and-actions-container-background-color: color-mix(in srgb, var(--surface-color) 88%, var(--bg-color));
+    --dv-activegroup-visiblepanel-tab-background-color: var(--surface-color);
+    --dv-activegroup-visiblepanel-tab-color: var(--text-color);
+    --dv-activegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--surface-color) 90%, var(--bg-color));
+    --dv-activegroup-hiddenpanel-tab-color: var(--text-secondary);
+    --dv-inactivegroup-visiblepanel-tab-background-color: color-mix(in srgb, var(--surface-color) 90%, var(--bg-color));
+    --dv-inactivegroup-visiblepanel-tab-color: var(--text-secondary);
+    --dv-inactivegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--surface-color) 92%, var(--bg-color));
+    --dv-inactivegroup-hiddenpanel-tab-color: var(--text-secondary);
+}
+
+/* Fallback hard overrides for Dockview classnames across versions */
+.workbench-dock [class*="dv-"] {
+    color: inherit;
+}
+
+.workbench-dock .dv-groupview,
+.workbench-dock .dv-group-container,
+.workbench-dock .dv-content-container,
+.workbench-dock .dv-tabs-and-actions-container,
+.workbench-dock .dv-panel-container {
+    background: var(--surface-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+.workbench-dock .dv-tabs-and-actions-container {
+    background: color-mix(in srgb, var(--surface-color) 88%, var(--bg-color)) !important;
+}
+
+.workbench-dock .dv-tab {
+    color: var(--text-secondary) !important;
+}
+
+.workbench-dock .dv-tab:hover {
+    color: var(--text-color) !important;
+    background: color-mix(in srgb, var(--node-color) 8%, transparent) !important;
+}
+
+.workbench-dock .dv-active-tab,
+.workbench-dock .dv-tab.dv-active-tab,
+.workbench-dock .dv-tab[aria-selected="true"] {
+    color: var(--text-color) !important;
+    background: var(--surface-color) !important;
+}
+
+.workbench-dock .dv-sash,
+.workbench-dock .dv-separator,
+.workbench-dock .dv-tab-divider {
+    border-color: var(--border-color) !important;
+    background-color: color-mix(in srgb, var(--border-color) 65%, transparent) !important;
+}
+
+/* Dragging states / previews */
+.dv-drag-image,
+.dv-drag-and-drop-overlay,
+.dv-drop-target,
+.dv-drop-target-preview {
+    background: var(--surface-color) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-color) !important;
+}
+
+.dv-drag-image .dv-tab,
+.dv-drag-image [class*="dv-tab"] {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Dockview clickable tabs ("Graph", "Repository", close X) */
+.workbench-dock [role="tablist"] {
+    background: color-mix(in srgb, var(--surface-color) 88%, var(--bg-color)) !important;
+    border-color: var(--border-color) !important;
+}
+
+.workbench-dock [role="tab"] {
+    background: color-mix(in srgb, var(--surface-color) 90%, var(--bg-color)) !important;
+    color: var(--text-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+.workbench-dock [role="tab"]:hover {
+    background: color-mix(in srgb, var(--node-color) 8%, var(--surface-color)) !important;
+    color: var(--text-color) !important;
+}
+
+.workbench-dock [role="tab"][aria-selected="true"] {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--node-color) 26%, transparent) !important;
+}
+
+.workbench-dock [role="tab"] button,
+.workbench-dock [role="tab"] [aria-label*="Close"],
+.workbench-dock [role="tab"] [title*="Close"] {
+    color: var(--text-secondary) !important;
+    background: transparent !important;
+}
+
+.workbench-dock [role="tab"]:hover button,
+.workbench-dock [role="tab"]:hover [aria-label*="Close"],
+.workbench-dock [role="tab"]:hover [title*="Close"] {
+    color: var(--text-color) !important;
+}
+
+/* Dockview inactive/hidden tabs: force theme correctness via Dockview classes */
+.dockview-theme-light .dv-tabs-and-actions-container,
+.dockview-theme-dark .dv-tabs-and-actions-container {
+    background: color-mix(in srgb, var(--surface-color) 88%, var(--bg-color)) !important;
+    border-color: var(--border-color) !important;
+}
+
+.dockview-theme-light .dv-tab,
+.dockview-theme-dark .dv-tab {
+    background: color-mix(in srgb, var(--surface-color) 90%, var(--bg-color)) !important;
+    color: var(--text-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+.dockview-theme-light .dv-tab:hover,
+.dockview-theme-dark .dv-tab:hover {
+    background: color-mix(in srgb, var(--node-color) 8%, var(--surface-color)) !important;
+    color: var(--text-color) !important;
+}
+
+.dockview-theme-light .dv-tab.dv-active-tab,
+.dockview-theme-dark .dv-tab.dv-active-tab,
+.dockview-theme-light .dv-tab[aria-selected="true"],
+.dockview-theme-dark .dv-tab[aria-selected="true"] {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+}
+
+/* Ensure close icon in inactive tabs also follows theme */
+.dockview-theme-light .dv-tab button,
+.dockview-theme-dark .dv-tab button,
+.dockview-theme-light .dv-tab [aria-label*="Close"],
+.dockview-theme-dark .dv-tab [aria-label*="Close"],
+.dockview-theme-light .dv-tab [title*="Close"],
+.dockview-theme-dark .dv-tab [title*="Close"] {
+    color: inherit !important;
+    background: transparent !important;
+}

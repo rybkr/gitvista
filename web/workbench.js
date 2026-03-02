@@ -105,9 +105,13 @@ function saveLayout(api) {
 }
 
 function getThemeClass() {
-    return document.documentElement.getAttribute("data-theme") === "light"
-        ? "dockview-theme-light"
-        : "dockview-theme-dark";
+    const explicit = document.documentElement.getAttribute("data-theme");
+    if (explicit === "light") return "dockview-theme-light";
+    if (explicit === "dark") return "dockview-theme-dark";
+
+    // "system" mode: mirror OS preference so Dockview tabs/panels stay in sync.
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false;
+    return prefersDark ? "dockview-theme-dark" : "dockview-theme-light";
 }
 
 export function createWorkbench(views) {
@@ -245,11 +249,24 @@ export function createWorkbench(views) {
         openView("graph");
     }
 
-    const observer = new MutationObserver(() => {
+    function applyDockThemeClass() {
         dockContainer.classList.remove("dockview-theme-light", "dockview-theme-dark");
         dockContainer.classList.add(getThemeClass());
+    }
+
+    const observer = new MutationObserver(() => {
+        applyDockThemeClass();
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const onSystemThemeChange = () => {
+        // Only relevant when explicit theme is not set ("system" mode).
+        if (!document.documentElement.hasAttribute("data-theme")) {
+            applyDockThemeClass();
+        }
+    };
+    media?.addEventListener?.("change", onSystemThemeChange);
 
     return {
         el,
