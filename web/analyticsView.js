@@ -387,6 +387,7 @@ function computeReworkRate(commits, diffStats, periodMonths) {
  */
 export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetchGraphCommits, fetchAnalytics }) {
     let selectedPeriod = "All";
+    let customRange = { start: "", end: "" };
     const ANALYTICS_HYDRATE_CHUNK = 200;
     const ANALYTICS_HYDRATE_MAX = 5000;
     let hydrationInFlight = false;
@@ -508,11 +509,53 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         btn.textContent = p.label;
         btn.addEventListener("click", () => {
             selectedPeriod = p.label;
+            customStatus.textContent = "";
             update();
         });
         periodSelector.appendChild(btn);
         periodButtons.push({ btn, period: p });
     }
+
+    const customWrap = document.createElement("div");
+    customWrap.className = "analytics-period-custom";
+    const customStatus = document.createElement("span");
+    customStatus.className = "analytics-period-custom-status";
+
+    const startInput = document.createElement("input");
+    startInput.type = "date";
+    startInput.className = "analytics-period-input";
+    startInput.setAttribute("aria-label", "Analytics start date");
+
+    const endInput = document.createElement("input");
+    endInput.type = "date";
+    endInput.className = "analytics-period-input";
+    endInput.setAttribute("aria-label", "Analytics end date");
+
+    const applyCustomBtn = document.createElement("button");
+    applyCustomBtn.className = "analytics-period-btn";
+    applyCustomBtn.textContent = "Apply";
+    applyCustomBtn.addEventListener("click", () => {
+        const start = startInput.value;
+        const end = endInput.value;
+        if (!start || !end) {
+            customStatus.textContent = "Pick both start and end.";
+            return;
+        }
+        if (start > end) {
+            customStatus.textContent = "Start must be before end.";
+            return;
+        }
+        customRange = { start, end };
+        selectedPeriod = "Custom";
+        customStatus.textContent = `Range: ${start} to ${end}`;
+        update();
+    });
+
+    customWrap.appendChild(startInput);
+    customWrap.appendChild(endInput);
+    customWrap.appendChild(applyCustomBtn);
+    customWrap.appendChild(customStatus);
+    periodSelector.appendChild(customWrap);
 
     // ── Chart container + canvas ──
     const chartContainer = document.createElement("div");
@@ -657,13 +700,14 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
 
     /** Maps canvas mouse position to data coordinates. Returns week index or -1. */
     function hitTest(mouseX) {
-        if (!currentData || currentData.weeks.length < 2) return -1;
+        const weeks = Array.isArray(currentData?.weeks) ? currentData.weeks : [];
+        if (weeks.length < 2) return -1;
         const rect = canvas.getBoundingClientRect();
         const plotWidth = rect.width - padding.left - padding.right;
         const x = mouseX - padding.left;
         if (x < 0 || x > plotWidth) return -1;
-        const idx = Math.round((x / plotWidth) * (currentData.weeks.length - 1));
-        return Math.max(0, Math.min(currentData.weeks.length - 1, idx));
+        const idx = Math.round((x / plotWidth) * (weeks.length - 1));
+        return Math.max(0, Math.min(weeks.length - 1, idx));
     }
 
     canvas.addEventListener("mousemove", (e) => {
@@ -705,8 +749,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
 
     /** Renders the chart onto the canvas. */
     function drawChart(data) {
-        currentData = data;
-        const { weeks } = data;
+        const weeks = Array.isArray(data?.weeks) ? data.weeks : [];
+        currentData = { ...data, weeks };
 
         const rect = chartContainer.getBoundingClientRect();
         const width = Math.max(rect.width, 100);
@@ -1246,6 +1290,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         const commits = getCommits();
         const period = PERIODS.find((p) => p.label === selectedPeriod) || PERIODS[3];
         const periodKey = period.label === "All" ? "all" : period.label.toLowerCase();
+        const usingCustomRange = selectedPeriod === "Custom" && customRange.start && customRange.end;
 
         // Update period button states
         for (const { btn, period: p } of periodButtons) {
@@ -1277,8 +1322,21 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
 
         if (fetchAnalytics) {
             try {
-                const payload = await fetchAnalytics({ period: periodKey });
-                const velocity = payload?.velocity || { weeks: [], totalCommits: 0, avgPerWeek: 0, bestWeek: null };
+                const payload = usingCustomRange
+                    ? await fetchAnalytics({ start: customRange.start, end: customRange.end })
+                    : await fetchAnalytics({ period: periodKey });
+                if (usingCustomRange) {
+                    const s = payload?.start?.slice?.(0, 10) || customRange.start;
+                    const e = payload?.end?.slice?.(0, 10) || customRange.end;
+                    customStatus.textContent = `Range: ${s} to ${e}`;
+                } else {
+                    customStatus.textContent = "";
+                }
+                const velocityRaw = payload?.velocity || { weeks: [], totalCommits: 0, avgPerWeek: 0, bestWeek: null };
+                const velocity = {
+                    ...velocityRaw,
+                    weeks: Array.isArray(velocityRaw?.weeks) ? velocityRaw.weeks : [],
+                };
                 totalStat.value.textContent = Number(velocity.totalCommits || 0).toLocaleString();
                 avgStat.value.textContent = Number(velocity.avgPerWeek || 0).toFixed(1);
                 bestStat.value.textContent = velocity.bestWeek
@@ -1286,8 +1344,13 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
                     : "—";
                 drawChart(velocity);
 
-                drawAuthorChart(payload?.authors || { authors: [] });
-                drawHeatmap(payload?.heatmap || { grid: Array.from({ length: 7 }, () => Array(24).fill(0)), max: 0 });
+                const authors = payload?.authors || { authors: [] };
+                authors.authors = Array.isArray(authors?.authors) ? authors.authors : [];
+                drawAuthorChart(authors);
+
+                const heatmap = payload?.heatmap || { grid: Array.from({ length: 7 }, () => Array(24).fill(0)), max: 0 };
+                heatmap.grid = Array.isArray(heatmap?.grid) ? heatmap.grid : Array.from({ length: 7 }, () => Array(24).fill(0));
+                drawHeatmap(heatmap);
 
                 const merges = payload?.merges || {};
                 mergeCountStat.value.textContent = Number(merges.mergeCount || 0).toLocaleString();
@@ -1295,11 +1358,13 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
                 mergesPerWeekStat.value.textContent = Number(merges.mergesPerWeek || 0).toFixed(1);
 
                 const changeSize = payload?.changeSize || { buckets: SIZE_BUCKETS.map((b) => ({ label: b.label, count: 0 })), median: 0, avgSize: 0 };
+                changeSize.buckets = Array.isArray(changeSize?.buckets) ? changeSize.buckets : [];
                 medianSizeStat.value.textContent = `${Number(changeSize.median || 0)} files`;
                 avgSizeStat.value.textContent = `${Number(changeSize.avgSize || 0).toFixed(1)} files`;
                 drawChangeSizeChart(changeSize);
 
                 const rework = payload?.rework || { weeks: [], avgRate: 0 };
+                rework.weeks = Array.isArray(rework?.weeks) ? rework.weeks : [];
                 avgReworkStat.value.textContent = `${Number(rework.avgRate || 0).toFixed(1)}%`;
                 drawReworkChart(rework);
 
@@ -1311,7 +1376,11 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
                 reworkSection.querySelector(".analytics-section-title").style.opacity = "";
                 return;
             } catch {
-                // Fall back to local analytics path.
+                if (usingCustomRange) {
+                    customStatus.textContent = "Failed to load selected range.";
+                    return;
+                }
+                // Fall back to local analytics path for period presets.
             }
         }
 

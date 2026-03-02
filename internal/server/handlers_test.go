@@ -696,6 +696,44 @@ func TestHandleAnalytics_InvalidPeriod(t *testing.T) {
 	}
 }
 
+func TestHandleAnalytics_RangeQuery(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	req := requestWithSession("GET", "/api/analytics?start=2024-01-01&end=2024-12-31", session)
+	w := httptest.NewRecorder()
+	s.handleAnalytics(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := response["start"]; !ok {
+		t.Error("response missing 'start'")
+	}
+	if _, ok := response["end"]; !ok {
+		t.Error("response missing 'end'")
+	}
+}
+
+func TestHandleAnalytics_RangeMissingEnd(t *testing.T) {
+	session := newTestSession(nil)
+	s := newTestServer(t)
+
+	req := requestWithSession("GET", "/api/analytics?start=2024-01-01", session)
+	w := httptest.NewRecorder()
+	s.handleAnalytics(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandleAnalytics_MethodNotAllowed(t *testing.T) {
 	session := newTestSession(nil)
 	s := newTestServer(t)

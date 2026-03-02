@@ -191,9 +191,16 @@ function bootstrapGraph(root, repoId) {
         getCommits: () => graph.getCommits(),
         getTags: () => graph.getTags?.() ?? new Map(),
         fetchGraphCommits,
-        fetchAnalytics: async ({ period } = {}) => {
-            const p = typeof period === "string" && period ? period : "all";
-            const resp = await apiFetch(apiUrl(`/analytics?period=${encodeURIComponent(p)}`));
+        fetchAnalytics: async ({ period, start, end } = {}) => {
+            const params = new URLSearchParams();
+            if (typeof start === "string" && start && typeof end === "string" && end) {
+                params.set("start", start);
+                params.set("end", end);
+            } else {
+                const p = typeof period === "string" && period ? period : "all";
+                params.set("period", p);
+            }
+            const resp = await apiFetch(apiUrl(`/analytics?${params.toString()}`));
             if (!resp.ok) throw new Error("Failed to fetch analytics");
             return resp.json();
         },

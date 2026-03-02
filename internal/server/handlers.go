@@ -920,14 +920,17 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	period := r.URL.Query().Get("period")
-	_, canonical, err := parseAnalyticsPeriod(period)
+	query, err := parseAnalyticsQuery(
+		r.URL.Query().Get("period"),
+		r.URL.Query().Get("start"),
+		r.URL.Query().Get("end"),
+	)
 	if err != nil {
-		http.Error(w, "Invalid period", http.StatusBadRequest)
+		http.Error(w, "Invalid analytics query", http.StatusBadRequest)
 		return
 	}
 
-	cacheKey := analyticsCacheKey(repo, canonical)
+	cacheKey := analyticsCacheKey(repo, query.cacheKey)
 	if cached, ok := session.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(cached); err != nil {
@@ -936,9 +939,9 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	analytics, err := buildAnalytics(repo, canonical)
+	analytics, err := buildAnalytics(repo, query)
 	if err != nil {
-		s.logger.Error("Failed to build analytics", "period", canonical, "err", err)
+		s.logger.Error("Failed to build analytics", "query", query.cacheKey, "err", err)
 		http.Error(w, "Failed to build analytics", http.StatusInternalServerError)
 		return
 	}

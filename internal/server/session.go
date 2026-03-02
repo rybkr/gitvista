@@ -231,7 +231,10 @@ func (rs *RepoSession) scheduleAnalyticsPrewarm(repo *gitcore.Repository) {
 				continue
 			}
 
-			analytics, err := buildAnalytics(repo, period)
+			analytics, err := buildAnalytics(repo, analyticsQuery{
+				period:   period,
+				cacheKey: period,
+			})
 			if err != nil {
 				rs.logger.Warn("Analytics prewarm failed", "period", period, "err", err)
 				continue

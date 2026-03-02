@@ -30,6 +30,8 @@ var analyticsSizeBuckets = []struct {
 
 type analyticsResponse struct {
 	Period       string                `json:"period"`
+	Start        string                `json:"start,omitempty"`
+	End          string                `json:"end,omitempty"`
 	Velocity     analyticsVelocity     `json:"velocity"`
 	Authors      analyticsAuthors      `json:"authors"`
 	Heatmap      analyticsHeatmap      `json:"heatmap"`
@@ -122,8 +124,16 @@ type analyticsDiffEntry struct {
 	Files []string
 }
 
-func buildAnalytics(repo *gitcore.Repository, period string) (*analyticsResponse, error) {
-	months, canonical, err := parseAnalyticsPeriod(period)
+type analyticsQuery struct {
+	period   string
+	cacheKey string
+	hasRange bool
+	start    time.Time
+	end      time.Time // inclusive
+}
+
+func buildAnalytics(repo *gitcore.Repository, q analyticsQuery) (*analyticsResponse, error) {
+	months, canonical, err := parseAnalyticsPeriod(q.period)
 	if err != nil {
 		return nil, err
 	}
@@ -142,10 +152,15 @@ func buildAnalytics(repo *gitcore.Repository, period string) (*analyticsResponse
 		})
 	}
 	if len(entries) == 0 {
-		return &analyticsResponse{
+		resp := &analyticsResponse{
 			Period:      canonical,
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		}, nil
+		}
+		if q.hasRange {
+			resp.Start = q.start.Format(time.RFC3339)
+			resp.End = q.end.Format(time.RFC3339)
+		}
+		return resp, nil
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -155,24 +170,31 @@ func buildAnalytics(repo *gitcore.Repository, period string) (*analyticsResponse
 		return entries[i].TS.Before(entries[j].TS)
 	})
 
-	cutoff := time.Time{}
-	if months > 0 {
-		now := time.Now().UTC()
-		cutoff = now.AddDate(0, -months, 0)
-	}
-
 	filtered := make([]analyticsCommitEntry, 0, len(entries))
 	for _, e := range entries {
-		if !cutoff.IsZero() && e.TS.Before(cutoff) {
-			continue
+		if q.hasRange {
+			if e.TS.Before(q.start) || e.TS.After(q.end) {
+				continue
+			}
+		} else if months > 0 {
+			now := time.Now().UTC()
+			cutoff := now.AddDate(0, -months, 0)
+			if e.TS.Before(cutoff) {
+				continue
+			}
 		}
 		filtered = append(filtered, e)
 	}
 	if len(filtered) == 0 {
-		return &analyticsResponse{
+		resp := &analyticsResponse{
 			Period:      canonical,
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		}, nil
+		}
+		if q.hasRange {
+			resp.Start = q.start.Format(time.RFC3339)
+			resp.End = q.end.Format(time.RFC3339)
+		}
+		return resp, nil
 	}
 
 	velocity := computeVelocity(filtered)
@@ -181,7 +203,7 @@ func buildAnalytics(repo *gitcore.Repository, period string) (*analyticsResponse
 	merges := computeMerges(filtered)
 	changeSize, rework, coverage := computeDiffAnalytics(repo, commitsMap, filtered)
 
-	return &analyticsResponse{
+	resp := &analyticsResponse{
 		Period:       canonical,
 		Velocity:     velocity,
 		Authors:      authors,
@@ -191,11 +213,16 @@ func buildAnalytics(repo *gitcore.Repository, period string) (*analyticsResponse
 		Rework:       rework,
 		DiffCoverage: coverage,
 		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
-	}, nil
+	}
+	if q.hasRange {
+		resp.Start = q.start.Format(time.RFC3339)
+		resp.End = q.end.Format(time.RFC3339)
+	}
+	return resp, nil
 }
 
-func analyticsCacheKey(repo *gitcore.Repository, period string) string {
-	return "analytics:v1:" + period + ":head:" + string(repo.Head()) + ":count:" + strconv.Itoa(repo.CommitCount())
+func analyticsCacheKey(repo *gitcore.Repository, queryPart string) string {
+	return "analytics:v1:" + queryPart + ":head:" + string(repo.Head()) + ":count:" + strconv.Itoa(repo.CommitCount())
 }
 
 func parseAnalyticsPeriod(raw string) (months int, canonical string, err error) {
@@ -211,6 +238,63 @@ func parseAnalyticsPeriod(raw string) (months int, canonical string, err error) 
 	default:
 		return 0, "", fmt.Errorf("invalid period: %q", raw)
 	}
+}
+
+func parseAnalyticsQuery(periodRaw string, startRaw string, endRaw string) (analyticsQuery, error) {
+	periodRaw = strings.TrimSpace(periodRaw)
+	startRaw = strings.TrimSpace(startRaw)
+	endRaw = strings.TrimSpace(endRaw)
+
+	if startRaw == "" && endRaw == "" {
+		_, canonical, err := parseAnalyticsPeriod(periodRaw)
+		if err != nil {
+			return analyticsQuery{}, err
+		}
+		return analyticsQuery{
+			period:   canonical,
+			cacheKey: canonical,
+		}, nil
+	}
+	if startRaw == "" || endRaw == "" {
+		return analyticsQuery{}, fmt.Errorf("both start and end are required")
+	}
+
+	start, err := parseAnalyticsDate(startRaw, false)
+	if err != nil {
+		return analyticsQuery{}, err
+	}
+	end, err := parseAnalyticsDate(endRaw, true)
+	if err != nil {
+		return analyticsQuery{}, err
+	}
+	if end.Before(start) {
+		return analyticsQuery{}, fmt.Errorf("end before start")
+	}
+
+	return analyticsQuery{
+		period:   "all",
+		cacheKey: "range:" + start.Format("20060102") + "-" + end.Format("20060102"),
+		hasRange: true,
+		start:    start,
+		end:      end,
+	}, nil
+}
+
+func parseAnalyticsDate(raw string, endOfDay bool) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("empty date")
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t.UTC(), nil
+	}
+	if d, err := time.Parse("2006-01-02", raw); err == nil {
+		if endOfDay {
+			return time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, int(time.Second-time.Nanosecond), time.UTC), nil
+		}
+		return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC), nil
+	}
+	return time.Time{}, fmt.Errorf("invalid date format: %q", raw)
 }
 
 func weekStartUTC(ts time.Time) int64 {
