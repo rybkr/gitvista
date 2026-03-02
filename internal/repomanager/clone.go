@@ -16,12 +16,24 @@ import (
 )
 
 // sshShorthandRe matches SSH shorthand like git@github.com:user/repo.git.
-var sshShorthandRe = regexp.MustCompile(`^([^@]+)@([^:]+):(.+)$`)
+// The user part is restricted to safe characters to prevent injection.
+var sshShorthandRe = regexp.MustCompile(`^([a-zA-Z0-9._-]+)@([^:]+):(.+)$`)
+
+// isAllowedHost checks if a hostname is in the allowed hosts list.
+func isAllowedHost(host string, allowed []string) bool {
+	for _, h := range allowed {
+		if host == h {
+			return true
+		}
+	}
+	return false
+}
 
 // normalizeURL canonicalizes a Git remote URL for deduplication.
 // It lowercases the hostname, strips .git suffix and trailing slashes,
 // removes embedded credentials, and converts SSH shorthand to ssh:// form.
-func normalizeURL(rawURL string) (string, error) {
+// The allowedHosts parameter restricts which hostnames are permitted.
+func normalizeURL(rawURL string, allowedHosts []string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return "", fmt.Errorf("empty URL")
@@ -42,6 +54,13 @@ func normalizeURL(rawURL string) (string, error) {
 
 	if m := sshShorthandRe.FindStringSubmatch(rawURL); m != nil {
 		host := strings.ToLower(m[2])
+		if !isAllowedHost(host, allowedHosts) {
+			return "", fmt.Errorf("hostname %q is not in the allowed hosts list", host)
+		}
+		// Defense-in-depth: block private/internal targets for SSH shorthand too.
+		if isPrivateHost(host) {
+			return "", fmt.Errorf("cloning from private/internal addresses is not allowed")
+		}
 		path := strings.TrimSuffix(m[3], ".git")
 		path = strings.TrimRight(path, "/")
 		return "ssh://" + host + "/" + path, nil
@@ -62,6 +81,12 @@ func normalizeURL(rawURL string) (string, error) {
 		return "", fmt.Errorf("missing hostname")
 	}
 
+	if !isAllowedHost(host, allowedHosts) {
+		return "", fmt.Errorf("hostname %q is not in the allowed hosts list", host)
+	}
+
+	// Defense-in-depth: reject private/internal addresses even if the host
+	// somehow appears in the allowlist.
 	if isPrivateHost(host) {
 		return "", fmt.Errorf("cloning from private/internal addresses is not allowed")
 	}

@@ -2,7 +2,7 @@
 gitvista
 gitvista-cli
 gitcli
-vista
+/vista
 *.exe
 *.out
 

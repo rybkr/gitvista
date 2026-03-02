@@ -190,6 +190,12 @@ func TestGetClientIP(t *testing.T) {
 			want: "203.0.113.45",
 		},
 		{
+			name:       "untrusted remote ignores forwarding headers",
+			remoteAddr: "203.0.113.10:8443",
+			headers:    map[string]string{"X-Forwarded-For": "198.51.100.23"},
+			want:       "203.0.113.10",
+		},
+		{
 			name:       "ipv6 with port",
 			remoteAddr: "[::1]:54321",
 			headers:    map[string]string{},

@@ -140,6 +140,29 @@ func TestNewServer_InitialisesFields(t *testing.T) {
 	}
 }
 
+func TestNewHTTPServer_TimeoutAndHeaderConfiguration(t *testing.T) {
+	s := newTestServer(t)
+	handler := http.NewServeMux()
+
+	srv := s.newHTTPServer(handler)
+
+	if srv.ReadHeaderTimeout != readHeaderTimeout {
+		t.Errorf("ReadHeaderTimeout = %s, want %s", srv.ReadHeaderTimeout, readHeaderTimeout)
+	}
+	if srv.MaxHeaderBytes != maxHeaderBytes {
+		t.Errorf("MaxHeaderBytes = %d, want %d", srv.MaxHeaderBytes, maxHeaderBytes)
+	}
+	if srv.ReadTimeout != 15*time.Second {
+		t.Errorf("ReadTimeout = %s, want %s", srv.ReadTimeout, 15*time.Second)
+	}
+	if srv.WriteTimeout != 0 {
+		t.Errorf("WriteTimeout = %s, want %s", srv.WriteTimeout, 0*time.Second)
+	}
+	if srv.IdleTimeout != 120*time.Second {
+		t.Errorf("IdleTimeout = %s, want %s", srv.IdleTimeout, 120*time.Second)
+	}
+}
+
 func TestHTTPServer_TimeoutConfiguration(t *testing.T) {
 	addr := freePort(t)
 	s := newTestServer(t)

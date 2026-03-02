@@ -2,6 +2,7 @@ package server
 
 import (
 	"compress/flate"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -16,10 +17,31 @@ const (
 	maxMessageSize = 512
 )
 
-// localUpgrader allows all origins; used in local mode where the server is
-// only reachable from localhost.
+// localUpgrader validates local-mode origins. It allows same-host requests and
+// loopback origins to prevent cross-site WebSocket hijacking.
 var localUpgrader = websocket.Upgrader{
-	CheckOrigin:       func(_ *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return false
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		// Allow same-host requests, plus loopback origins for local development.
+		if u.Host == r.Host {
+			return true
+		}
+		host := u.Hostname()
+		if host == "localhost" {
+			return true
+		}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			return true
+		}
+		return false
+	},
 	EnableCompression: true,
 }
 

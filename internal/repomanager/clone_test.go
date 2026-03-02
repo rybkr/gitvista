@@ -3,9 +3,13 @@ package repomanager
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
+
+// testAllowedHosts is the default allowlist used by normalizeURL tests.
+var testAllowedHosts = []string{"github.com", "gitlab.com", "bitbucket.org", "example.com"}
 
 func TestNormalizeURL(t *testing.T) {
 	tests := []struct {
@@ -98,7 +102,7 @@ func TestNormalizeURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := normalizeURL(tt.input)
+			got, err := normalizeURL(tt.input, testAllowedHosts)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("normalizeURL(%q) = %q, want error", tt.input, got)
@@ -124,13 +128,13 @@ func TestNormalizeURL_Deduplication(t *testing.T) {
 		"https://github.com/user/repo/",
 	}
 
-	first, err := normalizeURL(urls[0])
+	first, err := normalizeURL(urls[0], testAllowedHosts)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, u := range urls[1:] {
-		got, err := normalizeURL(u)
+		got, err := normalizeURL(u, testAllowedHosts)
 		if err != nil {
 			t.Fatalf("normalizeURL(%q) error: %v", u, err)
 		}
@@ -284,5 +288,68 @@ func TestSplitProgressLines(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNormalizeURL_AllowedHost(t *testing.T) {
+	allowed := []string{"github.com"}
+	got, err := normalizeURL("https://github.com/user/repo.git", allowed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "https://github.com/user/repo" {
+		t.Errorf("got %q, want %q", got, "https://github.com/user/repo")
+	}
+}
+
+func TestNormalizeURL_DisallowedHost(t *testing.T) {
+	allowed := []string{"github.com"}
+	_, err := normalizeURL("https://evil.com/user/repo.git", allowed)
+	if err == nil {
+		t.Fatal("expected error for disallowed host, got nil")
+	}
+	if !strings.Contains(err.Error(), "not in the allowed hosts list") {
+		t.Errorf("error = %q, want mention of allowed hosts list", err.Error())
+	}
+}
+
+func TestNormalizeURL_SSHShorthandAllowedHost(t *testing.T) {
+	allowed := []string{"github.com"}
+	got, err := normalizeURL("git@github.com:user/repo.git", allowed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "ssh://github.com/user/repo" {
+		t.Errorf("got %q, want %q", got, "ssh://github.com/user/repo")
+	}
+}
+
+func TestNormalizeURL_SSHShorthandDisallowedHost(t *testing.T) {
+	allowed := []string{"github.com"}
+	_, err := normalizeURL("git@evil.com:user/repo.git", allowed)
+	if err == nil {
+		t.Fatal("expected error for disallowed SSH shorthand host, got nil")
+	}
+	if !strings.Contains(err.Error(), "not in the allowed hosts list") {
+		t.Errorf("error = %q, want mention of allowed hosts list", err.Error())
+	}
+}
+
+func TestNormalizeURL_SSHShorthandBadUser(t *testing.T) {
+	allowed := []string{"github.com"}
+	_, err := normalizeURL("$(whoami)@github.com:user/repo.git", allowed)
+	if err == nil {
+		t.Fatal("expected error for shell metacharacters in SSH user, got nil")
+	}
+}
+
+func TestNormalizeURL_SSHShorthandPrivateHostRejected(t *testing.T) {
+	allowed := []string{"localhost"}
+	_, err := normalizeURL("git@localhost:user/repo.git", allowed)
+	if err == nil {
+		t.Fatal("expected error for private/internal SSH shorthand host, got nil")
+	}
+	if !strings.Contains(err.Error(), "private/internal addresses") {
+		t.Errorf("error = %q, want private/internal rejection", err.Error())
 	}
 }

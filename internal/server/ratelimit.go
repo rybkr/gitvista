@@ -125,11 +125,19 @@ func (rl *rateLimiter) middleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // getClientIP extracts the client IP from the request.
-// Checks X-Forwarded-For and X-Real-IP headers for proxied requests,
-// validating each value with net.ParseIP so that arbitrary non-IP strings
-// cannot be used to bypass per-IP rate limiting. Falls through to the next
-// source if a header value is missing or does not parse as a valid IP.
+// It only trusts X-Forwarded-For / X-Real-IP when the immediate peer appears
+// to be a trusted proxy (loopback/private/link-local). This prevents direct
+// clients from spoofing forwarding headers to bypass per-IP rate limits.
 func getClientIP(r *http.Request) string {
+	remoteIP, remoteRaw := remoteIP(r.RemoteAddr)
+	if remoteIP == nil {
+		return remoteRaw
+	}
+
+	if !isTrustedProxyIP(remoteIP) {
+		return remoteIP.String()
+	}
+
 	// X-Forwarded-For may contain a comma-separated list of IPs; the first
 	// entry is the original client. Validate before trusting it.
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -149,12 +157,24 @@ func getClientIP(r *http.Request) string {
 		// Invalid value — fall through to RemoteAddr.
 	}
 
-	// Use net.SplitHostPort so that IPv6 addresses enclosed in brackets
-	// (e.g. "[::1]:12345") are parsed correctly.
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		// RemoteAddr has no port component; return as-is.
-		return r.RemoteAddr
+	return remoteIP.String()
+}
+
+// remoteIP extracts a parsed IP from RemoteAddr. It supports host:port and
+// bare IP forms. If parsing fails, it returns nil and the raw value.
+func remoteIP(remoteAddr string) (net.IP, string) {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		if ip := net.ParseIP(host); ip != nil {
+			return ip, host
+		}
+		return nil, remoteAddr
 	}
-	return host
+	if ip := net.ParseIP(remoteAddr); ip != nil {
+		return ip, remoteAddr
+	}
+	return nil, remoteAddr
+}
+
+func isTrustedProxyIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }
