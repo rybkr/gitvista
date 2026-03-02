@@ -2,7 +2,7 @@ import { logger } from "./logger.js";
 import { initThemeToggle } from "./themeToggle.js";
 import { createGraphController as createGraph } from "./graph/graphController.js";
 import { startBackend } from "./backend.js";
-import { createSidebar } from "./sidebar.js";
+import { createWorkbench } from "./workbench.js";
 import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
 import { createFileExplorer } from "./fileExplorer.js";
@@ -96,9 +96,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 /** Removes sidebar elements and empties the root for a fresh view. */
 function clearRoot(root) {
-    const parent = root.parentElement;
-    // Remove sidebar activity bar and panel if present
-    parent.querySelectorAll(".activity-bar, .sidebar-panel").forEach((el) => el.remove());
     // Remove status dot
     document.querySelectorAll("[data-gv-status-dot]").forEach((el) => el.remove());
     root.innerHTML = "";
@@ -245,22 +242,34 @@ function bootstrapGraph(root, repoId) {
     repoTabContent.appendChild(infoBar.el);
     repoTabContent.appendChild(indexView.el);
 
-    const sidebar = createSidebar([
-        { name: "repository", icon: "", tooltip: "Repository", content: repoTabContent },
-        { name: "file-explorer", icon: "", tooltip: "File Explorer", content: fileExplorer.el },
+    const graphHost = document.createElement("div");
+    graphHost.className = "graph-host";
+
+    const workbench = createWorkbench([
+        { name: "graph", tooltip: "Graph", content: graphHost },
+        { name: "repository", tooltip: "Repository", content: repoTabContent },
+        { name: "file-explorer", tooltip: "File Explorer", content: fileExplorer.el },
         { name: "three-zones", tooltip: "Lifecycle", content: stagingView.el },
-        { name: "analytics", tooltip: "Analytics", content: analyticsView.el },
+        { name: "analytics", tooltip: "Analytics", content: analyticsView.el, onShow: () => analyticsView.update() },
         { name: "compare", tooltip: "Compare", content: mergePreviewView.el },
     ]);
-    root.parentElement.insertBefore(sidebar.activityBar, root);
-    root.parentElement.insertBefore(sidebar.panel, root);
+    root.appendChild(workbench.el);
 
     let initialBootstrapApplied = false;
+    let analyticsPreloadStarted = false;
 
-    const graph = createGraph(root, {
+    function preloadAnalyticsOnce() {
+        if (analyticsPreloadStarted) return;
+        analyticsPreloadStarted = true;
+        analyticsView.preload().catch(() => {
+            // Keep startup resilient even if analytics preloading fails.
+        });
+    }
+
+    const graph = createGraph(graphHost, {
         fetchGraphCommits,
         onCommitTreeClick: (commit) => {
-            if (sidebar.getActivePanel() === "file-explorer") {
+            if (workbench.isViewVisible("file-explorer")) {
                 fileExplorer.openCommit(commit);
             }
         },
@@ -318,14 +327,14 @@ function bootstrapGraph(root, repoId) {
         },
     });
 
-    const graphControlsEl = root.querySelector(".graph-controls");
+    const graphControlsEl = graphHost.querySelector(".graph-controls");
     if (graphControlsEl) {
         canvasToolbar.appendChild(graphControlsEl);
     }
 
-    const canvasEl = root.querySelector("canvas");
+    const canvasEl = graphHost.querySelector("canvas");
     if (canvasEl) {
-        root.insertBefore(canvasToolbar, canvasEl);
+        canvasEl.parentElement.insertBefore(canvasToolbar, canvasEl);
     }
 
     // ── Filter popover ─────────────────────────────────────────────────
@@ -346,9 +355,9 @@ function bootstrapGraph(root, repoId) {
             if (tip) graph.selectAndCenter(tip);
         },
     });
-    const canvasEl2 = root.querySelector("canvas");
+    const canvasEl2 = graphHost.querySelector("canvas");
     if (canvasEl2) {
-        root.insertBefore(breadcrumb.el, canvasEl2);
+        canvasEl2.parentElement.insertBefore(breadcrumb.el, canvasEl2);
     }
 
     /** Helper to refresh breadcrumb from current graph state. */
@@ -384,7 +393,7 @@ function bootstrapGraph(root, repoId) {
         getViewport: () => graph.getViewport(),
         onJump: (x, y) => graph.zoomTo(x, y),
     });
-    root.appendChild(minimap.el);
+    graphHost.appendChild(minimap.el);
 
     // Hook minimap rendering into the graph render loop.
     graph.setMinimapCallback(() => minimap.render());
@@ -397,9 +406,9 @@ function bootstrapGraph(root, repoId) {
         getLayoutMode: () => graph.getLayoutMode(),
     });
     canvasToolbar.appendChild(graphSettings.triggerEl);
-    root.appendChild(graphSettings.overlayEl);
+    graphHost.appendChild(graphSettings.overlayEl);
     canvasToolbar.appendChild(telemetryHud.triggerEl);
-    root.appendChild(telemetryHud.panelEl);
+    graphHost.appendChild(telemetryHud.panelEl);
 
     // Apply initial settings to the graph controller.
     graph.setGraphSettings(loadSettings());
@@ -478,6 +487,7 @@ function bootstrapGraph(root, repoId) {
             telemetryStore.recordSummary(summary);
             graph.applySummary(summary);
             analyticsView.update();
+            preloadAnalyticsOnce();
 
             graphFilters.updateBranches(graph.getBranches());
             mergePreviewView.updateBranches();
@@ -498,6 +508,7 @@ function bootstrapGraph(root, repoId) {
             telemetryStore.recordDelta(delta);
             graph.applyDelta(delta);
             analyticsView.update();
+            preloadAnalyticsOnce();
 
             graphFilters.updateBranches(graph.getBranches());
             mergePreviewView.updateBranches();

@@ -391,6 +391,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     const ANALYTICS_HYDRATE_CHUNK = 200;
     let hydrationInFlight = false;
     const attemptedHydration = new Set();
+    const analyticsCache = new Map();
+    let preloadPromise = null;
 
     function commitNeedsIdentity(commit) {
         if (!commit) return true;
@@ -457,6 +459,11 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             // Keep diffstats bounded on very large repositories.
             const commits = getCommits();
             const commitCount = commits?.size ?? 0;
+            if (commitCount === 0) {
+                diffStatsLoading = false;
+                updateDiffStatsUI();
+                return;
+            }
             const limit = Math.min(Math.max(commitCount, 1), 3000);
             const raw = await fetchDiffStats({ limit });
             const entries = raw && typeof raw === "object" && raw.entries && typeof raw.entries === "object"
@@ -481,6 +488,47 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             diffStatsCoverageLabel = "";
             updateDiffStatsUI();
         }
+    }
+
+    function analyticsCacheKey({ period, start, end } = {}) {
+        if (typeof start === "string" && start && typeof end === "string" && end) {
+            return `range:${start}:${end}`;
+        }
+        const p = typeof period === "string" && period ? period : "all";
+        return `period:${p}`;
+    }
+
+    async function fetchAnalyticsCached(opts = {}) {
+        if (!fetchAnalytics) return null;
+        const key = analyticsCacheKey(opts);
+        if (analyticsCache.has(key)) {
+            return analyticsCache.get(key);
+        }
+        const payload = await fetchAnalytics(opts);
+        analyticsCache.set(key, payload);
+        return payload;
+    }
+
+    async function preload() {
+        if (preloadPromise) return preloadPromise;
+        preloadPromise = (async () => {
+            const tasks = [];
+
+            if (fetchAnalytics) {
+                const presets = PERIODS.map((p) => (p.label === "All" ? "all" : p.label.toLowerCase()));
+                tasks.push(Promise.allSettled(presets.map((period) => fetchAnalyticsCached({ period }))));
+            }
+
+            tasks.push(loadDiffStats());
+
+            const commits = getCommits();
+            if (commits && commits.size > 0) {
+                tasks.push(hydrateAuthorsForPeriod(commits, 0));
+            }
+
+            await Promise.allSettled(tasks);
+        })();
+        return preloadPromise;
     }
 
     // ── Root element ──
@@ -1344,8 +1392,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         if (fetchAnalytics) {
             try {
                 const payload = usingCustomRange
-                    ? await fetchAnalytics({ start: customRange.start, end: customRange.end })
-                    : await fetchAnalytics({ period: periodKey });
+                    ? await fetchAnalyticsCached({ start: customRange.start, end: customRange.end })
+                    : await fetchAnalyticsCached({ period: periodKey });
                 if (usingCustomRange) {
                     const s = payload?.start?.slice?.(0, 10) || customRange.start;
                     const e = payload?.end?.slice?.(0, 10) || customRange.end;
@@ -1440,5 +1488,5 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         }
     }
 
-    return { el, update };
+    return { el, update, preload };
 }
