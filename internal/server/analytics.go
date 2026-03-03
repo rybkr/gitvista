@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,8 +39,35 @@ type analyticsResponse struct {
 	Merges       analyticsMerges       `json:"merges"`
 	ChangeSize   analyticsChangeSize   `json:"changeSize"`
 	Rework       analyticsRework       `json:"rework"`
+	Summary      []analyticsSummary    `json:"summarySignals"`
+	Hotspots     []analyticsHotspot    `json:"hotspots"`
+	Deltas       analyticsDeltas       `json:"deltas"`
 	DiffCoverage analyticsDiffCoverage `json:"diffCoverage"`
 	GeneratedAt  string                `json:"generatedAt"`
+}
+
+type analyticsSummary struct {
+	ID             string  `json:"id"`
+	Label          string  `json:"label"`
+	Current        float64 `json:"current"`
+	Previous       float64 `json:"previous"`
+	Delta          float64 `json:"delta"`
+	Status         string  `json:"status"`
+	Recommendation string  `json:"recommendation"`
+}
+
+type analyticsDeltaMetric struct {
+	Current  float64 `json:"current"`
+	Previous float64 `json:"previous"`
+	Delta    float64 `json:"delta"`
+}
+
+type analyticsDeltas struct {
+	ReworkRate             analyticsDeltaMetric `json:"reworkRate"`
+	LargeChangeShare       analyticsDeltaMetric `json:"largeChangeShare"`
+	AvgChangeSize          analyticsDeltaMetric `json:"avgChangeSize"`
+	MergePercent           analyticsDeltaMetric `json:"mergePercent"`
+	OwnershipConcentration analyticsDeltaMetric `json:"ownershipConcentration"`
 }
 
 type analyticsVelocity struct {
@@ -124,6 +152,24 @@ type analyticsDiffEntry struct {
 	Files []string
 }
 
+type analyticsDiffInsights struct {
+	LargeChangeShare       float64
+	OwnershipConcentration float64
+	Hotspots               []analyticsHotspot
+}
+
+type analyticsHotspot struct {
+	Path             string  `json:"path"`
+	ChurnCount       int     `json:"churnCount"`
+	ReworkRate       float64 `json:"reworkRate"`
+	LargeChangeShare float64 `json:"largeChangeShare"`
+	TopAuthor        string  `json:"topAuthor"`
+	TopAuthorShare   float64 `json:"topAuthorShare"`
+	RiskScore        int     `json:"riskScore"`
+	Status           string  `json:"status"`
+	Recommendation   string  `json:"recommendation"`
+}
+
 type analyticsQuery struct {
 	period   string
 	cacheKey string
@@ -154,6 +200,8 @@ func buildAnalytics(repo *gitcore.Repository, q analyticsQuery) (*analyticsRespo
 	if len(entries) == 0 {
 		resp := &analyticsResponse{
 			Period:      canonical,
+			Summary:     []analyticsSummary{},
+			Hotspots:    []analyticsHotspot{},
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		}
 		if q.hasRange {
@@ -170,24 +218,14 @@ func buildAnalytics(repo *gitcore.Repository, q analyticsQuery) (*analyticsRespo
 		return entries[i].TS.Before(entries[j].TS)
 	})
 
-	filtered := make([]analyticsCommitEntry, 0, len(entries))
-	for _, e := range entries {
-		if q.hasRange {
-			if e.TS.Before(q.start) || e.TS.After(q.end) {
-				continue
-			}
-		} else if months > 0 {
-			now := time.Now().UTC()
-			cutoff := now.AddDate(0, -months, 0)
-			if e.TS.Before(cutoff) {
-				continue
-			}
-		}
-		filtered = append(filtered, e)
-	}
+	now := time.Now().UTC()
+	windowStart, windowEnd := analyticsCurrentWindow(q, months, entries, now)
+	filtered := filterEntriesForWindow(entries, windowStart, windowEnd)
 	if len(filtered) == 0 {
 		resp := &analyticsResponse{
 			Period:      canonical,
+			Summary:     []analyticsSummary{},
+			Hotspots:    []analyticsHotspot{},
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		}
 		if q.hasRange {
@@ -201,7 +239,25 @@ func buildAnalytics(repo *gitcore.Repository, q analyticsQuery) (*analyticsRespo
 	authors := computeAuthors(filtered)
 	heatmap := computeHeatmap(filtered)
 	merges := computeMerges(filtered)
-	changeSize, rework, coverage := computeDiffAnalytics(repo, commitsMap, filtered)
+	changeSize, rework, coverage, insights := computeDiffAnalytics(repo, commitsMap, filtered)
+	prevStart, prevEnd := analyticsPreviousWindow(windowStart, windowEnd)
+	previous := filterEntriesForWindow(entries, prevStart, prevEnd)
+	prevMerges := analyticsMerges{}
+	prevChangeSize := analyticsChangeSize{}
+	prevRework := analyticsRework{}
+	prevInsights := analyticsDiffInsights{}
+	if len(previous) > 0 {
+		prevMerges = computeMerges(previous)
+		prevChangeSize, prevRework, _, prevInsights = computeDiffAnalytics(repo, commitsMap, previous)
+	}
+	deltas := buildAnalyticsDeltas(
+		rework.AvgRate, prevRework.AvgRate,
+		insights.LargeChangeShare, prevInsights.LargeChangeShare,
+		changeSize.AvgSize, prevChangeSize.AvgSize,
+		merges.MergePercent, prevMerges.MergePercent,
+		insights.OwnershipConcentration, prevInsights.OwnershipConcentration,
+	)
+	summary := buildAnalyticsSummary(deltas)
 
 	resp := &analyticsResponse{
 		Period:       canonical,
@@ -211,6 +267,9 @@ func buildAnalytics(repo *gitcore.Repository, q analyticsQuery) (*analyticsRespo
 		Merges:       merges,
 		ChangeSize:   changeSize,
 		Rework:       rework,
+		Summary:      summary,
+		Hotspots:     insights.Hotspots,
+		Deltas:       deltas,
 		DiffCoverage: coverage,
 		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
@@ -307,6 +366,48 @@ func weekStartUTC(ts time.Time) int64 {
 	}
 	d = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, diff)
 	return d.UnixMilli()
+}
+
+func analyticsCurrentWindow(
+	q analyticsQuery,
+	months int,
+	entries []analyticsCommitEntry,
+	now time.Time,
+) (time.Time, time.Time) {
+	if q.hasRange {
+		return q.start, q.end
+	}
+	if months > 0 {
+		return now.AddDate(0, -months, 0), now
+	}
+	return entries[0].TS, now
+}
+
+func analyticsPreviousWindow(start time.Time, end time.Time) (time.Time, time.Time) {
+	if end.Before(start) {
+		return time.Time{}, time.Time{}
+	}
+	duration := end.Sub(start)
+	if duration <= 0 {
+		return time.Time{}, time.Time{}
+	}
+	prevEnd := start.Add(-time.Nanosecond)
+	prevStart := prevEnd.Add(-duration)
+	return prevStart, prevEnd
+}
+
+func filterEntriesForWindow(entries []analyticsCommitEntry, start time.Time, end time.Time) []analyticsCommitEntry {
+	if start.IsZero() || end.IsZero() {
+		return nil
+	}
+	filtered := make([]analyticsCommitEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.TS.Before(start) || e.TS.After(end) {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	return filtered
 }
 
 func computeVelocity(entries []analyticsCommitEntry) analyticsVelocity {
@@ -466,15 +567,16 @@ func computeDiffAnalytics(
 	repo *gitcore.Repository,
 	commitsMap map[gitcore.Hash]*gitcore.Commit,
 	filtered []analyticsCommitEntry,
-) (analyticsChangeSize, analyticsRework, analyticsDiffCoverage) {
+) (analyticsChangeSize, analyticsRework, analyticsDiffCoverage, analyticsDiffInsights) {
 	change := analyticsChangeSize{Buckets: make([]analyticsBucket, 0, len(analyticsSizeBuckets))}
 	for _, b := range analyticsSizeBuckets {
 		change.Buckets = append(change.Buckets, analyticsBucket{Label: b.label})
 	}
 
 	coverage := analyticsDiffCoverage{EligibleCommits: len(filtered)}
+	insights := analyticsDiffInsights{Hotspots: []analyticsHotspot{}}
 	if len(filtered) == 0 {
-		return change, analyticsRework{}, coverage
+		return change, analyticsRework{}, coverage, insights
 	}
 
 	// Newest-first cap to avoid runaway costs on very large repos.
@@ -488,6 +590,7 @@ func computeDiffAnalytics(
 
 	sizes := make([]int, 0, len(desc))
 	reworkEntries := make([]analyticsDiffEntry, 0, len(desc))
+	analyzed := make([]analyticsAnalyzedCommit, 0, len(desc))
 	for _, e := range desc {
 		c := commitsMap[e.Hash]
 		if c == nil {
@@ -519,7 +622,18 @@ func computeDiffAnalytics(
 			TS:    e.TS.UnixMilli(),
 			Files: files,
 		})
-		sizes = append(sizes, len(entries))
+		size := len(entries)
+		sizes = append(sizes, size)
+		author := e.Author.Email
+		if author == "" {
+			author = "unknown"
+		}
+		analyzed = append(analyzed, analyticsAnalyzedCommit{
+			TS:     e.TS.UnixMilli(),
+			Author: author,
+			Files:  files,
+			Large:  size > 50, // L and XL buckets.
+		})
 	}
 
 	for _, sz := range sizes {
@@ -541,7 +655,312 @@ func computeDiffAnalytics(
 	}
 
 	rework := computeRework(reworkEntries)
-	return change, rework, coverage
+	insights = computeDiffInsights(analyzed)
+	return change, rework, coverage, insights
+}
+
+type analyticsAnalyzedCommit struct {
+	TS     int64
+	Author string
+	Files  []string
+	Large  bool
+}
+
+type analyticsHotspotAgg struct {
+	path          string
+	churnCount    int
+	totalTouches  int
+	reworkTouches int
+	largeTouches  int
+	authorTouches map[string]int
+}
+
+func computeDiffInsights(analyzed []analyticsAnalyzedCommit) analyticsDiffInsights {
+	if len(analyzed) == 0 {
+		return analyticsDiffInsights{Hotspots: []analyticsHotspot{}}
+	}
+	sort.Slice(analyzed, func(i, j int) bool { return analyzed[i].TS < analyzed[j].TS })
+	moduleAgg := make(map[string]*analyticsHotspotAgg)
+	lastTouchByFile := make(map[string]int64)
+	windowMS := int64(analyticsChurnWindowDays * 24 * time.Hour / time.Millisecond)
+	totalTouches := 0
+	largeTouches := 0
+	for _, c := range analyzed {
+		for _, file := range c.Files {
+			module := analyticsModuleKey(file)
+			agg, ok := moduleAgg[module]
+			if !ok {
+				agg = &analyticsHotspotAgg{
+					path:          module,
+					authorTouches: make(map[string]int),
+				}
+				moduleAgg[module] = agg
+			}
+			totalTouches++
+			agg.totalTouches++
+			agg.churnCount++
+			if c.Large {
+				largeTouches++
+				agg.largeTouches++
+			}
+			agg.authorTouches[c.Author]++
+			if last, ok := lastTouchByFile[file]; ok && c.TS-last <= windowMS {
+				agg.reworkTouches++
+			}
+			lastTouchByFile[file] = c.TS
+		}
+	}
+	counts := make([]int, 0, len(moduleAgg))
+	for _, agg := range moduleAgg {
+		counts = append(counts, agg.churnCount)
+	}
+	p90 := analyticsPercentile90(counts)
+	hotspots := make([]analyticsHotspot, 0, len(moduleAgg))
+	for _, agg := range moduleAgg {
+		if agg.totalTouches == 0 {
+			continue
+		}
+		topAuthor, topAuthorTouches := analyticsTopAuthor(agg.authorTouches)
+		reworkRate := float64(agg.reworkTouches) * 100.0 / float64(agg.totalTouches)
+		largeShare := float64(agg.largeTouches) * 100.0 / float64(agg.totalTouches)
+		topAuthorShare := float64(topAuthorTouches) * 100.0 / float64(agg.totalTouches)
+		risk := analyticsRiskScore(agg.churnCount, p90, reworkRate, largeShare, topAuthorShare)
+		status := analyticsRiskStatus(risk)
+		hotspots = append(hotspots, analyticsHotspot{
+			Path:             agg.path,
+			ChurnCount:       agg.churnCount,
+			ReworkRate:       reworkRate,
+			LargeChangeShare: largeShare,
+			TopAuthor:        topAuthor,
+			TopAuthorShare:   topAuthorShare,
+			RiskScore:        risk,
+			Status:           status,
+			Recommendation:   analyticsHotspotRecommendation(status, reworkRate, topAuthorShare, largeShare),
+		})
+	}
+	sort.Slice(hotspots, func(i, j int) bool {
+		if hotspots[i].RiskScore == hotspots[j].RiskScore {
+			return hotspots[i].ChurnCount > hotspots[j].ChurnCount
+		}
+		return hotspots[i].RiskScore > hotspots[j].RiskScore
+	})
+	if len(hotspots) > 15 {
+		hotspots = hotspots[:15]
+	}
+	ownership := 0.0
+	topN := min(5, len(hotspots))
+	for i := 0; i < topN; i++ {
+		ownership += hotspots[i].TopAuthorShare
+	}
+	if topN > 0 {
+		ownership /= float64(topN)
+	}
+	largeShare := 0.0
+	if totalTouches > 0 {
+		largeShare = float64(largeTouches) * 100.0 / float64(totalTouches)
+	}
+	return analyticsDiffInsights{
+		LargeChangeShare:       largeShare,
+		OwnershipConcentration: ownership,
+		Hotspots:               hotspots,
+	}
+}
+
+func analyticsModuleKey(filePath string) string {
+	clean := strings.TrimPrefix(path.Clean(filePath), "./")
+	if clean == "." || clean == "" {
+		return filePath
+	}
+	dir := path.Dir(clean)
+	if dir == "." {
+		return clean
+	}
+	parts := strings.Split(dir, "/")
+	if len(parts) == 1 {
+		return parts[0] + "/"
+	}
+	return parts[0] + "/" + parts[1] + "/"
+}
+
+func analyticsPercentile90(values []int) int {
+	if len(values) == 0 {
+		return 1
+	}
+	cp := append([]int(nil), values...)
+	sort.Ints(cp)
+	idx := int(0.9*float64(len(cp)-1) + 0.5)
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(cp) {
+		idx = len(cp) - 1
+	}
+	if cp[idx] < 1 {
+		return 1
+	}
+	return cp[idx]
+}
+
+func analyticsTopAuthor(authorTouches map[string]int) (string, int) {
+	topAuthor := "unknown"
+	topTouches := 0
+	for author, touches := range authorTouches {
+		if touches > topTouches || (touches == topTouches && author < topAuthor) {
+			topAuthor = author
+			topTouches = touches
+		}
+	}
+	return topAuthor, topTouches
+}
+
+func analyticsRiskScore(churnCount int, p90 int, reworkRate float64, largeShare float64, topAuthorShare float64) int {
+	churnNorm := 1.0
+	if p90 > 0 {
+		churnNorm = float64(churnCount) / float64(p90)
+	}
+	if churnNorm > 1 {
+		churnNorm = 1
+	}
+	reworkNorm := reworkRate / 100.0
+	largeNorm := largeShare / 100.0
+	ownerNorm := topAuthorShare / 100.0
+	risk := int((100 * (0.35*reworkNorm + 0.30*churnNorm + 0.20*ownerNorm + 0.15*largeNorm)) + 0.5)
+	if risk < 0 {
+		return 0
+	}
+	if risk > 100 {
+		return 100
+	}
+	return risk
+}
+
+func analyticsRiskStatus(score int) string {
+	switch {
+	case score >= 70:
+		return "risk"
+	case score >= 40:
+		return "watch"
+	default:
+		return "ok"
+	}
+}
+
+func analyticsHotspotRecommendation(status string, reworkRate float64, topAuthorShare float64, largeShare float64) string {
+	if status == "risk" && topAuthorShare >= 55 {
+		return "High churn with concentrated ownership. Add a secondary reviewer."
+	}
+	if status == "risk" && reworkRate >= 20 {
+		return "Rework is elevated. Stabilize this path before bundling more changes."
+	}
+	if largeShare >= 30 {
+		return "Large changes dominate here. Prefer smaller PR slices."
+	}
+	if status == "watch" {
+		return "Monitor this hotspot for churn and ownership concentration."
+	}
+	return "No immediate action required."
+}
+
+func buildAnalyticsDeltas(
+	reworkCurrent float64, reworkPrevious float64,
+	largeCurrent float64, largePrevious float64,
+	avgSizeCurrent float64, avgSizePrevious float64,
+	mergeCurrent float64, mergePrevious float64,
+	ownerCurrent float64, ownerPrevious float64,
+) analyticsDeltas {
+	return analyticsDeltas{
+		ReworkRate: analyticsDeltaMetric{
+			Current:  reworkCurrent,
+			Previous: reworkPrevious,
+			Delta:    reworkCurrent - reworkPrevious,
+		},
+		LargeChangeShare: analyticsDeltaMetric{
+			Current:  largeCurrent,
+			Previous: largePrevious,
+			Delta:    largeCurrent - largePrevious,
+		},
+		AvgChangeSize: analyticsDeltaMetric{
+			Current:  avgSizeCurrent,
+			Previous: avgSizePrevious,
+			Delta:    avgSizeCurrent - avgSizePrevious,
+		},
+		MergePercent: analyticsDeltaMetric{
+			Current:  mergeCurrent,
+			Previous: mergePrevious,
+			Delta:    mergeCurrent - mergePrevious,
+		},
+		OwnershipConcentration: analyticsDeltaMetric{
+			Current:  ownerCurrent,
+			Previous: ownerPrevious,
+			Delta:    ownerCurrent - ownerPrevious,
+		},
+	}
+}
+
+func buildAnalyticsSummary(d analyticsDeltas) []analyticsSummary {
+	rework := analyticsSummary{
+		ID:       "reworkTrend",
+		Label:    "Rework Trend",
+		Current:  d.ReworkRate.Current,
+		Previous: d.ReworkRate.Previous,
+		Delta:    d.ReworkRate.Delta,
+	}
+	if rework.Current >= 25 || rework.Delta >= 8 {
+		rework.Status = "risk"
+	} else if rework.Current >= 15 || rework.Delta >= 3 {
+		rework.Status = "watch"
+	} else {
+		rework.Status = "ok"
+	}
+	rework.Recommendation = fmt.Sprintf("Rework is %s %.1f%%. Investigate top hotspot paths before next merge batch.", analyticsTrendWord(rework.Delta), absFloat(rework.Delta))
+
+	large := analyticsSummary{
+		ID:       "largeChangeShare",
+		Label:    "Large Change Share",
+		Current:  d.LargeChangeShare.Current,
+		Previous: d.LargeChangeShare.Previous,
+		Delta:    d.LargeChangeShare.Delta,
+	}
+	if large.Current >= 35 || large.Delta >= 10 {
+		large.Status = "risk"
+	} else if large.Current >= 20 || large.Delta >= 5 {
+		large.Status = "watch"
+	} else {
+		large.Status = "ok"
+	}
+	large.Recommendation = fmt.Sprintf("Large/XL change share is %s %.1f%%. Encourage smaller PR slices in hotspot paths.", analyticsTrendWord(large.Delta), absFloat(large.Delta))
+
+	owner := analyticsSummary{
+		ID:       "ownershipConcentration",
+		Label:    "Ownership Concentration",
+		Current:  d.OwnershipConcentration.Current,
+		Previous: d.OwnershipConcentration.Previous,
+		Delta:    d.OwnershipConcentration.Delta,
+	}
+	if owner.Current >= 65 || owner.Delta >= 10 {
+		owner.Status = "risk"
+	} else if owner.Current >= 50 || owner.Delta >= 5 {
+		owner.Status = "watch"
+	} else {
+		owner.Status = "ok"
+	}
+	owner.Recommendation = "Ownership is concentrated in hotspot paths. Add a secondary reviewer this week."
+
+	return []analyticsSummary{rework, large, owner}
+}
+
+func analyticsTrendWord(delta float64) string {
+	if delta >= 0 {
+		return "up"
+	}
+	return "down"
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func computeRework(entries []analyticsDiffEntry) analyticsRework {

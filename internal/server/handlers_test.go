@@ -681,6 +681,15 @@ func TestHandleAnalytics(t *testing.T) {
 	if _, ok := response["authors"]; !ok {
 		t.Error("response missing 'authors'")
 	}
+	if _, ok := response["summarySignals"]; !ok {
+		t.Error("response missing 'summarySignals'")
+	}
+	if _, ok := response["hotspots"]; !ok {
+		t.Error("response missing 'hotspots'")
+	}
+	if _, ok := response["deltas"]; !ok {
+		t.Error("response missing 'deltas'")
+	}
 }
 
 func TestHandleAnalytics_InvalidPeriod(t *testing.T) {
