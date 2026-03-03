@@ -386,6 +386,7 @@ function computeReworkRate(commits, diffStats, periodMonths) {
  * @param {{ getCommits: () => Map<string, object>, getTags: () => Map<string, string>, fetchDiffStats: () => Promise<object>, fetchGraphCommits?: (hashes: string[]) => Promise<object[]>, fetchAnalytics?: (opts: {period: string}) => Promise<object> }} deps
  */
 export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetchGraphCommits, fetchAnalytics }) {
+    const DEFAULT_PERIOD = "All";
     let selectedPeriod = "All";
     let customRange = { start: "", end: "" };
     const ANALYTICS_HYDRATE_CHUNK = 200;
@@ -529,6 +530,11 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             await Promise.allSettled(tasks);
         })();
         return preloadPromise;
+    }
+
+    function resetToDefaultPeriod() {
+        selectedPeriod = DEFAULT_PERIOD;
+        customStatus.textContent = "";
     }
 
     // ── Root element ──
@@ -1488,5 +1494,5 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         }
     }
 
-    return { el, update, preload };
+    return { el, update, preload, resetToDefaultPeriod };
 }

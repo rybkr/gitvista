@@ -289,7 +289,16 @@ function bootstrapGraph(root, repoId) {
         { name: "repository", tooltip: "Repository", content: repoTabContent },
         { name: "file-explorer", tooltip: "File Explorer", content: fileExplorer.el },
         { name: "three-zones", tooltip: "Lifecycle", content: stagingView.el },
-        { name: "analytics", tooltip: "Analytics", content: analyticsView.el, onShow: () => analyticsView.update() },
+        {
+            name: "analytics",
+            tooltip: "Analytics",
+            content: analyticsView.el,
+            onShow: () => {
+                analyticsView.resetToDefaultPeriod();
+                preloadAnalyticsOnce();
+                analyticsView.update();
+            },
+        },
         { name: "compare", tooltip: "Compare", content: mergePreviewView.el },
     ]);
     root.appendChild(workbench.el);
@@ -304,6 +313,9 @@ function bootstrapGraph(root, repoId) {
             // Keep startup resilient even if analytics preloading fails.
         });
     }
+
+    // Warm analytics payloads as part of repo bootstrap.
+    preloadAnalyticsOnce();
 
     graph = createGraph(graphHost, {
         fetchGraphCommits,
