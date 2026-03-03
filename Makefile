@@ -11,13 +11,6 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
-GO_LOCAL_CACHE_DIR := $(CURDIR)/.cache
-GO_LOCAL_BUILD_CACHE := $(GO_LOCAL_CACHE_DIR)/go-build
-export GOCACHE := $(GO_LOCAL_BUILD_CACHE)
-
-## ensure-go-cache: Ensure local Go build cache directory exists
-ensure-go-cache:
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 
 .DEFAULT_GOAL := help
 
@@ -33,12 +26,10 @@ setup-hooks:
 
 ## test: Run all unit tests
 test:
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOTEST) -v -race -cover -timeout=60s ./...
 
 ## cover: Run tests with coverage
 cover:
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	@mkdir -p test/cover
 	$(GOTEST) -v -race -timeout=60s -covermode=atomic \
 		-coverprofile=test/cover/coverage.out -coverpkg=./internal/... ./...
@@ -55,12 +46,10 @@ cover-html: cover
 
 ## integration: Run integration tests
 integration:
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOTEST) -v -race -tags=integration -timeout=60s ./test/integration/...
 
 ## e2e: Run end-to-end tests (builds gitvista-cli, compares output against git)
 e2e:
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOTEST) -v -race -tags=e2e -timeout=60s ./test/e2e/...
 
 ## format: Auto-format the source code with gofmt
@@ -89,7 +78,6 @@ check-imports:
 ## vet: Run go vet static analysis
 vet:
 	@echo "Running go vet..."
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	@$(GOCMD) vet ./...
 
 ## security: Run security checks (govulncheck, gosec)
@@ -134,9 +122,7 @@ check-vuln:
 lint:
 	@echo "Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null; then \
-		mkdir -p "$(GO_LOCAL_BUILD_CACHE)"; \
-		GOCACHE="$(GO_LOCAL_BUILD_CACHE)" \
-			golangci-lint run --config=.golangci.yml ./...; \
+		golangci-lint run --config=.golangci.yml ./...; \
 	else \
 		echo "golangci-lint not found - install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 		exit 1; \
@@ -167,13 +153,11 @@ validate-js:
 ## build: Build all binaries
 build: build-cli
 	@echo "Building main binary..."
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista ./cmd/vista
 
 ## build-cli: Build the gitvista-cli binary
 build-cli:
 	@echo "Building CLI binary..."
-	@mkdir -p "$(GO_LOCAL_BUILD_CACHE)"
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-cli ./cmd/gitcli
 
 ## docker-build: Build Docker image
@@ -212,11 +196,11 @@ format-check:
 	@echo "All files properly formatted"
 
 ## ci-local: Run CI checks that work offline (no Docker or network needed)
-ci-local: ensure-go-cache format-check check-imports vet lint security-local test integration e2e validate-js test-js build
+ci-local: format-check check-imports vet lint security-local test integration e2e validate-js test-js build
 	@echo "All local CI checks passed!"
 
 ## ci-remote: Run all CI checks including Docker build and dependency verification
-ci-remote: ensure-go-cache format-check check-imports vet lint security test integration e2e validate-js test-js build docker-build deps-check
+ci-remote: format-check check-imports vet lint security test integration e2e validate-js test-js build docker-build deps-check
 	@echo "All CI checks passed!"
 
 ## clean: Clean build artifacts

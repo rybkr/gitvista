@@ -1,168 +1,267 @@
-import { apiUrl } from "./apiBase.js";
-import { createDiffContentViewer } from "./diffContentViewer.js";
+function shortHash(hash) {
+    if (!hash || typeof hash !== "string") return "unknown";
+    return hash.slice(0, 8);
+}
 
-const CHEVRON_SVG = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-    <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
+function sanitizeText(value, fallback = "Not available") {
+    if (typeof value !== "string") return fallback;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : fallback;
+}
 
-const SECTIONS = [
-    { key: "staged", label: "Staged", colorClass: "index-badge--staged" },
-    { key: "modified", label: "Modified", colorClass: "index-badge--modified" },
-    { key: "untracked", label: "Untracked", colorClass: "index-badge--untracked" },
-];
-
-/**
- * Build a single collapsible section (Staged / Modified / Untracked).
- *
- * @param {Object} cfg - Section config from SECTIONS array
- * @param {Function} onFileClick - Called with (file, sectionKey) when a list item is clicked
- */
-function createSection(cfg, onFileClick) {
-    const section = document.createElement("div");
-    section.className = "index-section is-empty";
-
-    const header = document.createElement("button");
-    header.className = "index-section-header";
-
-    const chevron = document.createElement("span");
-    chevron.className = "index-chevron";
-    chevron.innerHTML = CHEVRON_SVG;
-
-    const title = document.createElement("span");
-    title.className = "index-section-title";
-    title.textContent = cfg.label;
-
-    const badge = document.createElement("span");
-    badge.className = `index-badge ${cfg.colorClass}`;
-    badge.textContent = "0";
-
-    header.appendChild(chevron);
-    header.appendChild(title);
-    header.appendChild(badge);
-
-    const list = document.createElement("ul");
-    list.className = "index-file-list";
-
-    let collapsed = false;
-
-    header.addEventListener("click", () => {
-        collapsed = !collapsed;
-        section.classList.toggle("is-collapsed", collapsed);
-    });
-
-    section.appendChild(header);
-    section.appendChild(list);
+function splitRemoteUrl(url) {
+    const value = sanitizeText(url, "unknown");
+    const afterAt = value.includes("@") ? value.split("@").pop() : value;
+    const compact = afterAt.replace(/^https?:\/\//, "");
+    const withoutGit = compact.replace(/\.git$/, "");
+    const [host, ...pathParts] = withoutGit.split(/[/:]/).filter(Boolean);
 
     return {
-        el: section,
-        update(files) {
-            const isEmpty = !files || files.length === 0;
-            section.classList.toggle("is-empty", isEmpty);
-            badge.textContent = isEmpty ? "0" : String(files.length);
-
-            list.innerHTML = "";
-            if (!isEmpty) {
-                for (const file of files) {
-                    const li = document.createElement("li");
-                    li.className = "index-file";
-
-                    const code = document.createElement("span");
-                    code.className = "index-file-code";
-                    code.textContent = file.statusCode;
-
-                    const path = document.createElement("span");
-                    path.className = "index-file-path";
-                    path.textContent = file.path;
-                    path.title = file.path;
-
-                    li.appendChild(code);
-                    li.appendChild(path);
-
-                    // Modified and staged files are clickable — fetch their diff
-                    if (cfg.key === "modified" || cfg.key === "staged") {
-                        li.classList.add("index-file--clickable");
-                        li.setAttribute("role", "button");
-                        li.setAttribute("tabindex", "0");
-                        li.title = `Click to view diff for ${file.path}`;
-
-                        const handleClick = () => {
-                            if (onFileClick) {
-                                onFileClick(file, cfg.key);
-                            }
-                        };
-                        li.addEventListener("click", handleClick);
-                        // Keyboard accessibility: activate on Enter/Space
-                        li.addEventListener("keydown", (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                handleClick();
-                            }
-                        });
-                    }
-
-                    list.appendChild(li);
-                }
-            }
-        },
+        host: host || "unknown",
+        path: pathParts.join("/") || "repository",
+        full: value,
     };
+}
+
+function setPill(el, label, tone) {
+    el.textContent = label;
+    el.className = tone ? `repo-pill repo-pill--${tone}` : "repo-pill";
+}
+
+function setMetricValue(el, value, title = "") {
+    el.textContent = value;
+    el.title = title || value;
 }
 
 export function createIndexView() {
     const el = document.createElement("div");
     el.className = "index-view";
 
-    // Diff viewer shown inline when a modified file is clicked
-    const diffViewer = createDiffContentViewer();
-    diffViewer.el.className += " index-diff-viewer";
+    const hero = document.createElement("section");
+    hero.className = "repo-overview-hero";
 
-    const heading = document.createElement("h3");
-    heading.className = "index-heading";
-    heading.textContent = "Working Tree";
+    const eyebrow = document.createElement("div");
+    eyebrow.className = "repo-overview-eyebrow";
+    eyebrow.textContent = "Repository overview";
 
-    // Main content wrapper shown when the diff viewer is hidden
-    const content = document.createElement("div");
-    content.className = "index-content";
-    content.appendChild(heading);
+    const title = document.createElement("h2");
+    title.className = "repo-overview-title";
+    title.textContent = "Repository";
 
-    // Wire up "Back" button in the diff viewer to return to the file list
-    diffViewer.onBack(() => {
-        diffViewer.close();
-        content.style.display = "";
-    });
+    const subtitle = document.createElement("p");
+    subtitle.className = "repo-overview-subtitle";
+    subtitle.textContent = "Metadata and topology snapshot";
 
-    el.appendChild(content);
-    el.appendChild(diffViewer.el);
+    const pillRow = document.createElement("div");
+    pillRow.className = "repo-overview-pills";
 
-    /**
-     * Called when a file row is clicked. Fetches working-tree diff from the API
-     * and renders it using diffContentViewer. Untracked files get a friendly notice
-     * (the API returns status:"untracked" with empty hunks for those).
-     */
-    function handleFileClick(file) {
-        // Hide the file list and show the diff viewer
-        content.style.display = "none";
+    const branchPill = document.createElement("span");
+    setPill(branchPill, "No branch", "muted");
 
-        const encodedPath = encodeURIComponent(file.path);
-        const url = apiUrl(`/working-tree/diff?path=${encodedPath}`);
+    const headPill = document.createElement("span");
+    setPill(headPill, "HEAD unknown", "muted");
 
-        // showFromUrl handles loading state, fetch, and rendering
-        diffViewer.showFromUrl(url);
+    pillRow.appendChild(branchPill);
+    pillRow.appendChild(headPill);
+
+    hero.appendChild(eyebrow);
+    hero.appendChild(title);
+    hero.appendChild(subtitle);
+    hero.appendChild(pillRow);
+
+    const metricGrid = document.createElement("section");
+    metricGrid.className = "repo-metric-grid";
+
+    const commitValue = document.createElement("span");
+    const branchValue = document.createElement("span");
+    const tagValue = document.createElement("span");
+    const remoteValue = document.createElement("span");
+
+    const metricConfigs = [
+        { label: "Commits", valueEl: commitValue },
+        { label: "Branches", valueEl: branchValue },
+        { label: "Tags", valueEl: tagValue },
+        { label: "Remotes", valueEl: remoteValue },
+    ];
+
+    for (const metric of metricConfigs) {
+        const card = document.createElement("article");
+        card.className = "repo-metric-card";
+
+        const cardLabel = document.createElement("span");
+        cardLabel.className = "repo-metric-label";
+        cardLabel.textContent = metric.label;
+
+        metric.valueEl.className = "repo-metric-value";
+        metric.valueEl.textContent = "0";
+
+        card.appendChild(cardLabel);
+        card.appendChild(metric.valueEl);
+        metricGrid.appendChild(card);
     }
 
-    const sections = {};
-    for (const cfg of SECTIONS) {
-        const section = createSection(cfg, handleFileClick);
-        sections[cfg.key] = section;
-        content.appendChild(section.el);
+    const details = document.createElement("section");
+    details.className = "repo-details-grid";
+
+    const descriptionCard = document.createElement("article");
+    descriptionCard.className = "repo-detail-card";
+
+    const descriptionTitle = document.createElement("h3");
+    descriptionTitle.className = "repo-detail-title";
+    descriptionTitle.textContent = "Description";
+
+    const descriptionBody = document.createElement("p");
+    descriptionBody.className = "repo-description";
+    descriptionBody.textContent = "No description";
+
+    descriptionCard.appendChild(descriptionTitle);
+    descriptionCard.appendChild(descriptionBody);
+
+    const tagsCard = document.createElement("article");
+    tagsCard.className = "repo-detail-card";
+
+    const tagsTitle = document.createElement("h3");
+    tagsTitle.className = "repo-detail-title";
+    tagsTitle.textContent = "Recent tags";
+
+    const tagsList = document.createElement("div");
+    tagsList.className = "repo-tag-list";
+
+    tagsCard.appendChild(tagsTitle);
+    tagsCard.appendChild(tagsList);
+
+    const remotesCard = document.createElement("article");
+    remotesCard.className = "repo-detail-card";
+
+    const remotesTitle = document.createElement("h3");
+    remotesTitle.className = "repo-detail-title";
+    remotesTitle.textContent = "Remotes";
+
+    const remotesList = document.createElement("ul");
+    remotesList.className = "repo-remote-list";
+
+    remotesCard.appendChild(remotesTitle);
+    remotesCard.appendChild(remotesList);
+
+    details.appendChild(descriptionCard);
+    details.appendChild(tagsCard);
+    details.appendChild(remotesCard);
+
+    el.appendChild(hero);
+    el.appendChild(metricGrid);
+    el.appendChild(details);
+
+    let state = null;
+
+    function render() {
+        if (!state) return;
+
+        const repoName = sanitizeText(state.name, "Repository");
+        title.textContent = repoName;
+        title.title = repoName;
+
+        const branchName = sanitizeText(state.currentBranch, "");
+        if (state.headDetached) {
+            setPill(branchPill, "Detached HEAD", "warning");
+        } else if (branchName) {
+            setPill(branchPill, branchName, "branch");
+        } else {
+            setPill(branchPill, "No branch", "muted");
+        }
+
+        const hash = sanitizeText(state.headHash, "");
+        setPill(headPill, hash ? `HEAD ${shortHash(hash)}` : "HEAD unknown", "head");
+
+        setMetricValue(commitValue, String(state.commitCount ?? 0), "Total commits");
+        setMetricValue(branchValue, String(state.branchCount ?? 0), "Total branches");
+        setMetricValue(tagValue, String(state.tagCount ?? 0), "Total tags");
+        const remoteCount = state.remotes ? Object.keys(state.remotes).length : 0;
+        setMetricValue(remoteValue, String(remoteCount), "Configured remotes");
+
+        descriptionBody.textContent = sanitizeText(state.description, "No description available.");
+
+        tagsList.innerHTML = "";
+        const tags = Array.isArray(state.tags) ? state.tags.slice(0, 10) : [];
+        if (tags.length === 0) {
+            const emptyTag = document.createElement("span");
+            emptyTag.className = "repo-tag repo-tag--empty";
+            emptyTag.textContent = "No tags";
+            tagsList.appendChild(emptyTag);
+        } else {
+            for (const tag of tags) {
+                const tagEl = document.createElement("span");
+                tagEl.className = "repo-tag";
+                tagEl.textContent = tag;
+                tagEl.title = tag;
+                tagsList.appendChild(tagEl);
+            }
+        }
+
+        remotesList.innerHTML = "";
+        const remotes = state.remotes ? Object.entries(state.remotes) : [];
+        if (remotes.length === 0) {
+            const emptyRow = document.createElement("li");
+            emptyRow.className = "repo-remote repo-remote--empty";
+            emptyRow.textContent = "No remotes configured";
+            remotesList.appendChild(emptyRow);
+        } else {
+            for (const [name, url] of remotes) {
+                const row = document.createElement("li");
+                row.className = "repo-remote";
+
+                const label = document.createElement("span");
+                label.className = "repo-remote-name";
+                label.textContent = name;
+
+                const parsed = splitRemoteUrl(url);
+                const host = document.createElement("span");
+                host.className = "repo-remote-host";
+                host.textContent = parsed.host;
+
+                const path = document.createElement("span");
+                path.className = "repo-remote-path";
+                path.textContent = parsed.path;
+                path.title = parsed.full;
+
+                row.appendChild(label);
+                row.appendChild(host);
+                row.appendChild(path);
+                remotesList.appendChild(row);
+            }
+        }
     }
 
     return {
         el,
-        update(status) {
+        update(metadata) {
+            if (!metadata) return;
+            state = {
+                ...state,
+                ...metadata,
+                tags: Array.isArray(metadata.tags) ? metadata.tags : state?.tags,
+                remotes: metadata.remotes || state?.remotes,
+            };
+            render();
+        },
+        updateHead(headInfo) {
+            if (!headInfo) return;
+            state = {
+                ...state,
+                headHash: headInfo.hash,
+                headDetached: headInfo.isDetached,
+                currentBranch: headInfo.branchName,
+                commitCount: headInfo.commitCount,
+                branchCount: headInfo.branchCount,
+                tagCount: headInfo.tagCount,
+                description: headInfo.description,
+                tags: Array.isArray(headInfo.recentTags) ? headInfo.recentTags : state?.tags,
+                remotes: headInfo.remotes || state?.remotes,
+            };
+            render();
+        },
+        updateStatus(status) {
+            // No-op: Working Tree details were intentionally removed from Repository tab.
             if (!status) return;
-            sections.staged.update(status.staged);
-            sections.modified.update(status.modified);
-            sections.untracked.update(status.untracked);
         },
     };
 }

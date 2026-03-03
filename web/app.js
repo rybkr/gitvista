@@ -3,7 +3,6 @@ import { initThemeToggle } from "./themeToggle.js";
 import { createGraphController as createGraph } from "./graph/graphController.js";
 import { startBackend } from "./backend.js";
 import { createWorkbench } from "./workbench.js";
-import { createInfoBar } from "./infoBar.js";
 import { createIndexView } from "./indexView.js";
 import { createFileExplorer } from "./fileExplorer.js";
 import { createStagingView } from "./stagingView.js";
@@ -115,15 +114,24 @@ function showLanding(root) {
 
 /** Bootstraps the graph view (works for both local and SaaS modes). */
 function bootstrapGraph(root, repoId) {
-    const statusDot = document.createElement("div");
-    statusDot.setAttribute("data-gv-status-dot", "");
-    statusDot.title = "Connecting...";
-    statusDot.style.cssText = `
-        position: fixed; bottom: 16px; right: 16px;
-        width: 10px; height: 10px; border-radius: 50%;
-        background: #8b949e; z-index: 9999; transition: background 300ms ease;
-    `;
-    document.body.appendChild(statusDot);
+    const statusIndicator = document.createElement("div");
+    statusIndicator.className = "gv-connection-indicator";
+    statusIndicator.setAttribute("data-gv-status-dot", "");
+    statusIndicator.dataset.state = "connecting";
+    statusIndicator.setAttribute("role", "status");
+    statusIndicator.setAttribute("aria-live", "polite");
+
+    const statusLight = document.createElement("span");
+    statusLight.className = "gv-connection-indicator__light";
+    statusLight.setAttribute("aria-hidden", "true");
+
+    const statusText = document.createElement("span");
+    statusText.className = "gv-connection-indicator__text";
+    statusText.textContent = "Connecting";
+
+    statusIndicator.appendChild(statusLight);
+    statusIndicator.appendChild(statusText);
+    document.body.appendChild(statusIndicator);
 
     const banner = createConnectionBanner();
     document.body.appendChild(banner.el);
@@ -131,36 +139,22 @@ function bootstrapGraph(root, repoId) {
     const overlay = createRepoUnavailableOverlay({ repoId });
     document.body.appendChild(overlay.el);
 
-    const styleEl = document.createElement("style");
-    styleEl.textContent = `
-        @keyframes _gv-pulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(26,127,55,0.5); }
-            50%       { box-shadow: 0 0 0 5px rgba(26,127,55,0); }
-        }
-        @keyframes _gv-amber-pulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(154,103,0,0.5); }
-            50%       { box-shadow: 0 0 0 5px rgba(154,103,0,0); }
-        }
-    `;
-    document.head.appendChild(styleEl);
-
     function setConnectionState(state) {
         if (state === "connected") {
-            statusDot.style.background = "#1a7f37";
-            statusDot.style.animation = "_gv-pulse 2s ease infinite";
-            statusDot.title = "Connected";
+            statusIndicator.dataset.state = "connected";
+            statusText.textContent = "Connected";
+            statusIndicator.title = "Connected";
         } else if (state === "reconnecting") {
-            statusDot.style.background = "#9a6700";
-            statusDot.style.animation = "_gv-amber-pulse 1s ease infinite";
-            statusDot.title = "Reconnecting...";
+            statusIndicator.dataset.state = "reconnecting";
+            statusText.textContent = "Reconnecting";
+            statusIndicator.title = "Reconnecting...";
         } else {
-            statusDot.style.background = "#d1242f";
-            statusDot.style.animation = "none";
-            statusDot.title = "Disconnected";
+            statusIndicator.dataset.state = "disconnected";
+            statusText.textContent = "Disconnected";
+            statusIndicator.title = "Disconnected";
         }
     }
 
-    const infoBar = createInfoBar();
     const indexView = createIndexView();
     const fileExplorer = createFileExplorer();
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -268,7 +262,6 @@ function bootstrapGraph(root, repoId) {
         repoTabContent.appendChild(backBtn);
     }
 
-    repoTabContent.appendChild(infoBar.el);
     repoTabContent.appendChild(indexView.el);
 
     let graph = null;
@@ -594,12 +587,12 @@ function bootstrapGraph(root, repoId) {
             }
         },
         onStatus: (status) => {
-            indexView.update(status);
+            indexView.updateStatus(status);
             fileExplorer.updateWorkingTreeStatus(status);
             stagingView.update(status);
         },
         onHead: (headInfo) => {
-            infoBar.updateHead(headInfo);
+            indexView.updateHead(headInfo);
             if (headInfo.branchName) {
                 currentBranchName = headInfo.branchName;
                 updateTitle();
@@ -610,7 +603,7 @@ function bootstrapGraph(root, repoId) {
         },
         onRepoMetadata: (metadata) => {
             setRepositoryAvailable(true);
-            infoBar.update(metadata);
+            indexView.update(metadata);
             repoName = metadata.name || "";
             if (metadata.currentBranch) {
                 currentBranchName = metadata.currentBranch;
