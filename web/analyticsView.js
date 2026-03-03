@@ -625,6 +625,88 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     customWrap.appendChild(customStatus);
     periodSelector.appendChild(customWrap);
 
+    // ── Actionable summary section ──
+    const actionableSection = makeSection("Actionable Summary");
+    const signalCards = [];
+    const signalCardsWrap = document.createElement("div");
+    signalCardsWrap.className = "analytics-signal-grid";
+    for (let i = 0; i < 3; i++) {
+        const card = document.createElement("article");
+        card.className = "analytics-signal-card";
+
+        const head = document.createElement("div");
+        head.className = "analytics-signal-head";
+        const title = document.createElement("span");
+        title.className = "analytics-signal-title";
+        const status = document.createElement("span");
+        status.className = "analytics-signal-status";
+        head.appendChild(title);
+        head.appendChild(status);
+
+        const metric = document.createElement("div");
+        metric.className = "analytics-signal-metric";
+        const delta = document.createElement("div");
+        delta.className = "analytics-signal-delta";
+        const recommendation = document.createElement("p");
+        recommendation.className = "analytics-signal-recommendation";
+
+        card.appendChild(head);
+        card.appendChild(metric);
+        card.appendChild(delta);
+        card.appendChild(recommendation);
+        signalCardsWrap.appendChild(card);
+        signalCards.push({ title, status, metric, delta, recommendation });
+    }
+    actionableSection.appendChild(signalCardsWrap);
+
+    const deltaStrip = document.createElement("div");
+    deltaStrip.className = "analytics-delta-strip";
+    const deltaItems = [];
+    const deltaLabels = [
+        { key: "reworkRate", label: "Rework" },
+        { key: "largeChangeShare", label: "Large share" },
+        { key: "avgChangeSize", label: "Avg size" },
+        { key: "mergePercent", label: "Merge %" },
+        { key: "ownershipConcentration", label: "Ownership" },
+    ];
+    for (const item of deltaLabels) {
+        const chip = document.createElement("div");
+        chip.className = "analytics-delta-chip";
+        const lbl = document.createElement("span");
+        lbl.className = "analytics-delta-chip-label";
+        lbl.textContent = item.label;
+        const value = document.createElement("span");
+        value.className = "analytics-delta-chip-value";
+        chip.appendChild(lbl);
+        chip.appendChild(value);
+        deltaStrip.appendChild(chip);
+        deltaItems.push({ key: item.key, value });
+    }
+    actionableSection.appendChild(deltaStrip);
+
+    // ── Hotspot section ──
+    const hotspotSection = makeSection("Risk Hotspots");
+    const hotspotCoverage = document.createElement("div");
+    hotspotCoverage.className = "analytics-hotspot-coverage";
+    hotspotCoverage.style.display = "none";
+    const hotspotTable = document.createElement("table");
+    hotspotTable.className = "analytics-hotspot-table";
+    const hotspotHead = document.createElement("thead");
+    hotspotHead.innerHTML = `<tr>
+        <th>Path</th>
+        <th>Risk</th>
+        <th>Churn</th>
+        <th>Rework</th>
+        <th>Large</th>
+        <th>Owner</th>
+        <th>Action</th>
+    </tr>`;
+    const hotspotBody = document.createElement("tbody");
+    hotspotTable.appendChild(hotspotHead);
+    hotspotTable.appendChild(hotspotBody);
+    hotspotSection.appendChild(hotspotCoverage);
+    hotspotSection.appendChild(hotspotTable);
+
     // ── Chart container + canvas ──
     const chartContainer = document.createElement("div");
     chartContainer.className = "analytics-chart-container";
@@ -641,7 +723,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     // ── Empty state ──
     const emptyState = document.createElement("div");
     emptyState.className = "analytics-empty";
-    emptyState.textContent = "No commit history available. Push some commits to see velocity data.";
+    emptyState.textContent = "Analyze after first push. This view lights up once commit history is available.";
     const loadingState = document.createElement("div");
     loadingState.className = "analytics-loading";
     loadingState.textContent = "Loading analytics...";
@@ -650,6 +732,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     el.appendChild(summary);
     el.appendChild(periodSelector);
     el.appendChild(loadingState);
+    el.appendChild(actionableSection);
+    el.appendChild(hotspotSection);
     el.appendChild(chartContainer);
     el.appendChild(emptyState);
 
@@ -1344,6 +1428,86 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         ctx.stroke();
     }
 
+    function formatDelta(value, suffix = "%") {
+        const n = Number(value || 0);
+        const sign = n > 0 ? "+" : "";
+        return `${sign}${n.toFixed(1)}${suffix}`;
+    }
+
+    function signalStatus(status) {
+        if (status === "risk" || status === "watch" || status === "ok") return status;
+        return "ok";
+    }
+
+    function renderSignals(summarySignals) {
+        const fallback = [
+            { label: "Rework trend", current: 0, delta: 0, status: "ok", recommendation: "No rework trend available." },
+            { label: "Large change share", current: 0, delta: 0, status: "ok", recommendation: "No large-change trend available." },
+            { label: "Ownership concentration", current: 0, delta: 0, status: "ok", recommendation: "No ownership trend available." },
+        ];
+        const rows = Array.isArray(summarySignals) && summarySignals.length > 0 ? summarySignals : fallback;
+        for (let i = 0; i < signalCards.length; i++) {
+            const src = rows[i] || fallback[i];
+            const status = signalStatus(src.status);
+            signalCards[i].title.textContent = src.label || src.id || "Signal";
+            signalCards[i].status.textContent = status.toUpperCase();
+            signalCards[i].status.className = `analytics-signal-status is-${status}`;
+            signalCards[i].metric.textContent = `${Number(src.current || 0).toFixed(1)}%`;
+            signalCards[i].delta.textContent = `vs prev: ${formatDelta(src.delta || 0)}`;
+            signalCards[i].recommendation.textContent = src.recommendation || "No recommendation available.";
+        }
+    }
+
+    function renderDeltas(deltas) {
+        const source = (deltas && typeof deltas === "object") ? deltas : {};
+        for (const item of deltaItems) {
+            const metric = source[item.key];
+            const delta = Number(metric?.delta || 0);
+            item.value.textContent = formatDelta(delta, item.key === "avgChangeSize" ? "" : "%");
+            item.value.className = "analytics-delta-chip-value";
+            if (delta > 0.01) item.value.classList.add("is-up");
+            if (delta < -0.01) item.value.classList.add("is-down");
+        }
+    }
+
+    function renderHotspots(hotspots, coverage) {
+        hotspotBody.innerHTML = "";
+        const rows = Array.isArray(hotspots) ? hotspots : [];
+        if (rows.length === 0) {
+            const tr = document.createElement("tr");
+            const td = document.createElement("td");
+            td.colSpan = 7;
+            td.className = "analytics-hotspot-empty";
+            td.textContent = "Hotspot analytics unavailable for this range.";
+            tr.appendChild(td);
+            hotspotBody.appendChild(tr);
+        } else {
+            for (const row of rows.slice(0, 15)) {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td class="analytics-hotspot-path">${row.path || "unknown"}</td>
+                    <td><span class="analytics-hotspot-risk is-${signalStatus(row.status)}">${Number(row.riskScore || 0)}</span></td>
+                    <td>${Number(row.churnCount || 0)}</td>
+                    <td>${Number(row.reworkRate || 0).toFixed(1)}%</td>
+                    <td>${Number(row.largeChangeShare || 0).toFixed(1)}%</td>
+                    <td title="${row.topAuthor || "unknown"}">${Number(row.topAuthorShare || 0).toFixed(1)}%</td>
+                    <td class="analytics-hotspot-rec">${row.recommendation || "Monitor changes."}</td>
+                `;
+                hotspotBody.appendChild(tr);
+            }
+        }
+
+        const partial = coverage?.partial === true;
+        if (partial) {
+            const analyzed = Number(coverage?.analyzedCommits || 0);
+            const eligible = Number(coverage?.eligibleCommits || 0);
+            hotspotCoverage.textContent = `Partial coverage: analyzed ${analyzed} of ${eligible} commits.`;
+            hotspotCoverage.style.display = "block";
+        } else {
+            hotspotCoverage.style.display = "none";
+        }
+    }
+
     /** Recomputes and redraws both diff-stats-dependent charts. */
     function redrawDiffStatsCharts() {
         if (!diffStatsCache) return;
@@ -1377,6 +1541,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             emptyState.style.display = "none";
             summary.style.display = "";
             periodSelector.style.display = "";
+            actionableSection.style.display = "";
+            hotspotSection.style.display = "";
             chartContainer.style.display = "";
             authorSection.style.display = "";
             heatmapSection.style.display = "";
@@ -1394,6 +1560,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             loadingState.style.display = "block";
             summary.style.display = "none";
             periodSelector.style.display = "none";
+            actionableSection.style.display = "none";
+            hotspotSection.style.display = "none";
             chartContainer.style.display = "none";
             authorSection.style.display = "none";
             heatmapSection.style.display = "none";
@@ -1453,6 +1621,9 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
                 rework.weeks = Array.isArray(rework?.weeks) ? rework.weeks : [];
                 avgReworkStat.value.textContent = `${Number(rework.avgRate || 0).toFixed(1)}%`;
                 drawReworkChart(rework);
+                renderSignals(payload?.summarySignals);
+                renderDeltas(payload?.deltas);
+                renderHotspots(payload?.hotspots, payload?.diffCoverage);
 
                 diffStatsMsg.style.display = "none";
                 changeSizeChartContainer.style.display = "";
@@ -1466,7 +1637,11 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             } catch {
                 if (usingCustomRange) {
                     customStatus.textContent = "Failed to load selected range.";
+                    showSections();
                     loadingState.style.display = "none";
+                    renderSignals(null);
+                    renderDeltas(null);
+                    renderHotspots([], null);
                     return;
                 }
                 // Fall back to local analytics path for period presets.
@@ -1477,6 +1652,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             emptyState.style.display = "block";
             summary.style.display = "none";
             periodSelector.style.display = "none";
+            actionableSection.style.display = "none";
+            hotspotSection.style.display = "none";
             chartContainer.style.display = "none";
             authorSection.style.display = "none";
             heatmapSection.style.display = "none";
@@ -1515,6 +1692,9 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         mergeCountStat.value.textContent = mergeData.mergeCount.toLocaleString();
         mergePercentStat.value.textContent = `${mergeData.mergePercent.toFixed(1)}%`;
         mergesPerWeekStat.value.textContent = mergeData.mergesPerWeek.toFixed(1);
+        renderSignals(null);
+        renderDeltas(null);
+        renderHotspots([], null);
 
         // Diff-stats-dependent charts
         if (diffStatsCache) {

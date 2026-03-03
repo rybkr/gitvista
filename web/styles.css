@@ -5306,6 +5306,200 @@ canvas {
     border-radius: 8px;
 }
 
+/* ── Actionable Summary ── */
+
+.analytics-signal-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.analytics-signal-card {
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-elevated);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.analytics-signal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.analytics-signal-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.analytics-signal-status {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.analytics-signal-status.is-risk {
+    color: #fff;
+    background: #b91c1c;
+    border-color: #b91c1c;
+}
+
+.analytics-signal-status.is-watch {
+    color: #7c2d12;
+    background: #fed7aa;
+    border-color: #fdba74;
+}
+
+.analytics-signal-status.is-ok {
+    color: #065f46;
+    background: #bbf7d0;
+    border-color: #86efac;
+}
+
+.analytics-signal-metric {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.analytics-signal-delta {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.analytics-signal-recommendation {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-secondary);
+}
+
+.analytics-delta-strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.analytics-delta-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    padding: 6px 8px;
+}
+
+.analytics-delta-chip-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.analytics-delta-chip-value {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.analytics-delta-chip-value.is-up {
+    color: #b91c1c;
+}
+
+.analytics-delta-chip-value.is-down {
+    color: #047857;
+}
+
+/* ── Hotspots ── */
+
+.analytics-hotspot-coverage {
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 8px 10px;
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--surface-color) 85%, var(--bg-color));
+}
+
+.analytics-hotspot-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 12px;
+    background: var(--surface-elevated);
+}
+
+.analytics-hotspot-table th,
+.analytics-hotspot-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+    vertical-align: top;
+}
+
+.analytics-hotspot-table th {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    background: var(--surface-color);
+}
+
+.analytics-hotspot-path {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    color: var(--text-color);
+}
+
+.analytics-hotspot-risk {
+    display: inline-flex;
+    min-width: 28px;
+    justify-content: center;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px;
+    border-radius: 999px;
+    padding: 2px 6px;
+}
+
+.analytics-hotspot-risk.is-risk {
+    color: #fff;
+    background: #b91c1c;
+}
+
+.analytics-hotspot-risk.is-watch {
+    color: #7c2d12;
+    background: #fed7aa;
+}
+
+.analytics-hotspot-risk.is-ok {
+    color: #065f46;
+    background: #bbf7d0;
+}
+
+.analytics-hotspot-rec {
+    color: var(--text-secondary);
+    max-width: 320px;
+}
+
+.analytics-hotspot-empty {
+    color: var(--text-secondary);
+    text-align: center;
+    font-style: italic;
+}
+
 /* ── Sections ── */
 
 .analytics-section {
@@ -5337,6 +5531,20 @@ canvas {
     border-radius: 2px;
     background: var(--node-color);
     opacity: 0.6;
+}
+
+@media (max-width: 1100px) {
+    .analytics-signal-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .analytics-delta-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .analytics-hotspot-table {
+        font-size: 11px;
+    }
 }
 
 /* ── Diff Stats Loading ── */
