@@ -296,7 +296,7 @@ function bootstrapGraph(root, repoId) {
             onShow: () => {
                 analyticsView.resetToDefaultPeriod();
                 preloadAnalyticsOnce();
-                analyticsView.update();
+                requestAnimationFrame(() => analyticsView.update());
             },
         },
         { name: "compare", tooltip: "Compare", content: mergePreviewView.el },

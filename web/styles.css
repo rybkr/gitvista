@@ -5294,6 +5294,18 @@ canvas {
     line-height: 1.6;
 }
 
+.analytics-loading {
+    display: none;
+    padding: 32px 20px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--node-color) 6%, var(--surface-color));
+    border: 1px dashed color-mix(in srgb, var(--node-color) 25%, var(--border-color));
+    border-radius: 8px;
+}
+
 /* ── Sections ── */
 
 .analytics-section {

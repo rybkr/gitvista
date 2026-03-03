@@ -394,6 +394,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     const attemptedHydration = new Set();
     const analyticsCache = new Map();
     let preloadPromise = null;
+    let hasRenderedContent = false;
 
     function commitNeedsIdentity(commit) {
         if (!commit) return true;
@@ -641,9 +642,14 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     const emptyState = document.createElement("div");
     emptyState.className = "analytics-empty";
     emptyState.textContent = "No commit history available. Push some commits to see velocity data.";
+    const loadingState = document.createElement("div");
+    loadingState.className = "analytics-loading";
+    loadingState.textContent = "Loading analytics...";
+    loadingState.style.display = "none";
 
     el.appendChild(summary);
     el.appendChild(periodSelector);
+    el.appendChild(loadingState);
     el.appendChild(chartContainer);
     el.appendChild(emptyState);
 
@@ -1366,14 +1372,26 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         const period = PERIODS.find((p) => p.label === selectedPeriod) || PERIODS[3];
         const periodKey = period.label === "All" ? "all" : period.label.toLowerCase();
         const usingCustomRange = selectedPeriod === "Custom" && customRange.start && customRange.end;
+        const shouldShowLoading = !hasRenderedContent;
+        const showSections = () => {
+            emptyState.style.display = "none";
+            summary.style.display = "";
+            periodSelector.style.display = "";
+            chartContainer.style.display = "";
+            authorSection.style.display = "";
+            heatmapSection.style.display = "";
+            mergeSection.style.display = "";
+            changeSizeSection.style.display = "";
+            reworkSection.style.display = "";
+        };
 
         // Update period button states
         for (const { btn, period: p } of periodButtons) {
             btn.classList.toggle("is-active", p.label === selectedPeriod);
         }
 
-        if (!commits || commits.size === 0) {
-            emptyState.style.display = "block";
+        if (shouldShowLoading) {
+            loadingState.style.display = "block";
             summary.style.display = "none";
             periodSelector.style.display = "none";
             chartContainer.style.display = "none";
@@ -1382,24 +1400,17 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             mergeSection.style.display = "none";
             changeSizeSection.style.display = "none";
             reworkSection.style.display = "none";
-            return;
+            emptyState.style.display = "none";
+        } else {
+            showSections();
         }
-
-        emptyState.style.display = "none";
-        summary.style.display = "";
-        periodSelector.style.display = "";
-        chartContainer.style.display = "";
-        authorSection.style.display = "";
-        heatmapSection.style.display = "";
-        mergeSection.style.display = "";
-        changeSizeSection.style.display = "";
-        reworkSection.style.display = "";
 
         if (fetchAnalytics) {
             try {
                 const payload = usingCustomRange
                     ? await fetchAnalyticsCached({ start: customRange.start, end: customRange.end })
                     : await fetchAnalyticsCached({ period: periodKey });
+                showSections();
                 if (usingCustomRange) {
                     const s = payload?.start?.slice?.(0, 10) || customRange.start;
                     const e = payload?.end?.slice?.(0, 10) || customRange.end;
@@ -1449,17 +1460,36 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
                 reworkChartContainer.style.display = "";
                 reworkSummary.style.display = "";
                 reworkSection.querySelector(".analytics-section-title").style.opacity = "";
+                loadingState.style.display = "none";
+                hasRenderedContent = true;
                 return;
             } catch {
                 if (usingCustomRange) {
                     customStatus.textContent = "Failed to load selected range.";
+                    loadingState.style.display = "none";
                     return;
                 }
                 // Fall back to local analytics path for period presets.
             }
         }
 
+        if (!commits || commits.size === 0) {
+            emptyState.style.display = "block";
+            summary.style.display = "none";
+            periodSelector.style.display = "none";
+            chartContainer.style.display = "none";
+            authorSection.style.display = "none";
+            heatmapSection.style.display = "none";
+            mergeSection.style.display = "none";
+            changeSizeSection.style.display = "none";
+            reworkSection.style.display = "none";
+            loadingState.style.display = "none";
+            hasRenderedContent = true;
+            return;
+        }
+
         await hydrateAuthorsForPeriod(commits, period.months);
+        showSections();
 
         const data = computeVelocity(commits, period.months);
 
@@ -1492,6 +1522,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         } else {
             loadDiffStats();
         }
+        loadingState.style.display = "none";
+        hasRenderedContent = true;
     }
 
     return { el, update, preload, resetToDefaultPeriod };
