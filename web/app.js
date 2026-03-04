@@ -41,6 +41,19 @@ function parseHash() {
     return null;
 }
 
+async function detectServerMode() {
+    try {
+        const resp = await fetch("/api/config");
+        if (resp.ok) {
+            const config = await resp.json();
+            return config.mode || "local";
+        }
+    } catch {
+        // Default to local on failure.
+    }
+    return "local";
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
     logger.info("Bootstrapping frontend");
 
@@ -53,28 +66,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     // ── Detect server mode ───────────────────────────────────────────────
-    let mode = "local";
-    try {
-        const resp = await fetch("/api/config");
-        if (resp.ok) {
-            const config = await resp.json();
-            mode = config.mode || "local";
-        }
-    } catch {
-        // Default to local on failure
-    }
+    const mode = await detectServerMode();
     logger.info("Server mode", mode);
 
-    const mountGraph = (repoId) => {
+    const mount = (factory) => {
         cleanupActiveView();
         clearRoot(root);
-        activeViewCleanup = bootstrapGraph(root, repoId);
+        activeViewCleanup = factory();
+    };
+
+    const mountGraph = (repoId) => {
+        mount(() => bootstrapGraph(root, repoId));
     };
 
     const mountLanding = () => {
-        cleanupActiveView();
-        clearRoot(root);
-        activeViewCleanup = showLanding(root);
+        mount(() => showLanding(root));
     };
 
     if (mode === "local") {
@@ -272,7 +278,6 @@ function bootstrapGraph(root, repoId) {
         host.appendChild(loading);
         return {
             host,
-            loading,
             setLoaded(contentEl) {
                 if (contentEl.parentElement !== host) {
                     host.innerHTML = "";
@@ -282,16 +287,34 @@ function bootstrapGraph(root, repoId) {
         };
     };
 
+    function createDeferredViewLoader(load) {
+        let instance = null;
+        let inflight = null;
+        return {
+            get() {
+                return instance;
+            },
+            ensure() {
+                if (instance) return Promise.resolve(instance);
+                if (inflight) return inflight;
+                inflight = Promise.resolve()
+                    .then(load)
+                    .then((next) => {
+                        if (next) instance = next;
+                        return instance;
+                    })
+                    .finally(() => {
+                        inflight = null;
+                    });
+                return inflight;
+            },
+        };
+    }
+
     let graph = null;
     let graphFirstShown = false;
     let latestStatus = null;
     let pendingExplorerCommit = null;
-    let fileExplorer = null;
-    let fileExplorerLoadPromise = null;
-    let analyticsView = null;
-    let analyticsViewLoadPromise = null;
-    let mergePreviewView = null;
-    let mergePreviewLoadPromise = null;
     let disposed = false;
     let backendSession = null;
 
@@ -315,14 +338,11 @@ function bootstrapGraph(root, repoId) {
         return resp.json();
     };
 
-    function ensureFileExplorerLoaded() {
-        if (fileExplorer) return Promise.resolve(fileExplorer);
-        if (fileExplorerLoadPromise) return fileExplorerLoadPromise;
-        fileExplorerLoadPromise = import("./fileExplorer.js")
+    const fileExplorerLoader = createDeferredViewLoader(() =>
+        import("./fileExplorer.js")
             .then(({ createFileExplorer }) => {
                 if (disposed) return null;
                 const view = createFileExplorer();
-                fileExplorer = view;
                 fileExplorerPanel.setLoaded(view.el);
                 if (latestStatus) view.updateWorkingTreeStatus(latestStatus);
                 if (pendingExplorerCommit) {
@@ -331,16 +351,10 @@ function bootstrapGraph(root, repoId) {
                 }
                 return view;
             })
-            .finally(() => {
-                fileExplorerLoadPromise = null;
-            });
-        return fileExplorerLoadPromise;
-    }
+    );
 
-    function ensureAnalyticsLoaded() {
-        if (analyticsView) return Promise.resolve(analyticsView);
-        if (analyticsViewLoadPromise) return analyticsViewLoadPromise;
-        analyticsViewLoadPromise = import("./analyticsView.js")
+    const analyticsLoader = createDeferredViewLoader(() =>
+        import("./analyticsView.js")
             .then(({ createAnalyticsView }) => {
                 if (disposed) return null;
                 const view = createAnalyticsView({
@@ -350,20 +364,13 @@ function bootstrapGraph(root, repoId) {
                     fetchAnalytics,
                     fetchDiffStats,
                 });
-                analyticsView = view;
                 analyticsPanel.setLoaded(view.el);
                 return view;
             })
-            .finally(() => {
-                analyticsViewLoadPromise = null;
-            });
-        return analyticsViewLoadPromise;
-    }
+    );
 
-    function ensureMergePreviewLoaded() {
-        if (mergePreviewView) return Promise.resolve(mergePreviewView);
-        if (mergePreviewLoadPromise) return mergePreviewLoadPromise;
-        mergePreviewLoadPromise = import("./mergePreviewView.js")
+    const mergePreviewLoader = createDeferredViewLoader(() =>
+        import("./mergePreviewView.js")
             .then(({ createMergePreviewView }) => {
                 if (disposed) return null;
                 const view = createMergePreviewView({
@@ -372,16 +379,15 @@ function bootstrapGraph(root, repoId) {
                         graph?.setMergePreview(preview);
                     },
                 });
-                mergePreviewView = view;
                 comparePanel.setLoaded(view.el);
-                mergePreviewView.updateBranches();
+                view.updateBranches();
                 return view;
             })
-            .finally(() => {
-                mergePreviewLoadPromise = null;
-            });
-        return mergePreviewLoadPromise;
-    }
+    );
+
+    const ensureFileExplorerLoaded = () => fileExplorerLoader.ensure();
+    const ensureAnalyticsLoaded = () => analyticsLoader.ensure();
+    const ensureMergePreviewLoaded = () => mergePreviewLoader.ensure();
 
     const workbench = createWorkbench([
         {
@@ -449,6 +455,7 @@ function bootstrapGraph(root, repoId) {
     let analyticsPreloadStarted = false;
 
     function preloadAnalyticsOnce() {
+        const analyticsView = analyticsLoader.get();
         if (analyticsPreloadStarted || !analyticsView) return;
         analyticsPreloadStarted = true;
         analyticsView.preload().catch(() => {
@@ -639,6 +646,7 @@ function bootstrapGraph(root, repoId) {
 
     /** If the file explorer has no commit loaded, open HEAD. */
     function openHeadInExplorerIfEmpty() {
+        const fileExplorer = fileExplorerLoader.get();
         if (fileExplorer?.hasCommit?.()) return;
         const headHash = graph.getHeadHash();
         if (!headHash) return;
@@ -671,6 +679,7 @@ function bootstrapGraph(root, repoId) {
     }
 
     function syncBranchDependentViews() {
+        const mergePreviewView = mergePreviewLoader.get();
         graphFilters.updateBranches(graph.getBranches());
         mergePreviewView?.updateBranches?.();
         if (graphSettings.isVisible()) graphSettings.updateBranches();
@@ -695,6 +704,7 @@ function bootstrapGraph(root, repoId) {
             setErrorConnectionState(state, attempt);
         },
         onSummary: (summary) => {
+            const analyticsView = analyticsLoader.get();
             telemetryStore.recordSummary(summary);
             graph.applySummary(summary);
             analyticsView?.update?.();
@@ -703,6 +713,8 @@ function bootstrapGraph(root, repoId) {
             applyInitialSelectionOnce();
         },
         onDelta: (delta) => {
+            const analyticsView = analyticsLoader.get();
+            const mergePreviewView = mergePreviewLoader.get();
             telemetryStore.recordDelta(delta);
             graph.applyDelta(delta);
             analyticsView?.update?.();
@@ -732,6 +744,7 @@ function bootstrapGraph(root, repoId) {
             applyInitialSelectionOnce();
         },
         onStatus: (status) => {
+            const fileExplorer = fileExplorerLoader.get();
             latestStatus = status;
             indexView.updateStatus(status);
             fileExplorer?.updateWorkingTreeStatus?.(status);
