@@ -234,21 +234,26 @@ func buildAnalytics(repo *gitcore.Repository, q analyticsQuery) (*analyticsRespo
 		}
 		return resp, nil
 	}
+	workEntries := filterNonMergeEntries(filtered)
 
-	velocity := computeVelocity(filtered)
-	authors := computeAuthors(filtered)
-	heatmap := computeHeatmap(filtered)
+	velocity := analyticsVelocity{}
+	if len(workEntries) > 0 {
+		velocity = computeVelocity(workEntries)
+	}
+	authors := computeAuthors(workEntries)
+	heatmap := computeHeatmap(workEntries)
 	merges := computeMerges(filtered)
-	changeSize, rework, coverage, insights := computeDiffAnalytics(repo, commitsMap, filtered)
+	changeSize, rework, coverage, insights := computeDiffAnalytics(repo, commitsMap, workEntries)
 	prevStart, prevEnd := analyticsPreviousWindow(windowStart, windowEnd)
 	previous := filterEntriesForWindow(entries, prevStart, prevEnd)
+	prevWork := filterNonMergeEntries(previous)
 	prevMerges := analyticsMerges{}
 	prevChangeSize := analyticsChangeSize{}
 	prevRework := analyticsRework{}
 	prevInsights := analyticsDiffInsights{}
 	if len(previous) > 0 {
 		prevMerges = computeMerges(previous)
-		prevChangeSize, prevRework, _, prevInsights = computeDiffAnalytics(repo, commitsMap, previous)
+		prevChangeSize, prevRework, _, prevInsights = computeDiffAnalytics(repo, commitsMap, prevWork)
 	}
 	deltas := buildAnalyticsDeltas(
 		rework.AvgRate, prevRework.AvgRate,
@@ -403,6 +408,17 @@ func filterEntriesForWindow(entries []analyticsCommitEntry, start time.Time, end
 	filtered := make([]analyticsCommitEntry, 0, len(entries))
 	for _, e := range entries {
 		if e.TS.Before(start) || e.TS.After(end) {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	return filtered
+}
+
+func filterNonMergeEntries(entries []analyticsCommitEntry) []analyticsCommitEntry {
+	filtered := make([]analyticsCommitEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.Parents > 1 {
 			continue
 		}
 		filtered = append(filtered, e)

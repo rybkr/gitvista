@@ -64,3 +64,22 @@ func TestAnalyticsWindowing(t *testing.T) {
 		t.Fatalf("previous start must be before previous end: prevStart=%s prevEnd=%s", ps, pe)
 	}
 }
+
+func TestFilterNonMergeEntries(t *testing.T) {
+	entries := []analyticsCommitEntry{
+		{Parents: 0},
+		{Parents: 1},
+		{Parents: 2},
+		{Parents: 3},
+	}
+
+	filtered := filterNonMergeEntries(entries)
+	if len(filtered) != 2 {
+		t.Fatalf("filtered length = %d, want 2", len(filtered))
+	}
+	for _, e := range filtered {
+		if e.Parents > 1 {
+			t.Fatalf("unexpected merge entry retained: parents=%d", e.Parents)
+		}
+	}
+}

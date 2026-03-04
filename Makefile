@@ -193,7 +193,7 @@ deps-check:
 	@echo "Checking dependencies..."
 	@go mod download
 	@go mod verify
-	@if go mod tidy -check; then \
+	@if go mod tidy -diff; then \
 		echo "Dependencies are clean"; \
 	else \
 		echo "Dependencies need tidying - run 'go mod tidy'"; \
