@@ -154,7 +154,12 @@ lint:
 ## test-js: Run JavaScript unit tests (Node.js test runner)
 test-js:
 	@echo "Running JavaScript tests..."
-	@node --test web/**/*.test.js
+	@TEST_FILES=$$(find web -type f -name '*.test.js' | sort); \
+	if [ -z "$$TEST_FILES" ]; then \
+		echo "Could not find JavaScript test files under web/"; \
+		exit 1; \
+	fi; \
+	node --test $$TEST_FILES
 
 ## validate-js: Validate JavaScript syntax and ES module compliance
 validate-js:
