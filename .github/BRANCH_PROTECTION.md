@@ -28,65 +28,19 @@ This is the critical setting that enforces CI/CD compliance. The following statu
 
 #### Required Status Checks (in order of importance)
 
-1. **ci-status** ⭐ MASTER CHECK
-   - Aggregates all CI job results
+1. **CI Status** ⭐ MASTER CHECK
+   - Aggregates all required CI jobs
    - Must pass for any merge to proceed
-   - This is the only check GitHub strictly requires to exist before CI runs
+   - Recommended as the only required status check for low-maintenance branch protection
 
-2. **Test** - Unit tests with coverage
-   - Validates all code changes work as expected
-   - Ensures test coverage maintained
-   - Timeout: 5 minutes
+2. **Quality & Security** (optional, additional visibility)
+   - Formatting, imports, vet, dependencies, lint, security, and JS validation/tests
 
-3. **Integration Tests** - Integration test suite
-   - Validates components work together
-   - Uses full Git repository context
-   - Timeout: 5 minutes
+3. **Go Tests** (optional, additional visibility)
+   - Unit, integration, and e2e tests with coverage artifact upload
 
-4. **E2E Tests** - End-to-end tests
-   - Validates full user workflows
-   - Compares output against git baseline
-   - Timeout: 5 minutes
-
-5. **Lint** - Code quality checks
-   - Runs golangci-lint with configured linters
-   - Catches common mistakes, security issues, code style
-   - Only reports new issues in PRs
-
-6. **Vet** - Static analysis
-   - Runs `go vet` for correctness issues
-   - Catches pointer/method errors, suspicious constructs
-   - Prevents subtle bugs
-
-7. **Format Check** - Code formatting
-   - Ensures gofmt compliance
-   - Maintains consistent code style
-   - Prevents style debates in reviews
-
-8. **Security Scan** - Vulnerability checking
-   - Runs govulncheck for known CVEs
-   - Prevents dependency vulnerabilities
-   - Runs against Go 1.26
-
-9. **Validate JavaScript** - Frontend validation
-   - Checks JavaScript syntax correctness
-   - Ensures ES module compliance
-   - Catches typos in variable names
-
-10. **Build** - Binary compilation
-    - Verifies code compiles cleanly
-    - Builds main binary (gitvista) and CLI
-    - Ensures no missing imports or syntax errors
-
-11. **Docker Build** - Container image verification
-    - Verifies Docker image builds successfully
-    - Validates Dockerfile and multi-stage build
-    - Caches layers for faster subsequent builds
-
-12. **Dependency Check** - Module hygiene
-    - Verifies go.mod/go.sum are tidy
-    - Ensures no orphaned or missing dependencies
-    - Validates module integrity
+4. **Build Artifacts** (optional, additional visibility)
+   - Binary + Docker build verification and artifact upload
 
 **Configuration in GitHub UI:**
 - Check "Require status checks to pass before merging"
@@ -162,80 +116,30 @@ In urgent situations (production incident, security patch), administrators can:
 
 ### Jobs and Duration
 
-The CI pipeline consists of 10 independent jobs that run in parallel:
+The CI pipeline consists of 3 primary jobs plus 1 aggregator:
 
 | Job | Duration | Critical |
 |-----|----------|----------|
-| Format Check | < 10s | ⭐ Yes |
-| Vet | < 30s | ⭐ Yes |
-| Lint | < 2m | ⭐ Yes |
-| Security Scan | < 1m | ⭐ Yes |
-| Test | < 3m | ⭐ Yes |
-| Integration Tests | < 3m | ⭐ Yes |
-| E2E Tests | < 3m | ⭐ Yes |
-| Validate JavaScript | < 10s | ✓ Yes |
-| Build | < 2m | ✓ Yes |
-| Docker Build | < 3m | ✓ Yes |
-| Dependency Check | < 30s | ✓ Yes |
+| Quality & Security | 2-5m | ⭐ Yes |
+| Go Tests | 2-5m | ⭐ Yes |
+| Build Artifacts | 2-5m | ⭐ Yes |
+| CI Status (aggregator) | < 10s | ⭐ Yes |
 
 **Total Expected Time:** ~3-5 minutes (parallel execution)
 
 ### What Each Check Does
 
-#### Format Check (gofmt)
-- Ensures all Go code follows standard formatting
-- Auto-fixed by pre-commit hooks locally
-- Prevents style debates in code review
+#### Quality & Security
+- Runs format/import/vet/dependency/lint/security checks plus JS validation/tests
+- Front-loads code quality and dependency hygiene in one place
 
-#### Vet (go vet)
-- Detects suspicious code patterns
-- Catches pointer errors, unreachable code, unused variables
-- Zero false positives, 100% trustworthy
+#### Go Tests
+- Runs unit, integration, and e2e suites
+- Generates coverage report and uploads coverage artifacts
 
-#### Lint (golangci-lint)
-- Runs 13+ linters: errcheck, staticcheck, revive, gosec, etc.
-- Catches missing error handling, API misuse, security issues
-- Configured in `.golangci.yml`
-
-#### Security Scan (govulncheck)
-- Checks for known CVEs in dependencies
-- Uses Go vulnerability database
-- Fails on confirmed exploitable vulnerabilities
-
-#### Test
-- Runs all unit tests with race detector
-- Generates coverage report (uploaded to Codecov)
-- 5-minute timeout for flaky test detection
-
-#### Integration Tests
-- Tests component interactions with real file I/O
-- Uses full Git repository context
-- Separate from unit tests for clarity
-
-#### E2E Tests
-- Tests complete workflows end-to-end
-- Compares against git baseline
-- Validates user-facing functionality
-
-#### Validate JavaScript
-- Node.js syntax validation (ast parsing)
-- Checks for CommonJS in ES modules
-- No linting (that's for pre-commit locally)
-
-#### Build
-- Compiles both binaries (gitvista and gitvista-cli)
-- Uses minimal flags (-v for verbose only)
-- Verifies all imports present
-
-#### Docker Build
-- Builds the production Docker image
-- Uses multi-stage Dockerfile for minimal size
-- Caches intermediate layers
-
-#### Dependency Check
-- Verifies go.mod/go.sum are synchronized
-- Runs `go mod tidy -check` and `go mod verify`
-- Catches accidental edits to module files
+#### Build Artifacts
+- Builds `gitvista` and `gitvista-cli`
+- Verifies Docker image build and uploads build artifact archive
 
 ## Local Development
 
@@ -350,12 +254,12 @@ A: Only administrators can approve a failed check through the GitHub UI bypass b
 A: Investigate the failure, add retries to the workflow if needed, or fix the underlying test flakiness.
 
 **Q: How do I update the required checks list?**
-A: Edit `.github/workflows/ci.yml` and update the `ci-status` job's `needs:` list.
+A: Edit `.github/workflows/ci.yml` and update the `CI Status` job's `needs:` list and branch protection check selection in GitHub Settings.
 
 ## Related Documentation
 
 - [GitHub Branch Protection Rules](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule)
-- [GitVista CI Workflow](.github/workflows/ci.yml)
+- [GitVista CI Workflow](workflows/ci.yml)
 - [Lefthook Pre-commit Configuration](../../lefthook.yml)
 - [Project Makefile](../../Makefile)
 - [Go Testing Documentation](https://golang.org/pkg/testing/)

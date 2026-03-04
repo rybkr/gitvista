@@ -1,10 +1,12 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
     branches: [main]
+  workflow_dispatch:
 
-# Only one deploy at a time
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -13,46 +15,19 @@ permissions:
   contents: read
 
 jobs:
-  # Wait for CI to pass before deploying
-  ci:
-    name: CI Status
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait for CI checks
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-
-      - name: Verify CI passed
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "Waiting for CI workflow to complete..."
-          for i in $(seq 1 60); do
-            STATUS=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs \
-              --jq '[.check_runs[] | select(.name == "CI Status")] | first | .conclusion // "pending"')
-            if [ "$STATUS" = "success" ]; then
-              echo "CI passed"
-              exit 0
-            elif [ "$STATUS" = "failure" ] || [ "$STATUS" = "cancelled" ]; then
-              echo "CI failed with status: $STATUS"
-              exit 1
-            fi
-            echo "CI status: $STATUS (attempt $i/60)"
-            sleep 10
-          done
-          echo "Timed out waiting for CI"
-          exit 1
-
   deploy-staging:
     name: Deploy to Staging
-    needs: ci
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: staging
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Fly.io CLI
-        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be  # 1.5
+        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
 
       - name: Deploy to staging
         env:
@@ -65,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Run smoke tests against staging
         run: bash scripts/smoke-test.sh https://gitvista-staging.fly.dev
@@ -77,10 +52,12 @@ jobs:
     environment: production
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Fly.io CLI
-        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be  # 1.5
+        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
 
       - name: Deploy to production
         env:
@@ -93,7 +70,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Run smoke tests against production
         run: bash scripts/smoke-test.sh https://gitvista.fly.dev
+
+      - name: Publish deploy summary
+        run: |
+          {
+            echo "### Deploy Summary"
+            echo "- Staging deploy + smoke test passed"
+            echo "- Production deploy + smoke test passed"
+            echo "- Source SHA: ${{ github.event.workflow_run.head_sha || github.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"

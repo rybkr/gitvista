@@ -1,6 +1,6 @@
-.PHONY: test ci-local ci-remote lint integration e2e build build-cli clean help setup-hooks \
+.PHONY: unit test ci ci-local ci-remote lint integration e2e build build-cli clean help setup-hooks \
          format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
-         check-vuln docker-build deps-check deploy-staging deploy-production smoke-test
+         imports-check check-vuln docker-build deps-check deploy-staging deploy-production smoke-test
 
 GOCMD=go
 GOTEST=$(GOCMD) test
@@ -24,9 +24,13 @@ setup-hooks:
 	@echo "Setting up pre-commit hooks..."
 	@bash scripts/setup-hooks.sh
 
-## test: Run all unit tests
-test:
+## unit: Run unit tests
+unit:
 	$(GOTEST) -v -race -cover -timeout=60s ./...
+
+## test: Run all tests (unit, integration, e2e, JavaScript)
+test: unit integration e2e test-js
+	@echo "All tests passed!"
 
 ## cover: Run tests with coverage
 cover:
@@ -74,6 +78,25 @@ check-imports:
 		echo "goimports not found - install with: go install golang.org/x/tools/cmd/goimports@latest"; \
 		exit 1; \
 	fi
+
+## imports-check: Verify imports are organized (fails if goimports would change files)
+imports-check:
+	@echo "Checking import formatting with goimports..."
+	@if command -v goimports >/dev/null; then \
+		UNFORMATTED=$$(find . -name '*.go' \
+			-not -path './vendor/*' \
+			-not -path './web/*' \
+			-not -path './.cache/*' \
+			-print0 | xargs -0 goimports -l || true); \
+		if [ -n "$$UNFORMATTED" ]; then \
+			echo "Files with import/style issues:"; echo "$$UNFORMATTED"; \
+			echo "Run 'make check-imports' to fix"; exit 1; \
+		fi; \
+	else \
+		echo "goimports not found - install with: go install golang.org/x/tools/cmd/goimports@latest"; \
+		exit 1; \
+	fi
+	@echo "All imports properly formatted"
 
 ## vet: Run go vet static analysis
 vet:
@@ -178,7 +201,7 @@ deps-check:
 	fi
 
 ## dev-check: Run fast local checks (format, imports, vet) - suitable for CI pre-checks
-dev-check: format check-imports vet
+dev-check: format-check imports-check vet
 	@echo "Running development checks..."
 
 ## format-check: Verify all Go files are properly formatted (fails if not)
@@ -196,12 +219,15 @@ format-check:
 	@echo "All files properly formatted"
 
 ## ci-local: Run CI checks that work offline (no Docker or network needed)
-ci-local: format-check check-imports vet lint security-local test integration e2e validate-js test-js build
+ci-local: format-check imports-check vet lint security-local test validate-js build
 	@echo "All local CI checks passed!"
 
 ## ci-remote: Run all CI checks including Docker build and dependency verification
-ci-remote: format-check check-imports vet lint security test integration e2e validate-js test-js build docker-build deps-check
+ci-remote: format-check imports-check vet lint security test validate-js build docker-build deps-check
 	@echo "All CI checks passed!"
+
+## ci: Alias for full CI suite
+ci: ci-remote
 
 ## clean: Clean build artifacts
 clean:
