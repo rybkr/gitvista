@@ -49,3 +49,20 @@ func TestLoadRefs_LooseRefOverridesPackedRef(t *testing.T) {
 		t.Fatalf("HeadRef() = %q, want %q", got, "refs/heads/dev")
 	}
 }
+
+func TestResolveRef_RejectsPathTraversal(t *testing.T) {
+	gitDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(gitDir, "refs", "heads"), 0o755); err != nil {
+		t.Fatalf("mkdir refs/heads: %v", err)
+	}
+
+	refPath := filepath.Join(gitDir, "refs", "heads", "main")
+	if err := os.WriteFile(refPath, []byte("ref: ../outside\n"), 0o644); err != nil {
+		t.Fatalf("write ref: %v", err)
+	}
+
+	repo := &Repository{gitDir: gitDir}
+	if _, err := repo.resolveRef(refPath); err == nil {
+		t.Fatal("expected resolveRef to reject ref path traversal")
+	}
+}

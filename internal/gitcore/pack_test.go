@@ -187,6 +187,36 @@ func TestLoadPackIndexV2_LargeOffsets(t *testing.T) {
 	}
 }
 
+func TestLoadPackIndexV2_LargeOffsets_OverflowIgnored(t *testing.T) {
+	hash1 := hashFromHex("0a0b0c0d0e0f1011121314151617181920212223")
+
+	var buf bytes.Buffer
+	writeUint32BE(&buf, 2)
+
+	var fanout [256]uint32
+	for i := 0x0a; i <= 0xff; i++ {
+		fanout[i] = 1
+	}
+	for i := 0; i < 256; i++ {
+		writeUint32BE(&buf, fanout[i])
+	}
+
+	buf.Write(hash1[:])
+	writeUint32BE(&buf, 0)
+	writeUint32BE(&buf, 0x80000000)
+	writeUint64BE(&buf, ^uint64(0))
+
+	idx, err := loadPackIndexV2(bytes.NewReader(buf.Bytes()), "test.pack")
+	if err != nil {
+		t.Fatalf("loadPackIndexV2 failed: %v", err)
+	}
+
+	hash1Str, _ := NewHashFromBytes(hash1)
+	if _, ok := idx.FindObject(hash1Str); ok {
+		t.Fatal("expected object offset to be ignored when large offset exceeds int64 max")
+	}
+}
+
 func TestReadPackObjectHeader(t *testing.T) {
 	tests := []struct {
 		name     string

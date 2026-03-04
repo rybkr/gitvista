@@ -43,6 +43,7 @@ var ErrDeltaChainTooDeep = fmt.Errorf("delta chain exceeds maximum depth of %d",
 const (
 	packIndexLargeOffsetFlag uint32 = 0x80000000 // High bit set = large offset
 	packIndexLargeOffsetMask uint32 = 0x7FFFFFFF // Mask to extract large offset table index
+	maxPackObjectOffset      uint64 = ^uint64(0) >> 1
 )
 
 // loadPackIndices scans .git/objects/pack for .idx files. Must be called before loadObjects.
@@ -227,7 +228,11 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 			if largeOffsetIdx >= uint32(len(largeOffsets)) {
 				continue
 			}
-			idx.offsets[hash] = int64(largeOffsets[largeOffsetIdx])
+			largeOffset := largeOffsets[largeOffsetIdx]
+			if largeOffset > maxPackObjectOffset {
+				continue
+			}
+			idx.offsets[hash] = int64(largeOffset)
 		} else {
 			idx.offsets[hash] = int64(offset)
 		}

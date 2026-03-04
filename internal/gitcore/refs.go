@@ -219,8 +219,11 @@ func (r *Repository) resolveRefDepth(path string, depth int) (Hash, error) {
 	if depth > maxSymrefDepth {
 		return "", fmt.Errorf("symbolic ref chain too deep (possible cycle) at: %s", path)
 	}
+	if err := ensurePathWithinBase(r.gitDir, path); err != nil {
+		return "", fmt.Errorf("invalid ref path %q: %w", path, err)
+	}
 
-	//nolint:gosec // G304: Ref paths are controlled by git repository structure
+	// #nosec G304 -- path is constrained to r.gitDir by ensurePathWithinBase above.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -230,7 +233,7 @@ func (r *Repository) resolveRefDepth(path string, depth int) (Hash, error) {
 
 	if strings.HasPrefix(line, "ref: ") {
 		targetRef := strings.TrimPrefix(line, "ref: ")
-		targetPath := filepath.Join(r.gitDir, targetRef)
+		targetPath := filepath.Join(r.gitDir, filepath.Clean(targetRef))
 		return r.resolveRefDepth(targetPath, depth+1)
 	}
 
@@ -239,4 +242,23 @@ func (r *Repository) resolveRefDepth(path string, depth int) (Hash, error) {
 		return "", fmt.Errorf("invalid hash in ref file %s: %w", path, err)
 	}
 	return hash, nil
+}
+
+func ensurePathWithinBase(base, candidate string) error {
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return err
+	}
+	absCandidate, err := filepath.Abs(candidate)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(absBase, absCandidate)
+	if err != nil {
+		return err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path escapes base directory")
+	}
+	return nil
 }
