@@ -106,12 +106,22 @@ func TestDiff(t *testing.T) {
 	commit2 := hashes[0] // first commit (newer)
 
 	cliOut := runCLI(t, dir, "diff", commit1, commit2)
-	// Verify our diff is non-empty and contains expected markers
-	if !strings.Contains(cliOut, "diff --git") {
-		t.Error("diff output missing 'diff --git' header")
+	gitNumstat := strings.TrimSpace(git(t, dir, "diff", "--numstat", commit1, commit2))
+	parts := strings.Fields(gitNumstat)
+	if len(parts) < 3 {
+		t.Fatalf("unexpected git --numstat output: %q", gitNumstat)
 	}
-	if !strings.Contains(cliOut, "@@") {
-		t.Error("diff output missing hunk headers")
+
+	if !strings.Contains(cliOut, "diff --git a/main.go b/main.go") {
+		t.Fatalf("diff output missing file header:\n%s", cliOut)
+	}
+	if !strings.Contains(cliOut, "@@ -1,1 +1,3 @@") {
+		t.Fatalf("diff output missing expected hunk header:\n%s", cliOut)
+	}
+
+	added, removed := countUnifiedDiffLines(cliOut)
+	if added != 2 || removed != 0 {
+		t.Fatalf("unexpected line deltas: got +%d/-%d, want +2/-0", added, removed)
 	}
 }
 
@@ -160,11 +170,9 @@ func TestMergeCommit(t *testing.T) {
 		"GIT_COMMITTER_DATE=" + ts3,
 	}, "merge", "feature", "--no-edit")
 
-	// Verify our log shows the merge commit
 	cliOut := runCLI(t, dir, "log", "-n1")
-	if !strings.Contains(cliOut, "Merge:") {
-		t.Errorf("expected merge commit to contain 'Merge:' line, got:\n%s", cliOut)
-	}
+	gitOut := git(t, dir, "log", "-n1", "--decorate=short", "--no-color")
+	compareOutput(t, "log -n1 merge", cliOut, gitOut)
 }
 
 func TestBranch(t *testing.T) {
@@ -205,18 +213,18 @@ func TestShow(t *testing.T) {
 	dir := setupStandardRepo(t)
 
 	cliOut := runCLI(t, dir, "show")
+	gitOut := git(t, dir, "show", "--decorate=short", "--no-color")
 
-	if !strings.Contains(cliOut, "commit ") {
-		t.Error("show output missing 'commit ' line")
+	cliHeader := showHeader(cliOut)
+	gitHeader := showHeader(gitOut)
+	compareOutput(t, "show header", cliHeader, gitHeader)
+
+	if !strings.Contains(cliOut, "diff --git a/main.go b/main.go") {
+		t.Fatalf("show output missing diff header:\n%s", cliOut)
 	}
-	if !strings.Contains(cliOut, "Author:") {
-		t.Error("show output missing 'Author:' line")
-	}
-	if !strings.Contains(cliOut, "Date:") {
-		t.Error("show output missing 'Date:' line")
-	}
-	if !strings.Contains(cliOut, "diff --git") {
-		t.Error("show output missing 'diff --git' header")
+	added, removed := countUnifiedDiffLines(cliOut)
+	if added != 2 || removed != 0 {
+		t.Fatalf("show output unexpected line deltas: got +%d/-%d, want +2/-0", added, removed)
 	}
 }
 
@@ -224,12 +232,18 @@ func TestShowStat(t *testing.T) {
 	dir := setupStandardRepo(t)
 
 	cliOut := runCLI(t, dir, "show", "--stat")
-
-	if !strings.Contains(cliOut, "commit ") {
-		t.Error("show --stat output missing 'commit ' line")
+	gitHeader := strings.TrimSpace(git(t, dir, "show", "--decorate=short", "--no-color", "--no-patch"))
+	if !strings.HasPrefix(cliOut, gitHeader) {
+		t.Fatalf("show --stat output does not start with expected commit header\n--- want prefix ---\n%s\n--- got ---\n%s", gitHeader, cliOut)
 	}
-	if !strings.Contains(cliOut, "file(s) changed") {
-		t.Error("show --stat output missing 'file(s) changed' line")
+	if strings.Contains(cliOut, "diff --git") {
+		t.Fatalf("show --stat should not include patch body:\n%s", cliOut)
+	}
+	if !strings.Contains(cliOut, "main.go | (modified)") {
+		t.Fatalf("show --stat missing modified file summary:\n%s", cliOut)
+	}
+	if !strings.Contains(cliOut, "1 file(s) changed") {
+		t.Fatalf("show --stat missing aggregate file count:\n%s", cliOut)
 	}
 }
 
@@ -259,4 +273,28 @@ func TestStashList(t *testing.T) {
 
 func writeFile(dir, name, content string) error {
 	return os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)
+}
+
+func countUnifiedDiffLines(patch string) (added int, removed int) {
+	for _, line := range strings.Split(patch, "\n") {
+		if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		if strings.HasPrefix(line, "+") {
+			added++
+			continue
+		}
+		if strings.HasPrefix(line, "-") {
+			removed++
+		}
+	}
+	return added, removed
+}
+
+func showHeader(output string) string {
+	marker := "\ndiff --git "
+	if idx := strings.Index(output, marker); idx >= 0 {
+		return strings.TrimSpace(output[:idx])
+	}
+	return strings.TrimSpace(output)
 }

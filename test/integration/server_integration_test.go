@@ -11,6 +11,7 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -242,29 +243,52 @@ func TestServerIntegration(t *testing.T) {
 
 		client := &http.Client{Timeout: 2 * time.Second}
 
-		// Make many requests quickly
-		var successCount, rateLimitedCount int
-		for i := 0; i < 200; i++ {
-			resp, err := client.Get(baseURL + "/api/repository")
-			if err != nil {
-				t.Fatalf("request %d failed: %v", i, err)
-			}
-			resp.Body.Close()
+		const total = 400
+		type result struct {
+			status int
+			err    error
+		}
+		results := make(chan result, total)
 
-			if resp.StatusCode == http.StatusOK {
+		// Burst requests concurrently so we deterministically exceed burst capacity.
+		var wg sync.WaitGroup
+		for i := 0; i < total; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				resp, err := client.Get(baseURL + "/api/repository")
+				if err != nil {
+					results <- result{err: err}
+					return
+				}
+				resp.Body.Close()
+				results <- result{status: resp.StatusCode}
+			}()
+		}
+		wg.Wait()
+		close(results)
+
+		var successCount, rateLimitedCount, unexpectedCount int
+		for r := range results {
+			if r.err != nil {
+				t.Fatalf("rate-limiting request failed: %v", r.err)
+			}
+			switch r.status {
+			case http.StatusOK:
 				successCount++
-			} else if resp.StatusCode == http.StatusTooManyRequests {
+			case http.StatusTooManyRequests:
 				rateLimitedCount++
+			default:
+				unexpectedCount++
 			}
 		}
 
-		// We should have been rate limited at some point
-		// The exact numbers depend on rate limit configuration
-		if rateLimitedCount == 0 {
-			t.Log("Warning: no requests were rate limited (may indicate rate limiting is disabled)")
+		if unexpectedCount != 0 {
+			t.Fatalf("unexpected status codes observed: %d", unexpectedCount)
 		}
-
-		t.Logf("Requests: %d successful, %d rate limited", successCount, rateLimitedCount)
+		if rateLimitedCount == 0 {
+			t.Fatalf("expected some 429 responses in a %d-request burst (ok=%d, limited=%d)", total, successCount, rateLimitedCount)
+		}
 	})
 }
 
