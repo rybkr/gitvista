@@ -49,6 +49,8 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
     let reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
     let reconnectAttempt = 0;
     let destroyed = false;
+    let socket = null;
+    let reconnectTimer = null;
 
     function notifyState(state, attempt) {
         telemetryStore.recordConnectionState(state, attempt || 0);
@@ -57,8 +59,8 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
 
     function connect() {
         if (destroyed) return;
+        reconnectTimer = null;
 
-        let socket;
         try {
             socket = new WebSocket(url);
         } catch (error) {
@@ -73,7 +75,7 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
             reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
             reconnectAttempt = 0;
             notifyState("connected");
-            // Re-fetch metadata on reconnect so the info bar reflects any changes
+            // Re-fetch metadata on reconnect so UI state reflects any changes
             // (new branches, changed HEAD, etc.) that occurred while disconnected.
             if (isReconnect) {
                 loadRepositoryMetadata(logger, onRepoMetadata);
@@ -127,7 +129,7 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
             notifyState("reconnecting", reconnectAttempt);
             logger?.info(`Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt})`);
 
-            setTimeout(() => connect(), reconnectDelay);
+            reconnectTimer = setTimeout(() => connect(), reconnectDelay);
 
             reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
         });
@@ -139,4 +141,22 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
     }
 
     connect();
+
+    return {
+        destroy() {
+            destroyed = true;
+            if (reconnectTimer !== null) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+            if (socket) {
+                try {
+                    socket.close();
+                } catch {
+                    // Ignore close errors during teardown.
+                }
+                socket = null;
+            }
+        },
+    };
 }

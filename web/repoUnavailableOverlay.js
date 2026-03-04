@@ -59,7 +59,7 @@ export function createRepoUnavailableOverlay({ repoId } = {}) {
 
     el.appendChild(card);
 
-    retryBtn.addEventListener("click", async () => {
+    const onRetryClick = async () => {
         retryBtn.disabled = true;
         retryBtn.textContent = "Retrying\u2026";
         try {
@@ -72,9 +72,10 @@ export function createRepoUnavailableOverlay({ repoId } = {}) {
         }
         retryBtn.disabled = false;
         retryBtn.textContent = "Retry Connection";
-    });
+    };
+    retryBtn.addEventListener("click", onRetryClick);
 
-    subscribe((state) => {
+    const unsubscribe = subscribe((state) => {
         if (state.repositoryAvailable) {
             el.style.display = "none";
         } else {
@@ -88,5 +89,11 @@ export function createRepoUnavailableOverlay({ repoId } = {}) {
         el.style.display = "flex";
     }
 
-    return { el };
+    function destroy() {
+        retryBtn.removeEventListener("click", onRetryClick);
+        unsubscribe();
+        el.remove();
+    }
+
+    return { el, destroy };
 }

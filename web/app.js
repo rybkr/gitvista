@@ -4,10 +4,7 @@ import { createGraphController as createGraph } from "./graph/graphController.js
 import { startBackend } from "./backend.js";
 import { createWorkbench } from "./workbench.js";
 import { createIndexView } from "./indexView.js";
-import { createFileExplorer } from "./fileExplorer.js";
 import { createStagingView } from "./stagingView.js";
-import { createAnalyticsView } from "./analyticsView.js";
-import { createMergePreviewView } from "./mergePreviewView.js";
 import { showToast } from "./toast.js";
 import { createKeyboardShortcuts } from "./keyboardShortcuts.js";
 import { createKeyboardHelp } from "./keyboardHelp.js";
@@ -27,6 +24,7 @@ import { createTelemetryHud, telemetryStore } from "./telemetry.js";
 
 const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
 const REPO_HASH_RE = /^repo\/([^/]+)(?:\/([0-9a-f]{40}))?$/i;
+let activeViewCleanup = null;
 
 /** Parses the URL hash. Returns { repoId, commitHash } or null. */
 function parseHash() {
@@ -67,31 +65,48 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     logger.info("Server mode", mode);
 
+    const mountGraph = (repoId) => {
+        cleanupActiveView();
+        clearRoot(root);
+        activeViewCleanup = bootstrapGraph(root, repoId);
+    };
+
+    const mountLanding = () => {
+        cleanupActiveView();
+        clearRoot(root);
+        activeViewCleanup = showLanding(root);
+    };
+
     if (mode === "local") {
-        bootstrapGraph(root, null);
+        mountGraph(null);
     } else {
         // SaaS mode: check hash for an existing repo selection
         const parsed = parseHash();
         if (parsed?.repoId) {
             setApiBase(`/api/repos/${parsed.repoId}`);
-            bootstrapGraph(root, parsed.repoId);
+            mountGraph(parsed.repoId);
         } else {
-            showLanding(root);
+            mountLanding();
         }
 
         window.addEventListener("hashchange", () => {
             const p = parseHash();
             if (p?.repoId) {
                 setApiBase(`/api/repos/${p.repoId}`);
-                clearRoot(root);
-                bootstrapGraph(root, p.repoId);
+                mountGraph(p.repoId);
             } else {
-                clearRoot(root);
-                showLanding(root);
+                mountLanding();
             }
         });
     }
 });
+
+function cleanupActiveView() {
+    if (typeof activeViewCleanup === "function") {
+        activeViewCleanup();
+    }
+    activeViewCleanup = null;
+}
 
 /** Removes sidebar elements and empties the root for a fresh view. */
 function clearRoot(root) {
@@ -103,13 +118,23 @@ function clearRoot(root) {
 /** Shows the SaaS landing page. */
 function showLanding(root) {
     document.title = "GitVista";
+    let destroyed = false;
     const landing = createRepoLanding({
         onRepoSelect: (id) => {
-            landing.destroy();
+            destroy();
             location.hash = `repo/${id}`;
         },
     });
     root.appendChild(landing.el);
+
+    function destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        landing.destroy();
+        landing.el.remove();
+    }
+
+    return destroy;
 }
 
 /** Bootstraps the graph view (works for both local and SaaS modes). */
@@ -156,7 +181,6 @@ function bootstrapGraph(root, repoId) {
     }
 
     const indexView = createIndexView();
-    const fileExplorer = createFileExplorer();
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const fetchGraphCommits = async (hashes) => {
         if (!Array.isArray(hashes) || hashes.length === 0) return [];
@@ -206,42 +230,17 @@ function bootstrapGraph(root, repoId) {
         }
         return all;
     };
+    const fetchDiffStats = async ({ limit } = {}) => {
+        const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
+        const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
+        if (!resp.ok) {
+            telemetryStore.recordDiffStatsRequest(limit, false);
+            throw new Error("Failed to fetch diff stats");
+        }
+        telemetryStore.recordDiffStatsRequest(limit, true);
+        return resp.json();
+    };
     const stagingView = createStagingView();
-    const analyticsView = createAnalyticsView({
-        getCommits: () => graph.getCommits(),
-        getTags: () => graph.getTags?.() ?? new Map(),
-        fetchGraphCommits,
-        fetchAnalytics: async ({ period, start, end } = {}) => {
-            const params = new URLSearchParams();
-            if (typeof start === "string" && start && typeof end === "string" && end) {
-                params.set("start", start);
-                params.set("end", end);
-            } else {
-                const p = typeof period === "string" && period ? period : "all";
-                params.set("period", p);
-            }
-            const resp = await apiFetch(apiUrl(`/analytics?${params.toString()}`));
-            if (!resp.ok) throw new Error("Failed to fetch analytics");
-            return resp.json();
-        },
-        fetchDiffStats: async ({ limit } = {}) => {
-            const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
-            const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
-            if (!resp.ok) {
-                telemetryStore.recordDiffStatsRequest(limit, false);
-                throw new Error("Failed to fetch diff stats");
-            }
-            telemetryStore.recordDiffStatsRequest(limit, true);
-            return resp.json();
-        },
-    });
-
-    const mergePreviewView = createMergePreviewView({
-        getBranches: () => graph.getBranches(),
-        onPreviewResult: (preview) => {
-            graph.setMergePreview(preview);
-        },
-    });
 
     const repoTabContent = document.createElement("div");
     repoTabContent.style.display = "flex";
@@ -264,11 +263,125 @@ function bootstrapGraph(root, repoId) {
 
     repoTabContent.appendChild(indexView.el);
 
+    const createLazyHost = (message) => {
+        const host = document.createElement("div");
+        host.className = "lazy-panel-host";
+        const loading = document.createElement("div");
+        loading.className = "lazy-panel-loading";
+        loading.textContent = message;
+        host.appendChild(loading);
+        return {
+            host,
+            loading,
+            setLoaded(contentEl) {
+                if (contentEl.parentElement !== host) {
+                    host.innerHTML = "";
+                    host.appendChild(contentEl);
+                }
+            },
+        };
+    };
+
     let graph = null;
     let graphFirstShown = false;
+    let latestStatus = null;
+    let pendingExplorerCommit = null;
+    let fileExplorer = null;
+    let fileExplorerLoadPromise = null;
+    let analyticsView = null;
+    let analyticsViewLoadPromise = null;
+    let mergePreviewView = null;
+    let mergePreviewLoadPromise = null;
+    let disposed = false;
+    let backendSession = null;
 
     const graphHost = document.createElement("div");
     graphHost.className = "graph-host";
+    const fileExplorerPanel = createLazyHost("Loading file explorer…");
+    const analyticsPanel = createLazyHost("Loading analytics…");
+    const comparePanel = createLazyHost("Loading merge preview…");
+
+    const fetchAnalytics = async ({ period, start, end } = {}) => {
+        const params = new URLSearchParams();
+        if (typeof start === "string" && start && typeof end === "string" && end) {
+            params.set("start", start);
+            params.set("end", end);
+        } else {
+            const p = typeof period === "string" && period ? period : "all";
+            params.set("period", p);
+        }
+        const resp = await apiFetch(apiUrl(`/analytics?${params.toString()}`));
+        if (!resp.ok) throw new Error("Failed to fetch analytics");
+        return resp.json();
+    };
+
+    function ensureFileExplorerLoaded() {
+        if (fileExplorer) return Promise.resolve(fileExplorer);
+        if (fileExplorerLoadPromise) return fileExplorerLoadPromise;
+        fileExplorerLoadPromise = import("./fileExplorer.js")
+            .then(({ createFileExplorer }) => {
+                if (disposed) return null;
+                const view = createFileExplorer();
+                fileExplorer = view;
+                fileExplorerPanel.setLoaded(view.el);
+                if (latestStatus) view.updateWorkingTreeStatus(latestStatus);
+                if (pendingExplorerCommit) {
+                    view.openCommit(pendingExplorerCommit);
+                    pendingExplorerCommit = null;
+                }
+                return view;
+            })
+            .finally(() => {
+                fileExplorerLoadPromise = null;
+            });
+        return fileExplorerLoadPromise;
+    }
+
+    function ensureAnalyticsLoaded() {
+        if (analyticsView) return Promise.resolve(analyticsView);
+        if (analyticsViewLoadPromise) return analyticsViewLoadPromise;
+        analyticsViewLoadPromise = import("./analyticsView.js")
+            .then(({ createAnalyticsView }) => {
+                if (disposed) return null;
+                const view = createAnalyticsView({
+                    getCommits: () => graph?.getCommits?.() ?? new Map(),
+                    getTags: () => graph?.getTags?.() ?? new Map(),
+                    fetchGraphCommits,
+                    fetchAnalytics,
+                    fetchDiffStats,
+                });
+                analyticsView = view;
+                analyticsPanel.setLoaded(view.el);
+                return view;
+            })
+            .finally(() => {
+                analyticsViewLoadPromise = null;
+            });
+        return analyticsViewLoadPromise;
+    }
+
+    function ensureMergePreviewLoaded() {
+        if (mergePreviewView) return Promise.resolve(mergePreviewView);
+        if (mergePreviewLoadPromise) return mergePreviewLoadPromise;
+        mergePreviewLoadPromise = import("./mergePreviewView.js")
+            .then(({ createMergePreviewView }) => {
+                if (disposed) return null;
+                const view = createMergePreviewView({
+                    getBranches: () => graph?.getBranches?.() ?? new Map(),
+                    onPreviewResult: (preview) => {
+                        graph?.setMergePreview(preview);
+                    },
+                });
+                mergePreviewView = view;
+                comparePanel.setLoaded(view.el);
+                mergePreviewView.updateBranches();
+                return view;
+            })
+            .finally(() => {
+                mergePreviewLoadPromise = null;
+            });
+        return mergePreviewLoadPromise;
+    }
 
     const workbench = createWorkbench([
         {
@@ -287,19 +400,48 @@ function bootstrapGraph(root, repoId) {
             },
         },
         { name: "repository", tooltip: "Repository", content: repoTabContent },
-        { name: "file-explorer", tooltip: "File Explorer", content: fileExplorer.el },
+        {
+            name: "file-explorer",
+            tooltip: "File Explorer",
+            content: fileExplorerPanel.host,
+            onShow: () => {
+                ensureFileExplorerLoaded().catch(() => {
+                    // Keep tab open; load errors are surfaced by view retries.
+                });
+            },
+        },
         { name: "three-zones", tooltip: "Lifecycle", content: stagingView.el },
         {
             name: "analytics",
             tooltip: "Analytics",
-            content: analyticsView.el,
+            content: analyticsPanel.host,
             onShow: () => {
-                analyticsView.resetToDefaultPeriod();
-                preloadAnalyticsOnce();
-                requestAnimationFrame(() => analyticsView.update());
+                ensureAnalyticsLoaded()
+                    .then((view) => {
+                        if (!view) return;
+                        view.resetToDefaultPeriod();
+                        preloadAnalyticsOnce();
+                        requestAnimationFrame(() => view.update());
+                    })
+                    .catch(() => {
+                        // Keep tab open; view shows its own recoverable errors.
+                    });
             },
         },
-        { name: "compare", tooltip: "Compare", content: mergePreviewView.el },
+        {
+            name: "compare",
+            tooltip: "Compare",
+            content: comparePanel.host,
+            onShow: () => {
+                ensureMergePreviewLoaded()
+                    .then((view) => {
+                        view?.updateBranches?.();
+                    })
+                    .catch(() => {
+                        // Keep tab open; view shows its own recoverable errors.
+                    });
+            },
+        },
     ]);
     root.appendChild(workbench.el);
 
@@ -307,21 +449,23 @@ function bootstrapGraph(root, repoId) {
     let analyticsPreloadStarted = false;
 
     function preloadAnalyticsOnce() {
-        if (analyticsPreloadStarted) return;
+        if (analyticsPreloadStarted || !analyticsView) return;
         analyticsPreloadStarted = true;
         analyticsView.preload().catch(() => {
             // Keep startup resilient even if analytics preloading fails.
         });
     }
 
-    // Warm analytics payloads as part of repo bootstrap.
-    preloadAnalyticsOnce();
-
     graph = createGraph(graphHost, {
         fetchGraphCommits,
         onCommitTreeClick: (commit) => {
             if (workbench.isViewVisible("file-explorer")) {
-                fileExplorer.openCommit(commit);
+                ensureFileExplorerLoaded().then((view) => {
+                    if (!view) return;
+                    view.openCommit(commit);
+                }).catch(() => {
+                    // Ignore load failures here; tab remains interactive.
+                });
             }
         },
         onCommitSelect: (hash) => {
@@ -364,16 +508,7 @@ function bootstrapGraph(root, repoId) {
         getCommits: () => graph.getCommits(),
         getCommitCount: () => graph.getCommitCount(),
         getTags: () => graph.getTags?.() ?? new Map(),
-        fetchDiffStats: async ({ limit } = {}) => {
-            const query = Number.isFinite(limit) && limit > 0 ? `?limit=${Math.floor(limit)}` : "";
-            const resp = await apiFetch(apiUrl("/commits/diffstats" + query));
-            if (!resp.ok) {
-                telemetryStore.recordDiffStatsRequest(limit, false);
-                throw new Error("Failed to fetch diff stats");
-            }
-            telemetryStore.recordDiffStatsRequest(limit, true);
-            return resp.json();
-        },
+        fetchDiffStats,
         onSearch: ({ searchState }) => {
             graph.setSearchState(searchState ?? null);
             search.clearPosition();
@@ -468,7 +603,7 @@ function bootstrapGraph(root, repoId) {
 
     const keyboardHelp = createKeyboardHelp();
 
-    createKeyboardShortcuts({
+    const keyboardShortcuts = createKeyboardShortcuts({
         onJumpToHead: () => graph.centerOnCommit(graph.getHeadHash()),
         onFocusSearch: () => {
             search.focus();
@@ -504,11 +639,16 @@ function bootstrapGraph(root, repoId) {
 
     /** If the file explorer has no commit loaded, open HEAD. */
     function openHeadInExplorerIfEmpty() {
-        if (fileExplorer.hasCommit()) return;
+        if (fileExplorer?.hasCommit?.()) return;
         const headHash = graph.getHeadHash();
         if (!headHash) return;
         const commit = graph.getCommits().get(headHash);
-        if (commit) fileExplorer.openCommit(commit);
+        if (!commit) return;
+        if (fileExplorer) {
+            fileExplorer.openCommit(commit);
+            return;
+        }
+        pendingExplorerCommit = commit;
     }
 
     let currentBranchName = "";
@@ -530,6 +670,24 @@ function bootstrapGraph(root, repoId) {
         return parsed?.commitHash || null;
     }
 
+    function syncBranchDependentViews() {
+        graphFilters.updateBranches(graph.getBranches());
+        mergePreviewView?.updateBranches?.();
+        if (graphSettings.isVisible()) graphSettings.updateBranches();
+    }
+
+    function applyInitialSelectionOnce() {
+        if (initialBootstrapApplied) return;
+        initialBootstrapApplied = true;
+        const permalinkHash = getPermalinkHash();
+        if (permalinkHash) {
+            setTimeout(() => {
+                graph.selectAndCenter(permalinkHash);
+            }, 80);
+        }
+        openHeadInExplorerIfEmpty();
+    }
+
     startBackend({
         logger,
         onConnectionStateChange: (state, attempt) => {
@@ -539,36 +697,20 @@ function bootstrapGraph(root, repoId) {
         onSummary: (summary) => {
             telemetryStore.recordSummary(summary);
             graph.applySummary(summary);
-            analyticsView.update();
+            analyticsView?.update?.();
             preloadAnalyticsOnce();
-
-            graphFilters.updateBranches(graph.getBranches());
-            mergePreviewView.updateBranches();
-            if (graphSettings.isVisible()) graphSettings.updateBranches();
-
-            if (!initialBootstrapApplied) {
-                initialBootstrapApplied = true;
-                const permalinkHash = getPermalinkHash();
-                if (permalinkHash) {
-                    setTimeout(() => {
-                        graph.selectAndCenter(permalinkHash);
-                    }, 80);
-                }
-                openHeadInExplorerIfEmpty();
-            }
+            syncBranchDependentViews();
+            applyInitialSelectionOnce();
         },
         onDelta: (delta) => {
             telemetryStore.recordDelta(delta);
             graph.applyDelta(delta);
-            analyticsView.update();
+            analyticsView?.update?.();
             preloadAnalyticsOnce();
-
-            graphFilters.updateBranches(graph.getBranches());
-            mergePreviewView.updateBranches();
-            if (graphSettings.isVisible()) graphSettings.updateBranches();
+            syncBranchDependentViews();
 
             // If a selected branch tip moved, refresh the merge preview.
-            if (delta.amendedBranches) {
+            if (delta.amendedBranches && mergePreviewView) {
                 const selected = mergePreviewView.getSelectedBranches();
                 const amended = Object.keys(delta.amendedBranches);
                 if (amended.includes(selected.ours) || amended.includes(selected.theirs)) {
@@ -587,20 +729,12 @@ function bootstrapGraph(root, repoId) {
                 showToast(label, { duration: 5000 });
             }
 
-            if (!initialBootstrapApplied) {
-                initialBootstrapApplied = true;
-                const permalinkHash = getPermalinkHash();
-                if (permalinkHash) {
-                    setTimeout(() => {
-                        graph.selectAndCenter(permalinkHash);
-                    }, 80);
-                }
-                openHeadInExplorerIfEmpty();
-            }
+            applyInitialSelectionOnce();
         },
         onStatus: (status) => {
+            latestStatus = status;
             indexView.updateStatus(status);
-            fileExplorer.updateWorkingTreeStatus(status);
+            fileExplorer?.updateWorkingTreeStatus?.(status);
             stagingView.update(status);
         },
         onHead: (headInfo) => {
@@ -622,7 +756,24 @@ function bootstrapGraph(root, repoId) {
             }
             updateTitle();
         },
+    }).then((session) => {
+        if (disposed) {
+            session?.destroy?.();
+            return;
+        }
+        backendSession = session ?? null;
     }).catch((error) => {
-        logger.error("Backend bootstrap failed", error);
+        if (!disposed) {
+            logger.error("Backend bootstrap failed", error);
+        }
     });
+
+    return () => {
+        disposed = true;
+        backendSession?.destroy?.();
+        keyboardShortcuts.destroy();
+        banner.destroy?.();
+        overlay.destroy?.();
+        statusIndicator.remove();
+    };
 }

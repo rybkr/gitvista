@@ -33,12 +33,13 @@ export function createConnectionBanner() {
     let wasDisconnected = false;
     let successTimeout = null;
 
-    dismissBtn.addEventListener("click", () => {
+    const onDismissClick = () => {
         dismissed = true;
         el.style.display = "none";
-    });
+    };
+    dismissBtn.addEventListener("click", onDismissClick);
 
-    subscribe((state) => {
+    const unsubscribe = subscribe((state) => {
         if (successTimeout) {
             clearTimeout(successTimeout);
             successTimeout = null;
@@ -96,5 +97,15 @@ export function createConnectionBanner() {
         el.style.display = "flex";
     }
 
-    return { el };
+    function destroy() {
+        dismissBtn.removeEventListener("click", onDismissClick);
+        if (successTimeout) {
+            clearTimeout(successTimeout);
+            successTimeout = null;
+        }
+        unsubscribe();
+        el.remove();
+    }
+
+    return { el, destroy };
 }

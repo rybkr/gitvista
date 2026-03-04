@@ -2632,17 +2632,6 @@ export function createGraphController(rootElement, options = {}) {
         getNodes: () => nodes,
         /** Returns the live links array for the minimap. */
         getLinks: () => links,
-        /**
-         * Returns lightweight position data for the minimap in lazy mode.
-         * Falls back to nodes array in eager mode.
-         * @returns {Array<{hash: string, x: number, y: number, laneColor: string}>}
-         */
-        getMinimapData: () => {
-            if (lazyLoadingActive && commitIndex.size > 0) {
-                return commitIndex.getAllEntries();
-            }
-            return nodes.filter(n => n.type === "commit");
-        },
         /** Returns the current D3 zoom transform. */
         getZoomTransform: () => zoomTransform,
         /** Returns current viewport dimensions. */
@@ -2727,8 +2716,6 @@ export function createGraphController(rootElement, options = {}) {
             }
             saveSettings(state.graphSettings);
         },
-        /** Returns the current graph settings. */
-        getGraphSettings: () => state.graphSettings,
         /** Re-reads CSS theme variables and re-renders the graph canvas. */
         refreshPalette: () => {
             refreshPalette();
