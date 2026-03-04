@@ -316,7 +316,7 @@ An in-memory trigram/token inverted index over commit messages and author names,
 
 **E1. Worktree Support and Navigation**
 
-Enumerate linked worktrees by reading `.git/worktrees/`, expose via `GET /api/worktrees`, and surface a worktree switcher in `infoBar.js`.
+Enumerate linked worktrees by reading `.git/worktrees/`, expose via `GET /api/worktrees`, and surface a worktree switcher in the repository panel UI.
 
 **Correction from original:** Partial implementation already exists — `handleGitFile` in `repository.go` (lines 317–340) already resolves `.git` file pointers, meaning GitVista correctly loads a linked worktree if you point `-repo` at it directly. The missing piece is automatic enumeration of sibling worktrees from the primary `.git/worktrees/` directory.
 
@@ -428,7 +428,7 @@ Strategic flags: items with outsized long-term value that may score lower due to
 | 16 | B3 | **Diff Search / Find in Diff** | 6 | 7 | 8 | 4 | **84** | Pure frontend. `DiffLine.content` strings are in the DOM. Precedent in `fileExplorer.js` filter. |
 | 17 | D1 | **Compound URL Deep Links** | 6 | 7 | 7 | 4 | **74** | Commit-level permalink already ships. Extend to sidebar state (tab + file + diff). Requires restoration sequencing across async loads. |
 | 18 | F5 | **Graph Keyboard Navigation** | 6 | 8 | 7 | 5 | **67** | Primary surface is keyboard-inaccessible. Canvas focus + keydown routing + focus ring in `graphRenderer.js`. |
-| 19 | E1 | **Worktree Support** | 5 | 8 | 7 | 5 | **56** | `.git` file pointer resolution already exists in `repository.go`. Remaining: `.git/worktrees/` enumeration + `infoBar.js` switcher. |
+| 19 | E1 | **Worktree Support** | 5 | 8 | 7 | 5 | **56** | `.git` file pointer resolution already exists in `repository.go`. Remaining: `.git/worktrees/` enumeration + repository panel worktree switcher. |
 | 20 | B6 | **Split-Pane Side-by-Side Diff** | 6 | 7 | 7 | 5 | **59** | Re-render existing `DiffHunk` data in two columns. Deletion/addition pairing pass needed. No backend changes. |
 | 21 | C2 | **Annotated Tag Details Panel** | 5 | 6 | 7 | 4 | **52** | Tag data in memory. Neither `GET /api/tag/{name}` endpoint nor `tagTooltip.js` exists. Canvas hit-testing for tag pill adds effort. |
 | 22 | A7 | **Minimap Navigation Panel** | 6 | 7 | 6 | 5 | **50** | Second canvas + scaled render of all nodes. Viewport rect from `zoomTransform`. Useful for large repos. |

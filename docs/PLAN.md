@@ -561,7 +561,7 @@ const wsUrl = `${protocol}://${host}/api/repos/${repoId}/ws`;
 
 The entire visualization layer is untouched:
 - `graph.js` and all D3 visualization code
-- `sidebar.js`, `infoBar.js`, `search.js`, `keyboardShortcuts.js`
+- `search.js`, `keyboardShortcuts.js`
 - `tooltips/`, `graph/layout/`, `graph/rendering/`
 - `diffView.js`, `fileExplorer.js`
 - The WebSocket message format (`{delta, status, head}`)

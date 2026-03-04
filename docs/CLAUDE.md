@@ -115,8 +115,6 @@ GitVista is a real-time Git repository visualization tool with a Go backend and 
 - `graph/types.js` - Frontend type documentation (JSDoc shapes) including lane and filter state types
 - `graph/utils/palette.js` - Reads CSS custom properties, returns GraphPalette with fallback defaults
 - `graph/utils/time.js` - Human-readable relative time strings, timestamp extraction with fallback chain
-- `sidebar.js` - Activity bar (40px icon strip) + collapsible/resizable panel with localStorage persistence; replaced former tab-based `sidebarTabs.js`
-- `infoBar.js` - Collapsible repo metadata section (branch, commit count, branches, tags, remotes, description)
 - `fileExplorer.js` - Full tree browser (923 lines): lazy fetch with cache, blame annotations, W3C APG TreeView keyboard nav, filter input, breadcrumbs, working-tree status indicators, tree/diff toggle
 - `fileIcons.js` - Extension/name-based SVG icon mapping, GitHub Primer-inspired palette, covers 20+ languages/filetypes
 - `fileContentViewer.js` - Blob content display with highlight.js 11.9.0 (lazy CDN load), line numbers, binary/truncation notices
