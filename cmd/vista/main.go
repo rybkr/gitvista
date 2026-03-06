@@ -18,7 +18,6 @@ import (
 	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"github.com/rybkr/gitvista/internal/progress"
 	"github.com/rybkr/gitvista/internal/repomanager"
 	"github.com/rybkr/gitvista/internal/selfupdate"
 	"github.com/rybkr/gitvista/internal/server"
@@ -108,7 +107,7 @@ func main() {
 
 	if *repoPath != "" {
 		// LOCAL MODE: load repo, create local server
-		spin := progress.New("Loading repository...")
+		spin := cli.NewSpinner("Loading repository...")
 		spin.Start()
 		repoLoadStart := time.Now()
 		repo, err := gitcore.NewRepository(*repoPath)

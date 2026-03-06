@@ -7,7 +7,6 @@ import (
 
 	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"github.com/rybkr/gitvista/internal/progress"
 )
 
 // Build-time variables set via -ldflags.
@@ -134,7 +133,7 @@ func main() {
 			if repoPath == "" {
 				repoPath = "."
 			}
-			spin := progress.New("Loading repository...")
+			spin := cli.NewSpinner("Loading repository...")
 			spin.Start()
 			var err error
 			repo, err = gitcore.NewRepository(repoPath)
