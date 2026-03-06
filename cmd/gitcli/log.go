@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-func runLog(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
+func runLog(repo *gitcore.Repository, args []string, cw *cli.Writer) int {
 	maxCount := 0
 	oneline := false
 
@@ -85,7 +85,7 @@ func runLog(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
 	return 0
 }
 
-func buildDecorations(repo *gitcore.Repository, branches map[string]gitcore.Hash, tags map[string]string, headRef string, cw *termcolor.Writer) map[gitcore.Hash]string {
+func buildDecorations(repo *gitcore.Repository, branches map[string]gitcore.Hash, tags map[string]string, headRef string, cw *cli.Writer) map[gitcore.Hash]string {
 	result := make(map[gitcore.Hash]string)
 
 	// Determine the branch name HEAD points to

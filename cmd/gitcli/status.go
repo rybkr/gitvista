@@ -5,8 +5,8 @@ import (
 	"os"
 	"sort"
 
+	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
 const (
@@ -14,7 +14,7 @@ const (
 	statusDeleted  = "deleted"
 )
 
-func runStatus(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
+func runStatus(repo *gitcore.Repository, args []string, cw *cli.Writer) int {
 	porcelain := false
 	for _, arg := range args {
 		if arg == "-s" || arg == "--porcelain" {
@@ -74,7 +74,7 @@ func statusCodes(f gitcore.FileStatus) (x, y byte) {
 	return x, y
 }
 
-func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus, cw *termcolor.Writer) int {
+func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus, cw *cli.Writer) int {
 	headRef := repo.HeadRef()
 	if headRef != "" {
 		branch := headRef

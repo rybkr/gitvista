@@ -8,7 +8,6 @@ import (
 	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"github.com/rybkr/gitvista/internal/progress"
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
 // Build-time variables set via -ldflags.
@@ -30,7 +29,7 @@ func main() {
 		}
 	}
 
-	cw := termcolor.NewWriter(os.Stdout, gf.colorMode)
+	cw := cli.NewWriter(os.Stdout, gf.colorMode)
 
 	app := cli.NewApp("gitvista-cli", version)
 	app.Stderr = os.Stderr

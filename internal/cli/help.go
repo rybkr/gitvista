@@ -3,8 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
 // fpf is a shorthand for fmt.Fprintf that discards the error, used for
@@ -14,7 +12,7 @@ func fpf(w io.Writer, format string, a ...any) {
 }
 
 // FormatAppHelp writes the top-level help text to app.Stderr.
-func FormatAppHelp(app *App, cw *termcolor.Writer) {
+func FormatAppHelp(app *App, cw *Writer) {
 	w := app.Stderr
 
 	fpf(w, "%s version %s\n\n", app.Name, app.Version)
@@ -47,7 +45,7 @@ func FormatAppHelp(app *App, cw *termcolor.Writer) {
 }
 
 // FormatCommandHelp writes per-command help text to app.Stderr.
-func FormatCommandHelp(app *App, cmd *Command, cw *termcolor.Writer) {
+func FormatCommandHelp(app *App, cmd *Command, cw *Writer) {
 	w := app.Stderr
 
 	fpf(w, "%s — %s\n\n", cw.BoldCyan(cmd.Name), cmd.Summary)

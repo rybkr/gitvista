@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/rybkr/gitvista"
+	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"github.com/rybkr/gitvista/internal/progress"
 	"github.com/rybkr/gitvista/internal/repomanager"
 	"github.com/rybkr/gitvista/internal/selfupdate"
 	"github.com/rybkr/gitvista/internal/server"
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
 const (
@@ -54,18 +54,18 @@ func main() {
 	flag.Parse()
 
 	// Resolve color mode.
-	colorMode := termcolor.ColorAuto
+	colorMode := cli.ColorAuto
 	if *noColor {
-		colorMode = termcolor.ColorNever
+		colorMode = cli.ColorNever
 	} else if *colorFlag != "auto" {
 		var err error
-		colorMode, err = termcolor.ParseColorMode(*colorFlag)
+		colorMode, err = cli.ParseColorMode(*colorFlag)
 		if err != nil {
 			slog.Error("Invalid color flag", "value", *colorFlag, "err", err)
 			os.Exit(1)
 		}
 	}
-	cw := termcolor.NewWriter(os.Stdout, colorMode)
+	cw := cli.NewWriter(os.Stdout, colorMode)
 
 	portNum, _ := strconv.Atoi(*port)
 	if err := validateConfig(*repoPath, *dataDir, *outputFormat, portNum); err != nil {
@@ -307,7 +307,7 @@ func validateConfig(repoPath, dataDir, outputFormat string, portNum int) error {
 	return nil
 }
 
-func printStartupBanner(cw *termcolor.Writer, mode, addr, repoPath, dataDir string, repoLoadDur time.Duration) {
+func printStartupBanner(cw *cli.Writer, mode, addr, repoPath, dataDir string, repoLoadDur time.Duration) {
 	fmt.Printf("%s %s\n", cw.BoldCyan("GitVista"), cw.Green(version))
 	fmt.Printf("  mode:    %s\n", mode)
 	if mode == modeLocal {
@@ -318,7 +318,7 @@ func printStartupBanner(cw *termcolor.Writer, mode, addr, repoPath, dataDir stri
 	}
 	fmt.Printf("  listen:  http://%s\n", addr)
 	fmt.Printf("  commit:  %s\n", commit)
-	if termcolor.IsTerminal(os.Stdout.Fd()) {
+	if cli.IsTerminal(os.Stdout.Fd()) {
 		fmt.Printf("\n%s\n", cw.Bold("Press Ctrl+C to stop."))
 	}
 }
@@ -352,7 +352,7 @@ func printStartupJSON(mode, addr, repoPath, dataDir string, repoLoadDur time.Dur
 	fmt.Println(string(data))
 }
 
-func printHelp(cw *termcolor.Writer) {
+func printHelp(cw *cli.Writer) {
 	fmt.Println("GitVista - Real-time Git repository visualization")
 	fmt.Printf("Version: %s\n\n", version)
 	fmt.Println(cw.Bold("Usage:"))

@@ -1,4 +1,4 @@
-package termcolor
+package cli
 
 import (
 	"os"
@@ -103,8 +103,7 @@ func TestWriterColorAlways(t *testing.T) {
 	}
 }
 
-func TestShouldColorize_Pipe(t *testing.T) {
-	// A pipe fd is not a terminal, so ShouldColorize should return false.
+func TestShouldColorizePipe(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -117,10 +116,9 @@ func TestShouldColorize_Pipe(t *testing.T) {
 	}
 }
 
-func TestShouldColorize_NoColor(t *testing.T) {
+func TestShouldColorizeNoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 
-	// Even if we pass a real file, NO_COLOR should force false.
 	f, err := os.CreateTemp("", "colortest")
 	if err != nil {
 		t.Fatal(err)
@@ -133,8 +131,7 @@ func TestShouldColorize_NoColor(t *testing.T) {
 	}
 }
 
-func TestNewWriterAutoMode_Pipe(t *testing.T) {
-	// In auto mode with a pipe, color should be disabled.
+func TestNewWriterAutoModePipe(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)

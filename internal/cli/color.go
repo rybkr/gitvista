@@ -1,9 +1,65 @@
-package termcolor
+package cli
 
 import (
+	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/term"
 )
+
+// ANSI escape codes.
+const (
+	reset    = "\033[0m"
+	red      = "\033[31m"
+	green    = "\033[32m"
+	yellow   = "\033[33m"
+	cyan     = "\033[36m"
+	bold     = "\033[1m"
+	boldCyan = "\033[1;36m"
+)
+
+// ColorMode controls when color output is used.
+type ColorMode int
+
+const (
+	// ColorAuto enables color only when writing to a terminal.
+	ColorAuto ColorMode = iota
+	// ColorAlways forces color output regardless of terminal detection.
+	ColorAlways
+	// ColorNever disables color output unconditionally.
+	ColorNever
+)
+
+// ParseColorMode parses a string into a ColorMode.
+// Accepted values are "auto", "always", and "never".
+func ParseColorMode(s string) (ColorMode, error) {
+	switch s {
+	case "auto":
+		return ColorAuto, nil
+	case "always":
+		return ColorAlways, nil
+	case "never":
+		return ColorNever, nil
+	default:
+		return ColorAuto, fmt.Errorf("invalid color mode %q: must be auto, always, or never", s)
+	}
+}
+
+// IsTerminal reports whether the given file descriptor refers to a terminal.
+func IsTerminal(fd uintptr) bool {
+	return term.IsTerminal(int(fd)) // #nosec G115 -- fd comes from os.File.Fd(); safe on all supported platforms
+}
+
+// ShouldColorize reports whether color output should be enabled for f.
+// It returns true when f is a terminal and the NO_COLOR environment variable
+// is not set. See https://no-color.org/.
+func ShouldColorize(f *os.File) bool {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return false
+	}
+	return IsTerminal(f.Fd())
+}
 
 // Writer wraps an io.Writer and conditionally applies ANSI color codes
 // based on whether color output is enabled.

@@ -5,8 +5,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
 func TestFormatAppHelp(t *testing.T) {
@@ -17,7 +15,7 @@ func TestFormatAppHelp(t *testing.T) {
 	app.Register(&Command{Name: "log", Summary: "Show commit log", Run: func([]string) int { return 0 }})
 	app.Register(&Command{Name: "diff", Summary: "Show diff between commits", Run: func([]string) int { return 0 }})
 
-	cw := termcolor.NewWriter(os.Stdout, termcolor.ColorNever)
+	cw := NewWriter(os.Stdout, ColorNever)
 	FormatAppHelp(app, cw)
 
 	out := buf.String()
@@ -74,7 +72,7 @@ func TestFormatCommandHelp(t *testing.T) {
 		Run:      func([]string) int { return 0 },
 	}
 
-	cw := termcolor.NewWriter(os.Stdout, termcolor.ColorNever)
+	cw := NewWriter(os.Stdout, ColorNever)
 	FormatCommandHelp(app, cmd, cw)
 
 	out := buf.String()

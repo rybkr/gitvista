@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-func runShow(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
+func runShow(repo *gitcore.Repository, args []string, cw *cli.Writer) int {
 	stat := false
 	rev := "HEAD"
 

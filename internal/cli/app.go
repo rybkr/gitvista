@@ -5,8 +5,6 @@ import (
 	"io"
 	"os"
 	"sort"
-
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
 // Command describes a single CLI subcommand.
@@ -68,7 +66,7 @@ func (a *App) CommandNames() []string {
 //  2. "help" / "-h" / "--help" → print app or per-command help, return 0
 //  3. Known command → intercept -h/--help in sub-args, else call cmd.Run
 //  4. Unknown command → error + suggestion + hint, return 1
-func (a *App) Run(args []string, cw *termcolor.Writer) int {
+func (a *App) Run(args []string, cw *Writer) int {
 	if len(args) == 0 {
 		FormatAppHelp(a, cw)
 		return 1
@@ -107,7 +105,7 @@ func (a *App) Run(args []string, cw *termcolor.Writer) int {
 	return 1
 }
 
-func (a *App) showCommandHelp(name string, cw *termcolor.Writer) int {
+func (a *App) showCommandHelp(name string, cw *Writer) int {
 	cmd := a.Lookup(name)
 	if cmd == nil {
 		fpf(a.Stderr, "%s help: unknown command %q\n", a.Name, name)

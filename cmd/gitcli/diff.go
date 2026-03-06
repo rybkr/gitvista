@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-func runDiff(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int {
+func runDiff(repo *gitcore.Repository, args []string, cw *cli.Writer) int {
 	stat := false
 	var revs []string
 
@@ -61,7 +61,7 @@ func runDiff(repo *gitcore.Repository, args []string, cw *termcolor.Writer) int 
 	return printUnifiedDiff(repo, entries, cw)
 }
 
-func printUnifiedDiff(repo *gitcore.Repository, entries []gitcore.DiffEntry, cw *termcolor.Writer) int {
+func printUnifiedDiff(repo *gitcore.Repository, entries []gitcore.DiffEntry, cw *cli.Writer) int {
 	for _, entry := range entries {
 		path := entry.Path
 		oldPath := entry.OldPath

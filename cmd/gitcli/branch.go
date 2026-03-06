@@ -5,11 +5,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rybkr/gitvista/internal/cli"
 	"github.com/rybkr/gitvista/internal/gitcore"
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-func runBranch(repo *gitcore.Repository, _ []string, cw *termcolor.Writer) int {
+func runBranch(repo *gitcore.Repository, _ []string, cw *cli.Writer) int {
 	branches := repo.Branches()
 
 	names := make([]string, 0, len(branches))

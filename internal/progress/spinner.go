@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rybkr/gitvista/internal/termcolor"
+	"github.com/rybkr/gitvista/internal/cli"
 )
 
 // Spinner displays an animated braille spinner on stderr while a long-running
@@ -30,7 +30,7 @@ func New(msg string) *Spinner {
 // Start begins the spinner animation in a background goroutine.
 // It writes to stderr so it never pollutes stdout.
 func (s *Spinner) Start() {
-	if !termcolor.IsTerminal(os.Stderr.Fd()) {
+	if !cli.IsTerminal(os.Stderr.Fd()) {
 		return
 	}
 	s.wg.Add(1)

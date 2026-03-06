@@ -5,12 +5,10 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/rybkr/gitvista/internal/termcolor"
 )
 
-func noColorWriter() *termcolor.Writer {
-	return termcolor.NewWriter(os.Stdout, termcolor.ColorNever)
+func noColorWriter() *Writer {
+	return NewWriter(os.Stdout, ColorNever)
 }
 
 func TestRunDispatchesToCorrectCommand(t *testing.T) {
