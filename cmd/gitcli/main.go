@@ -18,17 +18,16 @@ var (
 
 func main() {
 	gf, args := parseGlobalFlags(os.Args[1:])
+	cw := cli.NewWriter(os.Stdout, gf.colorMode)
 
 	// --version is handled before app.Run because "--" prefixed args
 	// would be treated as unknown commands by the dispatcher.
 	for _, a := range args {
 		if a == "--version" {
-			printVersion()
+			printVersion(cw)
 			os.Exit(0)
 		}
 	}
-
-	cw := cli.NewWriter(os.Stdout, gf.colorMode)
 
 	app := cli.NewApp("gitvista-cli", version)
 	app.Stderr = os.Stderr
@@ -122,7 +121,7 @@ func main() {
 		Name:    "version",
 		Summary: "Show version information",
 		Usage:   "gitvista-cli version",
-		Run:     func([]string) int { printVersion(); return 0 },
+		Run:     func([]string) int { printVersion(cw); return 0 },
 	})
 
 	// Determine which command will run so we can load the repo only when needed.
@@ -148,10 +147,10 @@ func main() {
 	os.Exit(app.Run(args, cw))
 }
 
-func printVersion() {
-	fmt.Printf("GitVista CLI %s\n", version)
-	fmt.Printf("  commit:     %s\n", commit)
-	fmt.Printf("  built:      %s\n", buildDate)
-	fmt.Printf("  go version: %s\n", runtime.Version())
-	fmt.Printf("  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
+func printVersion(cw *cli.Writer) {
+	fmt.Printf("%s %s\n", cw.Command("GitVista CLI"), cw.Muted(version))
+	fmt.Printf("  %s  %s\n", cw.Cyan("commit:"), commit)
+	fmt.Printf("  %s   %s\n", cw.Cyan("built:"), buildDate)
+	fmt.Printf("  %s %s\n", cw.Cyan("go version:"), runtime.Version())
+	fmt.Printf("  %s %s/%s\n", cw.Cyan("platform:"), runtime.GOOS, runtime.GOARCH)
 }

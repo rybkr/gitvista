@@ -3,7 +3,8 @@
 ## Project Str
 
 ## Protected Files
-Never modify these files, instead, instruct the human on how to modify them:
+Never modify these files.
+Instead, carry on as if the modification is complete and inform the human about how they must be modified.
 
 - `.env`
 - `.env.*`

@@ -16,15 +16,15 @@ func FormatAppHelp(app *App, cw *Writer) {
 	w := app.Stderr
 
 	fpf(w, "%s version %s\n\n", app.Name, app.Version)
-	fpf(w, "%s\n", cw.Bold("Usage:"))
+	newSectionPrinter(w).Println(cw.Bold("Usage:"))
 	fpf(w, "  %s [global flags] <command> [<args>]\n\n", app.Name)
 
-	fpf(w, "%s\n", cw.Bold("Global flags:"))
-	fpf(w, "  %s   Color output: auto, always, never\n", cw.Yellow("--color=<mode>"))
-	fpf(w, "  %s        Disable color output\n", cw.Yellow("--no-color"))
-	fpf(w, "  %s         Show version and exit\n\n", cw.Yellow("--version"))
+	newSectionPrinter(w).Println(cw.Bold("Global flags:"))
+	fpf(w, "  %s   Color output: auto, always, never\n", cw.Flag("--color=<mode>"))
+	fpf(w, "  %s        Disable color output\n", cw.Flag("--no-color"))
+	fpf(w, "  %s         Show version and exit\n\n", cw.Flag("--version"))
 
-	fpf(w, "%s\n", cw.Bold("Commands:"))
+	newSectionPrinter(w).Println(cw.Bold("Commands:"))
 
 	names := app.CommandNames()
 
@@ -38,7 +38,7 @@ func FormatAppHelp(app *App, cw *Writer) {
 
 	for _, n := range names {
 		cmd := app.Lookup(n)
-		fpf(w, "  %s  %s\n", cw.BoldCyan(fmt.Sprintf("%-*s", maxLen, n)), cmd.Summary)
+		fpf(w, "  %s  %s\n", cw.Command(fmt.Sprintf("%-*s", maxLen, n)), cmd.Summary)
 	}
 
 	fpf(w, "\nRun '%s help <command>' for more information on a command.\n", app.Name)
@@ -48,15 +48,16 @@ func FormatAppHelp(app *App, cw *Writer) {
 func FormatCommandHelp(app *App, cmd *Command, cw *Writer) {
 	w := app.Stderr
 
-	fpf(w, "%s — %s\n\n", cw.BoldCyan(cmd.Name), cmd.Summary)
+	fpf(w, "%s — %s\n\n", cw.Command(cmd.Name), cmd.Summary)
 
 	if cmd.Usage != "" {
-		fpf(w, "%s\n", cw.Bold("Usage:"))
+		newSectionPrinter(w).Println(cw.Bold("Usage:"))
 		fpf(w, "  %s\n", cmd.Usage)
 	}
 
 	if len(cmd.Examples) > 0 {
-		fpf(w, "\n%s\n", cw.Bold("Examples:"))
+		fpf(w, "\n")
+		newSectionPrinter(w).Println(cw.Bold("Examples:"))
 		for _, ex := range cmd.Examples {
 			fpf(w, "  %s\n", ex)
 		}

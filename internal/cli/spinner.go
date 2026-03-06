@@ -1,26 +1,23 @@
 package cli
 
 import (
-	"fmt"
 	"os"
-	"sync"
-	"time"
+
+	"github.com/pterm/pterm"
 )
 
 // Spinner displays an animated braille spinner on stderr while a long-running
 // operation is in progress. It is only displayed when stderr is a TTY;
 // in non-interactive environments (piped output, CI, E2E tests) it is silent.
 type Spinner struct {
-	msg  string
-	done chan struct{}
-	wg   sync.WaitGroup
+	msg     string
+	printer *pterm.SpinnerPrinter
 }
 
 // NewSpinner creates a Spinner that will display msg alongside the animation.
 func NewSpinner(msg string) *Spinner {
 	return &Spinner{
-		msg:  msg,
-		done: make(chan struct{}),
+		msg: msg,
 	}
 }
 
@@ -30,34 +27,22 @@ func (s *Spinner) Start() {
 	if !IsTerminal(os.Stderr.Fd()) {
 		return
 	}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		ticker := time.NewTicker(80 * time.Millisecond)
-		defer ticker.Stop()
-		i := 0
-		for {
-			select {
-			case <-s.done:
-				// Clear the spinner line.
-				fmt.Fprintf(os.Stderr, "\r\033[K")
-				return
-			case <-ticker.C:
-				fmt.Fprintf(os.Stderr, "\r%s %s", frames[i%len(frames)], s.msg)
-				i++
-			}
-		}
-	}()
+	printer, err := pterm.DefaultSpinner.
+		WithWriter(os.Stderr).
+		WithShowTimer(false).
+		WithRemoveWhenDone(true).
+		Start(s.msg)
+	if err != nil {
+		return
+	}
+	s.printer = printer
 }
 
 // Stop halts the spinner animation and clears the line.
 func (s *Spinner) Stop() {
-	select {
-	case <-s.done:
-		// Already stopped.
-	default:
-		close(s.done)
+	if s.printer == nil {
+		return
 	}
-	s.wg.Wait()
+	_ = s.printer.Stop()
+	s.printer = nil
 }

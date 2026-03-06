@@ -73,12 +73,12 @@ func main() {
 	}
 
 	if *showVersion {
-		printVersion()
+		printVersion(cw)
 		os.Exit(0)
 	}
 
 	if *checkUpdate {
-		runCheckUpdate()
+		runCheckUpdate(cw)
 		os.Exit(0)
 	}
 
@@ -259,24 +259,24 @@ func resolveBindHost(repoPath, host string) string {
 	return ""
 }
 
-func printVersion() {
-	fmt.Printf("GitVista %s\n", version)
-	fmt.Printf("  commit:     %s\n", commit)
-	fmt.Printf("  built:      %s\n", buildDate)
-	fmt.Printf("  go version: %s\n", runtime.Version())
-	fmt.Printf("  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
+func printVersion(cw *cli.Writer) {
+	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
+	fmt.Printf("  %s  %s\n", cw.Cyan("commit:"), commit)
+	fmt.Printf("  %s   %s\n", cw.Cyan("built:"), buildDate)
+	fmt.Printf("  %s %s\n", cw.Cyan("go version:"), runtime.Version())
+	fmt.Printf("  %s %s/%s\n", cw.Cyan("platform:"), runtime.GOOS, runtime.GOARCH)
 }
 
-func runCheckUpdate() {
+func runCheckUpdate(cw *cli.Writer) {
 	const repo = "rybkr/gitvista"
-	fmt.Printf("Current version: %s\n", version)
+	fmt.Printf("%s %s\n", cw.Cyan("Current version:"), version)
 
 	latest, err := selfupdate.CheckLatest(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error checking for updates: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("Error checking for updates:"), err)
 		os.Exit(1)
 	}
-	fmt.Printf("Latest version:  %s\n", latest)
+	fmt.Printf("%s  %s\n", cw.Cyan("Latest version:"), latest)
 
 	if !selfupdate.NeedsUpdate(version, latest) {
 		if version == "dev" {
@@ -287,9 +287,9 @@ func runCheckUpdate() {
 		return
 	}
 
-	fmt.Printf("\nUpdate available: %s → %s\n", version, latest)
+	fmt.Printf("\n%s %s → %s\n", cw.Bold("Update available:"), version, cw.Green(latest))
 	fmt.Println("To update, run one of:")
-	fmt.Println("  gitvista-cli update")
+	fmt.Printf("  %s\n", cw.Command("gitvista-cli update"))
 	fmt.Println("  brew upgrade gitvista")
 }
 
@@ -307,16 +307,16 @@ func validateConfig(repoPath, dataDir, outputFormat string, portNum int) error {
 }
 
 func printStartupBanner(cw *cli.Writer, mode, addr, repoPath, dataDir string, repoLoadDur time.Duration) {
-	fmt.Printf("%s %s\n", cw.BoldCyan("GitVista"), cw.Green(version))
-	fmt.Printf("  mode:    %s\n", mode)
+	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
+	fmt.Printf("  %s    %s\n", cw.Cyan("mode:"), mode)
 	if mode == modeLocal {
 		timing := fmt.Sprintf("(loaded in %s)", cw.Yellow(repoLoadDur.String()))
-		fmt.Printf("  repo:    %s  %s\n", repoPath, timing)
+		fmt.Printf("  %s    %s  %s\n", cw.Cyan("repo:"), repoPath, timing)
 	} else {
-		fmt.Printf("  data:    %s\n", dataDir)
+		fmt.Printf("  %s    %s\n", cw.Cyan("data:"), dataDir)
 	}
-	fmt.Printf("  listen:  http://%s\n", addr)
-	fmt.Printf("  commit:  %s\n", commit)
+	fmt.Printf("  %s  http://%s\n", cw.Cyan("listen:"), addr)
+	fmt.Printf("  %s  %s\n", cw.Cyan("commit:"), commit)
 	if cli.IsTerminal(os.Stdout.Fd()) {
 		fmt.Printf("\n%s\n", cw.Bold("Press Ctrl+C to stop."))
 	}
@@ -352,38 +352,39 @@ func printStartupJSON(mode, addr, repoPath, dataDir string, repoLoadDur time.Dur
 }
 
 func printHelp(cw *cli.Writer) {
-	fmt.Println("GitVista - Real-time Git repository visualization")
-	fmt.Printf("Version: %s\n\n", version)
+	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
+	fmt.Println("Real-time Git repository visualization")
+	fmt.Println()
 	fmt.Println(cw.Bold("Usage:"))
 	fmt.Println("  gitvista [flags]")
 	fmt.Println()
 	fmt.Println(cw.Bold("Flags:"))
-	fmt.Printf("  %s string\n", cw.Yellow("-repo"))
+	fmt.Printf("  %s string\n", cw.Flag("-repo"))
 	fmt.Println("        Path to git repository (local mode)")
 	fmt.Println("        Environment: GITVISTA_REPO")
 	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Yellow("-data-dir"))
+	fmt.Printf("  %s string\n", cw.Flag("-data-dir"))
 	fmt.Println("        Data directory for managed repos (SaaS mode, default: /data/repos)")
 	fmt.Println("        Environment: GITVISTA_DATA_DIR")
 	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Yellow("-port"))
+	fmt.Printf("  %s string\n", cw.Flag("-port"))
 	fmt.Println("        Port to listen on (default: 8080)")
 	fmt.Println("        Environment: GITVISTA_PORT")
 	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Yellow("-host"))
+	fmt.Printf("  %s string\n", cw.Flag("-host"))
 	fmt.Println("        Host to bind to (default: all interfaces)")
 	fmt.Println("        Environment: GITVISTA_HOST")
 	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Yellow("-output"))
+	fmt.Printf("  %s string\n", cw.Flag("-output"))
 	fmt.Println("        Startup output format: json (default: human-readable)")
 	fmt.Println()
-	fmt.Printf("  %s\n", cw.Yellow("-version"))
+	fmt.Printf("  %s\n", cw.Flag("-version"))
 	fmt.Println("        Show version and exit")
 	fmt.Println()
-	fmt.Printf("  %s\n", cw.Yellow("-check-update"))
+	fmt.Printf("  %s\n", cw.Flag("-check-update"))
 	fmt.Println("        Check for a newer release and exit")
 	fmt.Println()
-	fmt.Printf("  %s\n", cw.Yellow("-help"))
+	fmt.Printf("  %s\n", cw.Flag("-help"))
 	fmt.Println("        Show this help message")
 	fmt.Println()
 	fmt.Println(cw.Bold("Examples:"))

@@ -2,21 +2,10 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"os"
 
+	"github.com/pterm/pterm"
 	"golang.org/x/term"
-)
-
-// ANSI escape codes.
-const (
-	reset    = "\033[0m"
-	red      = "\033[31m"
-	green    = "\033[32m"
-	yellow   = "\033[33m"
-	cyan     = "\033[36m"
-	bold     = "\033[1m"
-	boldCyan = "\033[1;36m"
 )
 
 // ColorMode controls when color output is used.
@@ -29,6 +18,17 @@ const (
 	ColorAlways
 	// ColorNever disables color output unconditionally.
 	ColorNever
+)
+
+var (
+	commandStyle  = pterm.NewStyle(pterm.Bold, pterm.FgLightCyan)
+	emphasisStyle = pterm.NewStyle(pterm.Bold)
+	flagStyle     = pterm.NewStyle(pterm.FgLightCyan)
+	successStyle  = pterm.NewStyle(pterm.FgGreen)
+	warningStyle  = pterm.NewStyle(pterm.FgYellow)
+	errorStyle    = pterm.NewStyle(pterm.FgLightRed)
+	accentStyle   = pterm.NewStyle(pterm.FgCyan)
+	mutedStyle    = pterm.NewStyle(pterm.FgDarkGray)
 )
 
 // ParseColorMode parses a string into a ColorMode.
@@ -61,10 +61,8 @@ func ShouldColorize(f *os.File) bool {
 	return IsTerminal(f.Fd())
 }
 
-// Writer wraps an io.Writer and conditionally applies ANSI color codes
-// based on whether color output is enabled.
+// Writer applies the GitVista CLI presentation theme to inline strings.
 type Writer struct {
-	io.Writer
 	enabled bool
 }
 
@@ -81,7 +79,10 @@ func NewWriter(f *os.File, mode ColorMode) *Writer {
 	default:
 		enabled = ShouldColorize(f)
 	}
-	return &Writer{Writer: f, enabled: enabled}
+
+	configureTheme(enabled)
+
+	return &Writer{enabled: enabled}
 }
 
 // Enabled reports whether color output is active.
@@ -89,50 +90,100 @@ func (w *Writer) Enabled() bool {
 	return w.enabled
 }
 
-// Red returns s wrapped in red ANSI codes, or s unchanged if color is disabled.
-func (w *Writer) Red(s string) string {
-	if !w.enabled {
-		return s
-	}
-	return red + s + reset
-}
-
-// Green returns s wrapped in green ANSI codes, or s unchanged if color is disabled.
-func (w *Writer) Green(s string) string {
-	if !w.enabled {
-		return s
-	}
-	return green + s + reset
-}
-
-// Yellow returns s wrapped in yellow ANSI codes, or s unchanged if color is disabled.
-func (w *Writer) Yellow(s string) string {
-	if !w.enabled {
-		return s
-	}
-	return yellow + s + reset
-}
-
-// Cyan returns s wrapped in cyan ANSI codes, or s unchanged if color is disabled.
-func (w *Writer) Cyan(s string) string {
-	if !w.enabled {
-		return s
-	}
-	return cyan + s + reset
-}
-
-// Bold returns s wrapped in bold ANSI codes, or s unchanged if color is disabled.
+// Bold returns s wrapped in the emphasis style, or s unchanged if color is disabled.
 func (w *Writer) Bold(s string) string {
-	if !w.enabled {
-		return s
-	}
-	return bold + s + reset
+	return w.apply(emphasisStyle, s)
 }
 
-// BoldCyan returns s wrapped in bold cyan ANSI codes, or s unchanged if color is disabled.
+// BoldCyan returns s wrapped in the command/title style, or s unchanged if color is disabled.
 func (w *Writer) BoldCyan(s string) string {
-	if !w.enabled {
+	return w.apply(commandStyle, s)
+}
+
+// Cyan returns s wrapped in the accent style, or s unchanged if color is disabled.
+func (w *Writer) Cyan(s string) string {
+	return w.apply(accentStyle, s)
+}
+
+// Green returns s wrapped in the success style, or s unchanged if color is disabled.
+func (w *Writer) Green(s string) string {
+	return w.apply(successStyle, s)
+}
+
+// Red returns s wrapped in the error style, or s unchanged if color is disabled.
+func (w *Writer) Red(s string) string {
+	return w.apply(errorStyle, s)
+}
+
+// Yellow returns s wrapped in the warning style, or s unchanged if color is disabled.
+func (w *Writer) Yellow(s string) string {
+	return w.apply(warningStyle, s)
+}
+
+// Command returns s wrapped in the command/title style.
+func (w *Writer) Command(s string) string {
+	return w.apply(commandStyle, s)
+}
+
+// Flag returns s wrapped in the flag style.
+func (w *Writer) Flag(s string) string {
+	return w.apply(flagStyle, s)
+}
+
+// Muted returns s wrapped in the muted style.
+func (w *Writer) Muted(s string) string {
+	return w.apply(mutedStyle, s)
+}
+
+func (w *Writer) apply(style *pterm.Style, s string) string {
+	if !w.enabled || style == nil {
 		return s
 	}
-	return boldCyan + s + reset
+	return style.Sprint(s)
+}
+
+func configureTheme(enabled bool) {
+	theme := pterm.ThemeDefault
+	theme.PrimaryStyle = pterm.Style{pterm.FgLightCyan}
+	theme.SecondaryStyle = pterm.Style{pterm.FgDarkGray}
+	theme.HighlightStyle = pterm.Style{pterm.Bold, pterm.FgLightCyan}
+	theme.InfoMessageStyle = pterm.Style{pterm.FgDefault}
+	theme.InfoPrefixStyle = pterm.Style{pterm.Bold, pterm.FgCyan}
+	theme.SuccessMessageStyle = pterm.Style{pterm.FgDefault}
+	theme.SuccessPrefixStyle = pterm.Style{pterm.Bold, pterm.FgGreen}
+	theme.WarningMessageStyle = pterm.Style{pterm.FgDefault}
+	theme.WarningPrefixStyle = pterm.Style{pterm.Bold, pterm.FgYellow}
+	theme.ErrorMessageStyle = pterm.Style{pterm.FgDefault}
+	theme.ErrorPrefixStyle = pterm.Style{pterm.Bold, pterm.FgLightRed}
+	theme.FatalMessageStyle = pterm.Style{pterm.FgDefault}
+	theme.FatalPrefixStyle = pterm.Style{pterm.Bold, pterm.FgLightRed}
+	theme.DescriptionMessageStyle = pterm.Style{pterm.FgDefault}
+	theme.DescriptionPrefixStyle = pterm.Style{pterm.FgDarkGray}
+	theme.ScopeStyle = pterm.Style{pterm.FgDarkGray}
+	theme.ProgressbarBarStyle = pterm.Style{pterm.FgCyan}
+	theme.ProgressbarTitleStyle = pterm.Style{pterm.FgLightCyan}
+	theme.SpinnerStyle = pterm.Style{pterm.FgCyan}
+	theme.SpinnerTextStyle = pterm.Style{pterm.FgDefault}
+	theme.TimerStyle = pterm.Style{pterm.FgDarkGray}
+	theme.TableStyle = pterm.Style{pterm.FgDefault}
+	theme.TableHeaderStyle = pterm.Style{pterm.Bold, pterm.FgLightCyan}
+	theme.TableSeparatorStyle = pterm.Style{pterm.FgDarkGray}
+	theme.SectionStyle = pterm.Style{pterm.Bold, pterm.FgLightCyan}
+	theme.BulletListTextStyle = pterm.Style{pterm.FgDefault}
+	theme.BulletListBulletStyle = pterm.Style{pterm.FgDarkGray}
+	theme.TreeStyle = pterm.Style{pterm.FgDarkGray}
+	theme.TreeTextStyle = pterm.Style{pterm.FgDefault}
+	theme.DebugMessageStyle = pterm.Style{pterm.FgDarkGray}
+	theme.DebugPrefixStyle = pterm.Style{pterm.FgDarkGray}
+	theme.BoxStyle = pterm.Style{pterm.FgDarkGray}
+	theme.BoxTextStyle = pterm.Style{pterm.FgDefault}
+	theme.BarLabelStyle = pterm.Style{pterm.FgLightCyan}
+	theme.BarStyle = pterm.Style{pterm.FgCyan}
+	pterm.ThemeDefault = theme
+
+	if enabled {
+		pterm.EnableColor()
+		return
+	}
+	pterm.DisableColor()
 }

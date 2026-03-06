@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -81,23 +82,24 @@ func TestWriterColorAlways(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		fn       func(string) string
-		wantCode string
+		name string
+		fn   func(string) string
 	}{
-		{"Red", w.Red, red},
-		{"Green", w.Green, green},
-		{"Yellow", w.Yellow, yellow},
-		{"Cyan", w.Cyan, cyan},
-		{"Bold", w.Bold, bold},
-		{"BoldCyan", w.BoldCyan, boldCyan},
+		{"Red", w.Red},
+		{"Green", w.Green},
+		{"Yellow", w.Yellow},
+		{"Cyan", w.Cyan},
+		{"Bold", w.Bold},
+		{"BoldCyan", w.BoldCyan},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.fn("hello")
-			want := tt.wantCode + "hello" + reset
-			if got != want {
-				t.Errorf("%s(\"hello\") = %q, want %q", tt.name, got, want)
+			if got == "hello" {
+				t.Errorf("%s(\"hello\") returned unstyled text", tt.name)
+			}
+			if !strings.Contains(got, "hello") {
+				t.Errorf("%s(\"hello\") = %q, want styled text containing %q", tt.name, got, "hello")
 			}
 		})
 	}
