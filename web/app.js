@@ -188,14 +188,14 @@ function bootstrapGraph(root, repoId) {
 
     const indexView = createIndexView();
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const GRAPH_COMMITS_CHUNK = 250;
     const fetchGraphCommits = async (hashes) => {
         if (!Array.isArray(hashes) || hashes.length === 0) return [];
         const unique = [...new Set(hashes.filter((h) => typeof h === "string" && h.length > 0))];
         if (unique.length === 0) return [];
         const batches = [];
-        const CHUNK = 50; // smaller batches reduce 414/429 risks in busy sessions
-        for (let i = 0; i < unique.length; i += CHUNK) {
-            batches.push(unique.slice(i, i + CHUNK));
+        for (let i = 0; i < unique.length; i += GRAPH_COMMITS_CHUNK) {
+            batches.push(unique.slice(i, i + GRAPH_COMMITS_CHUNK));
         }
 
         const all = [];

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"math"
 	"slices"
@@ -512,10 +513,57 @@ func (rs *RepoSession) handleBroadcast() {
 	}
 }
 
+func packetCommitCount(message UpdateMessage) int {
+	if message.Delta == nil {
+		return 0
+	}
+	return len(message.Delta.AddedCommits)
+}
+
+func marshalPacketPayload(message UpdateMessage) ([]byte, int, error) {
+	commitCount := packetCommitCount(message)
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return nil, commitCount, err
+	}
+	return payload, commitCount, nil
+}
+
+func packetType(message UpdateMessage) string {
+	switch {
+	case message.Delta != nil && message.Delta.BootstrapComplete:
+		return "bootstrap-final"
+	case message.Delta != nil && message.Delta.Bootstrap:
+		return "bootstrap"
+	case message.Delta != nil:
+		return "delta"
+	case message.Summary != nil:
+		return "summary"
+	default:
+		return "state"
+	}
+}
+
+func logPacketSent(logger *slog.Logger, kind string, clients int, commitCount int, payloadBytes int) {
+	logger.Debug("Packet sent",
+		"type", kind,
+		"clients", clients,
+		"commits", commitCount,
+		"bytes", payloadBytes,
+		"totalBytes", payloadBytes*clients,
+	)
+}
+
 // sendToAllClients writes a message to every connected WebSocket client.
 // Clients that fail to receive the message are removed.
 func (rs *RepoSession) sendToAllClients(message UpdateMessage) {
 	var failedClients []*websocket.Conn
+	payload, commitCount, err := marshalPacketPayload(message)
+	if err != nil {
+		rs.logger.Error("Failed to serialize outbound packet", "type", packetType(message), "err", err)
+		return
+	}
+	sentClients := 0
 
 	rs.clientsMu.RLock()
 	snapshot := make(map[*websocket.Conn]*sync.Mutex, len(rs.clients))
@@ -529,7 +577,7 @@ func (rs *RepoSession) sendToAllClients(message UpdateMessage) {
 		err1 := conn.SetWriteDeadline(time.Now().Add(writeWait))
 		var err2 error
 		if err1 == nil {
-			err2 = conn.WriteJSON(message)
+			err2 = conn.WriteMessage(websocket.TextMessage, payload)
 		}
 		mu.Unlock()
 
@@ -539,7 +587,13 @@ func (rs *RepoSession) sendToAllClients(message UpdateMessage) {
 		} else if err2 != nil {
 			rs.logger.Error("Broadcast failed", "addr", conn.RemoteAddr(), "err", err2)
 			failedClients = append(failedClients, conn)
+		} else {
+			sentClients++
 		}
+	}
+
+	if sentClients > 0 {
+		logPacketSent(rs.logger, packetType(message), sentClients, commitCount, len(payload))
 	}
 
 	if len(failedClients) > 0 {
@@ -586,19 +640,21 @@ func (rs *RepoSession) sendInitialState(conn *websocket.Conn) {
 		Status: status,
 		Head:   headInfo,
 	}
+	payload, commitCount, err := marshalPacketPayload(msg)
+	if err != nil {
+		rs.logger.Error("Failed to serialize initial state", "addr", conn.RemoteAddr(), "err", err)
+		return
+	}
 	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 		rs.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err)
 		return
 	}
-	if err := conn.WriteJSON(msg); err != nil {
+	if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 		rs.logger.Error("Failed to send initial state", "addr", conn.RemoteAddr(), "err", err)
 		return
 	}
 
-	rs.logger.Info("Initial state sent",
-		"addr", conn.RemoteAddr(),
-		"headHash", headInfo.Hash,
-	)
+	logPacketSent(rs.logger, "initial-state", 1, commitCount, len(payload))
 }
 
 // registerClient adds a WebSocket connection to the session's client map and

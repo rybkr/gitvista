@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -72,7 +73,11 @@ func requestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 		start := time.Now()
 		sr := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sr, r)
-		logger.Info("request",
+		logFn := logger.Info
+		if shouldLogRequestAtDebug(r.URL.Path, sr.status) {
+			logFn = logger.Debug
+		}
+		logFn("request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", sr.status,
@@ -80,6 +85,19 @@ func requestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 			"ip", getClientIP(r),
 		)
 	})
+}
+
+func shouldLogRequestAtDebug(path string, status int) bool {
+	if status >= 400 {
+		return false
+	}
+	if path == "/api/graph/commits" || path == "/api/ws" {
+		return true
+	}
+	if path == "/" || path == "/favicon.svg" {
+		return true
+	}
+	return !strings.HasPrefix(path, "/api/")
 }
 
 // writeDeadline wraps a handler to set a per-response write deadline using

@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
@@ -55,6 +58,47 @@ func TestWithLocalSession(t *testing.T) {
 var nopHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 })
+
+func TestShouldLogRequestAtDebug(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		status int
+		want   bool
+	}{
+		{name: "graph commits", path: "/api/graph/commits", status: http.StatusOK, want: true},
+		{name: "websocket", path: "/api/ws", status: http.StatusOK, want: true},
+		{name: "asset", path: "/app.js", status: http.StatusOK, want: true},
+		{name: "api summary", path: "/api/graph/summary", status: http.StatusOK, want: false},
+		{name: "error remains info", path: "/app.js", status: http.StatusNotFound, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldLogRequestAtDebug(tt.path, tt.status); got != tt.want {
+				t.Fatalf("shouldLogRequestAtDebug(%q, %d) = %v, want %v", tt.path, tt.status, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequestLogger_DowngradesNoisyRequests(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	h := requestLogger(logger, nopHandler)
+
+	req := httptest.NewRequest("GET", "/api/graph/commits?hashes=abc", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	out := buf.String()
+	if !strings.Contains(out, "level=DEBUG") {
+		t.Fatalf("expected debug log, got: %s", out)
+	}
+	if !strings.Contains(out, "path=/api/graph/commits") {
+		t.Fatalf("expected graph commits path in log, got: %s", out)
+	}
+}
 
 func TestCorsMiddleware_AllowedOrigin(t *testing.T) {
 	allowed := map[string]bool{"https://app.example.com": true}

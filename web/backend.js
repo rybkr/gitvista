@@ -86,10 +86,8 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
         socket.addEventListener("message", (event) => {
             const size = typeof event.data === "string" ? event.data.length : undefined;
             if (size !== undefined) {
-                logger?.info("WebSocket message received", { size });
                 telemetryStore.recordWsMessage(size);
             } else {
-                logger?.info("WebSocket message received");
                 telemetryStore.recordWsMessage(0);
             }
 

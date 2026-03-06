@@ -1,6 +1,10 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,5 +121,53 @@ func TestRepoSession_DefaultLogger(t *testing.T) {
 
 	if rs.logger == nil {
 		t.Error("logger was not initialized with default")
+	}
+}
+
+func TestMarshalPacketPayload(t *testing.T) {
+	msg := UpdateMessage{
+		Delta: &gitcore.RepositoryDelta{
+			AddedCommits: []*gitcore.Commit{
+				{ID: gitcore.Hash("1111111111111111111111111111111111111111")},
+				{ID: gitcore.Hash("2222222222222222222222222222222222222222")},
+			},
+		},
+	}
+
+	payload, commitCount, err := marshalPacketPayload(msg)
+	if err != nil {
+		t.Fatalf("marshalPacketPayload() error = %v", err)
+	}
+	if commitCount != 2 {
+		t.Fatalf("commitCount = %d, want 2", commitCount)
+	}
+
+	expected, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if string(payload) != string(expected) {
+		t.Fatalf("payload = %s, want %s", payload, expected)
+	}
+}
+
+func TestLogPacketSent(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	logPacketSent(logger, "bootstrap", 2, 42, 1024)
+
+	out := buf.String()
+	for _, want := range []string{
+		"Packet sent",
+		"type=bootstrap",
+		"clients=2",
+		"commits=42",
+		"bytes=1024",
+		"totalBytes=2048",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("log output missing %q: %s", want, out)
+		}
 	}
 }
