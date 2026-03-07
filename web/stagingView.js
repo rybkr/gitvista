@@ -1,7 +1,7 @@
 /**
  * Git Lifecycle View
  *
- * Visualizes git's three conceptual areas as a vertical pipeline —
+ * Visualizes git's three conceptual areas as a horizontal conveyor —
  * Working → Staged → Committed — with animated transitions as files
  * move between zones via git add, git reset, and git commit.
  */
@@ -118,8 +118,8 @@ function createConnector(fwdLabel, revLabel) {
     const connector = document.createElement("div");
     connector.className = "staging-connector";
 
-    const trackTop = document.createElement("div");
-    trackTop.className = "staging-connector-track";
+    const track = document.createElement("div");
+    track.className = "staging-connector-track";
 
     const fwd = document.createElement("span");
     fwd.className = "staging-connector-label";
@@ -129,13 +129,9 @@ function createConnector(fwdLabel, revLabel) {
     rev.className = "staging-connector-label staging-connector-label--rev";
     rev.textContent = revLabel;
 
-    const trackBottom = document.createElement("div");
-    trackBottom.className = "staging-connector-track";
-
-    connector.appendChild(trackTop);
+    connector.appendChild(track);
     connector.appendChild(fwd);
     connector.appendChild(rev);
-    connector.appendChild(trackBottom);
 
     return { el: connector, fwdLabel: fwd, revLabel: rev };
 }
@@ -143,6 +139,25 @@ function createConnector(fwdLabel, revLabel) {
 export function createStagingView() {
     const el = document.createElement("div");
     el.className = "staging-view";
+
+    const intro = document.createElement("div");
+    intro.className = "staging-intro";
+
+    const eyebrow = document.createElement("div");
+    eyebrow.className = "staging-intro-eyebrow";
+    eyebrow.textContent = "Git lifecycle";
+
+    const title = document.createElement("h2");
+    title.className = "staging-intro-title";
+    title.textContent = "Index conveyor";
+
+    const subtitle = document.createElement("p");
+    subtitle.className = "staging-intro-subtitle";
+    subtitle.textContent = "Files travel left to right as changes move from the working tree into the git index and then into a commit.";
+
+    intro.appendChild(eyebrow);
+    intro.appendChild(title);
+    intro.appendChild(subtitle);
 
     const zones = document.createElement("div");
     zones.className = "staging-zones";
@@ -160,6 +175,7 @@ export function createStagingView() {
     zones.appendChild(commitConnector.el);
     zones.appendChild(repo.el);
 
+    el.appendChild(intro);
     el.appendChild(zones);
 
     // State tracking for animations
