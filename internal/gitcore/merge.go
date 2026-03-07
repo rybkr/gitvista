@@ -5,6 +5,104 @@ import (
 	"fmt"
 )
 
+// ConflictType classifies how a file is affected in a merge preview.
+type ConflictType string
+
+const (
+	// ConflictNone represents no merge conflict.
+	ConflictNone ConflictType = "none"
+	// ConflictConflicting represents multiple conflicting edits.
+	ConflictConflicting ConflictType = "conflicting"
+	// ConflictBothAdded represents areas that were both added in a merge.
+	ConflictBothAdded ConflictType = "both_added"
+	// ConflictDeleteModify represents a hunk that was removed in one branch and modded in another.
+	ConflictDeleteModify ConflictType = "delete_modify"
+	// ConflictRenameModify represents a hunk that was renamed in one branch and modded in another.
+	ConflictRenameModify ConflictType = "rename_modify"
+	// ConflictRenameRename represents a hunk that was renamed in both branches.
+	ConflictRenameRename ConflictType = "rename_rename"
+)
+
+// MergePreviewEntry represents a single file in the merge preview.
+type MergePreviewEntry struct {
+	Path         string       `json:"path"`
+	ConflictType ConflictType `json:"conflictType"`
+	OursStatus   string       `json:"oursStatus"`
+	TheirsStatus string       `json:"theirsStatus"`
+	IsBinary     bool         `json:"isBinary"`
+	BaseHash     Hash         `json:"baseHash,omitempty"`
+	OursHash     Hash         `json:"oursHash,omitempty"`
+	TheirsHash   Hash         `json:"theirsHash,omitempty"`
+}
+
+// MergePreviewStats summarizes the merge preview.
+type MergePreviewStats struct {
+	TotalFiles int `json:"totalFiles"`
+	Conflicts  int `json:"conflicts"`
+	CleanMerge int `json:"cleanMerge"`
+}
+
+// MergePreviewResult is the full result of a merge preview computation.
+type MergePreviewResult struct {
+	MergeBaseHash Hash                `json:"mergeBaseHash"`
+	OursHash      Hash                `json:"oursHash"`
+	TheirsHash    Hash                `json:"theirsHash"`
+	Entries       []MergePreviewEntry `json:"entries"`
+	Stats         MergePreviewStats   `json:"stats"`
+}
+
+// MergeRegionType classifies a region in a three-way diff.
+type MergeRegionType string
+
+const (
+	// MergeRegionContext represents parts of a file that are context.
+	MergeRegionContext MergeRegionType = "context"
+	// MergeRegionOurs represents parts of a file that are ours.
+	MergeRegionOurs MergeRegionType = "ours"
+	// MergeRegionTheirs represents parts of a file that are theirs.
+	MergeRegionTheirs MergeRegionType = "theirs"
+	// MergeRegionConflict represents parts of a file that are in conflict.
+	MergeRegionConflict MergeRegionType = "conflict"
+)
+
+// MergeRegion represents a contiguous region in a three-way diff.
+type MergeRegion struct {
+	Type        MergeRegionType `json:"type"`
+	BaseStart   int             `json:"baseStart"`
+	BaseLines   []string        `json:"baseLines"`
+	OursLines   []string        `json:"oursLines,omitempty"`
+	TheirsLines []string        `json:"theirsLines,omitempty"`
+}
+
+// ThreeWayDiffStats summarizes the changes in a three-way diff.
+type ThreeWayDiffStats struct {
+	OursAdded       int `json:"oursAdded"`
+	OursDeleted     int `json:"oursDeleted"`
+	TheirsAdded     int `json:"theirsAdded"`
+	TheirsDeleted   int `json:"theirsDeleted"`
+	ConflictRegions int `json:"conflictRegions"`
+}
+
+// ThreeWayFileDiff represents a three-way merge diff for a single file.
+type ThreeWayFileDiff struct {
+	Path         string            `json:"path"`
+	ConflictType ConflictType      `json:"conflictType"`
+	IsBinary     bool              `json:"isBinary"`
+	Truncated    bool              `json:"truncated"`
+	Regions      []MergeRegion     `json:"regions"`
+	Stats        ThreeWayDiffStats `json:"stats"`
+}
+
+// LineType represents the type of line in a merge.
+type LineType string
+
+// nolint:revive // See: https://git-scm.com/docs/git-merge
+const (
+	LineTypeContext  = "context"
+	LineTypeAddition = "addition"
+	LineTypeDeletion = "deletion"
+)
+
 // MergeBase finds the best common ancestor of two commits using a
 // bidirectional BFS with date-ordered priority queues.
 // Returns an error if no common ancestor exists.

@@ -1,7 +1,6 @@
 package gitcore
 
 import (
-	"bufio"
 	"bytes"
 	"compress/zlib"
 	"fmt"
@@ -23,7 +22,6 @@ import (
 func (r *Repository) loadObjects() error {
 	visited := make(map[Hash]bool)
 
-	// Pre-size the stack to the number of refs + stashes to avoid initial allocations.
 	stack := make([]Hash, 0, len(r.refs)+len(r.stashes))
 	for _, ref := range r.refs {
 		stack = append(stack, ref)
@@ -33,7 +31,6 @@ func (r *Repository) loadObjects() error {
 	}
 
 	for len(stack) > 0 {
-		// Pop from the end to maintain a LIFO traversal order.
 		ref := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
@@ -54,7 +51,6 @@ func (r *Repository) loadObjects() error {
 				return fmt.Errorf("unexpected type for commit object %s", ref)
 			}
 			r.commits = append(r.commits, commit)
-			// Push all parent hashes onto the stack for subsequent processing.
 			stack = append(stack, commit.Parents...)
 		case TagObject:
 			tag, ok := object.(*Tag)
@@ -64,15 +60,12 @@ func (r *Repository) loadObjects() error {
 			r.tags = append(r.tags, tag)
 			stack = append(stack, tag.Object)
 		case TreeObject, BlobObject:
-			// Trees and blobs are terminal nodes in the ref traversal —
-			// they can appear when a tag points directly at a tree or blob.
 			continue
 		default:
 			return fmt.Errorf("unsupported object type: %d", object.Type())
 		}
 	}
 
-	// Build the commit lookup map once; the Repository is immutable after construction.
 	r.commitMap = make(map[Hash]*Commit, len(r.commits))
 	for _, c := range r.commits {
 		r.commitMap[c.ID] = c
@@ -83,18 +76,18 @@ func (r *Repository) loadObjects() error {
 
 // readObject reads and parses a Git object (loose first, then packed).
 // Parse errors from loose objects are returned immediately rather than silently
-// falling through to the pack search -- a corrupt loose object should fail loudly.
+// falling through to the pack search - a corrupt loose object should fail loudly.
 func (r *Repository) readObject(id Hash) (Object, error) {
 	header, content, err := r.readLooseObjectRaw(id)
 	if err == nil {
 		switch {
-		case strings.HasPrefix(header, ObjectTypeCommit):
+		case strings.HasPrefix(header, objectTypeCommit):
 			return parseCommitBody(content, id)
-		case strings.HasPrefix(header, ObjectTypeTag):
+		case strings.HasPrefix(header, objectTypeTag):
 			return parseTagBody(content, id)
-		case strings.HasPrefix(header, ObjectTypeTree):
+		case strings.HasPrefix(header, objectTypeTree):
 			return parseTreeBody(content, id)
-		case strings.HasPrefix(header, ObjectTypeBlob):
+		case strings.HasPrefix(header, objectTypeBlob):
 			return &Blob{ID: id}, nil
 		default:
 			return nil, fmt.Errorf("unrecognized loose object type: %q for %s", header, id)
@@ -161,8 +154,8 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 		return "", nil, err
 	}
 	defer func() {
-		if _err := file.Close(); _err != nil {
-			log.Printf("failed to close loose object file: %v", _err)
+		if closeErr := file.Close(); closeErr != nil {
+			log.Printf("failed to close loose object file: %v", closeErr)
 		}
 	}()
 
@@ -178,26 +171,6 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 
 	header, content = string(data[:nullIdx]), data[nullIdx+1:]
 	return header, content, nil
-}
-
-func ObjectTypeFromHeader(header string) (byte, error) {
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) != 2 {
-		return 0, fmt.Errorf("invalid header: %s", header)
-	}
-
-	switch parts[0] {
-	case ObjectTypeCommit:
-		return packObjectCommit, nil
-	case ObjectTypeTree:
-		return packObjectTree, nil
-	case ObjectTypeBlob:
-		return packObjectBlob, nil
-	case ObjectTypeTag:
-		return packObjectTag, nil
-	default:
-		return 0, fmt.Errorf("unsupported object type: %s", parts[0])
-	}
 }
 
 func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (Object, error) {
@@ -217,172 +190,6 @@ func (r *Repository) readPackedObject(packPath string, offset int64, id Hash) (O
 		return &Blob{ID: id}, nil
 	default:
 		return nil, fmt.Errorf("unknown object type: %d", objectType)
-	}
-}
-
-func parseCommitBody(body []byte, id Hash) (*Commit, error) {
-	commit := &Commit{ID: id}
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	inMessage := false
-	var messageLines []string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if inMessage {
-			messageLines = append(messageLines, line)
-			continue
-		}
-		if line == "" {
-			inMessage = true
-			continue
-		}
-
-		if strings.HasPrefix(line, "parent ") {
-			parent, err := NewHash(strings.TrimPrefix(line, "parent "))
-			if err != nil {
-				return nil, fmt.Errorf("invalid parent hash: %w", err)
-			}
-			commit.Parents = append(commit.Parents, parent)
-		} else if strings.HasPrefix(line, "tree ") {
-			tree, err := NewHash(strings.TrimPrefix(line, "tree "))
-			if err != nil {
-				return nil, fmt.Errorf("invalid tree hash: %w", err)
-			}
-			commit.Tree = tree
-		} else if strings.HasPrefix(line, "author ") {
-			authorLine := strings.TrimPrefix(line, "author ")
-			author, err := NewSignature(authorLine)
-			if err != nil {
-				return nil, fmt.Errorf("invalid author signature: %w", err)
-			}
-			commit.Author = author
-		} else if strings.HasPrefix(line, "committer ") {
-			committerLine := strings.TrimPrefix(line, "committer ")
-			committer, err := NewSignature(committerLine)
-			if err != nil {
-				return nil, fmt.Errorf("invalid committer signature: %w", err)
-			}
-			commit.Committer = committer
-		}
-	}
-
-	commit.Message = strings.Join(messageLines, "\n")
-	commit.Message = strings.TrimSpace(commit.Message)
-
-	return commit, nil
-}
-
-func parseTagBody(body []byte, id Hash) (*Tag, error) {
-	tag := &Tag{ID: id}
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	inMessage := false
-	var messageLines []string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if inMessage {
-			messageLines = append(messageLines, line)
-			continue
-		}
-		if line == "" {
-			inMessage = true
-			continue
-		}
-
-		if strings.HasPrefix(line, "object ") {
-			objectHash, err := NewHash(strings.TrimPrefix(line, "object "))
-			if err != nil {
-				return nil, fmt.Errorf("invalid object hash: %w", err)
-			}
-			tag.Object = objectHash
-		} else if strings.HasPrefix(line, "type ") {
-			typeStr := strings.TrimPrefix(line, "type ")
-			tag.ObjType = StrToObjectType(typeStr)
-		} else if strings.HasPrefix(line, "tag ") {
-			tag.Name = strings.TrimPrefix(line, "tag ")
-		} else if strings.HasPrefix(line, "tagger ") {
-			taggerLine := strings.TrimPrefix(line, "tagger ")
-			tagger, err := NewSignature(taggerLine)
-			if err != nil {
-				return nil, fmt.Errorf("invalid tagger: %w", err)
-			}
-			tag.Tagger = tagger
-		}
-	}
-
-	tag.Message = strings.Join(messageLines, "\n")
-	tag.Message = strings.TrimSpace(tag.Message)
-
-	return tag, nil
-}
-
-// parseTreeBody parses the binary tree format: repeated (mode SP name NUL hash[20]) entries.
-func parseTreeBody(body []byte, id Hash) (*Tree, error) {
-	tree := &Tree{
-		ID:      id,
-		Entries: make([]TreeEntry, 0),
-	}
-	reader := bytes.NewReader(body)
-
-	for {
-		var modeBuilder strings.Builder
-		for {
-			b, err := reader.ReadByte()
-			if err == io.EOF {
-				return tree, nil
-			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to read mode: %w", err)
-			}
-			if b == ' ' {
-				break
-			}
-			modeBuilder.WriteByte(b)
-		}
-		mode := modeBuilder.String()
-
-		var nameBuilder strings.Builder
-		for {
-			b, err := reader.ReadByte()
-			if err != nil {
-				return nil, fmt.Errorf("failed to read name: %w", err)
-			}
-			if b == 0 {
-				break
-			}
-			nameBuilder.WriteByte(b)
-		}
-		name := nameBuilder.String()
-
-		var hashBytes [20]byte
-		if _, err := io.ReadFull(reader, hashBytes[:]); err != nil {
-			return nil, fmt.Errorf("failed to read hash: %w", err)
-		}
-
-		hash, err := NewHashFromBytes(hashBytes)
-		if err != nil {
-			return nil, fmt.Errorf("invalid hash in tree entry: %w", err)
-		}
-
-		var entryType string
-		if strings.HasPrefix(mode, "100") {
-			entryType = "blob"
-		} else if mode == "040000" || mode == "40000" {
-			entryType = "tree"
-		} else if mode == "120000" || mode == "160000" {
-			entryType = "commit"
-		} else {
-			entryType = StatusUnknown
-		}
-
-		tree.Entries = append(tree.Entries, TreeEntry{
-			ID:   hash,
-			Name: name,
-			Mode: mode,
-			Type: entryType,
-		})
 	}
 }
 

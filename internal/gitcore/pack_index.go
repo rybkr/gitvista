@@ -37,22 +37,22 @@ func (p *PackIndex) FindObject(id Hash) (int64, bool) {
 
 // PackFile returns the path to the pack file associated with this index.
 func (p *PackIndex) PackFile() string {
-    return p.packPath
+	return p.packPath
 }
 
 // Version returns the pack index format version.
 func (p *PackIndex) Version() uint32 {
-    return p.version
+	return p.version
 }
 
 // NumObjects returns the number of objects stored in the pack file.
 func (p *PackIndex) NumObjects() uint32 {
-    return p.numObjects
+	return p.numObjects
 }
 
 // Fanout returns the 256-entry fanout table used for binary search within the index.
 func (p *PackIndex) Fanout() [256]uint32 {
-    return p.fanout
+	return p.fanout
 }
 
 // Offsets returns a defensive copy of the offset map.
