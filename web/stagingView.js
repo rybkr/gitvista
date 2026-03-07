@@ -103,7 +103,7 @@ function createInfoButton(text, id) {
     button.className = "staging-help-button";
     button.setAttribute("aria-label", `Explain ${id}`);
     button.setAttribute("aria-describedby", `staging-help-${id}`);
-    button.textContent = "?";
+    button.textContent = "i";
 
     const tooltip = document.createElement("span");
     tooltip.className = "staging-help-tooltip";

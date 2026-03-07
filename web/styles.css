@@ -4803,60 +4803,79 @@ canvas {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
+    overflow: visible;
 }
 
 .staging-help-button {
-    width: 16px;
-    height: 16px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
+    width: 17px;
+    height: 17px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
     border-radius: 999px;
-    background: transparent;
+    background: color-mix(in srgb, var(--surface-color) 90%, transparent);
     color: var(--text-secondary);
-    font: inherit;
-    font-size: 10px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 9px;
+    font-weight: 700;
     line-height: 1;
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: help;
-    transition: color 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: color 0.16s ease, border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
 }
 
 .staging-help-button:hover,
 .staging-help-button:focus-visible {
     color: var(--text-color);
-    border-color: color-mix(in srgb, var(--branch-node-color) 58%, var(--border-color));
-    background: color-mix(in srgb, var(--surface-color) 84%, var(--branch-node-color));
+    border-color: color-mix(in srgb, var(--branch-node-color) 48%, var(--border-color));
+    background: color-mix(in srgb, var(--surface-color) 76%, var(--branch-node-color));
+    transform: translateY(-1px);
     outline: none;
 }
 
 .staging-help-tooltip {
     position: absolute;
-    top: calc(100% + 8px);
-    left: 50%;
-    z-index: 5;
-    width: 184px;
-    padding: 8px 9px;
-    border: 1px solid color-mix(in srgb, var(--branch-node-color) 18%, var(--border-color));
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--surface-color) 94%, black 6%);
-    color: var(--text-secondary);
-    font-size: 10px;
-    line-height: 1.45;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    letter-spacing: 0.01em;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+    top: calc(100% + 10px);
+    left: -4px;
+    z-index: 6;
+    width: 220px;
+    padding: 10px 11px;
+    border: 1px solid color-mix(in srgb, var(--branch-node-color) 20%, var(--border-color));
+    border-radius: 10px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 48%),
+        color-mix(in srgb, var(--surface-color) 95%, black 5%);
+    color: var(--text-color);
+    font-size: 11px;
+    line-height: 1.5;
+    font-family: inherit;
+    letter-spacing: 0;
     opacity: 0;
     pointer-events: none;
-    transform: translateX(-50%) translateY(-4px);
-    transition: opacity 0.14s ease, transform 0.14s ease;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
+    transform: translateY(-4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.staging-help-tooltip::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 12px;
+    width: 9px;
+    height: 9px;
+    border-top: 1px solid color-mix(in srgb, var(--branch-node-color) 20%, var(--border-color));
+    border-left: 1px solid color-mix(in srgb, var(--branch-node-color) 20%, var(--border-color));
+    background: color-mix(in srgb, var(--surface-color) 95%, black 5%);
+    transform: rotate(45deg);
 }
 
 .staging-help:hover .staging-help-tooltip,
 .staging-help-button:focus-visible + .staging-help-tooltip {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
 }
 
 .staging-zone-badge {
@@ -4920,14 +4939,12 @@ canvas {
 .staging-zone-empty {
     color: var(--text-secondary);
     font-size: 11px;
-    font-style: normal;
+    font-style: italic;
     text-align: center;
     margin: auto 0;
     padding: 14px 8px;
-    opacity: 0.68;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    opacity: 0.72;
+    letter-spacing: 0.01em;
 }
 
 /* ── File card ── */
@@ -5124,6 +5141,7 @@ canvas {
 
     .staging-help-tooltip {
         left: 0;
+        width: min(220px, calc(100vw - 56px));
         transform: translateY(-4px);
     }
 
