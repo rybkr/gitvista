@@ -25,19 +25,18 @@ const ICON_COMMITTED = `<svg width="14" height="14" viewBox="0 0 14 14" fill="no
 
 const COMMITTED_TTL = 15000;
 const COMMITTED_PRUNE_INTERVAL = 3000;
-const UPSTREAM_STATUS_LABELS = {
-    up_to_date: "Up to date",
-    ahead: "Ahead",
-    behind: "Behind",
-    diverged: "Diverged",
-    unavailable: "Unavailable",
-};
 const UPSTREAM_REASON_LABELS = {
     detached_head: "Detached HEAD",
-    no_current_branch: "No current branch",
-    no_upstream_config: "No upstream tracking branch",
-    missing_remote_ref: "Upstream ref not found",
-    no_common_ancestor: "No common ancestor",
+    no_current_branch: "No branch",
+    no_upstream_config: "No upstream",
+    missing_remote_ref: "Missing upstream ref",
+    no_common_ancestor: "No merge base",
+};
+const LANE_HELP = {
+    working: "Files changed in the working tree but not staged in the index.",
+    staged: "Files currently in the git index and ready for commit.",
+    local: "Files that recently left the index through a local commit.",
+    upstream: "Current branch compared against its tracked remote branch.",
 };
 
 function splitPath(filePath) {
@@ -95,12 +94,37 @@ function createFileCard(file, animClass) {
     return card;
 }
 
-function createZone(id, icon, label, colorModifier) {
+function createInfoButton(text, id) {
+    const wrap = document.createElement("span");
+    wrap.className = "staging-help";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "staging-help-button";
+    button.setAttribute("aria-label", `Explain ${id}`);
+    button.setAttribute("aria-describedby", `staging-help-${id}`);
+    button.textContent = "?";
+
+    const tooltip = document.createElement("span");
+    tooltip.className = "staging-help-tooltip";
+    tooltip.id = `staging-help-${id}`;
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.textContent = text;
+
+    wrap.appendChild(button);
+    wrap.appendChild(tooltip);
+    return wrap;
+}
+
+function createZone(id, icon, label, colorModifier, helpText) {
     const zone = document.createElement("div");
     zone.className = `staging-zone staging-zone--${id}`;
 
     const header = document.createElement("div");
     header.className = "staging-zone-header";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "staging-zone-title-row";
 
     const headerText = document.createElement("div");
     headerText.className = "staging-zone-header-text";
@@ -113,6 +137,11 @@ function createZone(id, icon, label, colorModifier) {
     labelSpan.className = "staging-zone-label";
     labelSpan.textContent = label;
 
+    titleRow.appendChild(labelSpan);
+    if (helpText) {
+        titleRow.appendChild(createInfoButton(helpText, id));
+    }
+
     const meta = document.createElement("span");
     meta.className = "staging-zone-meta";
 
@@ -121,7 +150,7 @@ function createZone(id, icon, label, colorModifier) {
     badge.textContent = "0";
 
     header.appendChild(iconSpan);
-    headerText.appendChild(labelSpan);
+    headerText.appendChild(titleRow);
     headerText.appendChild(meta);
     header.appendChild(headerText);
     header.appendChild(badge);
@@ -135,7 +164,7 @@ function createZone(id, icon, label, colorModifier) {
     return { el: zone, body, badge, label: labelSpan, meta };
 }
 
-function createSummaryCard({ tone, title, body }) {
+function createSummaryCard({ tone, title, meta }) {
     const card = document.createElement("div");
     card.className = "staging-summary-card";
     if (tone) card.classList.add(`staging-summary-card--${tone}`);
@@ -144,93 +173,69 @@ function createSummaryCard({ tone, title, body }) {
     titleEl.className = "staging-summary-title";
     titleEl.textContent = title;
 
-    const bodyEl = document.createElement("div");
-    bodyEl.className = "staging-summary-body";
-    bodyEl.textContent = body;
-
     card.appendChild(titleEl);
-    card.appendChild(bodyEl);
+    if (meta) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "staging-summary-meta";
+        metaEl.textContent = meta;
+        card.appendChild(metaEl);
+    }
     return card;
 }
 
 function summarizeUpstream(upstream) {
     if (!upstream) {
-        return {
-            tone: "muted",
-            title: UPSTREAM_STATUS_LABELS.unavailable,
-            body: "No upstream tracking data available.",
-        };
+        return { mode: "empty", text: "No upstream" };
     }
 
     if (upstream.status === "up_to_date") {
-        return { tone: "stable", title: "Up to date", body: "Local branch matches the tracked upstream tip." };
+        return { mode: "empty", text: "Up to date" };
     }
     if (upstream.status === "ahead") {
         return {
+            mode: "summary",
             tone: "ahead",
-            title: `Ahead by ${upstream.aheadCount || 0}`,
-            body: "Local commits have not been pushed yet.",
+            title: `Ahead +${upstream.aheadCount || 0}`,
+            meta: upstream.branchName || "",
         };
     }
     if (upstream.status === "behind") {
         return {
+            mode: "summary",
             tone: "behind",
-            title: `Behind by ${upstream.behindCount || 0}`,
-            body: "Remote commits exist locally only as tracking refs.",
+            title: `Behind -${upstream.behindCount || 0}`,
+            meta: upstream.branchName || "",
         };
     }
     if (upstream.status === "diverged") {
         return {
+            mode: "summary",
             tone: "diverged",
             title: `Diverged +${upstream.aheadCount || 0} / -${upstream.behindCount || 0}`,
-            body: "Local and upstream both contain unique commits.",
+            meta: upstream.branchName || "",
         };
     }
 
-    return {
-        tone: "muted",
-        title: UPSTREAM_REASON_LABELS[upstream.reason] || UPSTREAM_STATUS_LABELS[upstream.status] || "Unavailable",
-        body: upstream.ref ? `Tracking target ${upstream.ref} is not currently comparable.` : "The current branch is not connected to an upstream tracking ref.",
-    };
+    return { mode: "empty", text: UPSTREAM_REASON_LABELS[upstream.reason] || "Unavailable" };
 }
 
 export function createStagingView() {
     const el = document.createElement("div");
     el.className = "staging-view";
 
-    const intro = document.createElement("div");
-    intro.className = "staging-intro";
-
-    const eyebrow = document.createElement("div");
-    eyebrow.className = "staging-intro-eyebrow";
-    eyebrow.textContent = "Git lifecycle";
-
-    const title = document.createElement("h2");
-    title.className = "staging-intro-title";
-    title.textContent = "Index conveyor";
-
-    const subtitle = document.createElement("p");
-    subtitle.className = "staging-intro-subtitle";
-    subtitle.textContent = "Files travel left to right from the working tree into the index and local branch, with the tracked upstream shown as the final published state.";
-
-    intro.appendChild(eyebrow);
-    intro.appendChild(title);
-    intro.appendChild(subtitle);
-
     const zones = document.createElement("div");
     zones.className = "staging-zones";
 
-    const working = createZone("working", ICON_WORKING, "Working", "warning");
-    const staging = createZone("staging", ICON_STAGED, "Staged", "success");
-    const local = createZone("local", ICON_COMMITTED, "Local branch", "info");
-    const upstream = createZone("upstream", ICON_COMMITTED, "Upstream", "upstream");
+    const working = createZone("working", ICON_WORKING, "Working", "warning", LANE_HELP.working);
+    const staging = createZone("staging", ICON_STAGED, "Staged", "success", LANE_HELP.staged);
+    const local = createZone("local", ICON_COMMITTED, "Local branch", "info", LANE_HELP.local);
+    const upstream = createZone("upstream", ICON_COMMITTED, "Upstream", "upstream", LANE_HELP.upstream);
 
     zones.appendChild(working.el);
     zones.appendChild(staging.el);
     zones.appendChild(local.el);
     zones.appendChild(upstream.el);
 
-    el.appendChild(intro);
     el.appendChild(zones);
 
     // State tracking for animations
@@ -306,16 +311,23 @@ export function createStagingView() {
         }
 
         const summary = summarizeUpstream(upstreamInfo);
-        upstream.body.appendChild(createSummaryCard(summary));
+        if (summary.mode === "empty") {
+            const empty = document.createElement("div");
+            empty.className = "staging-zone-empty";
+            empty.textContent = summary.text;
+            upstream.body.appendChild(empty);
+        } else {
+            upstream.body.appendChild(createSummaryCard(summary));
+        }
     }
 
     function renderHeaders() {
-        working.meta.textContent = "Modified + untracked";
-        staging.meta.textContent = "Git index";
+        working.meta.textContent = "";
+        staging.meta.textContent = "";
         local.meta.textContent = currentHead?.isDetached
             ? "Detached HEAD"
             : (currentHead?.branchName || "Current branch");
-        upstream.meta.textContent = currentHead?.upstream?.branchName || "No tracked upstream";
+        upstream.meta.textContent = currentHead?.upstream?.branchName || "";
     }
 
     function updateStatus(status) {
