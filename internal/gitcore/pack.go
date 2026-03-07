@@ -61,6 +61,14 @@ func (r *Repository) loadPackIndices() error {
 		}
 
 		r.packIndices = append(r.packIndices, idx)
+		for hash, offset := range idx.offsets {
+			if _, exists := r.packLocations[hash]; !exists {
+				r.packLocations[hash] = packLocation{
+					packPath: idx.PackFile(),
+					offset:   offset,
+				}
+			}
+		}
 	}
 
 	return errors.Join(loadErrs...)

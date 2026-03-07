@@ -10,53 +10,30 @@ import (
 
 func parseCommitBody(body []byte, id Hash) (*Commit, error) {
 	commit := &Commit{ID: id}
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	inMessage := false
-	var messageLines []string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if inMessage {
-			messageLines = append(messageLines, line)
-			continue
-		}
-		if line == "" {
-			inMessage = true
-			continue
-		}
-
-		if strings.HasPrefix(line, "parent ") {
-			parent, err := NewHash(strings.TrimPrefix(line, "parent "))
-			if err != nil {
-				return nil, fmt.Errorf("invalid parent hash: %w", err)
-			}
-			commit.Parents = append(commit.Parents, parent)
-		} else if strings.HasPrefix(line, "tree ") {
-			tree, err := NewHash(strings.TrimPrefix(line, "tree "))
-			if err != nil {
-				return nil, fmt.Errorf("invalid tree hash: %w", err)
-			}
-			commit.Tree = tree
-		} else if strings.HasPrefix(line, "author ") {
-			authorLine := strings.TrimPrefix(line, "author ")
-			author, err := NewSignature(authorLine)
-			if err != nil {
-				return nil, fmt.Errorf("invalid author signature: %w", err)
-			}
-			commit.Author = author
-		} else if strings.HasPrefix(line, "committer ") {
-			committerLine := strings.TrimPrefix(line, "committer ")
-			committer, err := NewSignature(committerLine)
-			if err != nil {
-				return nil, fmt.Errorf("invalid committer signature: %w", err)
-			}
-			commit.Committer = committer
-		}
+	headerEnd := bytes.Index(body, []byte("\n\n"))
+	headers := body
+	if headerEnd >= 0 {
+		headers = body[:headerEnd]
+		commit.Message = strings.TrimSpace(string(body[headerEnd+2:]))
 	}
 
-	commit.Message = strings.Join(messageLines, "\n")
-	commit.Message = strings.TrimSpace(commit.Message)
+	start := 0
+	for start <= len(headers) {
+		end := bytes.IndexByte(headers[start:], '\n')
+		if end < 0 {
+			end = len(headers) - start
+		}
+		line := headers[start : start+end]
+		if len(line) > 0 {
+			if err := parseCommitHeaderLine(commit, line); err != nil {
+				return nil, err
+			}
+		}
+		start += end + 1
+		if start > len(headers) {
+			break
+		}
+	}
 
 	return commit, nil
 }
@@ -104,6 +81,36 @@ func parseTagBody(body []byte, id Hash) (*Tag, error) {
 	tag.Message = strings.TrimSpace(tag.Message)
 
 	return tag, nil
+}
+
+func parseCommitHeaderLine(commit *Commit, line []byte) error {
+	switch {
+	case bytes.HasPrefix(line, []byte("parent ")):
+		parent, err := NewHash(string(line[len("parent "):]))
+		if err != nil {
+			return fmt.Errorf("invalid parent hash: %w", err)
+		}
+		commit.Parents = append(commit.Parents, parent)
+	case bytes.HasPrefix(line, []byte("tree ")):
+		tree, err := NewHash(string(line[len("tree "):]))
+		if err != nil {
+			return fmt.Errorf("invalid tree hash: %w", err)
+		}
+		commit.Tree = tree
+	case bytes.HasPrefix(line, []byte("author ")):
+		author, err := NewSignature(string(line[len("author "):]))
+		if err != nil {
+			return fmt.Errorf("invalid author signature: %w", err)
+		}
+		commit.Author = author
+	case bytes.HasPrefix(line, []byte("committer ")):
+		committer, err := NewSignature(string(line[len("committer "):]))
+		if err != nil {
+			return fmt.Errorf("invalid committer signature: %w", err)
+		}
+		commit.Committer = committer
+	}
+	return nil
 }
 
 // parseTreeBody parses the binary tree format: repeated (mode SP name NUL hash[20]) entries.

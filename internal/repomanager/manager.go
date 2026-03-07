@@ -183,6 +183,24 @@ func (rm *RepoManager) Start() error {
 func (rm *RepoManager) Close() {
 	rm.cancel()
 	rm.wg.Wait()
+
+	rm.mu.RLock()
+	var repos []*gitcore.Repository
+	for _, managed := range rm.repos {
+		managed.mu.RLock()
+		if managed.Repo != nil {
+			repos = append(repos, managed.Repo)
+		}
+		managed.mu.RUnlock()
+	}
+	rm.mu.RUnlock()
+
+	for _, repo := range repos {
+		if err := repo.Close(); err != nil {
+			rm.logger.Warn("failed to close repository resources", "error", err)
+		}
+	}
+
 	rm.logger.Info("repo manager stopped")
 }
 
@@ -387,7 +405,14 @@ func (rm *RepoManager) Remove(id string) error {
 
 	managed.mu.Lock()
 	diskPath := managed.DiskPath
+	repo := managed.Repo
 	managed.mu.Unlock()
+
+	if repo != nil {
+		if err := repo.Close(); err != nil {
+			rm.logger.Warn("failed to close repo before removal", "id", id, "error", err)
+		}
+	}
 
 	if err := os.RemoveAll(diskPath); err != nil {
 		rm.logger.Warn("failed to remove repo data", "id", id, "path", diskPath, "error", err)

@@ -110,7 +110,14 @@ func (rm *RepoManager) evictInactive() {
 		managed := rm.repos[id]
 		managed.mu.RLock()
 		diskPath := managed.DiskPath
+		repo := managed.Repo
 		managed.mu.RUnlock()
+
+		if repo != nil {
+			if err := repo.Close(); err != nil {
+				rm.logger.Warn("failed to close evicted repo resources", "id", id, "error", err)
+			}
+		}
 
 		if err := os.RemoveAll(diskPath); err != nil {
 			rm.logger.Warn("failed to remove evicted repo", "id", id, "path", diskPath, "error", err)
