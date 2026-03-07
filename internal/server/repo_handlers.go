@@ -23,6 +23,14 @@ type repoResponse struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type cloneProgressEvent struct {
+	Phase   string `json:"phase"`
+	Percent int    `json:"percent"`
+	Done    bool   `json:"done"`
+	State   string `json:"state"`
+	Error   string `json:"error"`
+}
+
 // handleAddRepo accepts a JSON body with a URL and enqueues a clone via the
 // RepoManager. Returns 201 with the repo ID and initial state.
 func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request) {
@@ -181,12 +189,12 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, id s
 	w.Header().Set("Connection", "keep-alive")
 
 	writeEvent := func(p repomanager.CloneProgress) {
-		data, _ := json.Marshal(map[string]interface{}{
-			"phase":   p.Phase,
-			"percent": p.Percent,
-			"done":    p.Done,
-			"state":   p.State,
-			"error":   p.Error,
+		data, _ := json.Marshal(cloneProgressEvent{
+			Phase:   p.Phase,
+			Percent: p.Percent,
+			Done:    p.Done,
+			State:   p.State,
+			Error:   p.Error,
 		})
 		fmt.Fprintf(w, "data: %s\n\n", data) //nolint:errcheck
 		flusher.Flush()
