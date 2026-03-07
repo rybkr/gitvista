@@ -145,6 +145,9 @@ func TestHandleRepository_Success(t *testing.T) {
 	if _, ok := response["name"]; !ok {
 		t.Error("response missing 'name' field")
 	}
+	if _, ok := response["upstream"]; !ok {
+		t.Error("response missing 'upstream' field")
+	}
 	// gitDir must not be present: exposing filesystem paths to unauthenticated
 	// clients is a security issue (see #73).
 	if _, ok := response["gitDir"]; ok {

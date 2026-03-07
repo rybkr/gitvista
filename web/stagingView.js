@@ -1,9 +1,8 @@
 /**
  * Git Lifecycle View
  *
- * Visualizes git's three conceptual areas as a horizontal conveyor —
- * Working → Staged → Committed — with animated transitions as files
- * move between zones via git add, git reset, and git commit.
+ * Visualizes git's working tree, index, local branch, and upstream tracking state
+ * as a horizontal conveyor with animated transitions for local file movement.
  */
 
 // Circle with filled dot (recording / active editing)
@@ -26,6 +25,20 @@ const ICON_COMMITTED = `<svg width="14" height="14" viewBox="0 0 14 14" fill="no
 
 const COMMITTED_TTL = 15000;
 const COMMITTED_PRUNE_INTERVAL = 3000;
+const UPSTREAM_STATUS_LABELS = {
+    up_to_date: "Up to date",
+    ahead: "Ahead",
+    behind: "Behind",
+    diverged: "Diverged",
+    unavailable: "Unavailable",
+};
+const UPSTREAM_REASON_LABELS = {
+    detached_head: "Detached HEAD",
+    no_current_branch: "No current branch",
+    no_upstream_config: "No upstream tracking branch",
+    missing_remote_ref: "Upstream ref not found",
+    no_common_ancestor: "No common ancestor",
+};
 
 function splitPath(filePath) {
     const idx = filePath.lastIndexOf("/");
@@ -89,6 +102,9 @@ function createZone(id, icon, label, colorModifier) {
     const header = document.createElement("div");
     header.className = "staging-zone-header";
 
+    const headerText = document.createElement("div");
+    headerText.className = "staging-zone-header-text";
+
     const iconSpan = document.createElement("span");
     iconSpan.className = `staging-zone-icon staging-zone-icon--${colorModifier}`;
     iconSpan.innerHTML = icon;
@@ -97,12 +113,17 @@ function createZone(id, icon, label, colorModifier) {
     labelSpan.className = "staging-zone-label";
     labelSpan.textContent = label;
 
+    const meta = document.createElement("span");
+    meta.className = "staging-zone-meta";
+
     const badge = document.createElement("span");
     badge.className = `staging-zone-badge staging-zone-badge--${colorModifier}`;
     badge.textContent = "0";
 
     header.appendChild(iconSpan);
-    header.appendChild(labelSpan);
+    headerText.appendChild(labelSpan);
+    headerText.appendChild(meta);
+    header.appendChild(headerText);
     header.appendChild(badge);
 
     const body = document.createElement("div");
@@ -111,29 +132,66 @@ function createZone(id, icon, label, colorModifier) {
     zone.appendChild(header);
     zone.appendChild(body);
 
-    return { el: zone, body, badge };
+    return { el: zone, body, badge, label: labelSpan, meta };
 }
 
-function createConnector(fwdLabel, revLabel) {
-    const connector = document.createElement("div");
-    connector.className = "staging-connector";
+function createSummaryCard({ tone, title, body }) {
+    const card = document.createElement("div");
+    card.className = "staging-summary-card";
+    if (tone) card.classList.add(`staging-summary-card--${tone}`);
 
-    const track = document.createElement("div");
-    track.className = "staging-connector-track";
+    const titleEl = document.createElement("div");
+    titleEl.className = "staging-summary-title";
+    titleEl.textContent = title;
 
-    const fwd = document.createElement("span");
-    fwd.className = "staging-connector-label";
-    fwd.textContent = fwdLabel;
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "staging-summary-body";
+    bodyEl.textContent = body;
 
-    const rev = document.createElement("span");
-    rev.className = "staging-connector-label staging-connector-label--rev";
-    rev.textContent = revLabel;
+    card.appendChild(titleEl);
+    card.appendChild(bodyEl);
+    return card;
+}
 
-    connector.appendChild(track);
-    connector.appendChild(fwd);
-    connector.appendChild(rev);
+function summarizeUpstream(upstream) {
+    if (!upstream) {
+        return {
+            tone: "muted",
+            title: UPSTREAM_STATUS_LABELS.unavailable,
+            body: "No upstream tracking data available.",
+        };
+    }
 
-    return { el: connector, fwdLabel: fwd, revLabel: rev };
+    if (upstream.status === "up_to_date") {
+        return { tone: "stable", title: "Up to date", body: "Local branch matches the tracked upstream tip." };
+    }
+    if (upstream.status === "ahead") {
+        return {
+            tone: "ahead",
+            title: `Ahead by ${upstream.aheadCount || 0}`,
+            body: "Local commits have not been pushed yet.",
+        };
+    }
+    if (upstream.status === "behind") {
+        return {
+            tone: "behind",
+            title: `Behind by ${upstream.behindCount || 0}`,
+            body: "Remote commits exist locally only as tracking refs.",
+        };
+    }
+    if (upstream.status === "diverged") {
+        return {
+            tone: "diverged",
+            title: `Diverged +${upstream.aheadCount || 0} / -${upstream.behindCount || 0}`,
+            body: "Local and upstream both contain unique commits.",
+        };
+    }
+
+    return {
+        tone: "muted",
+        title: UPSTREAM_REASON_LABELS[upstream.reason] || UPSTREAM_STATUS_LABELS[upstream.status] || "Unavailable",
+        body: upstream.ref ? `Tracking target ${upstream.ref} is not currently comparable.` : "The current branch is not connected to an upstream tracking ref.",
+    };
 }
 
 export function createStagingView() {
@@ -153,7 +211,7 @@ export function createStagingView() {
 
     const subtitle = document.createElement("p");
     subtitle.className = "staging-intro-subtitle";
-    subtitle.textContent = "Files travel left to right as changes move from the working tree into the git index and then into a commit.";
+    subtitle.textContent = "Files travel left to right from the working tree into the index and local branch, with the tracked upstream shown as the final published state.";
 
     intro.appendChild(eyebrow);
     intro.appendChild(title);
@@ -164,22 +222,20 @@ export function createStagingView() {
 
     const working = createZone("working", ICON_WORKING, "Working", "warning");
     const staging = createZone("staging", ICON_STAGED, "Staged", "success");
-    const repo = createZone("repo", ICON_COMMITTED, "Committed", "info");
-
-    const addConnector = createConnector("git add", "git restore --staged");
-    const commitConnector = createConnector("git commit", "git restore");
+    const local = createZone("local", ICON_COMMITTED, "Local branch", "info");
+    const upstream = createZone("upstream", ICON_COMMITTED, "Upstream", "info");
 
     zones.appendChild(working.el);
-    zones.appendChild(addConnector.el);
     zones.appendChild(staging.el);
-    zones.appendChild(commitConnector.el);
-    zones.appendChild(repo.el);
+    zones.appendChild(local.el);
+    zones.appendChild(upstream.el);
 
     el.appendChild(intro);
     el.appendChild(zones);
 
     // State tracking for animations
     let prevState = new Map(); // path → "working" | "staging"
+    let currentHead = null;
     const committedFiles = new Map(); // path → { file, addedAt }
 
     const pruneTimer = setInterval(() => {
@@ -191,7 +247,7 @@ export function createStagingView() {
                 changed = true;
             }
         }
-        if (changed) renderRepo();
+        if (changed) renderLocal();
     }, COMMITTED_PRUNE_INTERVAL);
 
     function renderZone(zoneObj, files, animMap) {
@@ -212,21 +268,21 @@ export function createStagingView() {
         }
     }
 
-    function renderRepo() {
-        const repoFiles = Array.from(committedFiles.values());
-        repo.body.innerHTML = "";
-        repo.badge.textContent = String(repoFiles.length);
+    function renderLocal() {
+        const localFiles = Array.from(committedFiles.values());
+        local.body.innerHTML = "";
+        local.badge.textContent = String(localFiles.length);
 
-        if (repoFiles.length === 0) {
+        if (localFiles.length === 0) {
             const empty = document.createElement("div");
             empty.className = "staging-zone-empty";
             empty.textContent = "No recent commits";
-            repo.body.appendChild(empty);
+            local.body.appendChild(empty);
             return;
         }
 
         const now = Date.now();
-        for (const entry of repoFiles) {
+        for (const entry of localFiles) {
             const card = createFileCard(entry.file, null);
             const elapsed = now - entry.addedAt;
             if (elapsed < 500) {
@@ -234,11 +290,35 @@ export function createStagingView() {
             } else if (elapsed > COMMITTED_TTL - 3000) {
                 card.classList.add("staging-anim-committed-fade");
             }
-            repo.body.appendChild(card);
+            local.body.appendChild(card);
         }
     }
 
-    function update(status) {
+    function renderUpstream() {
+        upstream.body.innerHTML = "";
+        const upstreamInfo = currentHead?.upstream || null;
+        if (!upstreamInfo || upstreamInfo.status === "unavailable" || upstreamInfo.status === "up_to_date") {
+            upstream.badge.textContent = "0";
+        } else if (upstreamInfo.status === "diverged") {
+            upstream.badge.textContent = String((upstreamInfo.aheadCount || 0) + (upstreamInfo.behindCount || 0));
+        } else {
+            upstream.badge.textContent = String(upstreamInfo.aheadCount || upstreamInfo.behindCount || 0);
+        }
+
+        const summary = summarizeUpstream(upstreamInfo);
+        upstream.body.appendChild(createSummaryCard(summary));
+    }
+
+    function renderHeaders() {
+        working.meta.textContent = "Modified + untracked";
+        staging.meta.textContent = "Git index";
+        local.meta.textContent = currentHead?.isDetached
+            ? "Detached HEAD"
+            : (currentHead?.branchName || "Current branch");
+        upstream.meta.textContent = currentHead?.upstream?.branchName || "No tracked upstream";
+    }
+
+    function updateStatus(status) {
         if (!status) return;
 
         const workingFiles = [
@@ -260,9 +340,6 @@ export function createStagingView() {
         const workingAnims = new Map();
         const stagingAnims = new Map();
 
-        let highlightRestoreStaged = false;
-        let highlightRestore = false;
-
         for (const [path, prevZone] of prevState) {
             const curZone = currentState.get(path);
 
@@ -270,27 +347,11 @@ export function createStagingView() {
                 stagingAnims.set(path, "staging-anim-slide-down");
             } else if (prevZone === "staging" && curZone === "working") {
                 workingAnims.set(path, "staging-anim-slide-up");
-                highlightRestoreStaged = true;
             } else if (prevZone === "staging" && !curZone) {
                 const file = findFile(stagingFiles, workingFiles, path) ||
                     { path, statusCode: "C" };
                 committedFiles.set(path, { file, addedAt: Date.now() });
-            } else if (prevZone === "working" && !curZone) {
-                highlightRestore = true;
             }
-        }
-
-        if (highlightRestoreStaged) {
-            addConnector.revLabel.classList.add("staging-connector-label--highlight");
-            setTimeout(() => {
-                addConnector.revLabel.classList.remove("staging-connector-label--highlight");
-            }, 600);
-        }
-        if (highlightRestore) {
-            commitConnector.revLabel.classList.add("staging-connector-label--highlight");
-            setTimeout(() => {
-                commitConnector.revLabel.classList.remove("staging-connector-label--highlight");
-            }, 600);
         }
 
         // Detect new files (not in prevState) for entrance animation
@@ -308,7 +369,15 @@ export function createStagingView() {
 
         renderZone(working, workingFiles, workingAnims);
         renderZone(staging, stagingFiles, stagingAnims);
-        renderRepo();
+        renderLocal();
+        renderUpstream();
+        renderHeaders();
+    }
+
+    function updateHead(headInfo) {
+        currentHead = headInfo || null;
+        renderHeaders();
+        renderUpstream();
     }
 
     function findFile(staged, working, path) {
@@ -321,5 +390,10 @@ export function createStagingView() {
         return null;
     }
 
-    return { el, update };
+    return {
+        el,
+        update: updateStatus,
+        updateStatus,
+        updateHead,
+    };
 }

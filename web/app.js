@@ -748,10 +748,11 @@ function bootstrapGraph(root, repoId) {
             latestStatus = status;
             indexView.updateStatus(status);
             fileExplorer?.updateWorkingTreeStatus?.(status);
-            stagingView.update(status);
+            stagingView.updateStatus(status);
         },
         onHead: (headInfo) => {
             indexView.updateHead(headInfo);
+            stagingView.updateHead(headInfo);
             if (headInfo.branchName) {
                 currentBranchName = headInfo.branchName;
                 updateTitle();
@@ -763,6 +764,11 @@ function bootstrapGraph(root, repoId) {
         onRepoMetadata: (metadata) => {
             setRepositoryAvailable(true);
             indexView.update(metadata);
+            stagingView.updateHead({
+                branchName: metadata.currentBranch || "",
+                isDetached: Boolean(metadata.headDetached),
+                upstream: metadata.upstream || null,
+            });
             repoName = metadata.name || "";
             if (metadata.currentBranch) {
                 currentBranchName = metadata.currentBranch;

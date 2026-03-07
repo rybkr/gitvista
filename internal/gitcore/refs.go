@@ -21,6 +21,9 @@ func (r *Repository) loadRefs() error {
 	if err := r.loadLooseRefs("heads"); err != nil {
 		return fmt.Errorf("failed to load loose branches: %w", err)
 	}
+	if err := r.loadLooseRefs("remotes"); err != nil {
+		return fmt.Errorf("failed to load loose remote-tracking refs: %w", err)
+	}
 	if err := r.loadLooseRefs("tags"); err != nil {
 		return fmt.Errorf("failed to load loose tags: %w", err)
 	}
@@ -242,6 +245,9 @@ func (r *Repository) resolveRefDepth(path string, depth int) (Hash, error) {
 
 	if strings.HasPrefix(line, "ref: ") {
 		targetRef := strings.TrimPrefix(line, "ref: ")
+		if hash, exists := r.refs[targetRef]; exists {
+			return hash, nil
+		}
 		targetPath := filepath.Join(r.gitDir, filepath.Clean(targetRef))
 		return r.resolveRefDepth(targetPath, depth+1)
 	}
