@@ -4675,7 +4675,7 @@ canvas {
     flex-direction: column;
     gap: 14px;
     padding: 14px;
-    overflow-y: auto;
+    overflow: hidden;
     flex: 1;
     min-height: 0;
     background:
@@ -4724,6 +4724,7 @@ canvas {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: stretch;
     gap: 10px;
+    flex: 1;
     min-height: 0;
 }
 
@@ -4734,6 +4735,7 @@ canvas {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background:
@@ -4854,11 +4856,15 @@ canvas {
 }
 
 .staging-zone-body {
+    flex: 1;
     padding: 8px;
     display: flex;
     flex-direction: column;
     gap: 6px;
     min-height: 240px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .staging-zone-empty {
@@ -5045,8 +5051,13 @@ canvas {
 }
 
 @media (max-width: 980px) {
+    .staging-view {
+        overflow-y: auto;
+    }
+
     .staging-zones {
         grid-template-columns: 1fr;
+        flex: none;
     }
 
     .staging-zone-body {
