@@ -1,6 +1,14 @@
 # AGENTS.md
 
-## Project Str
+## Commit Guidelines
+Agents must create *atomic commits*.
+The rules for atomic commits are as follows:
+
+1. Each commit must contain a single logical change.
+2. Each commit must leave the repository in a buildable and test-passing state.
+3. Commit messages must explain what changed (logically) and why.
+
+Large or unrelated changes should be broken into several atomic commits.
 
 ## Protected Files
 Never modify these files.

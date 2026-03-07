@@ -32,17 +32,19 @@ func (r *Repository) IsBare() bool {
 func (r *Repository) Commits() map[Hash]*Commit {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.commitsMap()
+
+	commits := r.commitsMap()
+	result := make(map[Hash]*Commit, len(commits))
+	for hash, commit := range commits {
+		result[hash] = commit
+	}
+	return result
 }
 
 // commitsMap returns the cached commit map. The map is always initialized by
-// loadObjects during NewRepository construction; this method panics if that
-// invariant is violated.
+// loadObjects during NewRepository construction.
 // Caller must hold at least r.mu.RLock().
 func (r *Repository) commitsMap() map[Hash]*Commit {
-	if r.commitMap == nil {
-		panic("gitcore: commitMap is nil - Repository was not fully initialized via NewRepository")
-	}
 	return r.commitMap
 }
 
@@ -158,7 +160,10 @@ func (r *Repository) Tags() map[string]string {
 func (r *Repository) Stashes() []*StashEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.stashes
+
+	result := make([]*StashEntry, len(r.stashes))
+	copy(result, r.stashes)
+	return result
 }
 
 // GetTree retrieves a Tree object by its hash.

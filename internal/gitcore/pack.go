@@ -3,9 +3,9 @@ package gitcore
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +44,7 @@ func (r *Repository) loadPackIndices() error {
 		return fmt.Errorf("failed to read pack directory: %w", err)
 	}
 
+	var loadErrs []error
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -55,14 +56,14 @@ func (r *Repository) loadPackIndices() error {
 		idxPath := filepath.Join(packDir, entry.Name())
 		idx, err := r.loadPackIndex(idxPath)
 		if err != nil {
-			log.Printf("failed to load pack index %s: %v", entry.Name(), err)
+			loadErrs = append(loadErrs, fmt.Errorf("loading pack index %s: %w", entry.Name(), err))
 			continue
 		}
 
 		r.packIndices = append(r.packIndices, idx)
 	}
 
-	return nil
+	return errors.Join(loadErrs...)
 }
 
 // loadPackIndex loads a single .idx file, auto-detecting v1 vs v2 format.
@@ -72,11 +73,7 @@ func (r *Repository) loadPackIndex(idxPath string) (*PackIndex, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if _err := file.Close(); _err != nil {
-			log.Printf("failed to close pack index file: %v", _err)
-		}
-	}()
+	defer func() { _ = file.Close() }()
 
 	var header [4]byte
 	if _, _err := io.ReadFull(file, header[:]); _err != nil {

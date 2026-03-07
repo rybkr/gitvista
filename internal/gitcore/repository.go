@@ -55,6 +55,7 @@ func NewRepository(path string) (*Repository, error) {
 		workDir:     workDir,
 		refs:        make(map[string]Hash),
 		commits:     make([]*Commit, 0),
+		commitMap:   make(map[Hash]*Commit),
 		tags:        make([]*Tag, 0),
 		stashes:     make([]*StashEntry, 0),
 		packIndices: make([]*PackIndex, 0),

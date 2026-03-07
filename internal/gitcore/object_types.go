@@ -47,8 +47,8 @@ func (t ObjectType) String() string {
 	}
 }
 
-// StrToObjectType converts a string representation of an object type to an ObjectType.
-func StrToObjectType(s string) ObjectType {
+// ParseObjectType converts a string representation of an object type to an ObjectType.
+func ParseObjectType(s string) ObjectType {
 	switch s {
 	case objectTypeCommit:
 		return CommitObject
@@ -61,6 +61,11 @@ func StrToObjectType(s string) ObjectType {
 	default:
 		return NoneObject
 	}
+}
+
+// StrToObjectType is kept as a compatibility wrapper for older call sites.
+func StrToObjectType(s string) ObjectType {
+	return ParseObjectType(s)
 }
 
 // Commit represents a Git commit object.

@@ -87,7 +87,7 @@ func parseTagBody(body []byte, id Hash) (*Tag, error) {
 			tag.Object = objectHash
 		} else if strings.HasPrefix(line, "type ") {
 			typeStr := strings.TrimPrefix(line, "type ")
-			tag.ObjType = StrToObjectType(typeStr)
+			tag.ObjType = ParseObjectType(typeStr)
 		} else if strings.HasPrefix(line, "tag ") {
 			tag.Name = strings.TrimPrefix(line, "tag ")
 		} else if strings.HasPrefix(line, "tagger ") {
@@ -162,7 +162,7 @@ func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 		} else if mode == "120000" || mode == "160000" {
 			entryType = objectTypeCommit
 		} else {
-			entryType = StatusUnknown
+			entryType = objectTypeUnknown
 		}
 
 		tree.Entries = append(tree.Entries, TreeEntry{

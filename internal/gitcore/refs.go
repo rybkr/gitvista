@@ -2,8 +2,8 @@ package gitcore
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +41,8 @@ func (r *Repository) loadLooseRefs(prefix string) error {
 		return err
 	}
 
-	return filepath.Walk(refsDir, func(path string, info os.FileInfo, err error) error {
+	var refErrs []error
+	walkErr := filepath.Walk(refsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -57,13 +58,17 @@ func (r *Repository) loadLooseRefs(prefix string) error {
 		refName := filepath.ToSlash(relPath)
 		hash, err := r.resolveRef(path)
 		if err != nil {
-			log.Printf("error resolving ref: %v", err)
+			refErrs = append(refErrs, fmt.Errorf("resolving %s: %w", refName, err))
 			return nil
 		}
 
 		r.refs[refName] = hash
 		return nil
 	})
+	if walkErr != nil {
+		return walkErr
+	}
+	return errors.Join(refErrs...)
 }
 
 func (r *Repository) loadPackedRefs() error {
@@ -77,13 +82,10 @@ func (r *Repository) loadPackedRefs() error {
 		}
 		return err
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			log.Printf("failed to close packed-refs file: %v", err)
-		}
-	}()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
+	var parseErrs []error
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "^") {
@@ -92,11 +94,13 @@ func (r *Repository) loadPackedRefs() error {
 
 		parts := strings.Fields(line)
 		if len(parts) != 2 {
+			parseErrs = append(parseErrs, fmt.Errorf("invalid packed-refs line: %q", line))
 			continue
 		}
 
 		hash, err := NewHash(parts[0])
 		if err != nil {
+			parseErrs = append(parseErrs, fmt.Errorf("invalid packed ref hash %q: %w", parts[0], err))
 			continue
 		}
 
@@ -107,7 +111,10 @@ func (r *Repository) loadPackedRefs() error {
 		}
 	}
 
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return errors.Join(parseErrs...)
 }
 
 func (r *Repository) loadHEAD() error {
@@ -158,11 +165,11 @@ func (r *Repository) loadStashes() error {
 		//nolint:gosec // G304: Stash ref path is controlled by git repository structure
 		content, err := os.ReadFile(stashRefPath)
 		if err != nil {
-			return nil
+			return fmt.Errorf("reading stash ref fallback: %w", err)
 		}
 		hash, err := NewHash(strings.TrimSpace(string(content)))
 		if err != nil {
-			return nil
+			return fmt.Errorf("parsing stash ref fallback: %w", err)
 		}
 		r.stashes = append(r.stashes, &StashEntry{
 			Hash:    hash,
@@ -170,19 +177,19 @@ func (r *Repository) loadStashes() error {
 		})
 		return nil
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			log.Printf("failed to close stash log: %v", err)
-		}
-	}()
+	defer func() { _ = file.Close() }()
 
 	var lines []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
 
 	// Reflog is oldest-first; reverse for newest-first output
+	var parseErrs []error
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
@@ -190,10 +197,12 @@ func (r *Repository) loadStashes() error {
 		}
 		parts := strings.Fields(line)
 		if len(parts) < 2 {
+			parseErrs = append(parseErrs, fmt.Errorf("invalid stash reflog line: %q", line))
 			continue
 		}
 		hash, err := NewHash(parts[1])
 		if err != nil {
+			parseErrs = append(parseErrs, fmt.Errorf("invalid stash reflog hash %q: %w", parts[1], err))
 			continue
 		}
 		msg := fmt.Sprintf("stash@{%d}", len(r.stashes))
@@ -206,7 +215,7 @@ func (r *Repository) loadStashes() error {
 		})
 	}
 
-	return nil
+	return errors.Join(parseErrs...)
 }
 
 // resolveRef reads a ref file, following symbolic refs if needed.

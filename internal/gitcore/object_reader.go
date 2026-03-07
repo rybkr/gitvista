@@ -5,7 +5,6 @@ import (
 	"compress/zlib"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,11 +131,7 @@ func (r *Repository) readFromPackFile(packPath string, offset int64, depth int) 
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			log.Printf("failed to close pack file: %v", err)
-		}
-	}()
+	defer func() { _ = file.Close() }()
 
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return nil, 0, err
@@ -153,11 +148,7 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 	if err != nil {
 		return "", nil, err
 	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			log.Printf("failed to close loose object file: %v", closeErr)
-		}
-	}()
+	defer func() { _ = file.Close() }()
 
 	data, err := readCompressedData(file)
 	if err != nil {
@@ -202,11 +193,7 @@ func readCompressedData(r io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create zlib reader: %w", err)
 	}
-	defer func() {
-		if err := zr.Close(); err != nil {
-			log.Printf("failed to close zlib reader: %v", err)
-		}
-	}()
+	defer func() { _ = zr.Close() }()
 
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, io.LimitReader(zr, maxDecompressedSize+1)); err != nil {

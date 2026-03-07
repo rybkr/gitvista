@@ -2,7 +2,6 @@ package gitcore
 
 import (
 	"bufio"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,11 +59,7 @@ func (m *ignoreMatcher) loadExcludeFileWithBase(path, baseDir string) {
 	if err != nil {
 		return // file is optional
 	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			log.Printf("failed to close file: %v", err)
-		}
-	}()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
