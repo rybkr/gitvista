@@ -9,10 +9,6 @@ import (
 	"time"
 )
 
-var (
-	signatureRe = regexp.MustCompile("[<>]")
-)
-
 // Hash represents a 40-character hex-encoded SHA-1 Git object identifier.
 type Hash string
 
@@ -49,43 +45,53 @@ type Object interface {
 // See: https://git-scm.com/docs/pack-format#_object_types
 type ObjectType int
 
+//nolint:revive // See: https://git-scm.com/docs/pack-format#_object_types
 const (
-	// NoneObject represents no git object.
-	NoneObject ObjectType = 0
-	// CommitObject represents a git commit object.
+	NoneObject   ObjectType = 0
 	CommitObject ObjectType = 1
-	// TreeObject represents a git tree object.
-	TreeObject ObjectType = 2
-	// BlobObject represents a git blob object.
-	BlobObject ObjectType = 3
-	// TagObject represents a git tag object.
-	TagObject ObjectType = 4
+	TreeObject   ObjectType = 2
+	BlobObject   ObjectType = 3
+	TagObject    ObjectType = 4
+)
+
+// ObjectTypeName assigns names to each of the ObjectType values.
+type ObjectTypeName string
+
+//nolint:revive // See: https://git-scm.com/docs/pack-format#_object_types
+const (
+	ObjectTypeUnknown = "unknown"
+	ObjectTypeCommit  = "commit"
+	ObjectTypeTree    = "tree"
+	ObjectTypeBlob    = "blob"
+	ObjectTypeTag     = "tag"
 )
 
 // String returns the Git object type name (e.g., "commit", "tree", "blob", "tag").
 func (t ObjectType) String() string {
 	switch t {
 	case CommitObject:
-		return objectTypeCommit
+		return ObjectTypeCommit
 	case TreeObject:
-		return objectTypeTree
+		return ObjectTypeTree
 	case BlobObject:
-		return objectTypeBlob
+		return ObjectTypeBlob
 	case TagObject:
-		return objectTypeTag
+		return ObjectTypeTag
 	default:
-		return StatusUnknown
+		return ObjectTypeUnknown
 	}
 }
 
 // StrToObjectType converts a string representation of an object type to an ObjectType.
 func StrToObjectType(s string) ObjectType {
 	switch s {
-	case objectTypeCommit:
+	case ObjectTypeCommit:
 		return CommitObject
-	case objectTypeTag:
+	case ObjectTypeTag:
 		return TagObject
-	case objectTypeTree:
+	case ObjectTypeBlob:
+		return BlobObject
+	case ObjectTypeTree:
 		return TreeObject
 	default:
 		return NoneObject
@@ -142,7 +148,7 @@ func (t *Tree) Type() ObjectType {
 }
 
 // Blob represents a Git blob object. Only the hash is stored since the
-// traversal does not need the content — blobs are terminal nodes.
+// traversal does not need the content, because blobs are terminal nodes.
 type Blob struct {
 	ID Hash `json:"hash"`
 }
@@ -151,6 +157,10 @@ type Blob struct {
 func (b *Blob) Type() ObjectType {
 	return BlobObject
 }
+
+var (
+	signatureRe = regexp.MustCompile("[<>]")
+)
 
 // Signature represents the author or committer of a Git commit.
 type Signature struct {
@@ -222,43 +232,6 @@ func parseTimezone(tz string) *time.Location {
 // ObjectResolver retrieves raw object data and type byte by hash.
 // Used for resolving delta base objects during pack file reading.
 type ObjectResolver func(id Hash, depth int) (data []byte, objectType byte, err error)
-
-// PackIndex maps object hashes to their byte offsets within a pack file.
-type PackIndex struct {
-	path       string
-	packPath   string
-	version    uint32
-	numObjects uint32
-	fanout     [256]uint32
-	offsets    map[Hash]int64
-}
-
-// FindObject looks up the byte offset of an object by its hash.
-func (p *PackIndex) FindObject(id Hash) (int64, bool) {
-	offset, found := p.offsets[id]
-	return offset, found
-}
-
-// PackFile returns the path to the pack file associated with this index.
-func (p *PackIndex) PackFile() string { return p.packPath }
-
-// Version returns the pack index format version.
-func (p *PackIndex) Version() uint32 { return p.version }
-
-// NumObjects returns the number of objects stored in the pack file.
-func (p *PackIndex) NumObjects() uint32 { return p.numObjects }
-
-// Fanout returns the 256-entry fanout table used for binary search within the index.
-func (p *PackIndex) Fanout() [256]uint32 { return p.fanout }
-
-// Offsets returns a defensive copy of the offset map.
-func (p *PackIndex) Offsets() map[Hash]int64 {
-	cp := make(map[Hash]int64, len(p.offsets))
-	for k, v := range p.offsets {
-		cp[k] = v
-	}
-	return cp
-}
 
 // StashEntry represents a single Git stash entry with its hash and message.
 type StashEntry struct {

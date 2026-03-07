@@ -252,7 +252,7 @@ func detectRenames(entries []DiffEntry) []DiffEntry {
 }
 
 func isTreeEntry(entry TreeEntry) bool {
-	return entry.Type == objectTypeTree || entry.Mode == "040000" || entry.Mode == "40000"
+	return entry.Type == ObjectTypeTree || entry.Mode == "040000" || entry.Mode == "40000"
 }
 
 func isSubmodule(entry TreeEntry) bool {

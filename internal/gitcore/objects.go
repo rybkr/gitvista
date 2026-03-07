@@ -1,4 +1,3 @@
-// Package gitcore provides pure Go implementation of Git object parsing and repository traversal.
 package gitcore
 
 import (
@@ -11,13 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-)
-
-const (
-	objectTypeCommit = "commit"
-	objectTypeTree   = "tree"
-	objectTypeBlob   = "blob"
-	objectTypeTag    = "tag"
 )
 
 // loadObjects traverses all refs and stash entries, loading reachable commits
@@ -96,13 +88,13 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 	header, content, err := r.readLooseObjectRaw(id)
 	if err == nil {
 		switch {
-		case strings.HasPrefix(header, objectTypeCommit):
+		case strings.HasPrefix(header, ObjectTypeCommit):
 			return parseCommitBody(content, id)
-		case strings.HasPrefix(header, objectTypeTag):
+		case strings.HasPrefix(header, ObjectTypeTag):
 			return parseTagBody(content, id)
-		case strings.HasPrefix(header, objectTypeTree):
+		case strings.HasPrefix(header, ObjectTypeTree):
 			return parseTreeBody(content, id)
-		case strings.HasPrefix(header, objectTypeBlob):
+		case strings.HasPrefix(header, ObjectTypeBlob):
 			return &Blob{ID: id}, nil
 		default:
 			return nil, fmt.Errorf("unrecognized loose object type: %q for %s", header, id)
@@ -122,7 +114,7 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 func (r *Repository) readObjectData(id Hash, depth int) ([]byte, byte, error) {
 	header, content, err := r.readLooseObjectRaw(id)
 	if err == nil {
-		typeNum, err := objectTypeFromHeader(header)
+		typeNum, err := ObjectTypeFromHeader(header)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -188,20 +180,20 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 	return header, content, nil
 }
 
-func objectTypeFromHeader(header string) (byte, error) {
+func ObjectTypeFromHeader(header string) (byte, error) {
 	parts := strings.SplitN(header, " ", 2)
 	if len(parts) != 2 {
 		return 0, fmt.Errorf("invalid header: %s", header)
 	}
 
 	switch parts[0] {
-	case objectTypeCommit:
+	case ObjectTypeCommit:
 		return packObjectCommit, nil
-	case objectTypeTree:
+	case ObjectTypeTree:
 		return packObjectTree, nil
-	case objectTypeBlob:
+	case ObjectTypeBlob:
 		return packObjectBlob, nil
-	case objectTypeTag:
+	case ObjectTypeTag:
 		return packObjectTag, nil
 	default:
 		return 0, fmt.Errorf("unsupported object type: %s", parts[0])

@@ -1,3 +1,4 @@
+// Package gitcore provides pure Go implementation of Git object parsing and repository traversal.
 package gitcore
 
 import (
@@ -83,16 +84,24 @@ func NewRepository(path string) (*Repository, error) {
 }
 
 // Name returns the base name of the repository's working directory.
-func (r *Repository) Name() string { return filepath.Base(r.workDir) }
+func (r *Repository) Name() string {
+    return filepath.Base(r.workDir)
+}
 
 // GitDir returns the path to the repository's .git directory.
-func (r *Repository) GitDir() string { return r.gitDir }
+func (r *Repository) GitDir() string {
+    return r.gitDir
+}
 
 // WorkDir returns the path to the repository's working directory.
-func (r *Repository) WorkDir() string { return r.workDir }
+func (r *Repository) WorkDir() string {
+    return r.workDir
+}
 
 // IsBare reports whether the repository is a bare repository.
-func (r *Repository) IsBare() bool { return r.gitDir == r.workDir }
+func (r *Repository) IsBare() bool {
+    return r.gitDir == r.workDir
+}
 
 // Commits returns a map of all commits in the repository keyed by their hash.
 // The returned map is built once during construction and must not be modified.
@@ -158,7 +167,6 @@ func (r *Repository) HeadDetached() bool {
 // the file is missing or contains Git's default placeholder text.
 func (r *Repository) Description() string {
 	descPath := filepath.Join(r.gitDir, "description")
-	//nolint:gosec // G304: Description path is controlled by git repository structure
 	content, err := os.ReadFile(descPath)
 	if err != nil {
 		return ""
@@ -175,12 +183,10 @@ func (r *Repository) Description() string {
 // Remotes parses .git/config and returns remote names to URLs (credentials stripped).
 func (r *Repository) Remotes() map[string]string {
 	configPath := filepath.Join(r.gitDir, "config")
-	//nolint:gosec // G304: Config path is controlled by git repository structure
 	content, err := os.ReadFile(configPath)
 	if err != nil {
 		return make(map[string]string)
 	}
-
 	return parseRemotesFromConfig(string(content))
 }
 
@@ -284,13 +290,14 @@ func (r *Repository) GetTag(hash Hash) (*Tag, error) {
 
 // BuildGraphSummary constructs a lightweight GraphSummary containing only the
 // topology (parent hashes) and temporal data (committer timestamps) for every
-// commit, plus branches, tags, HEAD, and stashes. This is ~7-8x smaller than
-// the full commit set and enables the client to compute graph layout without
+// commit, plus branches, tags, HEAD, and stashes. This is much smaller than the
+// full commit set and enables the client to compute graph layout without
 // materializing heavyweight commit data.
 func (r *Repository) BuildGraphSummary() *GraphSummary {
 	// Build skeletons and read head under the lock, then release before
-	// calling Branches/Tags/Stashes (which acquire their own RLock).
+	// calling Branches/Tags/Stashes which acquire their own RLock.
 	r.mu.RLock()
+
 	skeletons := make([]CommitSkeleton, 0, len(r.commits))
 	var oldest, newest int64
 	for _, c := range r.commits {

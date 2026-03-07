@@ -11,15 +11,6 @@ import (
 	"strings"
 )
 
-// Pack index v2 magic number bytes: "\377tOc" (\377 = 0xFF in octal)
-// See: https://git-scm.com/docs/pack-format#_version_2_pack_idx_files_support_packs_larger_than_4_gib_and
-const (
-	packIndexV2Magic0 byte = 0xFF
-	packIndexV2Magic1 byte = 0x74 // 't'
-	packIndexV2Magic2 byte = 0x4F // 'O'
-	packIndexV2Magic3 byte = 0x63 // 'c'
-)
-
 // Pack object types as defined in the Git pack format specification.
 // See: https://git-scm.com/docs/pack-format#_object_types
 const (
@@ -35,16 +26,6 @@ const maxDeltaDepth = 50
 
 // ErrDeltaChainTooDeep occurs when the recursive pack delta checker exceeds maxDeltaDepth.
 var ErrDeltaChainTooDeep = fmt.Errorf("delta chain exceeds maximum depth of %d", maxDeltaDepth)
-
-// Pack index v2 large offset constants.
-// In version 2 pack indices, a 32-bit offset with the high bit set indicates
-// that the actual offset is >= 4 GiB and must be looked up in the large offset table.
-// See: https://git-scm.com/docs/pack-format#_version_2_pack_idx_files_support_packs_larger_than_4_gib_and
-const (
-	packIndexLargeOffsetFlag uint32 = 0x80000000 // High bit set = large offset
-	packIndexLargeOffsetMask uint32 = 0x7FFFFFFF // Mask to extract large offset table index
-	maxPackObjectOffset      uint64 = ^uint64(0) >> 1
-)
 
 // loadPackIndices scans .git/objects/pack for .idx files. Must be called before loadObjects.
 func (r *Repository) loadPackIndices() error {
