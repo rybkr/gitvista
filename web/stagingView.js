@@ -223,7 +223,7 @@ export function createStagingView() {
     const working = createZone("working", ICON_WORKING, "Working", "warning");
     const staging = createZone("staging", ICON_STAGED, "Staged", "success");
     const local = createZone("local", ICON_COMMITTED, "Local branch", "info");
-    const upstream = createZone("upstream", ICON_COMMITTED, "Upstream", "info");
+    const upstream = createZone("upstream", ICON_COMMITTED, "Upstream", "upstream");
 
     zones.appendChild(working.el);
     zones.appendChild(staging.el);

@@ -4761,8 +4761,12 @@ canvas {
 }
 
 .staging-zone--local,
-.staging-zone--upstream {
+.staging-zone--repo {
     border-top: 3px solid var(--node-color);
+}
+
+.staging-zone--upstream {
+    border-top: 3px solid var(--branch-node-color);
 }
 
 .staging-zone:not(:last-child)::after {
@@ -4803,6 +4807,7 @@ canvas {
 .staging-zone-icon--warning { color: var(--warning-color); }
 .staging-zone-icon--success { color: var(--success-color); }
 .staging-zone-icon--info    { color: var(--node-color); }
+.staging-zone-icon--upstream { color: var(--branch-node-color); }
 
 .staging-zone-label {
     font-size: 12px;
@@ -4846,6 +4851,11 @@ canvas {
     color: var(--node-color);
 }
 
+.staging-zone-badge--upstream {
+    background: color-mix(in srgb, var(--branch-node-color) 14%, transparent);
+    color: var(--branch-node-color);
+}
+
 @media (prefers-color-scheme: dark) {
     .staging-zone-badge--warning {
         background: rgba(210, 153, 34, 0.15);
@@ -4855,6 +4865,9 @@ canvas {
     }
     .staging-zone-badge--info {
         background: rgba(88, 166, 255, 0.12);
+    }
+    .staging-zone-badge--upstream {
+        background: color-mix(in srgb, var(--branch-node-color) 16%, transparent);
     }
 }
 
