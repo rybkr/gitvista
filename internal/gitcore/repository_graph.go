@@ -35,7 +35,7 @@ func (r *Repository) BuildGraphSummary() *GraphSummary {
 	return &GraphSummary{
 		TotalCommits:    totalCommits,
 		Skeleton:        skeletons,
-		Branches:        r.Branches(),
+		Branches:        r.GraphBranches(),
 		Tags:            r.Tags(),
 		HeadHash:        headHash,
 		Stashes:         r.Stashes(),

@@ -55,7 +55,7 @@ func (r *Repository) CommitCount() int {
 	return len(r.commits)
 }
 
-// Branches returns a map of branch names to their tip commit hashes.
+// Branches returns a map of local branch short names to their tip commit hashes.
 func (r *Repository) Branches() map[string]Hash {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -64,6 +64,22 @@ func (r *Repository) Branches() map[string]Hash {
 	for ref, hash := range r.refs {
 		if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
 			result[name] = hash
+		}
+	}
+	return result
+}
+
+// GraphBranches returns graph-visible branch refs to their tip commit hashes.
+// Local branches keep their full refs/heads/* names so the frontend can
+// distinguish them from remote-tracking refs consistently.
+func (r *Repository) GraphBranches() map[string]Hash {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make(map[string]Hash)
+	for ref, hash := range r.refs {
+		if strings.HasPrefix(ref, "refs/heads/") || strings.HasPrefix(ref, "refs/remotes/") {
+			result[ref] = hash
 		}
 	}
 	return result

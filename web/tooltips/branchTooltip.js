@@ -5,6 +5,7 @@
 
 import { Tooltip, createTooltipElement } from "./baseTooltip.js";
 import { shortenHash } from "../utils/format.js";
+import { friendlyBranchName } from "../graph/utils/refs.js";
 
 /**
  * Tooltip that presents branch metadata with copy-to-clipboard support.
@@ -93,7 +94,7 @@ export class BranchTooltip extends Tooltip {
      * @param {import("../graph/types.js").GraphNodeBranch} node Branch node data.
      */
     buildContent(node) {
-        this.nameEl.textContent = node.branch;
+        this.nameEl.textContent = friendlyBranchName(node.branch);
         this.targetEl.textContent = shortenHash(node.targetHash);
 
         const isRemote = node.branch?.startsWith("refs/remotes/");

@@ -16,7 +16,7 @@ func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 		}
 	}
 
-	newBranches, oldBranches := r.Branches(), old.Branches()
+	newBranches, oldBranches := r.GraphBranches(), old.GraphBranches()
 	for branch, hash := range newBranches {
 		if oldHash, found := oldBranches[branch]; !found {
 			delta.AddedBranches[branch] = hash

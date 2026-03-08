@@ -34,7 +34,7 @@ func (s *Server) handleMergePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branches := repo.Branches()
+	branches := repo.GraphBranches()
 	oursHash, ok := branches[oursBranch]
 	if !ok {
 		http.Error(w, "Branch not found: ours", http.StatusNotFound)

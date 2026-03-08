@@ -98,8 +98,9 @@ func TestRepositoryDiff(t *testing.T) {
 		commits:   []*Commit{commit1, commit2},
 		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2},
 		refs: map[string]Hash{
-			"refs/heads/main":    commit2.ID,
-			"refs/heads/feature": commit1.ID,
+			"refs/heads/main":          commit2.ID,
+			"refs/heads/feature":       commit1.ID,
+			"refs/remotes/origin/main": commit2.ID,
 		},
 	}
 
@@ -107,8 +108,10 @@ func TestRepositoryDiff(t *testing.T) {
 		commits:   []*Commit{commit1, commit2, commit3},
 		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2, commit3.ID: commit3},
 		refs: map[string]Hash{
-			"refs/heads/main":    commit3.ID,
-			"refs/heads/develop": commit2.ID,
+			"refs/heads/main":          commit3.ID,
+			"refs/heads/develop":       commit2.ID,
+			"refs/remotes/origin/main": commit3.ID,
+			"refs/remotes/origin/ci":   commit2.ID,
 		},
 	}
 
@@ -130,11 +133,14 @@ func TestRepositoryDiff(t *testing.T) {
 	})
 
 	t.Run("added branches", func(t *testing.T) {
-		if len(delta.AddedBranches) != 1 {
-			t.Fatalf("expected 1 added branch, got %d", len(delta.AddedBranches))
+		if len(delta.AddedBranches) != 2 {
+			t.Fatalf("expected 2 added branches, got %d", len(delta.AddedBranches))
 		}
-		if hash, ok := delta.AddedBranches["develop"]; !ok || hash != commit2.ID {
-			t.Errorf("added branch 'develop' = %s, want %s", hash, commit2.ID)
+		if hash, ok := delta.AddedBranches["refs/heads/develop"]; !ok || hash != commit2.ID {
+			t.Errorf("added branch 'refs/heads/develop' = %s, want %s", hash, commit2.ID)
+		}
+		if hash, ok := delta.AddedBranches["refs/remotes/origin/ci"]; !ok || hash != commit2.ID {
+			t.Errorf("added branch 'refs/remotes/origin/ci' = %s, want %s", hash, commit2.ID)
 		}
 	})
 
@@ -142,19 +148,51 @@ func TestRepositoryDiff(t *testing.T) {
 		if len(delta.DeletedBranches) != 1 {
 			t.Fatalf("expected 1 deleted branch, got %d", len(delta.DeletedBranches))
 		}
-		if hash, ok := delta.DeletedBranches["feature"]; !ok || hash != commit1.ID {
-			t.Errorf("deleted branch 'feature' = %s, want %s", hash, commit1.ID)
+		if hash, ok := delta.DeletedBranches["refs/heads/feature"]; !ok || hash != commit1.ID {
+			t.Errorf("deleted branch 'refs/heads/feature' = %s, want %s", hash, commit1.ID)
 		}
 	})
 
 	t.Run("amended branches", func(t *testing.T) {
-		if len(delta.AmendedBranches) != 1 {
-			t.Fatalf("expected 1 amended branch, got %d", len(delta.AmendedBranches))
+		if len(delta.AmendedBranches) != 2 {
+			t.Fatalf("expected 2 amended branches, got %d", len(delta.AmendedBranches))
 		}
-		if hash, ok := delta.AmendedBranches["main"]; !ok || hash != commit3.ID {
-			t.Errorf("amended branch 'main' = %s, want %s", hash, commit3.ID)
+		if hash, ok := delta.AmendedBranches["refs/heads/main"]; !ok || hash != commit3.ID {
+			t.Errorf("amended branch 'refs/heads/main' = %s, want %s", hash, commit3.ID)
+		}
+		if hash, ok := delta.AmendedBranches["refs/remotes/origin/main"]; !ok || hash != commit3.ID {
+			t.Errorf("amended branch 'refs/remotes/origin/main' = %s, want %s", hash, commit3.ID)
 		}
 	})
+}
+
+func TestRepositoryGraphBranches(t *testing.T) {
+	repo := &Repository{
+		refs: map[string]Hash{
+			"refs/heads/main":            Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			"refs/remotes/origin/main":   Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			"refs/remotes/upstream/feat": Hash("cccccccccccccccccccccccccccccccccccccccc"),
+			"refs/tags/v1.0":             Hash("dddddddddddddddddddddddddddddddddddddddd"),
+		},
+	}
+
+	got := repo.GraphBranches()
+
+	if len(got) != 3 {
+		t.Fatalf("len(GraphBranches) = %d, want 3", len(got))
+	}
+	if got["refs/heads/main"] == "" {
+		t.Error("GraphBranches missing refs/heads/main")
+	}
+	if got["refs/remotes/origin/main"] == "" {
+		t.Error("GraphBranches missing refs/remotes/origin/main")
+	}
+	if got["refs/remotes/upstream/feat"] == "" {
+		t.Error("GraphBranches missing refs/remotes/upstream/feat")
+	}
+	if _, ok := got["refs/tags/v1.0"]; ok {
+		t.Error("GraphBranches unexpectedly included tag ref")
+	}
 }
 
 func TestRepositoryDelta_IsEmpty(t *testing.T) {
@@ -794,8 +832,9 @@ func TestBuildGraphSummary(t *testing.T) {
 		commits:   []*Commit{commit1, commit2, commit3},
 		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2, commit3.ID: commit3},
 		refs: map[string]Hash{
-			"refs/heads/main": commit3.ID,
-			"refs/tags/v1.0":  tagObj.ID,
+			"refs/heads/main":          commit3.ID,
+			"refs/remotes/origin/main": commit3.ID,
+			"refs/tags/v1.0":           tagObj.ID,
 		},
 		tags:    []*Tag{tagObj},
 		stashes: []*StashEntry{{Hash: commit1.ID, Message: "WIP"}},
@@ -851,11 +890,14 @@ func TestBuildGraphSummary(t *testing.T) {
 	})
 
 	t.Run("branches", func(t *testing.T) {
-		if len(summary.Branches) != 1 {
-			t.Fatalf("len(Branches) = %d, want 1", len(summary.Branches))
+		if len(summary.Branches) != 2 {
+			t.Fatalf("len(Branches) = %d, want 2", len(summary.Branches))
 		}
-		if summary.Branches["main"] != commit3.ID {
-			t.Errorf("Branches[main] = %s, want %s", summary.Branches["main"], commit3.ID)
+		if summary.Branches["refs/heads/main"] != commit3.ID {
+			t.Errorf("Branches[refs/heads/main] = %s, want %s", summary.Branches["refs/heads/main"], commit3.ID)
+		}
+		if summary.Branches["refs/remotes/origin/main"] != commit3.ID {
+			t.Errorf("Branches[refs/remotes/origin/main] = %s, want %s", summary.Branches["refs/remotes/origin/main"], commit3.ID)
 		}
 	})
 

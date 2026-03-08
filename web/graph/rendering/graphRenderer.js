@@ -47,6 +47,7 @@ import {
 import { shortenHash } from "../../utils/format.js";
 import { getAuthorColor, computeHighlightColors } from "../../utils/colors.js";
 import { relativeTime } from "../utils/time.js";
+import { friendlyBranchName } from "../utils/refs.js";
 
 /**
  * Renders graph nodes and links to a 2D canvas context.
@@ -274,7 +275,7 @@ export class GraphRenderer {
                 ctx.restore();
 
                 // Branch name label — monospace, muted
-                const label = seg.branchOwner || (seg.tipHash ? shortenHash(seg.tipHash) : "");
+                const label = seg.displayName || (seg.tipHash ? shortenHash(seg.tipHash) : "");
                 if (label) {
                     ctx.save();
                     ctx.font = monoFont;
@@ -398,7 +399,7 @@ export class GraphRenderer {
             ctx.restore();
 
             // Monospace label
-            const label = activeSeg.branchOwner || (activeSeg.tipHash ? shortenHash(activeSeg.tipHash) : "");
+            const label = activeSeg.displayName || (activeSeg.tipHash ? shortenHash(activeSeg.tipHash) : "");
             if (label) {
                 ctx.save();
                 ctx.font = monoFont;
@@ -1520,7 +1521,7 @@ export class GraphRenderer {
      */
     renderBranchNode(node, highlightKey) {
         const isHighlighted = highlightKey && node.branch === highlightKey;
-        const text = node.branch ?? "";
+        const text = friendlyBranchName(node.branch ?? "");
 
         const spawnProgress =
             typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
