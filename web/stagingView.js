@@ -105,7 +105,7 @@ function createFileCard(file, animClass, fileAction, diffAction) {
         });
     }
 
-    if (diffAction) {
+    if (diffAction && !fileAction) {
         const action = document.createElement("button");
         action.type = "button";
         action.className = "staging-file-action";
@@ -339,10 +339,10 @@ export function createStagingView(options = {}) {
 
         for (const file of files) {
             const animClass = animMap ? animMap.get(file.path) : null;
-            const fileAction = typeof options.onSelectFile === "function"
-                ? () => options.onSelectFile({ path: file.path, source: diffSource })
-                : null;
             const diffAction = diffSource ? () => showDiffForFile(file, diffSource) : null;
+            const fileAction = diffAction || (typeof options.onSelectFile === "function"
+                ? () => options.onSelectFile({ path: file.path, source: diffSource })
+                : null);
             zoneObj.body.appendChild(createFileCard(file, animClass, fileAction, diffAction));
         }
     }
