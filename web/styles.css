@@ -635,7 +635,7 @@ body.gv-sidebar-dock-right #root {
     height: 24px;
     padding: 0 8px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 11px;
     cursor: pointer;
 }
 
@@ -741,7 +741,7 @@ body.gv-sidebar-dock-right #root {
     background: transparent;
     color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
     display: flex;
@@ -1193,7 +1193,7 @@ body.gv-sidebar-dock-fullscreen .sidebar-panel-title {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-secondary);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
 }
 
@@ -1250,7 +1250,7 @@ body.gv-sidebar-dock-fullscreen .sidebar-panel-title {
 }
 
 .info-bar-value--remote-url {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text-secondary);
 }
 
@@ -1651,7 +1651,7 @@ canvas {
 
 .commit-search-dropdown-heading {
     padding: 6px 12px 4px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -2078,7 +2078,7 @@ canvas {
 }
 
 .branch-tooltip-badge {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -2353,7 +2353,7 @@ canvas {
 }
 
 .repo-overview-eyebrow {
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.14em;
     font-weight: 600;
     text-transform: uppercase;
@@ -2449,7 +2449,7 @@ canvas {
 }
 
 .repo-metric-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -2479,7 +2479,7 @@ canvas {
 
 .repo-detail-title {
     margin: 0;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.11em;
     text-transform: uppercase;
@@ -2510,7 +2510,7 @@ canvas {
     padding: 0 9px;
     border-radius: 999px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--branch-node-color);
     border: 1px solid color-mix(in srgb, var(--branch-node-color) 34%, var(--border-color));
     background: color-mix(in srgb, var(--branch-node-color) 11%, transparent);
@@ -2545,7 +2545,7 @@ canvas {
 }
 
 .repo-remote-name {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -3143,7 +3143,7 @@ canvas {
 
 .explorer-status {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     padding: 0 4px;
     border-radius: 3px;
@@ -3717,7 +3717,7 @@ canvas {
 /* Status badges (A, M, D, R) */
 .diff-status {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     padding: 2px 6px;
     border-radius: 3px;
@@ -3791,7 +3791,7 @@ canvas {
 }
 
 .diff-file-binary-badge {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     padding: 2px 6px;
     border-radius: 3px;
@@ -4049,7 +4049,7 @@ canvas {
 }
 
 .graph-filter-section-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -4783,7 +4783,7 @@ canvas {
 .staging-zone-icon--upstream { color: var(--branch-node-color); }
 
 .staging-zone-label {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -4792,7 +4792,7 @@ canvas {
 }
 
 .staging-zone-meta {
-    font-size: 9px;
+    font-size: 11px;
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -4815,7 +4815,7 @@ canvas {
     background: color-mix(in srgb, var(--surface-color) 90%, transparent);
     color: var(--text-secondary);
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1;
     padding: 0;
@@ -4880,7 +4880,7 @@ canvas {
 }
 
 .staging-zone-badge {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     min-width: 18px;
@@ -4939,7 +4939,7 @@ canvas {
 
 .staging-zone-empty {
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: 12px;
     font-style: italic;
     text-align: center;
     margin: auto 0;
@@ -4980,7 +4980,7 @@ canvas {
 .staging-file-code {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-weight: 600;
-    font-size: 10px;
+    font-size: 11px;
     width: 18px;
     height: 18px;
     line-height: 18px;
@@ -4997,7 +4997,7 @@ canvas {
 .staging-file-code--untracked { color: var(--text-secondary); opacity: 0.7; }
 
 .staging-file-hash {
-    font-size: 9px;
+    font-size: 11px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     color: var(--text-secondary);
     opacity: 0.5;
@@ -5022,7 +5022,7 @@ canvas {
 }
 
 .staging-file-dir {
-    font-size: 10px;
+    font-size: 11px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     color: var(--text-secondary);
     white-space: nowrap;
@@ -5042,7 +5042,7 @@ canvas {
     background: color-mix(in srgb, var(--surface-color) 90%, transparent);
     color: var(--text-secondary);
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1;
     cursor: pointer;
     flex-shrink: 0;
@@ -5090,7 +5090,7 @@ canvas {
 }
 
 .staging-summary-meta {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text-secondary);
     font-family: 'JetBrains Mono', 'Courier New', monospace;
 }
@@ -5456,7 +5456,7 @@ canvas {
 }
 
 .analytics-stat-label {
-    font-size: 9.5px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
     margin-top: 3px;
@@ -5486,7 +5486,7 @@ canvas {
 .analytics-period-input {
     min-width: 132px;
     padding: 4px 6px;
-    font-size: 11px;
+    font-size: 12px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     color: var(--text-color);
     background: var(--surface-color);
@@ -5495,7 +5495,7 @@ canvas {
 }
 
 .analytics-period-custom-status {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text-secondary);
     margin-left: 4px;
     white-space: nowrap;
@@ -5504,7 +5504,7 @@ canvas {
 .analytics-period-btn {
     flex: 1;
     padding: 5px 8px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     border: none;
@@ -5549,7 +5549,7 @@ canvas {
     display: none;
     position: absolute;
     padding: 5px 10px;
-    font-size: 11px;
+    font-size: 12px;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     color: var(--text-color);
     background: var(--surface-elevated);
@@ -5611,7 +5611,7 @@ canvas {
 }
 
 .analytics-signal-title {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -5619,7 +5619,7 @@ canvas {
 
 .analytics-signal-status {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 10px;
+    font-size: 11px;
     padding: 2px 6px;
     border-radius: 999px;
     border: 1px solid var(--border-color);
@@ -5652,13 +5652,13 @@ canvas {
 }
 
 .analytics-signal-delta {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-secondary);
 }
 
 .analytics-signal-recommendation {
     margin: 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.4;
     color: var(--text-secondary);
 }
@@ -5680,7 +5680,7 @@ canvas {
 }
 
 .analytics-delta-chip-label {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -5704,7 +5704,7 @@ canvas {
 /* ── Hotspots ── */
 
 .analytics-hotspot-coverage {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-secondary);
     padding: 8px 10px;
     border: 1px dashed var(--border-color);
@@ -5731,7 +5731,7 @@ canvas {
 }
 
 .analytics-hotspot-table th {
-    font-size: 10px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-secondary);
@@ -5748,7 +5748,7 @@ canvas {
     min-width: 28px;
     justify-content: center;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 11px;
+    font-size: 12px;
     border-radius: 999px;
     padding: 2px 6px;
 }
@@ -5867,7 +5867,7 @@ canvas {
 }
 
 .merge-preview-select-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -5967,7 +5967,7 @@ canvas {
     min-width: 22px;
     height: 18px;
     padding: 0 4px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     border-radius: 3px;
     flex-shrink: 0;
@@ -6027,7 +6027,7 @@ canvas {
     justify-content: center;
     width: 16px;
     height: 16px;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     border-radius: 3px;
     background: color-mix(in srgb, var(--border-color) 50%, transparent);
@@ -6111,7 +6111,7 @@ canvas {
 /* Region headers */
 .merge-region-header {
     padding: 2px 12px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -6148,7 +6148,7 @@ canvas {
 /* Sub-headers inside conflict regions */
 .merge-conflict-section-header {
     padding: 1px 12px;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -6369,10 +6369,9 @@ canvas {
 
 .graph-settings-overlay {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 300px;
-    max-height: calc(100vh - 140px);
+    width: min(360px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
+    max-height: min(540px, calc(100% - 16px));
     overflow-y: auto;
     background: var(--overlay-bg);
     backdrop-filter: blur(12px);
@@ -6390,6 +6389,100 @@ canvas {
 
 .graph-settings-overlay.is-visible {
     display: block;
+    animation: graph-settings-pop 0.18s ease-out;
+}
+
+.graph-settings-overlay__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.graph-settings-overlay__title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.graph-settings-overlay__title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text-color);
+}
+
+.graph-settings-overlay__mode-pill {
+    align-self: flex-start;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(14, 165, 233, 0.18);
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.graph-settings-overlay__action {
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 6px 10px;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.graph-settings-overlay__action:hover {
+    background: var(--surface-recessed);
+    border-color: var(--node-color);
+}
+
+.graph-settings-overlay__action--subtle {
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.graph-settings-overlay__branch-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.graph-settings-overlay__branch-search {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: 11px;
+    outline: none;
+}
+
+.graph-settings-overlay__branch-search:focus {
+    border-color: var(--node-color);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+}
+
+.graph-settings-overlay__branch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
 .graph-settings-overlay__section {
@@ -6404,7 +6497,7 @@ canvas {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -6527,22 +6620,65 @@ canvas {
 
 /* Branch checkbox list in scope section */
 .graph-settings-overlay__branch-list {
-    max-height: 120px;
+    max-height: 164px;
     overflow-y: auto;
     padding: 4px 0;
+    border-top: 1px solid rgba(127, 127, 127, 0.12);
 }
 
 .graph-settings-overlay__branch-item {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 0;
+    padding: 5px 0;
     font-size: 11px;
     color: var(--text-color);
 }
 
 .graph-settings-overlay__branch-item input[type="checkbox"] {
     accent-color: var(--slider-fill);
+}
+
+.graph-settings-overlay__branch-meta {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.graph-settings-overlay__branch-empty {
+    padding: 10px 0 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+@keyframes graph-settings-pop {
+    from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (max-width: 900px) {
+    .graph-settings-overlay {
+        width: min(320px, calc(100% - 12px));
+        max-width: calc(100% - 12px);
+        padding: 12px;
+    }
+
+    .graph-settings-overlay__header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .graph-settings-overlay__action {
+        align-self: flex-start;
+    }
 }
 
 /* ── Telemetry Overlay ───────────────────────────────────────────────── */
@@ -6712,7 +6848,7 @@ canvas {
 @media (max-width: 760px) {
     .telemetry-trigger {
         padding: 0 8px;
-        font-size: 10px;
+        font-size: 11px;
     }
 
     .telemetry-overlay {

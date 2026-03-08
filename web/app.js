@@ -640,6 +640,7 @@ function bootstrapGraph(root, repoId) {
         onChange: (partial) => graph.setGraphSettings(partial),
         getBranches: () => graph.getBranches(),
         getLayoutMode: () => graph.getLayoutMode(),
+        getCommitCount: () => graph.getCommitCount(),
     });
     canvasToolbar.appendChild(graphSettings.triggerEl);
     graphHost.appendChild(graphSettings.overlayEl);
@@ -723,7 +724,7 @@ function bootstrapGraph(root, repoId) {
         const mergePreviewView = mergePreviewLoader.get();
         graphFilters.updateBranches(graph.getBranches());
         mergePreviewView?.updateBranches?.();
-        if (graphSettings.isVisible()) graphSettings.updateBranches();
+        graphSettings.refresh();
     }
 
     function applyInitialSelectionOnce() {
