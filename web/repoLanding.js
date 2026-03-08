@@ -3,18 +3,16 @@ const FEATURED_REPOS = [
     { url: "https://github.com/expressjs/express", name: "expressjs/express", description: "Fast, unopinionated web framework for Node.js" },
 ];
 
-const LOGO_SVG = `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="24" cy="8" r="4" fill="var(--node-color)"/>
-    <circle cx="24" cy="24" r="4" fill="var(--node-color)"/>
-    <circle cx="24" cy="40" r="4" fill="var(--node-color)"/>
-    <circle cx="36" cy="16" r="4" fill="var(--merge-node-color)"/>
-    <circle cx="36" cy="32" r="4" fill="var(--merge-node-color)"/>
-    <line x1="24" y1="12" x2="24" y2="20" stroke="var(--node-color)" stroke-width="2"/>
-    <line x1="24" y1="28" x2="24" y2="36" stroke="var(--node-color)" stroke-width="2"/>
-    <path d="M24 12 C24 14 30 14 36 16" stroke="var(--node-color)" stroke-width="2" fill="none"/>
-    <line x1="36" y1="20" x2="36" y2="28" stroke="var(--merge-node-color)" stroke-width="2"/>
-    <path d="M36 32 C30 34 24 34 24 36" stroke="var(--merge-node-color)" stroke-width="2" fill="none"/>
-</svg>`;
+const HERO_VALUE_POINTS = [
+    "Trace branches, merges, and rebases without mentally simulating Git internals.",
+    "Open a public GitHub repo in seconds, or install locally for zero-latency updates.",
+];
+
+const PREVIEW_COMMITS = [
+    { label: "main", title: "Refactor graph viewport windowing", meta: "3 files • 128 additions", accent: "node" },
+    { label: "feature/filters", title: "Add staged diff stats panel", meta: "7 files • ahead by 2", accent: "branch" },
+    { label: "merge", title: "Merge pull request #184 from feature/filters", meta: "Clean merge with preserved history", accent: "merge" },
+];
 
 const DELETE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -38,7 +36,7 @@ const ARROW_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
 </svg>`;
 
 /**
- * Creates the SaaS-mode repo landing page.
+ * Creates the hosted-mode repo landing page.
  *
  * @param {Object} opts
  * @param {(repoId: string) => void} opts.onRepoSelect — called when user clicks a ready repo
@@ -48,12 +46,40 @@ export function createRepoLanding({ onRepoSelect }) {
     const el = document.createElement("div");
     el.className = "repo-landing";
 
+    const chrome = document.createElement("div");
+    chrome.className = "repo-landing__chrome";
+
+    const content = document.createElement("div");
+    content.className = "repo-landing__content";
+
     let repos = [];
     let activeStreams = new Map();
     let destroyed = false;
+    let highlightTimer = null;
 
     /** @type {Map<string, { id: string|null, state: string, error: string|null, phase: string, percent: number }>} keyed by URL */
     const featuredState = new Map();
+
+    function scrollToSection(target, { focus } = {}) {
+        target?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (focus) {
+            window.setTimeout(() => {
+                focus.focus();
+                if (typeof focus.select === "function") {
+                    focus.select();
+                }
+            }, 180);
+        }
+    }
+
+    function highlightElementTemporarily(node) {
+        if (!node) return;
+        node.classList.add("repo-landing__highlighted");
+        window.clearTimeout(highlightTimer);
+        highlightTimer = window.setTimeout(() => {
+            node.classList.remove("repo-landing__highlighted");
+        }, 1600);
+    }
 
     // ── Shared helpers ────────────────────────────────────────────────────
 
@@ -94,12 +120,11 @@ export function createRepoLanding({ onRepoSelect }) {
             es.close();
             activeStreams.delete(id);
 
-            // Fallback: single status fetch to get final state
             fetch(`/api/repos/${id}/status`)
                 .then((resp) => resp.ok ? resp.json() : null)
                 .then((data) => {
                     if (data && onUpdate && !destroyed) {
-                        onUpdate({ id, state: data.state, error: data.error || "", phase: data.phase || "", percent: data.percent || 0 });
+                        onUpdate({ id: data.id || id, state: data.state, error: data.error || "", phase: data.phase || "", percent: data.percent || 0 });
                     }
                 })
                 .catch(() => {});
@@ -115,64 +140,287 @@ export function createRepoLanding({ onRepoSelect }) {
         }
     }
 
-    // ── 1. Hero ───────────────────────────────────────────────────────────
+    // ── 1. Header + Hero ─────────────────────────────────────────────────
+
+    const topbar = document.createElement("header");
+    topbar.className = "repo-landing__topbar";
+
+    const topbarNav = document.createElement("nav");
+    topbarNav.className = "repo-landing__topbar-nav";
+    topbarNav.setAttribute("aria-label", "Primary");
+
+    const brand = document.createElement("a");
+    brand.className = "repo-landing__brand";
+    brand.href = "#try";
+    brand.setAttribute("aria-label", "GitVista home");
+    brand.addEventListener("click", (event) => {
+        event.preventDefault();
+        scrollToSection(el.querySelector("#try"), { focus: input });
+    });
+
+    const brandMark = document.createElement("img");
+    brandMark.className = "repo-landing__brand-mark";
+    brandMark.src = "/favicon.svg";
+    brandMark.alt = "";
+    brandMark.setAttribute("aria-hidden", "true");
+
+    const brandCopy = document.createElement("span");
+    brandCopy.className = "repo-landing__brand-copy";
+    brandCopy.innerHTML = `<strong>GitVista</strong><span>git history visualization</span>`;
+
+    brand.appendChild(brandMark);
+    brand.appendChild(brandCopy);
+    topbarNav.appendChild(brand);
+
+    const topbarLinks = document.createElement("div");
+    topbarLinks.className = "repo-landing__topbar-links";
+
+    const navItems = [
+        { label: "Overview", targetId: "try" },
+        { label: "Featured", targetId: "featured" },
+        { label: "Local", targetId: "local" },
+    ];
+
+    for (const item of navItems) {
+        const link = document.createElement("a");
+        link.className = "repo-landing__nav-link";
+        link.textContent = item.label;
+        if (item.external) {
+            link.href = item.href;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+        } else {
+            link.href = `#${item.targetId}`;
+            link.addEventListener("click", (event) => {
+                event.preventDefault();
+                const target = el.querySelector(`#${item.targetId}`);
+                scrollToSection(target, item.targetId === "try" ? { focus: input } : undefined);
+            });
+        }
+        topbarLinks.appendChild(link);
+    }
+
+    topbarNav.appendChild(topbarLinks);
+
+    topbar.appendChild(topbarNav);
 
     const hero = document.createElement("section");
     hero.className = "repo-landing__hero";
+    hero.id = "try";
 
-    const logo = document.createElement("div");
-    logo.className = "repo-landing__logo";
-    logo.innerHTML = LOGO_SVG;
+    const heroCopy = document.createElement("div");
+    heroCopy.className = "repo-landing__hero-copy";
 
     const title = document.createElement("h1");
     title.className = "repo-landing__title";
-    title.textContent = "GitVista";
+    title.textContent = "Bring your Git history into view at a glance.";
 
     const tagline = document.createElement("p");
     tagline.className = "repo-landing__tagline";
-    tagline.textContent = "See what Git is actually doing.";
+    tagline.textContent = "Paste a GitHub URL and GitVista opens the history as an explorable tool, not a wall of commits. When you need zero-latency updates, switch to local mode and watch your graph react in real time.";
+
+    const heroPoints = document.createElement("ul");
+    heroPoints.className = "repo-landing__value-list";
+    for (const value of HERO_VALUE_POINTS) {
+        const item = document.createElement("li");
+        item.className = "repo-landing__value-item";
+        item.textContent = value;
+        heroPoints.appendChild(item);
+    }
+
+    const heroFormShell = document.createElement("div");
+    heroFormShell.className = "repo-landing__hero-form-shell";
+
+    const formLead = document.createElement("div");
+    formLead.className = "repo-landing__hero-form-lead";
+    formLead.innerHTML = `<strong>Try it now</strong><span>Open a public repository directly in the browser.</span>`;
+
+    const form = document.createElement("form");
+    form.className = "repo-landing__form";
+
+    const input = document.createElement("input");
+    input.type = "url";
+    input.className = "repo-landing__input";
+    input.placeholder = "https://github.com/owner/repo";
+    input.required = true;
+    input.setAttribute("aria-label", "GitHub repository URL");
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "submit";
+    addBtn.className = "repo-landing__add-btn";
+    addBtn.textContent = "Open Repository";
+
+    form.appendChild(input);
+    form.appendChild(addBtn);
+
+    const formMeta = document.createElement("div");
+    formMeta.className = "repo-landing__hero-form-meta";
+
+    const heroSupport = document.createElement("span");
+    heroSupport.className = "repo-landing__hero-support";
+    heroSupport.textContent = "Works best with public GitHub repositories.";
+
+    const installShortcut = document.createElement("button");
+    installShortcut.type = "button";
+    installShortcut.className = "repo-landing__hero-link";
+    installShortcut.textContent = "Prefer local mode?";
+    installShortcut.addEventListener("click", () => {
+        scrollToSection(installSection);
+    });
+
+    formMeta.appendChild(heroSupport);
+    formMeta.appendChild(installShortcut);
+
+    const errorMsg = document.createElement("div");
+    errorMsg.className = "repo-landing__error";
+
+    const listContainer = document.createElement("div");
+    listContainer.className = "repo-landing__list repo-landing__list--hero";
+
+    heroFormShell.appendChild(formLead);
+    heroFormShell.appendChild(form);
+    heroFormShell.appendChild(formMeta);
+    heroFormShell.appendChild(errorMsg);
+    heroFormShell.appendChild(listContainer);
 
     const heroActions = document.createElement("div");
     heroActions.className = "repo-landing__hero-actions";
 
     const ctaPrimary = document.createElement("button");
+    ctaPrimary.type = "button";
     ctaPrimary.className = "repo-landing__cta-primary";
-    ctaPrimary.textContent = "Explore a repo";
+    ctaPrimary.textContent = "Paste a repo URL";
     ctaPrimary.addEventListener("click", () => {
-        featuredSection.scrollIntoView({ behavior: "smooth" });
+        scrollToSection(hero, { focus: input });
     });
 
     const ctaSecondary = document.createElement("button");
+    ctaSecondary.type = "button";
     ctaSecondary.className = "repo-landing__cta-secondary";
-    ctaSecondary.textContent = "Install locally";
+    ctaSecondary.textContent = "Browse featured examples";
     ctaSecondary.addEventListener("click", () => {
-        installSection.scrollIntoView({ behavior: "smooth" });
+        scrollToSection(featuredSection);
     });
 
     heroActions.appendChild(ctaPrimary);
     heroActions.appendChild(ctaSecondary);
 
-    hero.appendChild(logo);
-    hero.appendChild(title);
-    hero.appendChild(tagline);
-    hero.appendChild(heroActions);
+    heroCopy.appendChild(title);
+    heroCopy.appendChild(tagline);
+    heroCopy.appendChild(heroPoints);
+    heroCopy.appendChild(heroActions);
+    heroCopy.appendChild(heroFormShell);
+
+    const heroPreview = document.createElement("div");
+    heroPreview.className = "repo-landing__hero-preview";
+    heroPreview.setAttribute("aria-hidden", "true");
+
+    const previewFrame = document.createElement("div");
+    previewFrame.className = "repo-landing__preview-frame";
+
+    const previewTopbar = document.createElement("div");
+    previewTopbar.className = "repo-landing__preview-topbar";
+    previewTopbar.innerHTML = `
+        <div class="repo-landing__preview-dots">
+            <span></span><span></span><span></span>
+        </div>
+        <div class="repo-landing__preview-path">gitvista.io / repo / expressjs / express</div>
+    `;
+
+    const previewBody = document.createElement("div");
+    previewBody.className = "repo-landing__preview-body";
+
+    const previewGraph = document.createElement("div");
+    previewGraph.className = "repo-landing__preview-graph";
+    previewGraph.innerHTML = `
+        <div class="repo-landing__preview-graph-lines">
+            <span class="is-main"></span>
+            <span class="is-branch"></span>
+            <span class="is-merge"></span>
+        </div>
+        <div class="repo-landing__preview-nodes">
+            <span class="node node--main node--1"></span>
+            <span class="node node--main node--2"></span>
+            <span class="node node--branch node--3"></span>
+            <span class="node node--main node--4"></span>
+            <span class="node node--merge node--5"></span>
+            <span class="node node--main node--6"></span>
+        </div>
+        <div class="repo-landing__preview-badge">live graph</div>
+    `;
+
+    const previewSidebar = document.createElement("div");
+    previewSidebar.className = "repo-landing__preview-sidebar";
+
+    const previewSidebarHeader = document.createElement("div");
+    previewSidebarHeader.className = "repo-landing__preview-sidebar-header";
+    previewSidebarHeader.innerHTML = `<strong>Repository</strong><span>recent activity</span>`;
+
+    const previewList = document.createElement("div");
+    previewList.className = "repo-landing__preview-list";
+
+    for (const commit of PREVIEW_COMMITS) {
+        const item = document.createElement("div");
+        item.className = "repo-landing__preview-item";
+        item.innerHTML = `
+            <span class="repo-landing__preview-label repo-landing__preview-label--${commit.accent}">${commit.label}</span>
+            <strong>${commit.title}</strong>
+            <span>${commit.meta}</span>
+        `;
+        previewList.appendChild(item);
+    }
+
+    const previewFooter = document.createElement("div");
+    previewFooter.className = "repo-landing__preview-footer";
+    previewFooter.innerHTML = `
+        <div><strong>4.2s</strong><span>repo ready</span></div>
+        <div><strong>diffs</strong><span>expand inline</span></div>
+        <div><strong>filters</strong><span>branch-aware</span></div>
+    `;
+
+    previewSidebar.appendChild(previewSidebarHeader);
+    previewSidebar.appendChild(previewList);
+    previewSidebar.appendChild(previewFooter);
+
+    previewBody.appendChild(previewGraph);
+    previewBody.appendChild(previewSidebar);
+    previewFrame.appendChild(previewTopbar);
+    previewFrame.appendChild(previewBody);
+    heroPreview.appendChild(previewFrame);
+
+    hero.appendChild(heroCopy);
+    hero.appendChild(heroPreview);
+
+    const proofStrip = document.createElement("section");
+    proofStrip.className = "repo-landing__proof-strip";
+    proofStrip.innerHTML = `
+        <div class="repo-landing__proof-item"><strong>Instant orientation</strong><span>Graph-first context before you inspect individual commits.</span></div>
+        <div class="repo-landing__proof-item"><strong>Example repos ready</strong><span>Jump into curated public repos without waiting on setup.</span></div>
+        <div class="repo-landing__proof-item"><strong>Local mode available</strong><span>Track your own <code>.git</code> directory when browser mode is not enough.</span></div>
+    `;
 
     // ── 2. Featured Repos ─────────────────────────────────────────────────
 
     const featuredSection = document.createElement("section");
     featuredSection.className = "repo-landing__section repo-landing__featured";
+    featuredSection.id = "featured";
+
+    const featuredEyebrow = document.createElement("p");
+    featuredEyebrow.className = "repo-landing__eyebrow";
+    featuredEyebrow.textContent = "Fast-start examples";
 
     const featuredTitle = document.createElement("h2");
     featuredTitle.className = "repo-landing__section-title";
-    featuredTitle.textContent = "Featured Repositories";
+    featuredTitle.textContent = "Open a live repository and inspect how the history is shaped.";
 
     const featuredSubtitle = document.createElement("p");
     featuredSubtitle.className = "repo-landing__section-subtitle";
-    featuredSubtitle.textContent = "Pre-loaded and ready to explore";
+    featuredSubtitle.textContent = "These repos are preloaded to make the first interaction immediate. Use them to see branch movement, merges, and commit-level diffs before pasting your own URL.";
 
     const featuredGrid = document.createElement("div");
     featuredGrid.className = "repo-landing__featured-grid";
 
+    featuredSection.appendChild(featuredEyebrow);
     featuredSection.appendChild(featuredTitle);
     featuredSection.appendChild(featuredSubtitle);
     featuredSection.appendChild(featuredGrid);
@@ -211,13 +459,19 @@ export function createRepoLanding({ onRepoSelect }) {
         cardDesc.className = "repo-landing__card-desc";
         cardDesc.textContent = entry.description;
 
+        const cardMeta = document.createElement("p");
+        cardMeta.className = "repo-landing__card-meta";
+        cardMeta.textContent = s.state === "ready"
+            ? "Ready now. Open the graph view and inspect commit flow."
+            : "Preparing graph data and commit history.";
+
         const cardAction = document.createElement("div");
         cardAction.className = "repo-landing__card-action";
 
         if (s.state === "ready") {
             const cta = document.createElement("button");
             cta.className = "repo-landing__card-cta";
-            cta.innerHTML = `Explore ${ARROW_SVG}`;
+            cta.innerHTML = `Open Live View ${ARROW_SVG}`;
             cta.addEventListener("click", (e) => {
                 e.stopPropagation();
                 onRepoSelect(s.id);
@@ -238,35 +492,34 @@ export function createRepoLanding({ onRepoSelect }) {
                 cardAction.appendChild(errText);
             }
             cardAction.appendChild(retry);
+        } else if (s.state === "cloning" && s.percent > 0) {
+            const progressContainer = document.createElement("div");
+            progressContainer.className = "repo-landing__clone-progress";
+
+            const progressText = document.createElement("span");
+            progressText.className = "repo-landing__card-progress";
+            progressText.textContent = `${s.phase} ${s.percent}%`;
+            progressContainer.appendChild(progressText);
+
+            const progressBar = document.createElement("div");
+            progressBar.className = "repo-landing__progress-bar";
+            const progressFill = document.createElement("div");
+            progressFill.className = "repo-landing__progress-fill";
+            progressFill.style.width = `${s.percent}%`;
+            progressBar.appendChild(progressFill);
+            progressContainer.appendChild(progressBar);
+
+            cardAction.appendChild(progressContainer);
         } else {
-            if (s.state === "cloning" && s.percent > 0) {
-                const progressContainer = document.createElement("div");
-                progressContainer.className = "repo-landing__clone-progress";
-
-                const progressText = document.createElement("span");
-                progressText.className = "repo-landing__card-progress";
-                progressText.textContent = `${s.phase} ${s.percent}%`;
-                progressContainer.appendChild(progressText);
-
-                const progressBar = document.createElement("div");
-                progressBar.className = "repo-landing__progress-bar";
-                const progressFill = document.createElement("div");
-                progressFill.className = "repo-landing__progress-fill";
-                progressFill.style.width = `${s.percent}%`;
-                progressBar.appendChild(progressFill);
-                progressContainer.appendChild(progressBar);
-
-                cardAction.appendChild(progressContainer);
-            } else {
-                const progress = document.createElement("span");
-                progress.className = "repo-landing__card-progress";
-                progress.textContent = s.state === "cloning" ? "Cloning..." : "Loading...";
-                cardAction.appendChild(progress);
-            }
+            const progress = document.createElement("span");
+            progress.className = "repo-landing__card-progress";
+            progress.textContent = s.state === "cloning" ? "Cloning..." : "Loading...";
+            cardAction.appendChild(progress);
         }
 
         card.appendChild(cardHeader);
         card.appendChild(cardDesc);
+        card.appendChild(cardMeta);
         card.appendChild(cardAction);
 
         if (s.state === "ready") {
@@ -321,56 +574,25 @@ export function createRepoLanding({ onRepoSelect }) {
         Promise.allSettled(promises);
     }
 
-    // ── 3. Try Your Own ───────────────────────────────────────────────────
-
-    const tryOwnSection = document.createElement("section");
-    tryOwnSection.className = "repo-landing__section repo-landing__tryown";
-
-    const tryOwnTitle = document.createElement("h2");
-    tryOwnTitle.className = "repo-landing__section-title";
-    tryOwnTitle.textContent = "Visualize any public GitHub repository";
-
-    const form = document.createElement("form");
-    form.className = "repo-landing__form";
-
-    const input = document.createElement("input");
-    input.type = "url";
-    input.className = "repo-landing__input";
-    input.placeholder = "https://github.com/owner/repo";
-    input.required = true;
-
-    const addBtn = document.createElement("button");
-    addBtn.type = "submit";
-    addBtn.className = "repo-landing__add-btn";
-    addBtn.textContent = "Visualize";
-
-    form.appendChild(input);
-    form.appendChild(addBtn);
-
-    const errorMsg = document.createElement("div");
-    errorMsg.className = "repo-landing__error";
-
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
         errorMsg.textContent = "";
         const url = input.value.trim();
         if (!url) return;
 
-        // If the URL matches a featured repo, scroll to it instead
         const featuredEntry = FEATURED_REPOS.find((f) => f.url === url || f.url === url.replace(/\/$/, ""));
         if (featuredEntry && featuredState.has(featuredEntry.url)) {
             const card = featuredGrid.querySelector(`[data-url="${featuredEntry.url}"]`);
             if (card) {
-                card.scrollIntoView({ behavior: "smooth" });
-                card.style.outline = "2px solid var(--node-color)";
-                setTimeout(() => { card.style.outline = ""; }, 1500);
+                scrollToSection(featuredSection);
+                highlightElementTemporarily(card);
                 input.value = "";
                 return;
             }
         }
 
         addBtn.disabled = true;
-        addBtn.textContent = "Adding...";
+        addBtn.textContent = "Opening...";
 
         try {
             const resp = await fetch("/api/repos", {
@@ -388,14 +610,12 @@ export function createRepoLanding({ onRepoSelect }) {
             if (destroyed) return;
             input.value = "";
 
-            // Check if this repo ID belongs to a featured repo
             for (const [fUrl, fState] of featuredState) {
                 if (fState.id === repo.id) {
                     const card = featuredGrid.querySelector(`[data-url="${fUrl}"]`);
                     if (card) {
-                        card.scrollIntoView({ behavior: "smooth" });
-                        card.style.outline = "2px solid var(--node-color)";
-                        setTimeout(() => { card.style.outline = ""; }, 1500);
+                        scrollToSection(featuredSection);
+                        highlightElementTemporarily(card);
                     }
                     return;
                 }
@@ -403,6 +623,7 @@ export function createRepoLanding({ onRepoSelect }) {
 
             addOrUpdateRepo(repo);
             renderUserRepos();
+            scrollToSection(heroFormShell);
 
             if (repo.state === "cloning" || repo.state === "pending") {
                 startProgressStream(repo.id, (update) => {
@@ -415,17 +636,9 @@ export function createRepoLanding({ onRepoSelect }) {
             errorMsg.textContent = err.message;
         } finally {
             addBtn.disabled = false;
-            addBtn.textContent = "Visualize";
+            addBtn.textContent = "Open Repository";
         }
     });
-
-    const listContainer = document.createElement("div");
-    listContainer.className = "repo-landing__list";
-
-    tryOwnSection.appendChild(tryOwnTitle);
-    tryOwnSection.appendChild(form);
-    tryOwnSection.appendChild(errorMsg);
-    tryOwnSection.appendChild(listContainer);
 
     async function deleteRepo(id) {
         try {
@@ -444,7 +657,6 @@ export function createRepoLanding({ onRepoSelect }) {
     function renderUserRepos() {
         listContainer.innerHTML = "";
 
-        // Filter out repos whose IDs match featured repos
         const featuredIds = new Set();
         for (const s of featuredState.values()) {
             if (s.id) featuredIds.add(s.id);
@@ -455,7 +667,7 @@ export function createRepoLanding({ onRepoSelect }) {
 
         const heading = document.createElement("h3");
         heading.className = "repo-landing__list-heading";
-        heading.textContent = "Your Repositories";
+        heading.textContent = "Your recent repositories";
         listContainer.appendChild(heading);
 
         for (const repo of userRepos) {
@@ -527,18 +739,23 @@ export function createRepoLanding({ onRepoSelect }) {
         }
     }
 
-    // ── 4. Install Locally ────────────────────────────────────────────────
+    // ── 3. Install Locally ────────────────────────────────────────────────
 
     const installSection = document.createElement("section");
     installSection.className = "repo-landing__section repo-landing__install";
+    installSection.id = "local";
+
+    const installEyebrow = document.createElement("p");
+    installEyebrow.className = "repo-landing__eyebrow";
+    installEyebrow.textContent = "Local mode";
 
     const installTitle = document.createElement("h2");
     installTitle.className = "repo-landing__section-title";
-    installTitle.textContent = "Run locally for real-time updates";
+    installTitle.textContent = "Run GitVista beside your repository when you need live local state.";
 
     const installSubtitle = document.createElement("p");
     installSubtitle.className = "repo-landing__section-subtitle";
-    installSubtitle.textContent = "Watch commits appear the instant you make them. Local mode connects directly to your .git directory for zero-latency visualization.";
+    installSubtitle.textContent = "Browser mode is the fastest way to inspect a public repo. Local mode connects directly to your .git directory so new commits, staged changes, and diff views update the moment you make them.";
 
     const codeBlock = document.createElement("div");
     codeBlock.className = "repo-landing__code-block";
@@ -563,14 +780,19 @@ export function createRepoLanding({ onRepoSelect }) {
     codeBlock.appendChild(codeText);
     codeBlock.appendChild(copyBtn);
 
+    installSection.appendChild(installEyebrow);
     installSection.appendChild(installTitle);
     installSection.appendChild(installSubtitle);
     installSection.appendChild(codeBlock);
 
-    // ── 5. Footer ─────────────────────────────────────────────────────────
+    // ── 4. Footer ─────────────────────────────────────────────────────────
 
     const footer = document.createElement("footer");
     footer.className = "repo-landing__footer";
+
+    const footerBrand = document.createElement("div");
+    footerBrand.className = "repo-landing__footer-brand";
+    footerBrand.innerHTML = `<strong>GitVista</strong><span>See what Git is actually doing.</span>`;
 
     const footerLinks = document.createElement("div");
     footerLinks.className = "repo-landing__footer-links";
@@ -596,22 +818,27 @@ export function createRepoLanding({ onRepoSelect }) {
     license.className = "repo-landing__footer-license";
     license.textContent = "Apache 2.0";
 
+    footer.appendChild(footerBrand);
     footer.appendChild(footerLinks);
     footer.appendChild(license);
 
     // ── Assemble ──────────────────────────────────────────────────────────
 
-    el.appendChild(hero);
-    el.appendChild(featuredSection);
-    el.appendChild(tryOwnSection);
-    el.appendChild(installSection);
-    el.appendChild(footer);
+    chrome.appendChild(topbar);
+
+    content.appendChild(hero);
+    content.appendChild(proofStrip);
+    content.appendChild(featuredSection);
+    content.appendChild(installSection);
+    content.appendChild(footer);
+
+    el.appendChild(chrome);
+    el.appendChild(content);
 
     // ── Initialize ────────────────────────────────────────────────────────
 
     initFeatured();
 
-    // Load existing user repos
     (async () => {
         try {
             const resp = await fetch("/api/repos");
@@ -637,6 +864,7 @@ export function createRepoLanding({ onRepoSelect }) {
 
     function destroy() {
         destroyed = true;
+        window.clearTimeout(highlightTimer);
         for (const [, es] of activeStreams) {
             es.close();
         }
