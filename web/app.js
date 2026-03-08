@@ -13,6 +13,7 @@ import { createGraphFilters, loadFilterState } from "./graphFilters.js";
 import { setApiBase, apiUrl } from "./apiBase.js";
 import { apiFetch } from "./apiFetch.js";
 import { createRepoLanding } from "./repoLanding.js";
+import { createDocsView } from "./docsView.js";
 import { setConnectionState as setErrorConnectionState, setRepositoryAvailable } from "./errorState.js";
 import { createConnectionBanner } from "./connectionBanner.js";
 import { createRepoUnavailableOverlay } from "./repoUnavailableOverlay.js";
@@ -26,19 +27,23 @@ const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
 const REPO_HASH_RE = /^repo\/([^/]+)(?:\/([0-9a-f]{40}))?$/i;
 let activeViewCleanup = null;
 
-/** Parses the URL hash. Returns { repoId, commitHash } or null. */
+/** Parses the URL hash and resolves the hosted route. */
 function parseHash() {
     const fragment = location.hash.slice(1);
-    if (!fragment) return null;
+    if (!fragment) return { page: "landing", repoId: null, commitHash: null };
+
+    if (fragment === "docs") {
+        return { page: "docs", repoId: null, commitHash: null };
+    }
 
     // Hosted: #repo/{id} or #repo/{id}/{commitHash}
     const m = REPO_HASH_RE.exec(fragment);
-    if (m) return { repoId: m[1], commitHash: m[2] || null };
+    if (m) return { page: "repo", repoId: m[1], commitHash: m[2] || null };
 
     // Local: #{commitHash}
-    if (COMMIT_HASH_RE.test(fragment)) return { repoId: null, commitHash: fragment };
+    if (COMMIT_HASH_RE.test(fragment)) return { page: "repo", repoId: null, commitHash: fragment };
 
-    return null;
+    return { page: "landing", repoId: null, commitHash: null };
 }
 
 async function detectServerMode() {
@@ -83,23 +88,30 @@ document.addEventListener("DOMContentLoaded", async () => {
         mount(() => showLanding(root));
     };
 
+    const mountDocs = () => {
+        mount(() => showDocs(root));
+    };
+
     if (mode === "local") {
         mountGraph(null);
     } else {
-        // Hosted mode: check hash for an existing repo selection
         const parsed = parseHash();
-        if (parsed?.repoId) {
+        if (parsed.page === "repo" && parsed.repoId) {
             setApiBase(`/api/repos/${parsed.repoId}`);
             mountGraph(parsed.repoId);
+        } else if (parsed.page === "docs") {
+            mountDocs();
         } else {
             mountLanding();
         }
 
         window.addEventListener("hashchange", () => {
             const p = parseHash();
-            if (p?.repoId) {
+            if (p.page === "repo" && p.repoId) {
                 setApiBase(`/api/repos/${p.repoId}`);
                 mountGraph(p.repoId);
+            } else if (p.page === "docs") {
+                mountDocs();
             } else {
                 mountLanding();
             }
@@ -138,6 +150,22 @@ function showLanding(root) {
         destroyed = true;
         landing.destroy();
         landing.el.remove();
+    }
+
+    return destroy;
+}
+
+function showDocs(root) {
+    document.title = "GitVista Docs";
+    let destroyed = false;
+    const docs = createDocsView();
+    root.appendChild(docs.el);
+
+    function destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        docs.destroy();
+        docs.el.remove();
     }
 
     return destroy;

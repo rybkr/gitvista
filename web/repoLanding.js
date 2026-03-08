@@ -1,4 +1,6 @@
 import { shortenHash } from "./utils/format.js";
+import { LaneStrategy } from "./graph/layout/laneStrategy.js";
+import { LANE_MARGIN, LANE_WIDTH } from "./graph/constants.js";
 
 const FEATURED_REPOS = [
     { url: "https://github.com/rybkr/gitvista", name: "rybkr/gitvista", description: "Git history visualization for branches, diffs, and activity" },
@@ -94,6 +96,44 @@ export function createRepoLanding({ onRepoSelect }) {
         const text = String(value ?? "").trim();
         if (!text) return "";
         return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+    }
+
+    function buildSnapshotCommitHashes(summary, limit = 12) {
+        const allByHash = new Map((summary?.skeleton || []).map((commit) => [commit.h, commit]));
+        const headHash = summary?.headHash || summary?.skeleton?.[0]?.h || "";
+        const ordered = [];
+        const seen = new Set();
+        const queue = [];
+        if (headHash) {
+            queue.push(headHash);
+            let cursor = headHash;
+            for (let i = 0; cursor && i < 5; i++) {
+                const commit = allByHash.get(cursor);
+                cursor = commit?.p?.[0] || "";
+                if (cursor) queue.push(cursor);
+                const mergeParent = commit?.p?.[1] || "";
+                if (mergeParent) queue.push(mergeParent);
+            }
+        }
+
+        while (queue.length > 0 && ordered.length < limit) {
+            const hash = queue.shift();
+            if (!hash || seen.has(hash)) continue;
+            seen.add(hash);
+            const commit = allByHash.get(hash);
+            if (!commit) continue;
+            ordered.push(hash);
+            for (const parentHash of commit.p || []) {
+                if (!seen.has(parentHash)) {
+                    queue.push(parentHash);
+                }
+            }
+        }
+
+        if (ordered.length === 0) {
+            return (summary?.skeleton || []).slice(0, limit).map((commit) => commit.h);
+        }
+        return ordered;
     }
 
     function scrollToSection(target, { focus } = {}) {
@@ -215,13 +255,16 @@ export function createRepoLanding({ onRepoSelect }) {
         { label: "Overview", targetId: "try" },
         { label: "Featured", targetId: "featured" },
         { label: "Local", targetId: "local" },
+        { label: "Docs", href: "#docs" },
     ];
 
     for (const item of navItems) {
         const link = document.createElement("a");
         link.className = "repo-landing__nav-link";
         link.textContent = item.label;
-        if (item.external) {
+        if (item.href) {
+            link.href = item.href;
+        } else if (item.external) {
             link.href = item.href;
             link.target = "_blank";
             link.rel = "noopener noreferrer";
@@ -614,136 +657,154 @@ export function createRepoLanding({ onRepoSelect }) {
     function renderSnapshotGraph(summary, metadata = {}, commits = []) {
         if (!summary?.skeleton?.length) return;
 
-        const width = 860;
-        const height = 430;
-        const top = 38;
-        const bottom = 34;
-        const visible = summary.skeleton
-            .slice()
-            .sort((a, b) => (b.t || 0) - (a.t || 0))
-            .slice(0, 7);
+        const width = 520;
+        const height = 500;
+        const top = 34;
+        const bottom = 26;
+        const visibleHashes = buildSnapshotCommitHashes(summary, 12);
+        const visibleHashSet = new Set(visibleHashes);
         const allByHash = new Map(summary.skeleton.map((commit) => [commit.h, commit]));
         const commitByHash = new Map(commits.map((commit) => [commit.hash, commit]));
-
-        const headHash = summary.headHash || visible[0]?.h || "";
-        const currentBranch = metadata.currentBranch || "";
-        const mainline = new Set();
-        let cursor = headHash;
-        for (let i = 0; cursor && i < 32; i++) {
-            mainline.add(cursor);
-            const node = allByHash.get(cursor);
-            cursor = node?.p?.[0] || "";
+        const layoutCommits = new Map();
+        const nodes = [];
+        for (const hash of visibleHashes) {
+            const skeleton = allByHash.get(hash);
+            if (!skeleton) continue;
+            const details = commitByHash.get(hash) || {};
+            const commit = {
+                hash,
+                parents: (skeleton.p || []).filter((parentHash) => visibleHashSet.has(parentHash)),
+                message: details.message || "",
+                author: {
+                    name: details.author?.name || details.committer?.name || "",
+                    when: details.author?.when || details.committer?.when || (skeleton.t ? new Date(skeleton.t).toISOString() : ""),
+                },
+                committer: {
+                    name: details.committer?.name || details.author?.name || "",
+                    when: details.committer?.when || details.author?.when || (skeleton.t ? new Date(skeleton.t).toISOString() : ""),
+                },
+                branchLabel: skeleton.branchLabel || "",
+                branchLabelSource: skeleton.branchLabelSource || "",
+            };
+            layoutCommits.set(hash, commit);
+            nodes.push({ type: "commit", hash, commit, x: 0, y: 0 });
         }
+        const branchMap = new Map(Object.entries(summary.branches || {}));
+        const laneStrategy = new LaneStrategy();
+        laneStrategy.updateGraph(nodes, [], layoutCommits, branchMap, { height: 900 });
 
-        const branchRefsByHash = new Map();
-        for (const [refName, hash] of Object.entries(summary.branches || {})) {
-            const clean = formatBranchName(refName);
-            if (!clean) continue;
-            const list = branchRefsByHash.get(hash) || [];
-            list.push(clean);
-            branchRefsByHash.set(hash, list);
-        }
+        const positionData = laneStrategy.getPositionData();
+        const targetPositions = positionData.transitionTargetPositions;
+        const laneInfo = laneStrategy.getLaneInfo();
+        const laidOut = nodes
+            .map((node) => {
+                const target = targetPositions.get(node.hash);
+                if (!target) return null;
+                const position = Math.round((target.x - LANE_MARGIN) / LANE_WIDTH);
+                return {
+                    hash: node.hash,
+                    commit: layoutCommits.get(node.hash),
+                    graphX: target.x,
+                    graphY: target.y,
+                    position,
+                    merge: (layoutCommits.get(node.hash)?.parents?.length || 0) > 1,
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.graphY - b.graphY)
+            .slice(0, 10);
+        const visiblePositionSet = new Set(laidOut.map((item) => item.position));
+        const previewCenterX = 132;
+        const previewLaneStep = 68;
+        const yMin = laidOut[0]?.graphY || 0;
+        const yMax = laidOut[laidOut.length - 1]?.graphY || yMin;
+        const ySpan = Math.max(yMax - yMin, 1);
+        const positions = new Map(laidOut.map((item, index) => {
+            const x = previewCenterX + item.position * previewLaneStep;
+            const y = top + ((item.graphY - yMin) / ySpan) * (height - top - bottom);
+            return [item.hash, {
+                x,
+                y,
+                position: item.position,
+                merge: item.merge,
+            }];
+        }));
 
-        const laneLabels = [];
-        const laneMap = new Map();
-        if (currentBranch) {
-            laneMap.set(currentBranch, 0);
-            laneLabels.push(currentBranch);
-        }
+        const laneLabels = laneInfo
+            .filter((lane) => visiblePositionSet.has(lane.position))
+            .map((lane) => {
+                const header = lane.segments?.find((segment) => segment.displayName)?.displayName || "";
+                return {
+                    position: lane.position,
+                    label: header,
+                };
+            })
+            .filter((lane) => lane.label)
+            .sort((a, b) => a.position - b.position);
 
-        function commitLabel(commit) {
-            const refLabels = branchRefsByHash.get(commit.h) || [];
-            if (refLabels.length > 0) {
-                const preferred = refLabels.find((name) => name === currentBranch) || refLabels[0];
-                return preferred;
-            }
-            return formatBranchName(commit.branchLabel || "");
-        }
-
-        function laneFor(commit) {
-            const label = commitLabel(commit);
-            if (mainline.has(commit.h)) return 0;
-            if (label && laneMap.has(label)) return laneMap.get(label);
-            if (label && laneLabels.length < 3) {
-                laneMap.set(label, laneLabels.length);
-                laneLabels.push(label);
-                return laneMap.get(label);
-            }
-            return Math.min(Math.max((laneLabels.length || 1) - 1, 1), 2);
-        }
-
-        const laneX = [88, 186, 284];
-        const rowStep = (height - top - bottom) / Math.max(visible.length - 1, 1);
-        const positions = new Map();
-        visible.forEach((commit, index) => {
-            positions.set(commit.h, {
-                x: laneX[laneFor(commit)] || laneX[0],
-                y: top + rowStep * index,
-                lane: laneFor(commit),
-                merge: Array.isArray(commit.p) && commit.p.length > 1,
-            });
-        });
-
-        const guides = laneX.slice(0, 3).map((x, index) =>
-            `<line class="repo-landing__preview-guide ${index === 0 ? "is-main" : ""}" x1="${x}" y1="${top - 8}" x2="${x}" y2="${height - bottom + 8}" />`
-        ).join("");
+        const guides = [...visiblePositionSet]
+            .sort((a, b) => a - b)
+            .map((position) => {
+                const x = previewCenterX + position * previewLaneStep;
+                return `<line class="repo-landing__preview-guide ${position === 0 ? "is-main" : ""}" x1="${x}" y1="${top - 8}" x2="${x}" y2="${height - bottom + 8}" />`;
+            }).join("");
 
         const edges = [];
-        for (const commit of visible) {
-            const from = positions.get(commit.h);
+        for (const item of laidOut) {
+            const from = positions.get(item.hash);
             if (!from) continue;
-            for (const parentHash of commit.p || []) {
+            for (const parentHash of item.commit?.parents || []) {
                 const to = positions.get(parentHash);
                 if (!to) continue;
                 if (from.x === to.x) {
-                    edges.push(`<path class="repo-landing__preview-edge ${from.lane === 0 ? "is-main" : "is-branch"}" d="M ${from.x} ${from.y} L ${to.x} ${to.y}" />`);
+                    edges.push(`<path class="repo-landing__preview-edge ${from.position === 0 ? "is-main" : "is-branch"}" d="M ${from.x} ${from.y} L ${to.x} ${to.y}" />`);
                     continue;
                 }
                 const midY = from.y + (to.y - from.y) * 0.45;
-                const edgeTone = to.lane === 0 ? "is-merge" : "is-branch";
+                const edgeTone = to.position === 0 ? "is-merge" : "is-branch";
                 edges.push(`<path class="repo-landing__preview-edge ${edgeTone}" d="M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}" />`);
             }
         }
 
-        const nodes = visible.map((commit) => {
-            const pos = positions.get(commit.h);
-            const cls = pos.merge ? "is-merge" : (pos.lane === 0 ? "is-main" : "is-branch");
+        const nodeMarkup = laidOut.map((item) => {
+            const pos = positions.get(item.hash);
+            const cls = pos.merge ? "is-merge" : (pos.position === 0 ? "is-main" : "is-branch");
             return `<circle class="repo-landing__preview-node ${cls}" cx="${pos.x}" cy="${pos.y}" r="8" />`;
         }).join("");
 
-        const labels = visible.map((commit) => {
-            const pos = positions.get(commit.h);
-            const details = commitByHash.get(commit.h) || {};
-            const message = truncateLabel((details.message || "").split("\n")[0], 34);
-            const committer = truncateLabel(details.committer?.name || details.author?.name || "", 24);
-            const labelX = pos.x + 18;
+        const labels = laidOut.map((item) => {
+            const pos = positions.get(item.hash);
+            const details = commitByHash.get(item.hash) || {};
+            const message = truncateLabel((details.message || "").split("\n")[0], 30);
+            const committer = truncateLabel(details.committer?.name || details.author?.name || "", 22);
+            const labelX = pos.x + 24;
             const hashY = pos.y;
-            const messageY = pos.y + 16;
-            const authorY = pos.y + 30;
+            const messageY = pos.y + 18;
+            const authorY = pos.y + 34;
 
             return `
                 <g class="repo-landing__preview-label">
-                    <text class="repo-landing__preview-label-hash" x="${labelX}" y="${hashY}">${escapeHtml(shortenHash(commit.h))}</text>
+                    <text class="repo-landing__preview-label-hash" x="${labelX}" y="${hashY}">${escapeHtml(shortenHash(item.hash))}</text>
                     ${message ? `<text class="repo-landing__preview-label-message" x="${labelX}" y="${messageY}">${escapeHtml(message)}</text>` : ""}
                     ${committer ? `<text class="repo-landing__preview-label-author" x="${labelX}" y="${authorY}">${escapeHtml(committer)}</text>` : ""}
                 </g>
             `;
         }).join("");
 
-        const headerLabels = laneLabels.map((label, index) => {
-            const x = laneX[index];
-            const tone = index === 0 ? "is-main" : "is-branch";
-            return `<span class="repo-landing__preview-lane-label ${tone}" style="left:${(x / width) * 100}%">${label}</span>`;
+        const headerLabels = laneLabels.map((lane) => {
+            const x = previewCenterX + lane.position * previewLaneStep;
+            const tone = lane.position === 0 ? "is-main" : "is-branch";
+            return `<span class="repo-landing__preview-lane-label ${tone}" style="left:${(x / width) * 100}%">${escapeHtml(lane.label)}</span>`;
         }).join("");
 
         previewGraphHeader.innerHTML = headerLabels;
         previewGraph.dataset.loading = "false";
 
         previewGraphShell.innerHTML = `
-            <svg class="repo-landing__preview-graph-svg" viewBox="0 0 ${width} ${height}" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+            <svg class="repo-landing__preview-graph-svg" viewBox="0 0 ${width} ${height}" aria-hidden="true" preserveAspectRatio="xMinYMin meet">
                 ${guides}
                 ${edges.join("")}
-                ${nodes}
+                ${nodeMarkup}
                 ${labels}
             </svg>
         `;
@@ -768,11 +829,7 @@ export function createRepoLanding({ onRepoSelect }) {
         if (!repoResp.ok) throw new Error(`HTTP ${repoResp.status}`);
         if (!graphResp.ok) throw new Error(`HTTP ${graphResp.status}`);
         const [repoData, graphData] = await Promise.all([repoResp.json(), graphResp.json()]);
-        const visibleHashes = (graphData?.skeleton || [])
-            .slice()
-            .sort((a, b) => (b.t || 0) - (a.t || 0))
-            .slice(0, 7)
-            .map((commit) => commit.h);
+        const visibleHashes = buildSnapshotCommitHashes(graphData, 12);
         const graphCommits = await fetchSnapshotCommits(id, visibleHashes).catch(() => []);
         applySnapshotOverview(repoData);
         renderSnapshotGraph(graphData, repoData, graphCommits);
