@@ -23,7 +23,7 @@ const (
 
 // ReloadFunc returns a freshly-loaded repository, used by updateRepository to
 // reload state from disk. For local mode this calls gitcore.NewRepository; for
-// SaaS mode it returns the latest repo pointer from the RepoManager.
+// hosted mode it returns the latest repo pointer from the RepoManager.
 type ReloadFunc func() (*gitcore.Repository, error)
 
 // RepoSession holds per-repository state that was previously embedded in the

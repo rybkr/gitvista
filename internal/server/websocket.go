@@ -45,9 +45,9 @@ var localUpgrader = websocket.Upgrader{
 	EnableCompression: true,
 }
 
-// saasUpgrader validates that the Origin header matches the request Host to
-// prevent cross-site WebSocket hijacking in SaaS mode.
-var saasUpgrader = websocket.Upgrader{
+// hostedUpgrader validates that the Origin header matches the request Host to
+// prevent cross-site WebSocket hijacking in hosted mode.
+var hostedUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
@@ -80,8 +80,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	up := localUpgrader
-	if s.mode == ModeSaaS {
-		up = saasUpgrader
+	if s.mode == ModeHosted {
+		up = hostedUpgrader
 	}
 
 	conn, err := up.Upgrade(w, r, nil)

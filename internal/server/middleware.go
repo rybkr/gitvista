@@ -94,7 +94,7 @@ func shouldLogRequestAtDebug(path string, status int) bool {
 	if path == "/api/graph/commits" || path == "/api/ws" {
 		return true
 	}
-	if path == "/" || path == "/favicon.svg" {
+	if path == "/" || path == "/favicon.png" {
 		return true
 	}
 	return !strings.HasPrefix(path, "/api/")

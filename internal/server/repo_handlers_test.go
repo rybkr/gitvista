@@ -11,7 +11,7 @@ import (
 	"github.com/rybkr/gitvista/internal/repomanager"
 )
 
-func newTestSaaSServer(t *testing.T) *Server {
+func newTestHostedServer(t *testing.T) *Server {
 	t.Helper()
 	dataDir := t.TempDir()
 	rm, err := repomanager.New(repomanager.Config{
@@ -27,13 +27,13 @@ func newTestSaaSServer(t *testing.T) *Server {
 	t.Cleanup(rm.Close)
 
 	webFS := os.DirFS(t.TempDir())
-	s := NewSaaSServer(rm, "127.0.0.1:0", webFS, nil)
+	s := NewHostedServer(rm, "127.0.0.1:0", webFS, nil)
 	s.logger = silentLogger()
 	return s
 }
 
 func TestHandleAddRepo_Success(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
@@ -59,7 +59,7 @@ func TestHandleAddRepo_Success(t *testing.T) {
 }
 
 func TestHandleAddRepo_MissingURL(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	body := strings.NewReader(`{}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
@@ -74,7 +74,7 @@ func TestHandleAddRepo_MissingURL(t *testing.T) {
 }
 
 func TestHandleAddRepo_InvalidURL(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	body := strings.NewReader(`{"url":"file:///tmp/repo"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
@@ -89,7 +89,7 @@ func TestHandleAddRepo_InvalidURL(t *testing.T) {
 }
 
 func TestHandleListRepos(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	// Add a repo first
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
@@ -122,7 +122,7 @@ func TestHandleListRepos(t *testing.T) {
 }
 
 func TestHandleRepoStatus_NotFound(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	req := httptest.NewRequest("GET", "/api/repos/nonexistent/status", nil)
 	w := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func TestHandleRepoStatus_NotFound(t *testing.T) {
 }
 
 func TestHandleRepoStatus_Found(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	// Add a repo
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
@@ -169,7 +169,7 @@ func TestHandleRepoStatus_Found(t *testing.T) {
 }
 
 func TestHandleRemoveRepo_NotFound(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	req := httptest.NewRequest("DELETE", "/api/repos/nonexistent", nil)
 	w := httptest.NewRecorder()
@@ -182,7 +182,7 @@ func TestHandleRemoveRepo_NotFound(t *testing.T) {
 }
 
 func TestHandleRemoveRepo_Success(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	// Add a repo
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
@@ -221,7 +221,7 @@ func TestHandleRemoveRepo_Success(t *testing.T) {
 }
 
 func TestHandleRepoProgress_AlreadyReady(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	// Add a repo
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
@@ -264,7 +264,7 @@ func TestHandleRepoProgress_AlreadyReady(t *testing.T) {
 }
 
 func TestHandleRepoProgress_NotFound(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	req := httptest.NewRequest("GET", "/api/repos/nonexistent/progress", nil)
 	w := httptest.NewRecorder()
@@ -343,7 +343,7 @@ func TestRepoHandlers_LocalMode(t *testing.T) {
 }
 
 func TestHandleRepoRoutes_InvalidID_GenericError(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	// Hit a session-scoped route with a nonexistent repo ID to trigger
 	// the getOrCreateSession error path.
@@ -362,7 +362,7 @@ func TestHandleRepoRoutes_InvalidID_GenericError(t *testing.T) {
 }
 
 func TestHandleAddRepo_InvalidURL_GenericError(t *testing.T) {
-	s := newTestSaaSServer(t)
+	s := newTestHostedServer(t)
 
 	body := strings.NewReader(`{"url":"file:///etc/passwd"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)

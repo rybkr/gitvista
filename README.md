@@ -60,7 +60,7 @@ All options can be set via CLI flags or environment variables.
 |------|-------------|---------|-------------|
 | `-repo` | `GITVISTA_REPO` | `.` | Path to git repository |
 | `-port` | `GITVISTA_PORT` | `8080` | Server port |
-| `-host` | `GITVISTA_HOST` | Local mode: `127.0.0.1`; SaaS mode: *(all interfaces)* | Bind address |
+| `-host` | `GITVISTA_HOST` | Local mode: `127.0.0.1`; Hosted mode: *(all interfaces)* | Bind address |
 | | `GITVISTA_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | | `GITVISTA_LOG_FORMAT` | `text` | Log format: `text`, `json` |
 | | `GITVISTA_CACHE_SIZE` | `500` | LRU cache capacity (blame + diff entries) |

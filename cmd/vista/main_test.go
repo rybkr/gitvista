@@ -2,6 +2,30 @@ package main
 
 import "testing"
 
+func TestParseFlagsDefaultsPort(t *testing.T) {
+	flags, err := parseFlags(nil, func(key, fallback string) string {
+		return fallback
+	})
+	if err != nil {
+		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if flags.port != "8080" {
+		t.Fatalf("parseFlags default port = %q, want %q", flags.port, "8080")
+	}
+}
+
+func TestParseFlagsAcceptsLongPort(t *testing.T) {
+	flags, err := parseFlags([]string{"--port", "9090"}, func(key, fallback string) string {
+		return fallback
+	})
+	if err != nil {
+		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if flags.port != "9090" {
+		t.Fatalf("parseFlags port = %q, want %q", flags.port, "9090")
+	}
+}
+
 func TestResolveBindHost(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -16,7 +40,7 @@ func TestResolveBindHost(t *testing.T) {
 			want:     "127.0.0.1",
 		},
 		{
-			name:     "saas mode keeps all-interfaces default",
+			name:     "hosted mode keeps all-interfaces default",
 			repoPath: "",
 			host:     "",
 			want:     "",
@@ -28,7 +52,7 @@ func TestResolveBindHost(t *testing.T) {
 			want:     "0.0.0.0",
 		},
 		{
-			name:     "explicit host wins in saas mode",
+			name:     "explicit host wins in hosted mode",
 			repoPath: "",
 			host:     "0.0.0.0",
 			want:     "0.0.0.0",

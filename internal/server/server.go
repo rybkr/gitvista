@@ -17,14 +17,14 @@ import (
 	"github.com/rybkr/gitvista/internal/repomanager"
 )
 
-// Mode distinguishes between local and SaaS operation.
+// Mode distinguishes between local and hosted operation.
 type Mode int
 
 const (
 	// ModeLocal serves a single local Git repository.
 	ModeLocal Mode = iota
-	// ModeSaaS serves multiple cloned repositories via the repo manager.
-	ModeSaaS
+	// ModeHosted serves multiple cloned repositories via the repo manager.
+	ModeHosted
 
 	readHeaderTimeout = 5 * time.Second
 	maxHeaderBytes    = 1 << 20 // 1 MiB
@@ -41,9 +41,9 @@ type Server struct {
 	mode           Mode
 	localSession   *RepoSession             // non-nil in local mode
 	sessionsMu     sync.RWMutex             // guards sessions map
-	sessions       map[string]*RepoSession  // non-nil in SaaS mode
-	repoManager    *repomanager.RepoManager // non-nil in SaaS mode
-	allowedOrigins map[string]bool          // CORS allowlist (SaaS mode)
+	sessions       map[string]*RepoSession  // non-nil in hosted mode
+	repoManager    *repomanager.RepoManager // non-nil in hosted mode
+	allowedOrigins map[string]bool          // CORS allowlist (hosted mode)
 	cacheSize      int
 	fetchInterval  time.Duration
 
@@ -89,8 +89,8 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 	return s
 }
 
-// NewSaaSServer constructs a Server in SaaS mode backed by a RepoManager.
-func NewSaaSServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowedOrigins map[string]bool) *Server {
+// NewHostedServer constructs a Server in hosted mode backed by a RepoManager.
+func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowedOrigins map[string]bool) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rl := newRateLimiter(100, 200, time.Second)
 
@@ -101,7 +101,7 @@ func NewSaaSServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowe
 		webFS:          webFS,
 		rateLimiter:    rl,
 		logger:         slog.Default(),
-		mode:           ModeSaaS,
+		mode:           ModeHosted,
 		sessions:       make(map[string]*RepoSession),
 		repoManager:    rm,
 		allowedOrigins: allowedOrigins,
@@ -124,7 +124,7 @@ func readCacheSize() int {
 }
 
 // getOrCreateSession returns an existing session or lazily creates one when a
-// SaaS repo is ready. Uses double-checked locking.
+// Hosted repo is ready. Uses double-checked locking.
 func (s *Server) getOrCreateSession(id string) (*RepoSession, error) {
 	if s.mode == ModeLocal {
 		if s.localSession != nil {
@@ -220,15 +220,15 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/graph/commits", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleGraphCommits))))
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
-		// Repo management endpoints (SaaS mode only)
+		// Repo management endpoints (hosted mode only)
 		mux.HandleFunc("/api/repos", writeDeadline(s.rateLimiter.middleware(s.handleRepos)))
 		mux.HandleFunc("/api/repos/", writeDeadline(s.rateLimiter.middleware(s.handleRepoRoutes)))
 	}
 
 	// Build the handler chain: logging wraps the mux, and CORS wraps
-	// logging in SaaS mode.
+	// logging in hosted mode.
 	handler := requestLogger(s.logger, mux)
-	if s.mode == ModeSaaS {
+	if s.mode == ModeHosted {
 		handler = corsMiddleware(s.allowedOrigins, handler)
 	}
 
@@ -256,7 +256,7 @@ func (s *Server) modeString() string {
 	if s.mode == ModeLocal {
 		return "local"
 	}
-	return "saas"
+	return "hosted"
 }
 
 // newHTTPServer builds the net/http server with explicit production-safe

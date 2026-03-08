@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -35,54 +36,57 @@ var (
 	buildDate = "unknown"
 )
 
+type appFlags struct {
+	repoPath     string
+	dataDir      string
+	port         string
+	host         string
+	color        string
+	noColor      bool
+	showVersion  bool
+	checkUpdate  bool
+	showHelp     bool
+	outputFormat string
+}
+
 func main() {
 	initLogger()
 
-	// CLI flags
-	repoPath := flag.String("repo", getEnv("GITVISTA_REPO", ""), "Path to git repository (local mode)")
-	dataDir := flag.String("data-dir", getEnv("GITVISTA_DATA_DIR", "/data/repos"), "Data directory for managed repos (SaaS mode)")
-	port := flag.String("port", getEnv("GITVISTA_PORT", "8080"), "Port to listen on")
-	host := flag.String("host", getEnv("GITVISTA_HOST", ""), "Host to bind to (empty = all interfaces)")
-	colorFlag := flag.String("color", "auto", "Color output: auto, always, never")
-	noColor := flag.Bool("no-color", false, "Disable color output")
-	showVersion := flag.Bool("version", false, "Show version and exit")
-	checkUpdate := flag.Bool("check-update", false, "Check for a newer release and exit")
-	showHelp := flag.Bool("help", false, "Show help and exit")
-	outputFormat := flag.String("output", "", "Startup output format: json (default: human-readable)")
-
-	flag.Parse()
+	parsed, err := parseFlags(os.Args[1:], getEnv)
+	if err != nil {
+		os.Exit(2)
+	}
 
 	// Resolve color mode.
 	colorMode := cli.ColorAuto
-	if *noColor {
+	if parsed.noColor {
 		colorMode = cli.ColorNever
-	} else if *colorFlag != "auto" {
-		var err error
-		colorMode, err = cli.ParseColorMode(*colorFlag)
+	} else if parsed.color != "auto" {
+		colorMode, err = cli.ParseColorMode(parsed.color)
 		if err != nil {
-			slog.Error("Invalid color flag", "value", *colorFlag, "err", err)
+			slog.Error("Invalid color flag", "value", parsed.color, "err", err)
 			os.Exit(1)
 		}
 	}
 	cw := cli.NewWriter(os.Stdout, colorMode)
 
-	portNum, _ := strconv.Atoi(*port)
-	if err := validateConfig(*repoPath, *dataDir, *outputFormat, portNum); err != nil {
+	portNum, _ := strconv.Atoi(parsed.port)
+	if err := validateConfig(parsed.repoPath, parsed.dataDir, parsed.outputFormat, portNum); err != nil {
 		fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("error:"), err) // #nosec G705 -- error message to stderr, not HTTP response
 		os.Exit(1)
 	}
 
-	if *showVersion {
+	if parsed.showVersion {
 		printVersion(cw)
 		os.Exit(0)
 	}
 
-	if *checkUpdate {
+	if parsed.checkUpdate {
 		runCheckUpdate(cw)
 		os.Exit(0)
 	}
 
-	if *showHelp {
+	if parsed.showHelp {
 		printHelp(cw)
 		os.Exit(0)
 	}
@@ -94,8 +98,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	bindHost := resolveBindHost(*repoPath, *host)
-	addr := fmt.Sprintf("%s:%s", bindHost, *port)
+	bindHost := resolveBindHost(parsed.repoPath, parsed.host)
+	addr := fmt.Sprintf("%s:%s", bindHost, parsed.port)
 
 	var serv interface {
 		Start() error
@@ -105,28 +109,28 @@ func main() {
 	var rm *repomanager.RepoManager
 	var repoLoadDur time.Duration
 
-	if *repoPath != "" {
+	if parsed.repoPath != "" {
 		// LOCAL MODE: load repo, create local server
 		spin := cli.NewSpinner("Loading repository...")
 		spin.Start()
 		repoLoadStart := time.Now()
-		repo, err := gitcore.NewRepository(*repoPath)
+		repo, err := gitcore.NewRepository(parsed.repoPath)
 		repoLoadDur = time.Since(repoLoadStart).Round(time.Millisecond)
 		spin.Stop()
 		if err != nil {
-			slog.Error("Failed to load repository", "path", *repoPath, "err", err)
+			slog.Error("Failed to load repository", "path", parsed.repoPath, "err", err)
 			os.Exit(1)
 		}
 
 		serv = server.NewLocalServer(repo, addr, webFS)
 
 		slog.Info("Starting GitVista", "version", version, "mode", modeLocal)
-		slog.Info("Repository loaded", "path", *repoPath)
+		slog.Info("Repository loaded", "path", parsed.repoPath)
 	} else {
-		// SAAS MODE: create RepoManager, start it, create SaaS server
+		// HOSTED MODE: create RepoManager, start it, create hosted server
 		var err error
 		allowedHosts := parseAllowedHosts(os.Getenv("GITVISTA_CLONE_ALLOWED_HOSTS"))
-		rm, err = repomanager.New(repomanager.Config{DataDir: *dataDir, AllowedHosts: allowedHosts})
+		rm, err = repomanager.New(repomanager.Config{DataDir: parsed.dataDir, AllowedHosts: allowedHosts})
 		if err != nil {
 			slog.Error("Failed to create repo manager", "err", err)
 			os.Exit(1)
@@ -138,22 +142,22 @@ func main() {
 		}
 
 		corsOrigins := parseCORSOrigins(os.Getenv("GITVISTA_CORS_ORIGINS"))
-		serv = server.NewSaaSServer(rm, addr, webFS, corsOrigins)
+		serv = server.NewHostedServer(rm, addr, webFS, corsOrigins)
 
-		slog.Info("Starting GitVista", "version", version, "mode", "saas")
-		slog.Info("Data directory", "path", *dataDir)
+		slog.Info("Starting GitVista", "version", version, "mode", "hosted")
+		slog.Info("Data directory", "path", parsed.dataDir)
 	}
 
 	slog.Info("Listening", "addr", "http://"+addr)
 
-	mode := "saas"
-	if *repoPath != "" {
+	mode := "hosted"
+	if parsed.repoPath != "" {
 		mode = modeLocal
 	}
-	if *outputFormat == outputFormatJS {
-		printStartupJSON(mode, addr, *repoPath, *dataDir, repoLoadDur)
+	if parsed.outputFormat == outputFormatJS {
+		printStartupJSON(mode, addr, parsed.repoPath, parsed.dataDir, repoLoadDur)
 	} else {
-		printStartupBanner(cw, mode, addr, *repoPath, *dataDir, repoLoadDur)
+		printStartupBanner(cw, mode, addr, parsed.repoPath, parsed.dataDir, repoLoadDur)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -180,6 +184,23 @@ func main() {
 			slog.Info("Repo manager stopped")
 		}
 	}
+}
+
+func parseFlags(args []string, getenv func(string, string) string) (appFlags, error) {
+	flags := appFlags{}
+	fs := flag.NewFlagSet("gitvista", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&flags.repoPath, "repo", getenv("GITVISTA_REPO", ""), "Path to git repository (local mode)")
+	fs.StringVar(&flags.dataDir, "data-dir", getenv("GITVISTA_DATA_DIR", "/data/repos"), "Data directory for managed repos (hosted mode)")
+	fs.StringVar(&flags.port, "port", getenv("GITVISTA_PORT", "8080"), "Port to listen on")
+	fs.StringVar(&flags.host, "host", getenv("GITVISTA_HOST", ""), "Host to bind to (empty = all interfaces)")
+	fs.StringVar(&flags.color, "color", "auto", "Color output: auto, always, never")
+	fs.BoolVar(&flags.noColor, "no-color", false, "Disable color output")
+	fs.BoolVar(&flags.showVersion, "version", false, "Show version and exit")
+	fs.BoolVar(&flags.checkUpdate, "check-update", false, "Check for a newer release and exit")
+	fs.BoolVar(&flags.showHelp, "help", false, "Show help and exit")
+	fs.StringVar(&flags.outputFormat, "output", "", "Startup output format: json (default: human-readable)")
+	return flags, fs.Parse(args)
 }
 
 // initLogger reads GITVISTA_LOG_LEVEL and GITVISTA_LOG_FORMAT from the
@@ -248,7 +269,7 @@ func getEnv(key, fallback string) string {
 
 // resolveBindHost chooses a safe default bind host.
 // In local mode (repoPath set), default to loopback when host is empty.
-// In SaaS mode, preserve the existing empty-host behavior (all interfaces).
+// In hosted mode, preserve the existing empty-host behavior (all interfaces).
 func resolveBindHost(repoPath, host string) string {
 	if host != "" {
 		return host
@@ -364,11 +385,11 @@ func printHelp(cw *cli.Writer) {
 	fmt.Println("        Environment: GITVISTA_REPO")
 	fmt.Println()
 	fmt.Printf("  %s string\n", cw.Flag("-data-dir"))
-	fmt.Println("        Data directory for managed repos (SaaS mode, default: /data/repos)")
+	fmt.Println("        Data directory for managed repos (hosted mode, default: /data/repos)")
 	fmt.Println("        Environment: GITVISTA_DATA_DIR")
 	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Flag("-port"))
-	fmt.Println("        Port to listen on (default: 8080)")
+	fmt.Printf("  %s string\n", cw.Flag("-port, --port"))
+	fmt.Println("        Port to listen on (default: 8080; long form accepted)")
 	fmt.Println("        Environment: GITVISTA_PORT")
 	fmt.Println()
 	fmt.Printf("  %s string\n", cw.Flag("-host"))
@@ -390,13 +411,13 @@ func printHelp(cw *cli.Writer) {
 	fmt.Println(cw.Bold("Examples:"))
 	fmt.Println("  gitvista -repo .              # local mode: current directory")
 	fmt.Println("  gitvista -repo /path/to/repo  # local mode: specific repo")
-	fmt.Println("  gitvista                      # SaaS mode: manage repos via API")
-	fmt.Println("  gitvista -port 3000")
+	fmt.Println("  gitvista                      # hosted mode: manage repos via API")
+	fmt.Println("  gitvista --port 3000")
 	fmt.Println("  gitvista -host localhost -port 9090")
 	fmt.Println()
 	fmt.Println(cw.Bold("Environment Variables:"))
 	fmt.Println("  GITVISTA_REPO         Repository path (sets local mode)")
-	fmt.Println("  GITVISTA_DATA_DIR     Data directory for SaaS mode")
+	fmt.Println("  GITVISTA_DATA_DIR     Data directory for hosted mode")
 	fmt.Println("  GITVISTA_PORT         Default port")
 	fmt.Println("  GITVISTA_HOST         Default host")
 	fmt.Println("  GITVISTA_LOG_LEVEL    Log level: debug, info, warn, error (default: info)")

@@ -1,4 +1,4 @@
-# GitVista SaaS Architecture Plan
+# GitVista Hosted Architecture Plan
 
 **Date**: February 2026
 **Status**: Draft -- Pending Approval
@@ -8,10 +8,10 @@
 
 ## Executive Summary
 
-This plan transforms GitVista from a single-user CLI tool into a hosted SaaS where users paste any Git remote URL and get a live, real-time commit graph visualization. The architecture evolves in three phases:
+This plan transforms GitVista from a single-user CLI tool into a hosted deployment where users paste any Git remote URL and get a live, real-time commit graph visualization. The architecture evolves in three phases:
 
 1. **MVP (Weeks 1-6)**: Clone-and-serve on a single Fly.io machine. Bare-clone repos to a volume, point `gitcore.NewRepository()` at them, periodic fetch for updates. Public repos only, SQLite metadata.
-2. **v1.0 (Weeks 7-14)**: Production SaaS. Separate web/worker tiers, PostgreSQL, Valkey cache, GitHub OAuth, private repo access, webhook-driven real-time updates.
+2. **v1.0 (Weeks 7-14)**: Production Hosted. Separate web/worker tiers, PostgreSQL, Valkey cache, GitHub OAuth, private repo access, webhook-driven real-time updates.
 3. **v2.0 (Weeks 15-22+)**: Multi-forge support (GitLab, Bitbucket), billing via Stripe, team features, and optional `ObjectReader` interface for performance-critical paths.
 
 **Key Principle**: `gitcore` is the crown jewel and should not change for MVP/v1. The entire `internal/gitcore/` package works as-is -- the only change needed is a small fix to `findGitDirectory()` to support bare repos.
@@ -59,7 +59,7 @@ User runs: gitvista -repo /path/to/repo -port 8080
                     via WebSocket
 ```
 
-**Constraints for SaaS transformation**:
+**Constraints for Hosted transformation**:
 - `gitcore` reads exclusively from the local filesystem (`os.Open`, `filepath.Walk`)
 - `NewRepository(path)` expects a local `.git/` directory
 - `fsnotify` watches local `.git/` for changes -- no network equivalent
@@ -380,7 +380,7 @@ Multiple users viewing the same public repo share a single clone. Private repos 
 
 ### 8.1 The RepoSession Abstraction
 
-The current `Server` struct holds a single `*Repository`. For SaaS, `RepoSession` is a per-repo mini-server:
+The current `Server` struct holds a single `*Repository`. For Hosted, `RepoSession` is a per-repo mini-server:
 
 ```go
 type RepoSession struct {
@@ -469,7 +469,7 @@ When running multiple web nodes:
 
 ### 10.2 Existing Endpoints -- Repo-Scoped
 
-| Current Path | SaaS Path |
+| Current Path | Hosted Path |
 |-------------|-----------|
 | `/api/repository` | `/api/repos/:id/repository` |
 | `/api/tree/:hash` | `/api/repos/:id/tree/:hash` |
@@ -638,14 +638,14 @@ Same logical schema, adding:
 
 ```toml
 # fly.toml
-app = "gitvista-saas"
+app = "gitvista-hosted"
 primary_region = "iad"
 
 [build]
 
 [env]
   GITVISTA_DATA_DIR = "/data"
-  GITVISTA_MODE = "saas"
+  GITVISTA_MODE = "hosted"
   GITVISTA_LOG_FORMAT = "json"
 
 [mounts]
@@ -741,7 +741,7 @@ fly secrets set \
 | 9 | Auth middleware. Per-user rate limiting. User dashboard (repo list, access management) |
 | 10 | Error handling hardening. Clone failures, network errors, disk full, auth expiry |
 
-### Phase 3: Production SaaS (Weeks 11-14)
+### Phase 3: Production Hosted (Weeks 11-14)
 
 | Week | Work |
 |------|------|
@@ -769,7 +769,7 @@ fly secrets set \
 | File | Change | Description |
 |------|--------|-------------|
 | `internal/gitcore/repository.go` | Minor | Add `isBareRepo()` check in `findGitDirectory()` |
-| `cmd/vista/main.go` | Modified | New startup path for SaaS mode: init RepoManager, SQLite, auth config |
+| `cmd/vista/main.go` | Modified | New startup path for Hosted mode: init RepoManager, SQLite, auth config |
 | `internal/server/server.go` | Modified | Top-level HTTP router; delegates repo-specific work to RepoSession |
 | `internal/server/handlers.go` | Modified | Extract repo from context instead of `s.cached.repo` |
 | `internal/server/websocket.go` | Modified | Route WebSocket connections to correct RepoSession |
@@ -880,6 +880,6 @@ Trade-off: Building a Git protocol v2 client is significant work (~6-8 weeks). T
 | **Disk per repo** | 5-500 MB | 0 (in-memory) | 5-500 MB |
 | **Memory per session** | 10-100 MB | 10-256 MB | 10-100 MB (cache in Valkey) |
 | **Scaling bottleneck** | Disk I/O | Memory | Infra complexity |
-| **Best for** | MVP, fast ship | Large repos, latency-sensitive | Production SaaS at scale |
+| **Best for** | MVP, fast ship | Large repos, latency-sensitive | Production Hosted at scale |
 
 **Final architecture**: A -> C -> B (pragmatic MVP, production separation, then performance optimization).

@@ -65,7 +65,7 @@ func TestLocalUpgrader_CheckOrigin(t *testing.T) {
 	}
 }
 
-func TestSaaSUpgrader_CheckOrigin(t *testing.T) {
+func TestHostedUpgrader_CheckOrigin(t *testing.T) {
 	tests := []struct {
 		name   string
 		host   string
@@ -99,9 +99,9 @@ func TestSaaSUpgrader_CheckOrigin(t *testing.T) {
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)
 			}
-			got := saasUpgrader.CheckOrigin(req)
+			got := hostedUpgrader.CheckOrigin(req)
 			if got != tt.want {
-				t.Errorf("saasUpgrader.CheckOrigin() = %v, want %v", got, tt.want)
+				t.Errorf("hostedUpgrader.CheckOrigin() = %v, want %v", got, tt.want)
 			}
 		})
 	}

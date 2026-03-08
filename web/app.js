@@ -31,7 +31,7 @@ function parseHash() {
     const fragment = location.hash.slice(1);
     if (!fragment) return null;
 
-    // SaaS: #repo/{id} or #repo/{id}/{commitHash}
+    // Hosted: #repo/{id} or #repo/{id}/{commitHash}
     const m = REPO_HASH_RE.exec(fragment);
     if (m) return { repoId: m[1], commitHash: m[2] || null };
 
@@ -86,7 +86,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (mode === "local") {
         mountGraph(null);
     } else {
-        // SaaS mode: check hash for an existing repo selection
+        // Hosted mode: check hash for an existing repo selection
         const parsed = parseHash();
         if (parsed?.repoId) {
             setApiBase(`/api/repos/${parsed.repoId}`);
@@ -121,7 +121,7 @@ function clearRoot(root) {
     root.innerHTML = "";
 }
 
-/** Shows the SaaS landing page. */
+/** Shows the hosted landing page. */
 function showLanding(root) {
     document.title = "GitVista";
     let destroyed = false;
@@ -143,7 +143,7 @@ function showLanding(root) {
     return destroy;
 }
 
-/** Bootstraps the graph view (works for both local and SaaS modes). */
+/** Bootstraps the graph view (works for both local and hosted modes). */
 function bootstrapGraph(root, repoId) {
     const statusIndicator = document.createElement("div");
     statusIndicator.className = "gv-connection-indicator";
@@ -290,7 +290,7 @@ function bootstrapGraph(root, repoId) {
     repoTabContent.style.flex = "1";
     repoTabContent.style.overflow = "hidden";
 
-    // In SaaS mode, add a "Back to repos" button at the top of the sidebar
+    // In hosted mode, add a "Back to repos" button at the top of the sidebar
     if (repoId) {
         const backBtn = document.createElement("button");
         backBtn.className = "back-to-repos";
@@ -518,7 +518,7 @@ function bootstrapGraph(root, repoId) {
         },
         onCommitSelect: (hash) => {
             if (repoId) {
-                // SaaS: preserve repo prefix in hash
+                // Hosted: preserve repo prefix in hash
                 if (hash) {
                     history.replaceState(null, "", `#repo/${repoId}/${hash}`);
                 } else {
