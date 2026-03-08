@@ -2424,6 +2424,8 @@ export function createGraphController(rootElement, options = {}) {
                 parents,
                 author: { when },
                 committer: { when },
+                branchLabel: item?.branchLabel || "",
+                branchLabelSource: item?.branchLabelSource || "",
             };
             const existing = previousCommits.get(hash);
             commits.set(hash, mergeCommitData(existing, skeletonCommit));
