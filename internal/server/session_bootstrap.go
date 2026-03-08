@@ -167,12 +167,14 @@ func makeBootstrapCommit(c *gitcore.Commit, lightweight bool) *gitcore.Commit {
 	parents := append([]gitcore.Hash(nil), c.Parents...)
 	if !lightweight {
 		return &gitcore.Commit{
-			ID:        c.ID,
-			Tree:      c.Tree,
-			Parents:   parents,
-			Author:    c.Author,
-			Committer: c.Committer,
-			Message:   c.Message,
+			ID:                c.ID,
+			Tree:              c.Tree,
+			Parents:           parents,
+			Author:            c.Author,
+			Committer:         c.Committer,
+			Message:           c.Message,
+			BranchLabel:       c.BranchLabel,
+			BranchLabelSource: c.BranchLabelSource,
 		}
 	}
 	return &gitcore.Commit{
@@ -184,6 +186,8 @@ func makeBootstrapCommit(c *gitcore.Commit, lightweight bool) *gitcore.Commit {
 		Committer: gitcore.Signature{
 			When: c.Committer.When,
 		},
+		BranchLabel:       c.BranchLabel,
+		BranchLabelSource: c.BranchLabelSource,
 	}
 }
 

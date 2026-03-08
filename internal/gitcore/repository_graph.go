@@ -8,6 +8,8 @@ import "container/heap"
 // full commit set and enables the client to compute graph layout without
 // materializing heavyweight commit data.
 func (r *Repository) BuildGraphSummary() *GraphSummary {
+	attribution := r.commitBranchAttribution()
+
 	// Build skeletons and read head under the lock, then release before
 	// calling Branches/Tags/Stashes which acquire their own RLock.
 	r.mu.RLock()
@@ -16,10 +18,13 @@ func (r *Repository) BuildGraphSummary() *GraphSummary {
 	var oldest, newest int64
 	for _, c := range r.commits {
 		ts := c.Committer.When.Unix()
+		attr := attribution[c.ID]
 		skeletons = append(skeletons, CommitSkeleton{
-			Hash:      c.ID,
-			Parents:   c.Parents,
-			Timestamp: ts,
+			Hash:              c.ID,
+			Parents:           c.Parents,
+			Timestamp:         ts,
+			BranchLabel:       attr.Label,
+			BranchLabelSource: attr.Source,
 		})
 		if oldest == 0 || ts < oldest {
 			oldest = ts

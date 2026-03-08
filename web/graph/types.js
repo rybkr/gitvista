@@ -20,6 +20,8 @@
  * @property {GraphSignature} [author] Author metadata.
  * @property {GraphSignature} [committer] Committer metadata.
  * @property {string[]} [parents] Array of parent commit hashes.
+ * @property {string} [branchLabel] Derived branch label for this commit.
+ * @property {string} [branchLabelSource] Provenance for the derived branch label.
  */
 
 /**
@@ -113,4 +115,3 @@
  * @property {string} headHash Current HEAD commit hash, or "" when unknown.
  * @property {Map<string, string>} tags Map of tag name to target commit hash.
  */
-

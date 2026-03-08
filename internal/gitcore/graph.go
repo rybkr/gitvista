@@ -3,9 +3,11 @@ package gitcore
 // CommitSkeleton is the minimum data needed to position a node in the graph.
 // Contains only topology (parents) and temporal position (timestamp).
 type CommitSkeleton struct {
-	Hash      Hash   `json:"h"`
-	Parents   []Hash `json:"p,omitempty"`
-	Timestamp int64  `json:"t"` // committer date, unix seconds
+	Hash              Hash   `json:"h"`
+	Parents           []Hash `json:"p,omitempty"`
+	Timestamp         int64  `json:"t"` // committer date, unix seconds
+	BranchLabel       string `json:"branchLabel,omitempty"`
+	BranchLabelSource string `json:"branchLabelSource,omitempty"`
 }
 
 // GraphSummary is a lightweight representation of the full DAG topology.

@@ -70,12 +70,14 @@ func StrToObjectType(s string) ObjectType {
 
 // Commit represents a Git commit object.
 type Commit struct {
-	ID        Hash      `json:"hash"`
-	Tree      Hash      `json:"tree"`
-	Parents   []Hash    `json:"parents"`
-	Author    Signature `json:"author"`
-	Committer Signature `json:"committer"`
-	Message   string    `json:"message"`
+	ID                Hash      `json:"hash"`
+	Tree              Hash      `json:"tree"`
+	Parents           []Hash    `json:"parents"`
+	Author            Signature `json:"author"`
+	Committer         Signature `json:"committer"`
+	Message           string    `json:"message"`
+	BranchLabel       string    `json:"branchLabel,omitempty"`
+	BranchLabelSource string    `json:"branchLabelSource,omitempty"`
 }
 
 // Type returns the ObjectType for a Commit.

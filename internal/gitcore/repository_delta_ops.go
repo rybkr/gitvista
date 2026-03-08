@@ -3,16 +3,18 @@ package gitcore
 // Diff computes a RepositoryDelta treating r as the new state and old as the previous state.
 func (r *Repository) Diff(old *Repository) *RepositoryDelta {
 	delta := NewRepositoryDelta()
+	newAttribution := r.commitBranchAttribution()
+	oldAttribution := old.commitBranchAttribution()
 
 	newCommits, oldCommits := r.Commits(), old.Commits()
 	for hash, commit := range newCommits {
 		if _, found := oldCommits[hash]; !found {
-			delta.AddedCommits = append(delta.AddedCommits, commit)
+			delta.AddedCommits = append(delta.AddedCommits, cloneCommitWithBranchAttribution(commit, newAttribution[hash]))
 		}
 	}
 	for hash, commit := range oldCommits {
 		if _, found := newCommits[hash]; !found {
-			delta.DeletedCommits = append(delta.DeletedCommits, commit)
+			delta.DeletedCommits = append(delta.DeletedCommits, cloneCommitWithBranchAttribution(commit, oldAttribution[hash]))
 		}
 	}
 

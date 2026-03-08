@@ -23,6 +23,7 @@ import {
 	TIMELINE_PADDING,
 	TIMELINE_MARGIN,
 } from "../constants.js";
+import { shortenHash } from "../../utils/format.js";
 import { getCommitTimestamp } from "../utils/time.js";
 
 /**
@@ -70,6 +71,96 @@ function parseMergeBranchName(message) {
 	if (customMatch) return customMatch[1];
 
 	return "";
+}
+
+/**
+ * Normalizes a branch/ref name for lane header display.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function normalizeBranchLabel(name) {
+	if (!name) return "";
+	if (name.startsWith("refs/heads/")) {
+		return name.slice("refs/heads/".length);
+	}
+	if (name.startsWith("refs/remotes/")) {
+		const rest = name.slice("refs/remotes/".length);
+		const slashIdx = rest.indexOf("/");
+		return slashIdx >= 0 ? rest.slice(slashIdx + 1) : rest;
+	}
+	return name;
+}
+
+/**
+ * Resolves a branch map entry to its target commit hash.
+ *
+ * Supports both legacy string values and ref metadata objects
+ * shaped like { target, type }.
+ *
+ * @param {string|{target?: string}|null|undefined} branchRef
+ * @returns {string}
+ */
+function getBranchTargetHash(branchRef) {
+	if (!branchRef) return "";
+	if (typeof branchRef === "string") return branchRef;
+	if (typeof branchRef === "object" && typeof branchRef.target === "string") {
+		return branchRef.target;
+	}
+	return "";
+}
+
+/**
+ * Chooses the best visible branch label for a segment from live branch refs.
+ * Prefers refs pointing directly at the segment tip, with local branches ahead
+ * of remote branches, and otherwise falls back to any ref pointing inside the
+ * segment ancestry.
+ *
+ * @param {Map<string, string>} branches
+ * @param {string} tipHash
+ * @param {Set<string>} hashSet
+ * @returns {string}
+ */
+function inferBranchLabelFromRefs(branches, tipHash, hashSet) {
+	if (!branches?.size) return "";
+	const direct = [];
+	const reachable = [];
+	for (const [name, branchRef] of branches.entries()) {
+		const targetHash = getBranchTargetHash(branchRef);
+		if (!targetHash) continue;
+		if (targetHash === tipHash) {
+			direct.push(name);
+		} else if (hashSet.has(targetHash)) {
+			reachable.push(name);
+		}
+	}
+	const pickBest = (names) => {
+		if (names.length === 0) return "";
+		names.sort((a, b) => {
+			const aLocal = a.startsWith("refs/heads/");
+			const bLocal = b.startsWith("refs/heads/");
+			if (aLocal !== bLocal) return aLocal ? -1 : 1;
+			return normalizeBranchLabel(a).localeCompare(normalizeBranchLabel(b));
+		});
+		return normalizeBranchLabel(names[0]);
+	};
+	return pickBest(direct) || pickBest(reachable);
+}
+
+/**
+ * Assigns a first-class display label to a segment.
+ *
+ * @param {Object} segment
+ * @param {string} label
+ * @param {string} source
+ */
+function setSegmentDisplayName(segment, label, source) {
+	const normalized = source === "tip_hash"
+		? shortenHash(label)
+		: normalizeBranchLabel(label);
+	if (!normalized) return;
+	segment.displayName = normalized;
+	segment.displayNameSource = source;
 }
 
 /**
@@ -122,6 +213,9 @@ export class LaneStrategy {
 
 		/** @type {Map<string, number>} Persisted segment ID → position (survives graph updates) */
 		this._segmentPositions = new Map();
+
+		/** @type {Map<string, string>} Persisted segment ID → display label */
+		this._segmentLabels = new Map();
 
 		/** @type {Map<string, number>} Commit hash → Y coordinate */
 		this._yPositions = new Map();
@@ -203,6 +297,7 @@ export class LaneStrategy {
 		this._phase1Commits = null;
 		this._segments = [];
 		this._segmentPositions.clear();
+		this._segmentLabels.clear();
 		this._yPositions.clear();
 		this._commitToSegmentId.clear();
 
@@ -598,9 +693,10 @@ export class LaneStrategy {
 		let mainEntry = null;
 
 		for (const name of mainNames) {
-			if (branches.has(name)) {
+			const targetHash = getBranchTargetHash(branches.get(name));
+			if (targetHash) {
 				mainEntry = name;
-				result.push([name, branches.get(name)]);
+				result.push([name, targetHash]);
 				break;
 			}
 		}
@@ -610,7 +706,9 @@ export class LaneStrategy {
 		if (!mainEntry) {
 			for (const target of mainNames) {
 				const candidates = [];
-				for (const [name, hash] of branches.entries()) {
+				for (const [name, branchRef] of branches.entries()) {
+					const hash = getBranchTargetHash(branchRef);
+					if (!hash) continue;
 					const tail = name.split("/").pop();
 					if (tail === target) candidates.push([name, hash]);
 				}
@@ -625,14 +723,20 @@ export class LaneStrategy {
 
 		// Fallback: use the first branch if no main/master/trunk
 		if (!mainEntry && branches.size > 0) {
-			const [name, hash] = branches.entries().next().value;
-			mainEntry = name;
-			result.push([name, hash]);
+			for (const [name, branchRef] of branches.entries()) {
+				const hash = getBranchTargetHash(branchRef);
+				if (!hash) continue;
+				mainEntry = name;
+				result.push([name, hash]);
+				break;
+			}
 		}
 
 		// Remaining branches alphabetically
 		const others = [];
-		for (const [name, hash] of branches.entries()) {
+		for (const [name, branchRef] of branches.entries()) {
+			const hash = getBranchTargetHash(branchRef);
+			if (!hash) continue;
 			if (name !== mainEntry) {
 				others.push([name, hash]);
 			}
@@ -689,7 +793,13 @@ export class LaneStrategy {
 			for (const seg of segments) {
 				const barY = seg.minY - pad;
 				if (graphY >= barY && graphY <= barY + LANE_HEADER_HEIGHT) {
-					return { displayLane: lane.position, segmentHashes: seg.hashes, branchOwner: seg.branchOwner || "", tipHash: seg.tipHash || "" };
+					return {
+						displayLane: lane.position,
+						segmentHashes: seg.hashes,
+						displayName: seg.displayName || "",
+						branchOwner: seg.branchOwner || "",
+						tipHash: seg.tipHash || "",
+					};
 				}
 			}
 		}
@@ -706,6 +816,7 @@ export class LaneStrategy {
 	 */
 	findLaneBodyAt(graphX, graphY) {
 		const halfW = LANE_WIDTH / 2 - 4;
+		const pad = LANE_VERTICAL_STEP / 2;
 
 		for (const lane of this._laneInfo) {
 			const cx = this.positionToX(lane.position);
@@ -713,7 +824,9 @@ export class LaneStrategy {
 
 			const segments = lane.segments ?? [];
 			for (const seg of segments) {
-				if (graphY >= seg.coreMinY && graphY <= seg.coreMaxY) {
+				const bodyTop = Math.min(seg.minY + pad, seg.coreMinY);
+				const bodyBottom = Math.max(seg.maxY - pad, seg.coreMaxY);
+				if (graphY >= bodyTop && graphY <= bodyBottom) {
 					// Merge all segment hashes at this position
 					const allHashes = new Set();
 					for (const s of segments) {
@@ -1011,7 +1124,7 @@ export class LaneStrategy {
 					}
 				}
 
-				const id = branchOwner + ":" + tipHash;
+				const id = tipHash;
 
 				// Resolve the tip commit's timestamp for age badges
 				const tipCommit = commits?.get(tipHash);
@@ -1030,10 +1143,43 @@ export class LaneStrategy {
 					position: 0, // will be assigned in _assignSegmentPositions
 					isMain,
 					branchOwner,
+					displayName: "",
+					displayNameSource: "",
 					tipHash,
 					tipTimestamp,
 					color: LANE_COLORS[laneIndex % LANE_COLORS.length],
 				};
+
+				const labeledHashes = [...groupHashes].sort((a, b) => {
+					const ay = hashToY.get(a) ?? Infinity;
+					const by = hashToY.get(b) ?? Infinity;
+					return ay - by;
+				});
+				const attributedCommit = labeledHashes
+					.map((hash) => commits?.get(hash))
+					.find((commit) => commit?.branchLabel);
+
+				if (attributedCommit?.branchLabel) {
+					setSegmentDisplayName(
+						segment,
+						attributedCommit.branchLabel,
+						attributedCommit.branchLabelSource || "branch_label",
+					);
+				} else {
+					const normalizedOwner = normalizeBranchLabel(branchOwner);
+					if (normalizedOwner) {
+					setSegmentDisplayName(
+						segment,
+						normalizedOwner,
+						ownsLane ? "lane_owner" : "stash",
+					);
+					} else {
+						const refLabel = inferBranchLabelFromRefs(this._branches, tipHash, hashSet);
+						if (refLabel) {
+							setSegmentDisplayName(segment, refLabel, "ref");
+						}
+					}
+				}
 
 				this._segments.push(segment);
 
@@ -1051,7 +1197,7 @@ export class LaneStrategy {
 		// message often contains the original branch name (e.g. "Merge branch
 		// 'feature/foo'" or "Merge pull request #N from user/branch").
 		for (const seg of this._segments) {
-			if (seg.branchOwner) continue;
+			if (seg.displayName) continue;
 
 			// Use the full commits map (not only rendered nodes) so name inference
 			// still works when merge commits are filtered out from the visible set.
@@ -1062,11 +1208,17 @@ export class LaneStrategy {
 				if (!mergesIntoSeg) continue;
 
 				const msg = commit.message || "";
-				const name = parseMergeBranchName(msg);
+				const name = normalizeBranchLabel(parseMergeBranchName(msg));
 				if (name) {
-					seg.branchOwner = name;
+					setSegmentDisplayName(seg, name, "merge_message");
 					break;
 				}
+			}
+		}
+
+		for (const seg of this._segments) {
+			if (!seg.displayName) {
+				setSegmentDisplayName(seg, seg.tipHash, "tip_hash");
 			}
 		}
 	}
@@ -1080,8 +1232,7 @@ export class LaneStrategy {
 		// Build a map from branch owner to previous positions for restoration
 		const prevPositionsByOwner = new Map();
 		for (const [segId, pos] of this._segmentPositions) {
-			const colonIdx = segId.indexOf(":");
-			const owner = colonIdx >= 0 ? segId.slice(0, colonIdx) : "";
+			const owner = this._segmentLabels.get(segId) || "";
 			if (owner) {
 				// Store all previous positions for this owner
 				if (!prevPositionsByOwner.has(owner)) {
@@ -1093,12 +1244,14 @@ export class LaneStrategy {
 
 		// Clear old positions map — will rebuild
 		this._segmentPositions.clear();
+		this._segmentLabels.clear();
 
 		// 1. Main segments → always position 0
 		for (const seg of this._segments) {
 			if (seg.isMain) {
 				seg.position = 0;
 				this._segmentPositions.set(seg.id, 0);
+				this._segmentLabels.set(seg.id, seg.displayName || "");
 			}
 		}
 
@@ -1107,12 +1260,13 @@ export class LaneStrategy {
 		for (const seg of this._segments) {
 			if (seg.isMain) continue;
 
-			const owner = seg.branchOwner;
+			const owner = seg.displayName;
 			if (owner && prevPositionsByOwner.has(owner)) {
 				const positions = prevPositionsByOwner.get(owner);
 				if (positions.length > 0) {
 					seg.position = positions.shift();
 					this._segmentPositions.set(seg.id, seg.position);
+					this._segmentLabels.set(seg.id, seg.displayName || "");
 					continue;
 				}
 			}
@@ -1123,6 +1277,7 @@ export class LaneStrategy {
 		for (const seg of unmatched) {
 			seg.position = this._assignInitialPosition(seg);
 			this._segmentPositions.set(seg.id, seg.position);
+			this._segmentLabels.set(seg.id, seg.displayName || "");
 		}
 
 		// 4. Resolve any collisions introduced by restoration
@@ -1251,7 +1406,9 @@ export class LaneStrategy {
 					hashes: seg.hashes,
 					color: seg.color,
 					branchOwner: seg.branchOwner,
-					tipHash: seg.id.split(":")[1] || "",
+					displayName: seg.displayName,
+					displayNameSource: seg.displayNameSource,
+					tipHash: seg.tipHash || "",
 					tipTimestamp: seg.tipTimestamp ?? null,
 				});
 			}
