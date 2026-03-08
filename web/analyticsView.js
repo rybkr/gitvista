@@ -30,6 +30,16 @@ const SIZE_BUCKETS = [
     { label: "L", max: 100 },
     { label: "XL", max: Infinity },
 ];
+const ANALYTICS_HELP = {
+    actionableSummary: "Three lead indicators to scan first. Each card highlights the current level, the change from the prior window, and the concrete follow-up to take.",
+    riskHotspots: "Files with the highest delivery risk based on repeated change, rework, large diffs, and concentrated ownership. Use this list to target review and cleanup effort.",
+    velocity: "Weekly commit volume with a rolling average overlay. Use it to spot bursts, slowdowns, and whether the recent pace is an outlier or part of a trend.",
+    contributors: "Top authors by commit count for the selected range. This is useful for spotting ownership concentration, not for measuring code quality or impact.",
+    heatmap: "Commit activity by weekday and hour in UTC. Read it as a coordination pattern, not a productivity score.",
+    merges: "How often work lands through merge commits instead of linear history. Helpful for understanding branch integration behavior and repository hygiene.",
+    changeSize: "How many files change per commit. Smaller, steadier changes are usually easier to review and less likely to hide risk.",
+    rework: `Share of files changed again within ${CHURN_WINDOW_DAYS} days. Rising rework can indicate churn, unstable requirements, or code that is hard to land cleanly.`,
+};
 
 /** Returns the Monday-based ISO week start for a given date. */
 function weekStart(date) {
@@ -63,6 +73,28 @@ function formatWeekRange(ts) {
 /** Reads a CSS variable from the document. */
 function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function createInfoButton(text, id) {
+    const wrap = document.createElement("span");
+    wrap.className = "analytics-help";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "analytics-help-button";
+    button.setAttribute("aria-label", `Explain ${id}`);
+    button.setAttribute("aria-describedby", `analytics-help-${id}`);
+    button.textContent = "i";
+
+    const tooltip = document.createElement("span");
+    tooltip.className = "analytics-help-tooltip";
+    tooltip.id = `analytics-help-${id}`;
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.textContent = text;
+
+    wrap.appendChild(button);
+    wrap.appendChild(tooltip);
+    return wrap;
 }
 
 /**
@@ -626,7 +658,9 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     periodSelector.appendChild(customWrap);
 
     // ── Actionable summary section ──
-    const actionableSection = makeSection("Actionable Summary");
+    const actionableSection = makeSection("Actionable Summary", {
+        helpText: ANALYTICS_HELP.actionableSummary,
+    });
     const signalCards = [];
     const signalCardsWrap = document.createElement("div");
     signalCardsWrap.className = "analytics-signal-grid";
@@ -657,7 +691,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         signalCardsWrap.appendChild(card);
         signalCards.push({ title, status, metric, delta, recommendation });
     }
-    actionableSection.appendChild(signalCardsWrap);
+    actionableSection.body.appendChild(signalCardsWrap);
 
     const deltaStrip = document.createElement("div");
     deltaStrip.className = "analytics-delta-strip";
@@ -682,10 +716,12 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         deltaStrip.appendChild(chip);
         deltaItems.push({ key: item.key, value });
     }
-    actionableSection.appendChild(deltaStrip);
+    actionableSection.body.appendChild(deltaStrip);
 
     // ── Hotspot section ──
-    const hotspotSection = makeSection("Risk Hotspots");
+    const hotspotSection = makeSection("Risk Hotspots", {
+        helpText: ANALYTICS_HELP.riskHotspots,
+    });
     const hotspotCoverage = document.createElement("div");
     hotspotCoverage.className = "analytics-hotspot-coverage";
     hotspotCoverage.style.display = "none";
@@ -704,8 +740,8 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     const hotspotBody = document.createElement("tbody");
     hotspotTable.appendChild(hotspotHead);
     hotspotTable.appendChild(hotspotBody);
-    hotspotSection.appendChild(hotspotCoverage);
-    hotspotSection.appendChild(hotspotTable);
+    hotspotSection.body.appendChild(hotspotCoverage);
+    hotspotSection.body.appendChild(hotspotTable);
 
     // ── Chart container + canvas ──
     const chartContainer = document.createElement("div");
@@ -729,47 +765,102 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     loadingState.textContent = "Loading analytics...";
     loadingState.style.display = "none";
 
-    el.appendChild(summary);
-    el.appendChild(periodSelector);
-    el.appendChild(loadingState);
-    el.appendChild(actionableSection);
-    el.appendChild(hotspotSection);
-    el.appendChild(chartContainer);
-    el.appendChild(emptyState);
+    const overviewSection = makeSection("Commit Velocity", {
+        helpText: ANALYTICS_HELP.velocity,
+    });
+    overviewSection.body.appendChild(summary);
+    overviewSection.body.appendChild(periodSelector);
+    overviewSection.body.appendChild(loadingState);
+    overviewSection.body.appendChild(chartContainer);
+    overviewSection.body.appendChild(emptyState);
+
+    el.appendChild(actionableSection.el);
+    el.appendChild(hotspotSection.el);
+    el.appendChild(overviewSection.el);
 
     // ── Section helper ──
-    function makeSection(title) {
+    function makeSection(title, options = {}) {
+        const { helpText = "", collapsible = false, defaultExpanded = true } = options;
         const section = document.createElement("div");
         section.className = "analytics-section";
+        if (collapsible) section.classList.add("analytics-section--collapsible");
+
+        const header = document.createElement("div");
+        header.className = "analytics-section-header";
+
+        const heading = document.createElement("div");
+        heading.className = "analytics-section-heading";
+
         const h3 = document.createElement("h3");
         h3.className = "analytics-section-title";
         h3.textContent = title;
-        section.appendChild(h3);
-        return section;
+        heading.appendChild(h3);
+        if (helpText) {
+            heading.appendChild(createInfoButton(helpText, title.toLowerCase().replace(/[^a-z0-9]+/g, "-")));
+        }
+
+        const body = document.createElement("div");
+        body.className = "analytics-section-body";
+        body.hidden = collapsible && !defaultExpanded;
+
+        header.appendChild(heading);
+
+        let toggle = null;
+        if (collapsible) {
+            toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "analytics-section-toggle";
+            toggle.setAttribute("aria-expanded", String(defaultExpanded));
+            toggle.textContent = defaultExpanded ? "Hide" : "Show";
+            toggle.addEventListener("click", () => {
+                const expanded = toggle.getAttribute("aria-expanded") === "true";
+                const nextExpanded = !expanded;
+                toggle.setAttribute("aria-expanded", String(nextExpanded));
+                toggle.textContent = nextExpanded ? "Hide" : "Show";
+                body.hidden = !nextExpanded;
+            });
+            header.appendChild(toggle);
+        }
+
+        section.appendChild(header);
+        section.appendChild(body);
+        return { el: section, body, titleEl: h3, toggleEl: toggle };
     }
 
     // ── Author contributions section ──
-    const authorSection = makeSection("Top Contributors");
+    const authorSection = makeSection("Top Contributors", {
+        helpText: ANALYTICS_HELP.contributors,
+        collapsible: true,
+        defaultExpanded: false,
+    });
     const authorChartContainer = document.createElement("div");
     authorChartContainer.className = "analytics-chart-container";
     const authorCanvas = document.createElement("canvas");
     authorCanvas.className = "analytics-chart-canvas";
     authorChartContainer.appendChild(authorCanvas);
-    authorSection.appendChild(authorChartContainer);
-    el.appendChild(authorSection);
+    authorSection.body.appendChild(authorChartContainer);
+    el.appendChild(authorSection.el);
 
     // ── Heatmap section ──
-    const heatmapSection = makeSection("Activity Heatmap");
+    const heatmapSection = makeSection("Activity Heatmap", {
+        helpText: ANALYTICS_HELP.heatmap,
+        collapsible: true,
+        defaultExpanded: false,
+    });
     const heatmapChartContainer = document.createElement("div");
     heatmapChartContainer.className = "analytics-chart-container";
     const heatmapCanvas = document.createElement("canvas");
     heatmapCanvas.className = "analytics-chart-canvas";
     heatmapChartContainer.appendChild(heatmapCanvas);
-    heatmapSection.appendChild(heatmapChartContainer);
-    el.appendChild(heatmapSection);
+    heatmapSection.body.appendChild(heatmapChartContainer);
+    el.appendChild(heatmapSection.el);
 
     // ── Merge stats section ──
-    const mergeSection = makeSection("Merge Statistics");
+    const mergeSection = makeSection("Merge Statistics", {
+        helpText: ANALYTICS_HELP.merges,
+        collapsible: true,
+        defaultExpanded: false,
+    });
     const mergeSummary = document.createElement("div");
     mergeSummary.className = "analytics-summary";
     const mergeCountStat = makeStat("Merges");
@@ -778,47 +869,55 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
     mergeSummary.appendChild(mergeCountStat.el);
     mergeSummary.appendChild(mergePercentStat.el);
     mergeSummary.appendChild(mergesPerWeekStat.el);
-    mergeSection.appendChild(mergeSummary);
-    el.appendChild(mergeSection);
+    mergeSection.body.appendChild(mergeSummary);
+    el.appendChild(mergeSection.el);
 
     // ── Change size distribution section ──
-    const changeSizeSection = makeSection("Change Size Distribution");
+    const changeSizeSection = makeSection("Change Size Distribution", {
+        helpText: ANALYTICS_HELP.changeSize,
+        collapsible: true,
+        defaultExpanded: false,
+    });
     const changeSizeChartContainer = document.createElement("div");
     changeSizeChartContainer.className = "analytics-chart-container";
     const changeSizeCanvas = document.createElement("canvas");
     changeSizeCanvas.className = "analytics-chart-canvas";
     changeSizeChartContainer.appendChild(changeSizeCanvas);
-    changeSizeSection.appendChild(changeSizeChartContainer);
+    changeSizeSection.body.appendChild(changeSizeChartContainer);
     const changeSizeSummary = document.createElement("div");
     changeSizeSummary.className = "analytics-summary";
     const medianSizeStat = makeStat("Median size");
     const avgSizeStat = makeStat("Avg size");
     changeSizeSummary.appendChild(medianSizeStat.el);
     changeSizeSummary.appendChild(avgSizeStat.el);
-    changeSizeSection.appendChild(changeSizeSummary);
-    el.appendChild(changeSizeSection);
+    changeSizeSection.body.appendChild(changeSizeSummary);
+    el.appendChild(changeSizeSection.el);
 
     // ── Rework rate section ──
-    const reworkSection = makeSection("Rework Rate");
+    const reworkSection = makeSection("Rework Rate", {
+        helpText: ANALYTICS_HELP.rework,
+        collapsible: true,
+        defaultExpanded: false,
+    });
     const reworkChartContainer = document.createElement("div");
     reworkChartContainer.className = "analytics-chart-container";
     const reworkCanvas = document.createElement("canvas");
     reworkCanvas.className = "analytics-chart-canvas";
     reworkChartContainer.appendChild(reworkCanvas);
-    reworkSection.appendChild(reworkChartContainer);
+    reworkSection.body.appendChild(reworkChartContainer);
     const reworkSummary = document.createElement("div");
     reworkSummary.className = "analytics-summary";
     const avgReworkStat = makeStat("Avg rework %");
     reworkSummary.appendChild(avgReworkStat.el);
-    reworkSection.appendChild(reworkSummary);
-    el.appendChild(reworkSection);
+    reworkSection.body.appendChild(reworkSummary);
+    el.appendChild(reworkSection.el);
 
     // ── Diff stats loading/error message ──
     const diffStatsMsg = document.createElement("div");
     diffStatsMsg.className = "analytics-diff-stats-msg";
     diffStatsMsg.style.display = "none";
     // Insert before changeSizeSection title
-    changeSizeSection.insertBefore(diffStatsMsg, changeSizeSection.firstChild);
+    changeSizeSection.body.insertBefore(diffStatsMsg, changeSizeSection.body.firstChild);
 
     function updateDiffStatsUI() {
         if (diffStatsLoading) {
@@ -828,7 +927,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             changeSizeSummary.style.display = "none";
             reworkChartContainer.style.display = "none";
             reworkSummary.style.display = "none";
-            reworkSection.querySelector(".analytics-section-title").style.opacity = "0.5";
+            reworkSection.titleEl.style.opacity = "0.5";
         } else if (diffStatsError) {
             diffStatsMsg.textContent = "Failed to load diff stats.";
             diffStatsMsg.style.display = "block";
@@ -836,7 +935,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             changeSizeSummary.style.display = "none";
             reworkChartContainer.style.display = "none";
             reworkSummary.style.display = "none";
-            reworkSection.querySelector(".analytics-section-title").style.opacity = "0.5";
+            reworkSection.titleEl.style.opacity = "0.5";
         } else if (diffStatsPartial) {
             diffStatsMsg.textContent = diffStatsCoverageLabel || "Diff stats are partial for this repository.";
             diffStatsMsg.style.display = "block";
@@ -844,14 +943,14 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             changeSizeSummary.style.display = "";
             reworkChartContainer.style.display = "";
             reworkSummary.style.display = "";
-            reworkSection.querySelector(".analytics-section-title").style.opacity = "";
+            reworkSection.titleEl.style.opacity = "";
         } else {
             diffStatsMsg.style.display = "none";
             changeSizeChartContainer.style.display = "";
             changeSizeSummary.style.display = "";
             reworkChartContainer.style.display = "";
             reworkSummary.style.display = "";
-            reworkSection.querySelector(".analytics-section-title").style.opacity = "";
+            reworkSection.titleEl.style.opacity = "";
         }
     }
 
@@ -1541,14 +1640,15 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             emptyState.style.display = "none";
             summary.style.display = "";
             periodSelector.style.display = "";
-            actionableSection.style.display = "";
-            hotspotSection.style.display = "";
+            actionableSection.el.style.display = "";
+            hotspotSection.el.style.display = "";
+            overviewSection.el.style.display = "";
             chartContainer.style.display = "";
-            authorSection.style.display = "";
-            heatmapSection.style.display = "";
-            mergeSection.style.display = "";
-            changeSizeSection.style.display = "";
-            reworkSection.style.display = "";
+            authorSection.el.style.display = "";
+            heatmapSection.el.style.display = "";
+            mergeSection.el.style.display = "";
+            changeSizeSection.el.style.display = "";
+            reworkSection.el.style.display = "";
         };
 
         // Update period button states
@@ -1560,14 +1660,15 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             loadingState.style.display = "block";
             summary.style.display = "none";
             periodSelector.style.display = "none";
-            actionableSection.style.display = "none";
-            hotspotSection.style.display = "none";
+            actionableSection.el.style.display = "none";
+            hotspotSection.el.style.display = "none";
+            overviewSection.el.style.display = "";
             chartContainer.style.display = "none";
-            authorSection.style.display = "none";
-            heatmapSection.style.display = "none";
-            mergeSection.style.display = "none";
-            changeSizeSection.style.display = "none";
-            reworkSection.style.display = "none";
+            authorSection.el.style.display = "none";
+            heatmapSection.el.style.display = "none";
+            mergeSection.el.style.display = "none";
+            changeSizeSection.el.style.display = "none";
+            reworkSection.el.style.display = "none";
             emptyState.style.display = "none";
         } else {
             showSections();
@@ -1630,7 +1731,7 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
                 changeSizeSummary.style.display = "";
                 reworkChartContainer.style.display = "";
                 reworkSummary.style.display = "";
-                reworkSection.querySelector(".analytics-section-title").style.opacity = "";
+                reworkSection.titleEl.style.opacity = "";
                 loadingState.style.display = "none";
                 hasRenderedContent = true;
                 return;
@@ -1652,14 +1753,15 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             emptyState.style.display = "block";
             summary.style.display = "none";
             periodSelector.style.display = "none";
-            actionableSection.style.display = "none";
-            hotspotSection.style.display = "none";
+            actionableSection.el.style.display = "none";
+            hotspotSection.el.style.display = "none";
+            overviewSection.el.style.display = "";
             chartContainer.style.display = "none";
-            authorSection.style.display = "none";
-            heatmapSection.style.display = "none";
-            mergeSection.style.display = "none";
-            changeSizeSection.style.display = "none";
-            reworkSection.style.display = "none";
+            authorSection.el.style.display = "none";
+            heatmapSection.el.style.display = "none";
+            mergeSection.el.style.display = "none";
+            changeSizeSection.el.style.display = "none";
+            reworkSection.el.style.display = "none";
             loadingState.style.display = "none";
             hasRenderedContent = true;
             return;
