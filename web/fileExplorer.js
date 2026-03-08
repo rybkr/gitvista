@@ -78,6 +78,8 @@ export function createFileExplorer() {
     const diffContentViewer = createDiffContentViewer();
     const diffView = createDiffView(null, diffContentViewer);
     diffView.el.style.display = "none"; // Initially hidden
+    const externalDiffViewer = createDiffContentViewer();
+    externalDiffViewer.el.style.display = "none";
 
     const state = {
         commitHash: null,          // Currently browsed commit hash
@@ -96,7 +98,9 @@ export function createFileExplorer() {
         breadcrumbPath: "",         // Current breadcrumb navigation path
         statusIndex: new Map(),     // path -> { code, category } from working tree status
         viewMode: "tree",           // "tree" or "diff" - controls which view is shown
+        externalDiff: null,         // { path, title, url } or null
     };
+    let currentExternalDiffUrl = null;
 
     async function fetchTree(treeHash) {
         const response = await apiFetch(apiUrl(`/tree/${treeHash}`));
@@ -448,6 +452,41 @@ export function createFileExplorer() {
         el.appendChild(diffView.el);
     }
 
+    function renderExternalDiffMode() {
+        el.innerHTML = "";
+
+        const header = document.createElement("div");
+        header.className = "file-explorer-header";
+
+        const title = document.createElement("div");
+        title.className = "file-explorer-commit";
+        title.textContent = state.externalDiff?.title || state.externalDiff?.path || "Diff";
+        header.appendChild(title);
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.className = "file-explorer-toggle";
+        toggleBtn.innerHTML = TREE_SVG + " Show Tree";
+        toggleBtn.title = "Return to file explorer tree";
+        toggleBtn.setAttribute("aria-label", "Return to file explorer tree");
+        toggleBtn.addEventListener("click", () => {
+            state.viewMode = "tree";
+            state.externalDiff = null;
+            currentExternalDiffUrl = null;
+            externalDiffViewer.close();
+            render();
+        });
+        header.appendChild(toggleBtn);
+
+        el.appendChild(header);
+
+        if (state.externalDiff?.url && currentExternalDiffUrl !== state.externalDiff.url) {
+            currentExternalDiffUrl = state.externalDiff.url;
+            externalDiffViewer.showFromUrl(state.externalDiff.url);
+        }
+
+        el.appendChild(externalDiffViewer.el);
+    }
+
     function render() {
         const currentEntries = el.querySelectorAll(".explorer-entry[data-path]");
         const prevPaths = new Set();
@@ -456,13 +495,16 @@ export function createFileExplorer() {
 
         el.innerHTML = "";
 
-        if (!state.commitHash) {
-            el.appendChild(renderEmptyState());
-            return;
-        }
-
         if (state.viewMode === "diff") {
             renderDiffMode();
+            return;
+        }
+        if (state.viewMode === "external-diff") {
+            renderExternalDiffMode();
+            return;
+        }
+        if (!state.commitHash) {
+            el.appendChild(renderEmptyState());
             return;
         }
 
@@ -888,12 +930,15 @@ export function createFileExplorer() {
         state.breadcrumbPath = "";
         state.loading = true;
         state.viewMode = "tree";
+        state.externalDiff = null;
+        currentExternalDiffUrl = null;
 
         state.expandedDirs.add("");
 
         if (diffView.isOpen()) {
             diffView.close();
         }
+        externalDiffViewer.close();
 
         render();
 
@@ -924,6 +969,55 @@ export function createFileExplorer() {
         }
     }
 
+    async function revealPath(path) {
+        if (!state.rootTreeHash || !path) return null;
+
+        const segments = path.split("/").filter(Boolean);
+        if (segments.length === 0) return null;
+
+        let treeHash = state.rootTreeHash;
+        let currentPath = "";
+
+        for (let i = 0; i < segments.length - 1; i++) {
+            const segment = segments[i];
+            const tree = state.treeCache.get(treeHash);
+            if (!tree) break;
+
+            const entry = tree.entries.find((item) => item.type === "tree" && item.name === segment);
+            if (!entry) break;
+
+            currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+            state.expandedDirs.add(currentPath);
+
+            if (!state.treeCache.has(entry.hash)) {
+                try {
+                    const gen = state.generation;
+                    const childTree = await fetchTree(entry.hash);
+                    if (state.generation !== gen) return null;
+                    state.treeCache.set(entry.hash, childTree);
+                } catch (err) {
+                    console.error("Failed to fetch tree while revealing path:", err);
+                    break;
+                }
+            }
+
+            treeHash = entry.hash;
+        }
+
+        state.selectedFile = { path, blobHash: null };
+        state.breadcrumbPath = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : "";
+        render();
+
+        const entries = buildVisibleEntries();
+        const idx = entries.findIndex((entry) => entry.path === path);
+        if (idx >= 0) {
+            state.focusedIndex = idx;
+            renderFocusUpdate(entries);
+            return entries[idx];
+        }
+        return null;
+    }
+
     function updateWorkingTreeStatus(status) {
         state.statusIndex.clear();
         if (!status) return;
@@ -949,9 +1043,30 @@ export function createFileExplorer() {
 
     render();
 
+    externalDiffViewer.onBack(() => {
+        state.viewMode = "tree";
+        state.externalDiff = null;
+        currentExternalDiffUrl = null;
+        externalDiffViewer.close();
+        render();
+    });
+
     return {
         el,
         openCommit,
+        revealPath,
+        async openFilePath(path) {
+            const entry = await revealPath(path);
+            if (entry?.blobHash) {
+                handleFileClick(entry);
+            }
+        },
+        async openExternalDiff({ path, title, url }) {
+            await revealPath(path);
+            state.externalDiff = { path, title, url };
+            state.viewMode = "external-diff";
+            render();
+        },
         updateWorkingTreeStatus,
         /** Returns true when a commit is currently loaded. */
         hasCommit: () => !!state.commitHash,

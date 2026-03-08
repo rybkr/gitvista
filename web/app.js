@@ -246,7 +246,43 @@ function bootstrapGraph(root, repoId) {
         telemetryStore.recordDiffStatsRequest(limit, true);
         return resp.json();
     };
-    const stagingView = createStagingView();
+    let workbench = null;
+    const stagingView = createStagingView({
+        onSelectFile: ({ path }) => {
+            workbench?.focusView?.("file-explorer");
+            ensureFileExplorerLoaded()
+                .then(async (view) => {
+                    if (!view) return;
+                    const headHash = graph?.getHeadHash?.();
+                    const headCommit = headHash ? graph?.getCommits?.()?.get(headHash) : null;
+                    if (headCommit) {
+                        await view.openCommit(headCommit);
+                    }
+                    await view.openFilePath(path);
+                })
+                .catch(() => {
+                    // Keep Lifecycle usable even if the explorer fails to load.
+                });
+        },
+        onOpenInExplorer: (payload) => {
+            pendingExplorerDiff = payload;
+            workbench?.focusView?.("file-explorer");
+            ensureFileExplorerLoaded()
+                .then(async (view) => {
+                    if (!view) return;
+                    const headHash = graph?.getHeadHash?.();
+                    const headCommit = headHash ? graph?.getCommits?.()?.get(headHash) : null;
+                    if (headCommit) {
+                        await view.openCommit(headCommit);
+                    }
+                    await view.openExternalDiff(payload);
+                    pendingExplorerDiff = null;
+                })
+                .catch(() => {
+                    // Keep Lifecycle usable even if the explorer fails to load.
+                });
+        },
+    });
 
     const repoTabContent = document.createElement("div");
     repoTabContent.style.display = "flex";
@@ -315,6 +351,7 @@ function bootstrapGraph(root, repoId) {
     let graphFirstShown = false;
     let latestStatus = null;
     let pendingExplorerCommit = null;
+    let pendingExplorerDiff = null;
     let disposed = false;
     let backendSession = null;
 
@@ -348,6 +385,10 @@ function bootstrapGraph(root, repoId) {
                 if (pendingExplorerCommit) {
                     view.openCommit(pendingExplorerCommit);
                     pendingExplorerCommit = null;
+                }
+                if (pendingExplorerDiff) {
+                    view.openExternalDiff(pendingExplorerDiff);
+                    pendingExplorerDiff = null;
                 }
                 return view;
             })
@@ -389,7 +430,7 @@ function bootstrapGraph(root, repoId) {
     const ensureAnalyticsLoaded = () => analyticsLoader.ensure();
     const ensureMergePreviewLoaded = () => mergePreviewLoader.ensure();
 
-    const workbench = createWorkbench([
+    workbench = createWorkbench([
         {
             name: "graph",
             tooltip: "Graph",

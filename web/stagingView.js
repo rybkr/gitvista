@@ -5,6 +5,9 @@
  * as a horizontal conveyor with animated transitions for local file movement.
  */
 
+import { apiUrl } from "./apiBase.js";
+import { createDiffContentViewer } from "./diffContentViewer.js";
+
 // Circle with filled dot (recording / active editing)
 const ICON_WORKING = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
     <circle cx="7" cy="7" r="5.5"/>
@@ -21,6 +24,10 @@ const ICON_STAGED = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"
 const ICON_COMMITTED = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
     <circle cx="7" cy="7" r="5.5"/>
     <path d="M4.5 7l2 2 3-3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+const ICON_DIFF = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+    <path d="M5 3.5v9M11 3.5v9" stroke-linecap="round"/>
+    <path d="M2.5 6.5h5M8.5 9.5h5" stroke-linecap="round"/>
 </svg>`;
 
 const COMMITTED_TTL = 15000;
@@ -45,7 +52,7 @@ function splitPath(filePath) {
     return { dir: filePath.slice(0, idx + 1), base: filePath.slice(idx + 1) };
 }
 
-function createFileCard(file, animClass) {
+function createFileCard(file, animClass, fileAction, diffAction) {
     const card = document.createElement("div");
     card.className = "staging-file-card";
     if (animClass) card.classList.add(animClass);
@@ -90,6 +97,27 @@ function createFileCard(file, animClass) {
 
     card.appendChild(nameWrap);
     card.title = file.path;
+
+    if (fileAction) {
+        card.classList.add("staging-file-card--interactive");
+        card.addEventListener("click", () => {
+            fileAction();
+        });
+    }
+
+    if (diffAction) {
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "staging-file-action";
+        action.setAttribute("aria-label", `View diff for ${file.path}`);
+        action.title = `View diff for ${file.path}`;
+        action.innerHTML = `${ICON_DIFF}<span>Diff</span>`;
+        action.addEventListener("click", (event) => {
+            event.stopPropagation();
+            diffAction();
+        });
+        card.appendChild(action);
+    }
 
     return card;
 }
@@ -219,12 +247,18 @@ function summarizeUpstream(upstream) {
     return { mode: "empty", text: UPSTREAM_REASON_LABELS[upstream.reason] || "Unavailable" };
 }
 
-export function createStagingView() {
+export function createStagingView(options = {}) {
     const el = document.createElement("div");
     el.className = "staging-view";
 
     const zones = document.createElement("div");
     zones.className = "staging-zones";
+    const diffViewer = createDiffContentViewer();
+    const diffOverlay = document.createElement("div");
+    diffOverlay.className = "staging-diff-overlay";
+    diffOverlay.style.display = "none";
+    diffOverlay.appendChild(diffViewer.el);
+    let activeDiffContext = null;
 
     const working = createZone("working", ICON_WORKING, "Working", "warning", LANE_HELP.working);
     const staging = createZone("staging", ICON_STAGED, "Staged", "success", LANE_HELP.staged);
@@ -237,6 +271,7 @@ export function createStagingView() {
     zones.appendChild(upstream.el);
 
     el.appendChild(zones);
+    el.appendChild(diffOverlay);
 
     // State tracking for animations
     let prevState = new Map(); // path → "working" | "staging"
@@ -255,7 +290,42 @@ export function createStagingView() {
         if (changed) renderLocal();
     }, COMMITTED_PRUNE_INTERVAL);
 
-    function renderZone(zoneObj, files, animMap) {
+    diffViewer.onBack(() => {
+        diffViewer.close();
+        diffOverlay.style.display = "none";
+        activeDiffContext = null;
+    });
+    diffViewer.setHeaderActionRenderer((fileDiff) => {
+        if (!activeDiffContext || typeof options.onOpenInExplorer !== "function") return null;
+
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "staging-diff-open-explorer";
+        action.textContent = "Open in File Explorer";
+        action.addEventListener("click", () => {
+            options.onOpenInExplorer({
+                path: fileDiff.path,
+                source: activeDiffContext.source,
+                url: activeDiffContext.url,
+                title: activeDiffContext.title,
+            });
+        });
+        return action;
+    });
+
+    function showDiffForFile(file, source) {
+        const basePath = source === "index" ? "/index/diff" : "/working-tree/diff";
+        const url = apiUrl(`${basePath}?path=${encodeURIComponent(file.path)}`);
+        activeDiffContext = {
+            source,
+            url,
+            title: `${source === "index" ? "Staged" : "Working"} diff — ${file.path}`,
+        };
+        diffOverlay.style.display = "flex";
+        diffViewer.showFromUrl(url);
+    }
+
+    function renderZone(zoneObj, files, animMap, diffSource = null) {
         zoneObj.body.innerHTML = "";
         zoneObj.badge.textContent = String(files.length);
 
@@ -269,7 +339,11 @@ export function createStagingView() {
 
         for (const file of files) {
             const animClass = animMap ? animMap.get(file.path) : null;
-            zoneObj.body.appendChild(createFileCard(file, animClass));
+            const fileAction = typeof options.onSelectFile === "function"
+                ? () => options.onSelectFile({ path: file.path, source: diffSource })
+                : null;
+            const diffAction = diffSource ? () => showDiffForFile(file, diffSource) : null;
+            zoneObj.body.appendChild(createFileCard(file, animClass, fileAction, diffAction));
         }
     }
 
@@ -379,8 +453,8 @@ export function createStagingView() {
 
         prevState = currentState;
 
-        renderZone(working, workingFiles, workingAnims);
-        renderZone(staging, stagingFiles, stagingAnims);
+        renderZone(working, workingFiles, workingAnims, "working");
+        renderZone(staging, stagingFiles, stagingAnims, "index");
         renderLocal();
         renderUpstream();
         renderHeaders();

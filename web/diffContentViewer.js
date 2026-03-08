@@ -41,6 +41,7 @@ export function createDiffContentViewer() {
     el.style.display = "none"; // Hidden by default
 
     let onBackCallback = null;
+    let headerActionRenderer = null;
 
     // State tracking for the currently displayed diff, used by expand-context
     let currentFetchUrl = null;       // URL used to fetch the current diff
@@ -279,6 +280,12 @@ export function createDiffContentViewer() {
         pathEl.className = "diff-file-path";
         pathEl.textContent = fileDiff.path;
         header.appendChild(pathEl);
+        if (typeof headerActionRenderer === "function") {
+            const actionEl = headerActionRenderer(fileDiff);
+            if (actionEl) {
+                header.appendChild(actionEl);
+            }
+        }
         el.appendChild(header);
 
         // Content body
@@ -434,6 +441,10 @@ export function createDiffContentViewer() {
         onBackCallback = callback;
     }
 
+    function setHeaderActionRenderer(renderer) {
+        headerActionRenderer = typeof renderer === "function" ? renderer : null;
+    }
+
     return {
         el,
         show,
@@ -444,5 +455,6 @@ export function createDiffContentViewer() {
         close,
         clear,
         onBack,
+        setHeaderActionRenderer,
     };
 }

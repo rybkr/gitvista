@@ -244,12 +244,7 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	}
 	filePath = sanitized
 
-	contextLines := gitcore.DefaultContextLines
-	if raw := r.URL.Query().Get("context"); raw != "" {
-		if n, parseErr := strconv.Atoi(raw); parseErr == nil && n > 0 && n <= 100 {
-			contextLines = n
-		}
-	}
+	contextLines := parseDiffContextLines(r)
 
 	cacheKey := string(commitHash) + ":" + filePath + ":ctx" + strconv.Itoa(contextLines)
 	if cached, ok := session.diffCache.Get(cacheKey); ok {
@@ -311,6 +306,80 @@ func (s *Server) handleFileDiff(w http.ResponseWriter, r *http.Request, repo *gi
 	}
 }
 
+func (s *Server) handleIndexDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	sanitized, err := sanitizePath(filePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid path: %v", err), http.StatusBadRequest)
+		return
+	}
+	filePath = sanitized
+
+	session := sessionFromCtx(r.Context())
+	if session == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	repo := session.Repo()
+	if repo == nil {
+		http.Error(w, "Repository not available", http.StatusInternalServerError)
+		return
+	}
+
+	wts, err := gitcore.ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		s.logger.Error("Failed to compute index diff status", "path", filePath, "err", err)
+		http.Error(w, "Index diff failed", http.StatusInternalServerError)
+		return
+	}
+
+	var fileStatus *gitcore.FileStatus
+	for i := range wts.Files {
+		if wts.Files[i].Path == filePath && wts.Files[i].IndexStatus != "" {
+			fileStatus = &wts.Files[i]
+			break
+		}
+	}
+	if fileStatus == nil {
+		http.Error(w, "No staged diff for path", http.StatusNotFound)
+		return
+	}
+
+	contextLines := parseDiffContextLines(r)
+	fileDiff, err := gitcore.ComputeFileDiff(repo, fileStatus.HeadHash, fileStatus.IndexHash, filePath, contextLines)
+	if err != nil {
+		s.logger.Error("Failed to compute index diff", "path", filePath, "err", err)
+		http.Error(w, "Index diff failed", http.StatusInternalServerError)
+		return
+	}
+
+	response := diffFileResponse{
+		Path:      fileDiff.Path,
+		Status:    fileStatus.IndexStatus,
+		OldHash:   string(fileDiff.OldHash),
+		NewHash:   string(fileDiff.NewHash),
+		IsBinary:  fileDiff.IsBinary,
+		Truncated: fileDiff.Truncated,
+		Hunks:     fileDiff.Hunks,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -342,7 +411,7 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	const contextLines = 3
+	contextLines := parseDiffContextLines(r)
 	fileDiff, err := gitcore.ComputeWorkingTreeFileDiff(repo, filePath, contextLines)
 	if err != nil {
 		s.logger.Error("Failed to compute working-tree diff", "path", filePath, "err", err)
@@ -371,4 +440,14 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
+}
+
+func parseDiffContextLines(r *http.Request) int {
+	contextLines := gitcore.DefaultContextLines
+	if raw := r.URL.Query().Get("context"); raw != "" {
+		if n, parseErr := strconv.Atoi(raw); parseErr == nil && n > 0 && n <= 100 {
+			contextLines = n
+		}
+	}
+	return contextLines
 }

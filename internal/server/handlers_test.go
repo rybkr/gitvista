@@ -247,6 +247,32 @@ func TestHandleBlob_InvalidMethod(t *testing.T) {
 	}
 }
 
+func TestHandleIndexDiff_InvalidMethod(t *testing.T) {
+	s := newTestServer(t)
+
+	req := httptest.NewRequest("POST", "/api/index/diff?path=main.go", nil)
+	w := httptest.NewRecorder()
+
+	s.handleIndexDiff(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleIndexDiff_MissingPath(t *testing.T) {
+	s := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/index/diff", nil)
+	w := httptest.NewRecorder()
+
+	s.handleIndexDiff(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandleBlob_MissingHash(t *testing.T) {
 	s := newTestServer(t)
 
