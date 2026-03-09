@@ -56,8 +56,6 @@ brews:
     homepage: "https://github.com/rybkr/gitvista"
     description: "Real-time Git repository visualization"
     license: "MIT"
-    ids:
-      - gitvista
     install: |
       bin.install "gitvista"
     test: |
