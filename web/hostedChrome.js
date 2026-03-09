@@ -74,13 +74,21 @@ export function createHostedFooter() {
     const currentYear = new Date().getFullYear();
 
     const brand = createElement("div", "repo-landing__footer-brand");
-    brand.appendChild(createElement("strong", "", PRODUCT_INFO.name));
-    brand.appendChild(createElement("span", "", "See what Git is actually doing."));
+    const brandMark = createElement("img", "repo-landing__footer-mark");
+    brandMark.src = "/favicon.png";
+    brandMark.alt = "";
+    brandMark.setAttribute("aria-hidden", "true");
+
+    const brandCopy = createElement("div", "repo-landing__footer-copy");
+    brandCopy.appendChild(createElement("strong", "", PRODUCT_INFO.name));
+    brandCopy.appendChild(createElement("span", "", "See what Git is actually doing."));
 
     const meta = createElement("div", "repo-landing__footer-meta");
     meta.appendChild(createElement("span", "repo-landing__footer-meta-item", `Copyright © ${currentYear} ${PRODUCT_INFO.name}.`));
     meta.appendChild(createElement("span", "repo-landing__footer-meta-item repo-landing__footer-license", `Open source under ${PRODUCT_INFO.license}.`));
-    brand.appendChild(meta);
+    brandCopy.appendChild(meta);
+    brand.appendChild(brandMark);
+    brand.appendChild(brandCopy);
 
     const links = createElement("div", "repo-landing__footer-links");
     const githubLink = createElement("a", "repo-landing__footer-link", "GitHub");

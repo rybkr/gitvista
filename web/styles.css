@@ -8108,6 +8108,20 @@ body {
 }
 
 .repo-landing__footer-brand {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.repo-landing__footer-mark {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    margin-top: 1px;
+    filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--node-color) 14%, transparent));
+}
+
+.repo-landing__footer-copy {
     display: grid;
     gap: 6px;
 }
