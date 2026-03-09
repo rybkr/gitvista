@@ -150,6 +150,25 @@ export function createGraphSettings(options) {
     scopeSection.body.appendChild(depthRow.el);
     scopeSection.body.appendChild(timeRow);
 
+    const laneBranchLabelRow = document.createElement("label");
+    laneBranchLabelRow.className = "graph-settings-overlay__branch-item";
+    const laneBranchLabelCheckbox = document.createElement("input");
+    laneBranchLabelCheckbox.type = "checkbox";
+    laneBranchLabelCheckbox.checked = settings.scope.showLaneBranchLabels !== false;
+    laneBranchLabelCheckbox.addEventListener("change", () => {
+        settings.scope.showLaneBranchLabels = laneBranchLabelCheckbox.checked;
+        emitChange({ scope: settings.scope });
+    });
+    const laneBranchLabelText = document.createElement("span");
+    laneBranchLabelText.textContent = "Show lane branch names";
+    const laneBranchLabelMeta = document.createElement("span");
+    laneBranchLabelMeta.className = "graph-settings-overlay__branch-meta";
+    laneBranchLabelMeta.textContent = "gutter labels only";
+    laneBranchLabelRow.appendChild(laneBranchLabelCheckbox);
+    laneBranchLabelRow.appendChild(laneBranchLabelText);
+    laneBranchLabelRow.appendChild(laneBranchLabelMeta);
+    scopeSection.body.appendChild(laneBranchLabelRow);
+
     // Branch include/exclude checkboxes
     const branchHeader = document.createElement("div");
     branchHeader.className = "graph-settings-overlay__row";
@@ -437,6 +456,7 @@ export function createGraphSettings(options) {
         };
         branchFilterQuery = "";
         branchSearch.value = "";
+        laneBranchLabelCheckbox.checked = settings.scope.showLaneBranchLabels !== false;
         updateDepthControl();
         updateBranches();
         emitChange({ scope: settings.scope, physics: settings.physics });

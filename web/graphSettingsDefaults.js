@@ -18,6 +18,7 @@ export const DEFAULT_SCOPE = Object.freeze({
     depthLimit: Infinity,
     timeWindow: "all",
     branchRules: {},
+    showLaneBranchLabels: true,
 });
 
 /** Returns a fresh copy of the full default settings object. */
@@ -57,6 +58,9 @@ export function loadSettings() {
             }
             if (parsed.scope.branchRules && typeof parsed.scope.branchRules === "object") {
                 defaults.scope.branchRules = { ...parsed.scope.branchRules };
+            }
+            if (typeof parsed.scope.showLaneBranchLabels === "boolean") {
+                defaults.scope.showLaneBranchLabels = parsed.scope.showLaneBranchLabels;
             }
         }
         return defaults;

@@ -2053,6 +2053,7 @@ export function createGraphController(rootElement, options = {}) {
                 hoverNode: state.hoverNode,
                 tags: state.tags,
                 layoutMode: state.layoutMode,
+                showLaneBranchLabels: state.graphSettings?.scope?.showLaneBranchLabels !== false,
                 laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
                 mergePreview: state.mergePreview,
             });

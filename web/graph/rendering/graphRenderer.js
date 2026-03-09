@@ -107,7 +107,18 @@ export class GraphRenderer {
 
         this.renderLinks(links, nodes, vpBounds);
         const layoutMode = state.layoutMode ?? "force";
-        this.renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash, vpBounds);
+        this.renderNodes(
+            nodes,
+            highlightKey,
+            zoomTransform,
+            headHash,
+            hoverNode,
+            tags,
+            layoutMode,
+            mergeBaseHash,
+            vpBounds,
+            state.showLaneBranchLabels !== false,
+        );
 
         if (laneInfo.length > 0) {
             this.renderLaneHeaders(laneInfo);
@@ -851,7 +862,7 @@ export class GraphRenderer {
      * @param {import("../types.js").GraphNode[]} nodes Collection of nodes to render.
      * @param {string|null} highlightKey Hash or branch name for the highlighted node.
      */
-    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash, vpBounds) {
+    renderNodes(nodes, highlightKey, zoomTransform, headHash, hoverNode, tags, layoutMode, mergeBaseHash, vpBounds, showLaneBranchLabels = true) {
         // Build a reverse map: commit hash -> array of tag names pointing at it.
         const tagsByCommit = new Map();
         if (tags) {
@@ -875,6 +886,7 @@ export class GraphRenderer {
             if (node.type !== "branch") continue;
             if (vpBounds && (node.x < vpBounds.left || node.x > vpBounds.right ||
                 node.y < vpBounds.top || node.y > vpBounds.bottom)) continue;
+            if (node.compactLaneChip && !showLaneBranchLabels) continue;
             this.renderBranchNode(node, highlightKey);
         }
         for (const node of nodes) {
