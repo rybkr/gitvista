@@ -23,6 +23,7 @@ import { createGraphSettings } from "./graphSettings.js";
 import { loadSettings } from "./graphSettingsDefaults.js";
 import { createTelemetryHud, telemetryStore } from "./telemetry.js";
 import { parseHostedPath, parseLocalHash } from "./routes.js";
+import { PRODUCT_INFO } from "./hostedProduct.js";
 
 let activeViewCleanup = null;
 
@@ -126,7 +127,7 @@ function clearRoot(root) {
 
 /** Shows the hosted landing page. */
 function showLanding(root, navigateToPath) {
-    document.title = "GitVista";
+    document.title = PRODUCT_INFO.name;
     let destroyed = false;
     const landing = createRepoLanding({
         onRepoSelect: (id) => {
@@ -147,7 +148,7 @@ function showLanding(root, navigateToPath) {
 }
 
 function showDocs(root, navigateToPath) {
-    document.title = "GitVista Docs";
+    document.title = `${PRODUCT_INFO.name} Docs`;
     let destroyed = false;
     const docs = createDocsView({ navigateToPath });
     root.appendChild(docs.el);
@@ -725,11 +726,11 @@ function bootstrapGraph(root, repoId, navigation = {}) {
 
     function updateTitle() {
         if (currentBranchName && repoName) {
-            document.title = `${currentBranchName} — ${repoName} — GitVista`;
+            document.title = `${currentBranchName} — ${repoName} — ${PRODUCT_INFO.name}`;
         } else if (repoName) {
-            document.title = `${repoName} — GitVista`;
+            document.title = `${repoName} — ${PRODUCT_INFO.name}`;
         } else {
-            document.title = "GitVista";
+            document.title = PRODUCT_INFO.name;
         }
     }
 
