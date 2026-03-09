@@ -29,6 +29,21 @@ jobs:
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
 
+      - name: Ensure staging app exists
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          flyctl status --app gitvista-staging >/dev/null 2>&1 || flyctl apps create gitvista-staging
+
+      - name: Ensure staging volume exists
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          flyctl volumes list --app gitvista-staging --json | grep -q '"name":"gitvista_staging_data"' || \
+            flyctl volumes create gitvista_staging_data --app gitvista-staging --region iad --size 10 --yes
+
       - name: Deploy to staging
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -39,11 +54,33 @@ jobs:
     needs: deploy-staging
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
       - name: Run smoke tests against staging
-        run: bash scripts/smoke-test.sh https://gitvista-staging.fly.dev
+        env:
+          BASE_URL: https://gitvista-staging.fly.dev
+          SMOKE_TIMEOUT: 30
+          SMOKE_INTERVAL: 5
+        run: |
+          set -euo pipefail
+
+          elapsed=0
+          echo "Waiting for ${BASE_URL}/health"
+          while [ "$elapsed" -lt "$SMOKE_TIMEOUT" ]; do
+            if curl -fsS --max-time 5 "${BASE_URL}/health" >/dev/null; then
+              break
+            fi
+            sleep "$SMOKE_INTERVAL"
+            elapsed=$((elapsed + SMOKE_INTERVAL))
+          done
+
+          curl -fsS --max-time 10 "${BASE_URL}/health"
+          curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Upgrade: websocket" \
+            -H "Connection: Upgrade" \
+            -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+            -H "Sec-WebSocket-Version: 13" \
+            "${BASE_URL}/api/ws" || true)
+          [ "$status" = "101" ] || [ "$status" = "400" ]
 
   deploy-production:
     name: Deploy to Production
@@ -69,11 +106,33 @@ jobs:
     needs: deploy-production
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
       - name: Run smoke tests against production
-        run: bash scripts/smoke-test.sh https://gitvista.fly.dev
+        env:
+          BASE_URL: https://gitvista.fly.dev
+          SMOKE_TIMEOUT: 30
+          SMOKE_INTERVAL: 5
+        run: |
+          set -euo pipefail
+
+          elapsed=0
+          echo "Waiting for ${BASE_URL}/health"
+          while [ "$elapsed" -lt "$SMOKE_TIMEOUT" ]; do
+            if curl -fsS --max-time 5 "${BASE_URL}/health" >/dev/null; then
+              break
+            fi
+            sleep "$SMOKE_INTERVAL"
+            elapsed=$((elapsed + SMOKE_INTERVAL))
+          done
+
+          curl -fsS --max-time 10 "${BASE_URL}/health"
+          curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Upgrade: websocket" \
+            -H "Connection: Upgrade" \
+            -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+            -H "Sec-WebSocket-Version: 13" \
+            "${BASE_URL}/api/ws" || true)
+          [ "$status" = "101" ] || [ "$status" = "400" ]
 
       - name: Publish deploy summary
         run: |

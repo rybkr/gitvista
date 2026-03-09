@@ -32,3 +32,15 @@ Instead, carry on as if the modification is complete and inform the human about 
 - `.github/workflows/*`
 - `go.mod`
 - `go.sum`
+
+## Versioning
+
+Agents must suggest a semantic versioning bump whenever significant code changes are committed.
+The rules for semantic versioning are as follows:
+
+1. Bug fixes always are a patch bump (x.y.Z)
+2. New backwards-compatible features are typically a minor bump (x.Y.0)
+3. Very minor additions can be patch bumps (x.y.Z)
+4. Breaking changes are major bumps (X.0.0)
+
+When applicable, always suggest version bumps post-commit, and never do it unless the human approves.
