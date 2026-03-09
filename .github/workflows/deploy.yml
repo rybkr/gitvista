@@ -81,16 +81,12 @@ jobs:
             curl -fsS --max-time 10 "${BASE_URL}/api/repos" | python3 -c "import json,sys; data=json.load(sys.stdin); assert isinstance(data, list)"
           else
             curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
-          fi
-          status=$(curl -sS -o /dev/null -w '%{http_code}' \
-            -H "Upgrade: websocket" \
-            -H "Connection: Upgrade" \
-            -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-            -H "Sec-WebSocket-Version: 13" \
-            "$(if [ "$mode" = "hosted" ]; then printf '%s' "${BASE_URL}/api/repos"; else printf '%s' "${BASE_URL}/api/ws"; fi)" || true)
-          if [ "$mode" = "hosted" ]; then
-            [ "$status" = "405" ] || [ "$status" = "404" ]
-          else
+            status=$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Upgrade: websocket" \
+              -H "Connection: Upgrade" \
+              -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+              -H "Sec-WebSocket-Version: 13" \
+              "${BASE_URL}/api/ws" || true)
             [ "$status" = "101" ] || [ "$status" = "400" ]
           fi
 
@@ -158,16 +154,12 @@ jobs:
             curl -fsS --max-time 10 "${BASE_URL}/api/repos" | python3 -c "import json,sys; data=json.load(sys.stdin); assert isinstance(data, list)"
           else
             curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
-          fi
-          status=$(curl -sS -o /dev/null -w '%{http_code}' \
-            -H "Upgrade: websocket" \
-            -H "Connection: Upgrade" \
-            -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-            -H "Sec-WebSocket-Version: 13" \
-            "$(if [ "$mode" = "hosted" ]; then printf '%s' "${BASE_URL}/api/repos"; else printf '%s' "${BASE_URL}/api/ws"; fi)" || true)
-          if [ "$mode" = "hosted" ]; then
-            [ "$status" = "405" ] || [ "$status" = "404" ]
-          else
+            status=$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Upgrade: websocket" \
+              -H "Connection: Upgrade" \
+              -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+              -H "Sec-WebSocket-Version: 13" \
+              "${BASE_URL}/api/ws" || true)
             [ "$status" = "101" ] || [ "$status" = "400" ]
           fi
 

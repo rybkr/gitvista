@@ -43,4 +43,4 @@ The rules for semantic versioning are as follows:
 3. Very minor additions can be patch bumps (x.y.Z)
 4. Breaking changes are major bumps (X.0.0)
 
-When applicable, always suggest version bumps post-commit, and never do it unless the human approves.
+When applicable, always explicity suggest version bumps post-commit, and await approval.
