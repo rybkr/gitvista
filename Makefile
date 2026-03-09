@@ -1,6 +1,6 @@
 .PHONY: unit test ci ci-local ci-remote lint integration e2e build build-cli clean help setup-hooks \
          format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
-         imports-check check-vuln docker-build deps-check deploy-staging deploy-production smoke-test
+         imports-check check-vuln docker-build deps-check deploy-staging deploy-production
 
 GOCMD=go
 GOTEST=$(GOCMD) test
@@ -254,10 +254,6 @@ deploy-staging:
 deploy-production:
 	@echo "Deploying to production..."
 	flyctl deploy --app gitvista
-
-## smoke-test: Run smoke tests against a URL (usage: make smoke-test URL=https://...)
-smoke-test:
-	@bash scripts/smoke-test.sh $(URL)
 
 ## cloc: Count lines of code
 cloc:
