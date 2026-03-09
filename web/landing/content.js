@@ -12,11 +12,9 @@ export const FEATURED_REPOS = [
 ];
 
 export const HERO_PREVIEW = {
-    alt: "GitVista graph view showing branch lanes, selected commit context, and repository history.",
+    alt: "GitVista swimlanes view showing a vertical line of commits on transparent background.",
     images: {
-        desktopLight: "/images/landing/hero-preview-desktop-light.png",
-        desktopDark: "/images/landing/hero-preview-desktop-dark.png",
-        mobileLight: "/images/landing/hero-preview-mobile-light.png",
-        mobileDark: "/images/landing/hero-preview-mobile-dark.png",
+        light: "/images/landing/hero-preview-light.png",
+        dark: "/images/landing/hero-preview-dark.png",
     },
 };

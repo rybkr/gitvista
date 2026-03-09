@@ -9,28 +9,18 @@ function createPreviewPicture(previewData) {
     const picture = document.createElement("picture");
     picture.className = "repo-landing__preview-picture";
 
-    const stackedDark = document.createElement("source");
-    stackedDark.media = "(max-width: 760px) and (prefers-color-scheme: dark)";
-    stackedDark.srcset = previewData.images.desktopDark;
-
-    const stackedLight = document.createElement("source");
-    stackedLight.media = "(max-width: 760px)";
-    stackedLight.srcset = previewData.images.desktopLight;
-
-    const sideBySideDark = document.createElement("source");
-    sideBySideDark.media = "(prefers-color-scheme: dark)";
-    sideBySideDark.srcset = previewData.images.mobileDark;
+    const darkSource = document.createElement("source");
+    darkSource.media = "(prefers-color-scheme: dark)";
+    darkSource.srcset = previewData.images.dark;
 
     const img = document.createElement("img");
     img.className = "repo-landing__preview-image";
-    img.src = previewData.images.mobileLight;
+    img.src = previewData.images.light;
     img.alt = previewData.alt;
     img.loading = "eager";
     img.decoding = "async";
 
-    picture.appendChild(stackedDark);
-    picture.appendChild(stackedLight);
-    picture.appendChild(sideBySideDark);
+    picture.appendChild(darkSource);
     picture.appendChild(img);
     return picture;
 }
