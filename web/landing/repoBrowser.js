@@ -27,7 +27,7 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
     const featuredSectionEl = createElement("section", "repo-landing__section repo-landing__featured");
     featuredSectionEl.id = "featured";
 
-    featuredSectionEl.appendChild(createElement("p", "repo-landing__eyebrow", "Fast-start examples"));
+    featuredSectionEl.appendChild(createElement("p", "repo-landing__eyebrow", "Quick-Start Examples"));
     featuredSectionEl.appendChild(createElement("h2", "repo-landing__section-title", "Open a live repository and inspect how the history is shaped."));
     featuredSectionEl.appendChild(createElement("p", "repo-landing__section-subtitle", "These repos are preloaded to make the first interaction immediate. Use them to see branch movement, merges, and commit-level diffs before pasting your own URL."));
 
@@ -125,10 +125,6 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
         header.appendChild(createElement("span", `repo-landing__badge repo-landing__badge--${state.state}`, state.state));
 
         const desc = createElement("p", "repo-landing__card-desc", entry.description);
-        const metaText = state.state === "ready"
-            ? "Ready now. Open the graph view and inspect commit flow."
-            : "Preparing graph data and commit history.";
-        const meta = createElement("p", "repo-landing__card-meta", metaText);
         const action = createElement("div", "repo-landing__card-action");
 
         if (state.state === "ready") {
@@ -157,7 +153,6 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
 
         card.appendChild(header);
         card.appendChild(desc);
-        card.appendChild(meta);
         card.appendChild(action);
 
         card.onclick = state.state === "ready" ? () => onRepoSelect(state.id) : null;
@@ -347,4 +342,3 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
         destroy,
     };
 }
-

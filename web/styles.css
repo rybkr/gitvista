@@ -7862,7 +7862,7 @@ body {
     position: relative;
     display: grid;
     grid-template-rows: auto 1fr auto;
-    min-height: clamp(320px, 38vw, 430px);
+    min-height: clamp(248px, 28vw, 340px);
     border-radius: 28px;
     border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
     background:
@@ -7890,34 +7890,10 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    min-height: 58px;
+    min-height: 50px;
     padding: 0 18px;
     border-bottom: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
     background: color-mix(in srgb, var(--surface-color) 84%, transparent);
-}
-
-.repo-landing__preview-dots {
-    display: inline-flex;
-    gap: 8px;
-}
-
-.repo-landing__preview-dots span {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--text-secondary) 28%, transparent);
-}
-
-.repo-landing__preview-dots span:nth-child(1) {
-    background: color-mix(in srgb, var(--danger-color) 58%, transparent);
-}
-
-.repo-landing__preview-dots span:nth-child(2) {
-    background: color-mix(in srgb, var(--warning-color) 58%, transparent);
-}
-
-.repo-landing__preview-dots span:nth-child(3) {
-    background: color-mix(in srgb, var(--success-color) 58%, transparent);
 }
 
 .repo-landing__preview-path {
@@ -7927,80 +7903,11 @@ body {
     color: var(--text-secondary);
 }
 
-.repo-landing__preview-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1.28fr) minmax(220px, 0.72fr);
-    min-height: 0;
-    padding: 18px;
-    gap: 14px;
-}
-
-.repo-landing__preview-graph-panel,
-.repo-landing__preview-focus {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-    min-height: 0;
-    padding: 16px;
-    border-radius: 22px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
-    background:
-        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 96%, transparent), color-mix(in srgb, var(--surface-color) 92%, transparent));
-    box-shadow: var(--gv-card-shadow);
-}
-
-.repo-landing__preview-graph-panel {
-    background:
-        radial-gradient(circle at top right, color-mix(in srgb, var(--node-color) 12%, transparent), transparent 34%),
-        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 96%, transparent), color-mix(in srgb, var(--surface-color) 92%, transparent));
-}
-
-.repo-landing__preview-focus {
-    align-self: stretch;
-    background:
-        radial-gradient(circle at top left, color-mix(in srgb, var(--merge-node-color) 9%, transparent), transparent 34%),
-        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 94%, transparent), color-mix(in srgb, var(--surface-color) 92%, transparent));
-}
-
-.repo-landing__preview-header {
-    display: grid;
-    gap: 8px;
-}
-
-.repo-landing__preview-heading {
-    font-weight: 600;
-    line-height: 1.15;
-}
-
-.repo-landing__preview-copy {
-    color: var(--text-secondary);
-    line-height: 1.55;
-}
-
-.repo-landing__preview-kicker {
-    font-family: var(--gv-font-mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-}
-
-.repo-landing__preview-lanes {
-    display: grid;
-    gap: 10px;
-}
-
-.repo-landing__preview-lane {
-    display: grid;
-    gap: 8px;
-}
-
-.repo-landing__preview-lane-label {
+.repo-landing__preview-badge {
+    min-height: 26px;
+    padding: 0 10px;
     display: inline-flex;
     align-items: center;
-    width: fit-content;
-    min-height: 24px;
-    padding: 0 8px;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
     background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
@@ -8011,127 +7918,28 @@ body {
     text-transform: uppercase;
 }
 
-.repo-landing__preview-lane--main .repo-landing__preview-lane-label {
-    border-color: color-mix(in srgb, var(--node-color) 28%, var(--border-color));
-}
-
-.repo-landing__preview-lane--branch .repo-landing__preview-lane-label {
-    border-color: color-mix(in srgb, var(--branch-node-color) 28%, var(--border-color));
-}
-
-.repo-landing__preview-lane--merge .repo-landing__preview-lane-label {
-    border-color: color-mix(in srgb, var(--merge-node-color) 28%, var(--border-color));
-}
-
-.repo-landing__preview-lane-track {
+.repo-landing__preview-media {
     position: relative;
-    display: grid;
-    gap: 8px;
-    padding-left: 16px;
+    min-height: 0;
+    padding: 14px 14px 0;
 }
 
-.repo-landing__preview-lane-track::before {
-    content: "";
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    left: 4px;
-    width: 2px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--border-color) 78%, transparent);
+.repo-landing__preview-picture {
+    display: block;
+    width: 100%;
+    height: 100%;
 }
 
-.repo-landing__preview-lane--main .repo-landing__preview-lane-track::before {
-    background: color-mix(in srgb, var(--node-color) 32%, var(--border-color));
-}
-
-.repo-landing__preview-lane--branch .repo-landing__preview-lane-track::before {
-    background: color-mix(in srgb, var(--branch-node-color) 32%, var(--border-color));
-}
-
-.repo-landing__preview-lane--merge .repo-landing__preview-lane-track::before {
-    background: color-mix(in srgb, var(--merge-node-color) 32%, var(--border-color));
-}
-
-.repo-landing__preview-commit {
-    position: relative;
-    display: grid;
-    gap: 4px;
-    padding: 10px 12px;
-    border-radius: 16px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
-}
-
-.repo-landing__preview-commit::before {
-    content: "";
-    position: absolute;
-    top: 14px;
-    left: -16px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 2px solid color-mix(in srgb, var(--surface-color) 90%, transparent);
-    background: var(--node-color);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 18%, transparent);
-}
-
-.repo-landing__preview-commit--branch::before,
-.repo-landing__preview-lane--branch .repo-landing__preview-commit::before {
-    background: var(--branch-node-color);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--branch-node-color) 18%, transparent);
-}
-
-.repo-landing__preview-commit--merge::before,
-.repo-landing__preview-lane--merge .repo-landing__preview-commit::before {
-    background: var(--merge-node-color);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--merge-node-color) 18%, transparent);
-}
-
-.repo-landing__preview-commit.is-active {
-    border-color: color-mix(in srgb, var(--node-color) 34%, var(--border-color));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 10%, transparent), var(--gv-card-shadow);
-    animation: gv-preview-node-pulse 2.8s ease-in-out infinite;
-}
-
-.repo-landing__preview-commit-hash,
-.repo-landing__preview-commit-meta {
-    font-family: var(--gv-font-mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.repo-landing__preview-commit-hash {
-    color: var(--text-secondary);
-}
-
-.repo-landing__preview-commit-title,
-.repo-landing__preview-heading {
-    font-size: 14px;
-    line-height: 1.3;
-}
-
-.repo-landing__preview-commit-meta,
-.repo-landing__preview-copy {
-    color: var(--text-secondary);
-    line-height: 1.5;
-}
-
-.repo-landing__preview-pill-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.repo-landing__preview-pill {
-    min-height: 24px;
-    padding: 0 8px;
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+.repo-landing__preview-image {
+    display: block;
+    width: 100%;
+    height: clamp(180px, 22vw, 250px);
+    object-fit: cover;
+    object-position: center top;
+    border-radius: 18px;
     border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+    box-shadow: var(--gv-card-shadow);
+    background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
 }
 
 .repo-landing__preview-chip-row {
@@ -8231,9 +8039,9 @@ body {
 
 .repo-landing__card {
     display: grid;
-    grid-template-rows: auto auto 1fr;
-    gap: 14px;
-    min-height: 228px;
+    grid-template-rows: auto auto auto;
+    gap: 10px;
+    min-height: 188px;
     padding: 22px;
     border-left: 3px solid color-mix(in srgb, var(--node-color) 35%, var(--border-color));
     background:
@@ -8267,6 +8075,7 @@ body {
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
+    margin-bottom: 2px;
 }
 
 .repo-landing__card-name,
@@ -8284,14 +8093,15 @@ body {
 .repo-landing__card-desc {
     margin: 0;
     color: var(--text-secondary);
-    line-height: 1.55;
+    font-size: 16px;
+    line-height: 1.6;
 }
 
 .repo-landing__card-action {
-    margin-top: auto;
     display: flex;
     align-items: flex-end;
-    min-height: 48px;
+    min-height: 0;
+    padding-top: 2px;
 }
 
 .repo-landing__badge {
@@ -8809,17 +8619,9 @@ body {
         max-width: none;
     }
 
-    .repo-landing__preview-frame {
-        height: 520px;
-    }
-
     .repo-landing__proof-strip,
     .repo-landing__featured-grid,
     .repo-landing__footer {
-        grid-template-columns: 1fr;
-    }
-
-    .repo-landing__preview-body {
         grid-template-columns: 1fr;
     }
 
@@ -8881,8 +8683,6 @@ body {
     .repo-landing__card,
     .repo-landing__item,
     .repo-landing__code-block,
-    .repo-landing__preview-graph-panel,
-    .repo-landing__preview-focus,
     .repo-docs__hero-panel,
     .repo-docs__rail,
     .repo-docs__section,
@@ -8906,16 +8706,8 @@ body {
         flex-direction: column;
     }
 
-    .repo-landing__preview-body {
-        padding: 16px;
-    }
-
-    .repo-landing__preview-lane-track {
-        padding-left: 14px;
-    }
-
-    .repo-landing__preview-commit::before {
-        left: -14px;
+    .repo-landing__preview-frame {
+        min-height: auto;
     }
 
     .repo-landing__preview-topbar {
@@ -8925,21 +8717,20 @@ body {
         padding-bottom: 14px;
     }
 
+    .repo-landing__preview-media {
+        padding: 12px 12px 0;
+    }
+
+    .repo-landing__preview-image {
+        height: min(56vw, 320px);
+    }
+
     .repo-landing__preview-chip-row {
         padding: 0 16px 16px;
     }
 
     .repo-landing__footer {
         justify-items: start;
-    }
-}
-
-@keyframes gv-preview-node-pulse {
-    0%, 100% {
-        box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 10%, transparent), var(--gv-card-shadow);
-    }
-    50% {
-        box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-color) 14%, transparent), 0 10px 22px color-mix(in srgb, var(--node-color) 16%, transparent);
     }
 }
 
@@ -8952,7 +8743,6 @@ body {
     .repo-landing__section,
     .repo-landing__footer,
     .repo-landing__card,
-    .repo-landing__preview-commit.is-active,
     .gv-connection-indicator__light {
         animation: none !important;
     }
