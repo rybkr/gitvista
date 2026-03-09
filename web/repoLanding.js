@@ -52,9 +52,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         navigateToPath: onNavigate,
         brandAction: () => scrollToSection(hero, { focus: input }),
         navItems: [
-            { label: "Overview", onClick: () => scrollToSection(hero, { focus: input }), href: "#try" },
-            { label: "Featured", onClick: () => scrollToSection(repoBrowser.featuredSectionEl), href: "#featured" },
-            { label: "Local", onClick: () => scrollToSection(installSection), href: "#local" },
+            { label: "Home", path: "/" },
             { label: "Docs", path: "/docs" },
         ],
     });
@@ -197,4 +195,3 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         },
     };
 }
-
