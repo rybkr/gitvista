@@ -5,67 +5,34 @@ function createElement(tagName, className, text) {
     return el;
 }
 
-function createPreviewHeader({ kicker, title, body }) {
-    const header = createElement("div", "repo-landing__preview-header");
-    if (kicker) header.appendChild(createElement("span", "repo-landing__preview-kicker", kicker));
-    if (title) header.appendChild(createElement("strong", "repo-landing__preview-heading", title));
-    if (body) header.appendChild(createElement("p", "repo-landing__preview-copy", body));
-    return header;
-}
+function createPreviewPicture(previewData) {
+    const picture = document.createElement("picture");
+    picture.className = "repo-landing__preview-picture";
 
-function createPreviewCommit(commit, tone) {
-    const card = createElement(
-        "article",
-        `repo-landing__preview-commit repo-landing__preview-commit--${tone}${commit.emphasis === "active" ? " is-active" : ""}`,
-    );
-    card.appendChild(createElement("span", "repo-landing__preview-commit-hash", commit.hash));
-    card.appendChild(createElement("strong", "repo-landing__preview-commit-title", commit.title));
-    card.appendChild(createElement("span", "repo-landing__preview-commit-meta", commit.meta));
-    return card;
-}
+    const mobileDark = document.createElement("source");
+    mobileDark.media = "(max-width: 760px) and (prefers-color-scheme: dark)";
+    mobileDark.srcset = previewData.images.mobileDark;
 
-function createPreviewLane(lane) {
-    const laneEl = createElement("section", `repo-landing__preview-lane repo-landing__preview-lane--${lane.tone}`);
-    laneEl.appendChild(createElement("span", "repo-landing__preview-lane-label", lane.label));
+    const mobileLight = document.createElement("source");
+    mobileLight.media = "(max-width: 760px)";
+    mobileLight.srcset = previewData.images.mobileLight;
 
-    const track = createElement("div", "repo-landing__preview-lane-track");
-    for (const commit of lane.commits) {
-        track.appendChild(createPreviewCommit(commit, lane.tone));
-    }
-    laneEl.appendChild(track);
-    return laneEl;
-}
+    const desktopDark = document.createElement("source");
+    desktopDark.media = "(prefers-color-scheme: dark)";
+    desktopDark.srcset = previewData.images.desktopDark;
 
-function createPreviewGraph(graph) {
-    const panel = createElement("section", "repo-landing__preview-graph-panel");
-    panel.appendChild(createPreviewHeader({
-        kicker: graph.kicker,
-        title: graph.title,
-        body: graph.summary,
-    }));
+    const img = document.createElement("img");
+    img.className = "repo-landing__preview-image";
+    img.src = previewData.images.desktopLight;
+    img.alt = previewData.alt;
+    img.loading = "eager";
+    img.decoding = "async";
 
-    const lanes = createElement("div", "repo-landing__preview-lanes");
-    for (const lane of graph.lanes) {
-        lanes.appendChild(createPreviewLane(lane));
-    }
-    panel.appendChild(lanes);
-    return panel;
-}
-
-function createFocusCard(focusCard) {
-    const card = createElement("aside", "repo-landing__preview-focus");
-    card.appendChild(createPreviewHeader({
-        kicker: focusCard.kicker,
-        title: focusCard.title,
-        body: focusCard.summary,
-    }));
-
-    const pills = createElement("div", "repo-landing__preview-pill-row");
-    for (const pill of focusCard.pills) {
-        pills.appendChild(createElement("span", "repo-landing__preview-pill", pill));
-    }
-    card.appendChild(pills);
-    return card;
+    picture.appendChild(mobileDark);
+    picture.appendChild(mobileLight);
+    picture.appendChild(desktopDark);
+    picture.appendChild(img);
+    return picture;
 }
 
 function createChipRow(chips) {
@@ -77,22 +44,19 @@ function createChipRow(chips) {
 }
 
 export function createHeroPreview(previewData) {
-    const frame = createElement("div", "repo-landing__preview-frame");
+    const frame = createElement("figure", "repo-landing__preview-frame");
 
-    const topbar = createElement("div", "repo-landing__preview-topbar");
-    const dots = createElement("div", "repo-landing__preview-dots");
-    dots.appendChild(createElement("span"));
-    dots.appendChild(createElement("span"));
-    dots.appendChild(createElement("span"));
-    topbar.appendChild(dots);
-    topbar.appendChild(createElement("div", "repo-landing__preview-path", previewData.path));
+    const topbar = createElement("figcaption", "repo-landing__preview-topbar");
+    const path = createElement("div", "repo-landing__preview-path", previewData.path);
+    const badge = createElement("span", "repo-landing__preview-badge", previewData.badge);
+    topbar.appendChild(path);
+    topbar.appendChild(badge);
 
-    const body = createElement("div", "repo-landing__preview-body");
-    body.appendChild(createPreviewGraph(previewData.graph));
-    body.appendChild(createFocusCard(previewData.focusCard));
+    const media = createElement("div", "repo-landing__preview-media");
+    media.appendChild(createPreviewPicture(previewData));
 
     frame.appendChild(topbar);
-    frame.appendChild(body);
+    frame.appendChild(media);
     if (Array.isArray(previewData.chips) && previewData.chips.length > 0) {
         frame.appendChild(createChipRow(previewData.chips));
     }
