@@ -8517,8 +8517,12 @@ body {
 
 .repo-docs {
     --gv-docs-max-width: 1080px;
-    min-height: 100vh;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
     padding: 0 20px 48px;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .repo-docs__chrome {
@@ -8535,6 +8539,19 @@ body {
     display: grid;
     grid-template-columns: 240px minmax(0, 1fr);
     gap: 28px;
+}
+
+.repo-docs__state {
+    grid-column: 2;
+    padding: 24px;
+    border-radius: 24px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 96%, transparent), color-mix(in srgb, var(--surface-color) 94%, transparent));
+    box-shadow: var(--gv-card-shadow);
+}
+
+.repo-docs__state--error {
+    color: var(--danger-color);
 }
 
 .repo-docs__hero,
@@ -8737,6 +8754,20 @@ body {
     max-width: 62ch;
     line-height: 1.72;
     color: var(--text-secondary);
+}
+
+.repo-docs__copy + .repo-docs__copy {
+    margin-top: 12px;
+}
+
+.repo-docs__copy code,
+.repo-docs__point code {
+    font-family: var(--gv-font-mono);
+    font-size: 0.95em;
+    padding: 0.08em 0.35em;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--surface-recessed) 84%, transparent);
+    color: var(--text-color);
 }
 
 .repo-docs__point-list {

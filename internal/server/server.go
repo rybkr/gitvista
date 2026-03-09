@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/internal/gitcore"
 	"github.com/rybkr/gitvista/internal/repomanager"
 )
@@ -36,6 +37,7 @@ const (
 type Server struct {
 	addr        string
 	webFS       fs.FS
+	docsFS      fs.FS
 	rateLimiter *rateLimiter
 	httpServer  *http.Server
 	logger      *slog.Logger
@@ -66,10 +68,12 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
+	docsFS, _ := gitvista.GetDocsFS()
 
 	s := &Server{
 		addr:        addr,
 		webFS:       webFS,
+		docsFS:      docsFS,
 		rateLimiter: rl,
 		logger:      slog.Default(),
 		mode:        ModeLocal,
@@ -97,10 +101,12 @@ func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allo
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
+	docsFS, _ := gitvista.GetDocsFS()
 
 	return &Server{
 		addr:           addr,
 		webFS:          webFS,
+		docsFS:         docsFS,
 		rateLimiter:    rl,
 		logger:         slog.Default(),
 		mode:           ModeHosted,
@@ -201,6 +207,7 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
+	mux.HandleFunc("/api/docs", s.handleDocs)
 
 	if s.mode == ModeLocal {
 		ls := s.localSession

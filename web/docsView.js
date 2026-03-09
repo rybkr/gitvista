@@ -2,57 +2,52 @@ const GITHUB_SVG = `<svg width="18" height="18" viewBox="0 0 16 16" fill="curren
     <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/>
 </svg>`;
 
-const SECTIONS = [
-    {
-        id: "hosted",
-        label: "Hosted Mode",
-        title: "Open a public GitHub repository directly in the browser.",
-        body: "Hosted mode is the fastest path into GitVista. Paste a public GitHub URL on the landing page and GitVista prepares a repository-backed workspace with the commit graph, repository overview, and diff views already wired up.",
-        points: [
-            "Best for quick inspection, demos, and sharing a repository view without asking someone to install anything.",
-            "Preloaded examples are there to show the graph immediately while the rest of the product remains repo-accurate.",
-            "If a repository is still being prepared, GitVista streams progress until the graph is ready.",
-        ],
-    },
-    {
-        id: "local",
-        label: "Local Mode",
-        title: "Run beside your checkout when you need zero-latency state.",
-        body: "Local mode connects GitVista to your own repository so branch movement, staged changes, and diffs reflect what you are doing on disk. This is the right mode when you are actively working, not just inspecting history.",
-        points: [
-            "Install with `go install github.com/rybkr/gitvista/cmd/vista@latest && vista`.",
-            "Use local mode when you care about staged changes, immediate refresh, and your unpushed work.",
-            "The browser UI stays the same, but the data source is your local `.git` directory.",
-        ],
-    },
-    {
-        id: "views",
-        label: "Views",
-        title: "Read the repository from graph to diff without changing tools.",
-        body: "GitVista is organized around orientation first. The graph gives branch shape, the repository overview summarizes the current state, and the commit and diff views let you drill down without losing context.",
-        points: [
-            "Graph view shows commit flow, merges, and branch movement.",
-            "Repository overview highlights branch, HEAD, remotes, description, and recent tags.",
-            "Diff and file views let you move from topology to exact file changes in one session.",
-        ],
-    },
-    {
-        id: "limits",
-        label: "Limits",
-        title: "Know the edges before you depend on them.",
-        body: "GitVista is built to make Git behavior legible, but it still inherits the realities of repository size, remote accessibility, and the distinction between hosted and local execution.",
-        points: [
-            "Hosted mode is aimed at public GitHub repositories.",
-            "Very large histories can take longer to prepare before the graph is available.",
-            "For private repositories or sensitive local work, use local mode instead of expecting the hosted path to cover everything.",
-        ],
-    },
-];
-
 export function createDocsView({ navigateToPath } = {}) {
-    const bindHostedNavigation = (link, path) => {
+    const controller = new AbortController();
+    const el = document.createElement("div");
+    el.className = "repo-docs";
+
+    const chrome = document.createElement("div");
+    chrome.className = "repo-docs__chrome";
+    chrome.appendChild(createTopbar(bindHostedNavigation));
+
+    const content = document.createElement("div");
+    content.className = "repo-docs__content";
+
+    const state = document.createElement("section");
+    state.className = "repo-docs__state";
+    state.textContent = "Loading docs…";
+    content.appendChild(state);
+
+    el.appendChild(chrome);
+    el.appendChild(content);
+
+    loadDocs();
+
+    function bindHostedNavigation(link, path) {
         link.href = path;
-        if (typeof navigateToPath !== "function") return;
+        if (path.startsWith("#")) {
+            link.addEventListener("click", (event) => {
+                if (
+                    event.defaultPrevented ||
+                    event.button !== 0 ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey
+                ) {
+                    return;
+                }
+                event.preventDefault();
+                const target = el.querySelector(path);
+                if (!target) return;
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+                history.replaceState(null, "", path);
+            });
+            return;
+        }
+
+        if (typeof navigateToPath !== "function" || !path.startsWith("/")) return;
         link.addEventListener("click", (event) => {
             if (
                 event.defaultPrevented ||
@@ -67,14 +62,32 @@ export function createDocsView({ navigateToPath } = {}) {
             event.preventDefault();
             navigateToPath(path);
         });
+    }
+
+    async function loadDocs() {
+        try {
+            const resp = await fetch("/api/docs", { signal: controller.signal });
+            if (!resp.ok) throw new Error(`docs request failed: ${resp.status}`);
+            const docs = await resp.json();
+            if (controller.signal.aborted) return;
+            renderDocs(content, docs, bindHostedNavigation);
+        } catch (error) {
+            if (controller.signal.aborted) return;
+            state.className = "repo-docs__state repo-docs__state--error";
+            state.textContent = "Docs are unavailable right now.";
+            console.error(error);
+        }
+    }
+
+    return {
+        el,
+        destroy() {
+            controller.abort();
+        },
     };
+}
 
-    const el = document.createElement("div");
-    el.className = "repo-docs";
-
-    const chrome = document.createElement("div");
-    chrome.className = "repo-docs__chrome";
-
+function createTopbar(bindHostedNavigation) {
     const topbar = document.createElement("header");
     topbar.className = "repo-landing__topbar";
 
@@ -84,8 +97,8 @@ export function createDocsView({ navigateToPath } = {}) {
 
     const brand = document.createElement("a");
     brand.className = "repo-landing__brand";
-    bindHostedNavigation(brand, "/");
     brand.setAttribute("aria-label", "GitVista home");
+    bindHostedNavigation(brand, "/");
 
     const brandMark = document.createElement("img");
     brandMark.className = "repo-landing__brand-mark";
@@ -116,63 +129,91 @@ export function createDocsView({ navigateToPath } = {}) {
 
     topbarLinks.appendChild(homeLink);
     topbarLinks.appendChild(docsLink);
-
     topbarNav.appendChild(brand);
     topbarNav.appendChild(topbarLinks);
     topbar.appendChild(topbarNav);
-    chrome.appendChild(topbar);
 
-    const content = document.createElement("div");
-    content.className = "repo-docs__content";
+    return topbar;
+}
+
+function renderDocs(content, docs, bindHostedNavigation) {
+    content.innerHTML = "";
 
     const hero = document.createElement("section");
     hero.className = "repo-docs__hero";
-    hero.innerHTML = `
-        <div class="repo-docs__hero-copy">
-            <p class="repo-docs__eyebrow">Product Docs</p>
-            <h1 class="repo-docs__title">Start fast, understand the edges, and know when to switch modes.</h1>
-            <p class="repo-docs__lede">GitVista is easiest to trust when the operating model is explicit. These docs cover how hosted mode behaves, when local mode is the better fit, and what the core views are designed to show.</p>
-            <div class="repo-docs__hero-actions">
-                <a class="repo-docs__primary-link" href="#hosted">Read the workflow</a>
-                <a class="repo-docs__secondary-link" href="#">Open the landing page</a>
-            </div>
-        </div>
-        <aside class="repo-docs__hero-panel" aria-label="Docs summary">
-            <div class="repo-docs__panel-kicker">At a glance</div>
-            <div class="repo-docs__panel-grid">
-                <div><strong>Hosted</strong><span>Public GitHub repos in browser</span></div>
-                <div><strong>Local</strong><span>Directly against your checkout</span></div>
-                <div><strong>Views</strong><span>Graph, overview, commit, diff</span></div>
-                <div><strong>Best use</strong><span>Orientation before file-level inspection</span></div>
-            </div>
-        </aside>
-    `;
-    const heroLandingLink = hero.querySelector(".repo-docs__secondary-link");
-    if (heroLandingLink) {
-        bindHostedNavigation(heroLandingLink, "/");
-    }
 
-    const sectionRail = document.createElement("aside");
-    sectionRail.className = "repo-docs__rail";
-    sectionRail.setAttribute("aria-label", "Doc sections");
+    const heroCopy = document.createElement("div");
+    heroCopy.className = "repo-docs__hero-copy";
+
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "repo-docs__eyebrow";
+    eyebrow.textContent = docs.eyebrow || "Product Docs";
+
+    const title = document.createElement("h1");
+    title.className = "repo-docs__title";
+    title.textContent = docs.title || "GitVista Docs";
+
+    const lede = document.createElement("p");
+    lede.className = "repo-docs__lede";
+    lede.textContent = docs.lede || "";
+
+    const heroActions = document.createElement("div");
+    heroActions.className = "repo-docs__hero-actions";
+    const primaryLink = createDocsLink(docs.primaryCta, "repo-docs__primary-link", bindHostedNavigation);
+    const secondaryLink = createDocsLink(docs.secondaryCta, "repo-docs__secondary-link", bindHostedNavigation);
+    if (primaryLink) heroActions.appendChild(primaryLink);
+    if (secondaryLink) heroActions.appendChild(secondaryLink);
+
+    heroCopy.appendChild(eyebrow);
+    heroCopy.appendChild(title);
+    heroCopy.appendChild(lede);
+    heroCopy.appendChild(heroActions);
+
+    const heroPanel = document.createElement("aside");
+    heroPanel.className = "repo-docs__hero-panel";
+    heroPanel.setAttribute("aria-label", "Docs summary");
+
+    const panelLabel = document.createElement("div");
+    panelLabel.className = "repo-docs__panel-kicker";
+    panelLabel.textContent = "At a glance";
+    heroPanel.appendChild(panelLabel);
+
+    const panelGrid = document.createElement("div");
+    panelGrid.className = "repo-docs__panel-grid";
+    for (const item of docs.summary || []) {
+        const card = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = item.label;
+        const span = document.createElement("span");
+        span.textContent = item.value;
+        card.appendChild(strong);
+        card.appendChild(span);
+        panelGrid.appendChild(card);
+    }
+    heroPanel.appendChild(panelGrid);
+
+    hero.appendChild(heroCopy);
+    hero.appendChild(heroPanel);
+
+    const rail = document.createElement("aside");
+    rail.className = "repo-docs__rail";
+    rail.setAttribute("aria-label", "Doc sections");
 
     const railLabel = document.createElement("p");
     railLabel.className = "repo-docs__rail-label";
     railLabel.textContent = "Sections";
-    sectionRail.appendChild(railLabel);
-
-    for (const section of SECTIONS) {
-        const link = document.createElement("a");
-        link.className = "repo-docs__rail-link";
-        link.href = `#${section.id}`;
-        link.textContent = section.label;
-        sectionRail.appendChild(link);
-    }
+    rail.appendChild(railLabel);
 
     const sections = document.createElement("div");
     sections.className = "repo-docs__sections";
 
-    for (const section of SECTIONS) {
+    for (const section of docs.sections || []) {
+        const link = document.createElement("a");
+        link.className = "repo-docs__rail-link";
+        link.href = `#${section.id}`;
+        link.textContent = section.label;
+        rail.appendChild(link);
+
         const article = document.createElement("section");
         article.className = "repo-docs__section";
         article.id = section.id;
@@ -181,59 +222,106 @@ export function createDocsView({ navigateToPath } = {}) {
         label.className = "repo-docs__section-label";
         label.textContent = section.label;
 
-        const title = document.createElement("h2");
-        title.className = "repo-docs__section-title";
-        title.textContent = section.title;
+        const heading = document.createElement("h2");
+        heading.className = "repo-docs__section-title";
+        heading.textContent = section.title;
 
-        const body = document.createElement("p");
+        const body = document.createElement("div");
         body.className = "repo-docs__section-body";
-        body.textContent = section.body;
-
-        const list = document.createElement("ul");
-        list.className = "repo-docs__point-list";
-
-        for (const point of section.points) {
-            const item = document.createElement("li");
-            item.className = "repo-docs__point";
-            item.textContent = point;
-            list.appendChild(item);
-        }
+        renderMarkdown(body, section.content || "");
 
         article.appendChild(label);
-        article.appendChild(title);
+        article.appendChild(heading);
         article.appendChild(body);
-        article.appendChild(list);
         sections.appendChild(article);
     }
 
     const help = document.createElement("section");
     help.className = "repo-docs__help";
-    help.innerHTML = `
-        <div>
-            <p class="repo-docs__section-label">Need More</p>
-            <h2 class="repo-docs__section-title">Use the product, then come back here when you hit a real question.</h2>
-            <p class="repo-docs__section-body">This page is meant to remove ambiguity, not bury the product in prose. Start with a public repository from the landing page, then switch to local mode when you need live repository state.</p>
-        </div>
-        <div class="repo-docs__help-actions">
-            <a class="repo-docs__primary-link" href="#">Open GitVista</a>
-            <a class="repo-landing__footer-link" href="https://github.com/rybkr/gitvista" target="_blank" rel="noopener noreferrer">${GITHUB_SVG} GitHub</a>
-        </div>
-    `;
-    const helpLandingLink = help.querySelector(".repo-docs__primary-link");
-    if (helpLandingLink) {
-        bindHostedNavigation(helpLandingLink, "/");
-    }
+
+    const helpCopy = document.createElement("div");
+    const helpLabel = document.createElement("p");
+    helpLabel.className = "repo-docs__section-label";
+    helpLabel.textContent = docs.help?.label || "Need More";
+    const helpTitle = document.createElement("h2");
+    helpTitle.className = "repo-docs__section-title";
+    helpTitle.textContent = docs.help?.title || "";
+    const helpBody = document.createElement("p");
+    helpBody.className = "repo-docs__section-body";
+    helpBody.textContent = docs.help?.body || "";
+    helpCopy.appendChild(helpLabel);
+    helpCopy.appendChild(helpTitle);
+    helpCopy.appendChild(helpBody);
+
+    const helpActions = document.createElement("div");
+    helpActions.className = "repo-docs__help-actions";
+    const helpPrimaryLink = createDocsLink(docs.help?.primaryCta, "repo-docs__primary-link", bindHostedNavigation);
+    if (helpPrimaryLink) helpActions.appendChild(helpPrimaryLink);
+
+    const githubLink = document.createElement("a");
+    githubLink.className = "repo-landing__footer-link";
+    githubLink.href = "https://github.com/rybkr/gitvista";
+    githubLink.target = "_blank";
+    githubLink.rel = "noopener noreferrer";
+    githubLink.innerHTML = `${GITHUB_SVG} GitHub`;
+    helpActions.appendChild(githubLink);
+
+    help.appendChild(helpCopy);
+    help.appendChild(helpActions);
 
     content.appendChild(hero);
-    content.appendChild(sectionRail);
+    content.appendChild(rail);
     content.appendChild(sections);
     content.appendChild(help);
+}
 
-    el.appendChild(chrome);
-    el.appendChild(content);
+function createDocsLink(cta, className, bindHostedNavigation) {
+    if (!cta?.label || !cta?.href) return null;
+    const link = document.createElement("a");
+    link.className = className;
+    link.textContent = cta.label;
+    bindHostedNavigation(link, cta.href);
+    return link;
+}
 
-    return {
-        el,
-        destroy() {},
-    };
+function renderMarkdown(container, markdown) {
+    const blocks = String(markdown)
+        .trim()
+        .split(/\n\s*\n/)
+        .map((block) => block.trim())
+        .filter(Boolean);
+
+    for (const block of blocks) {
+        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (lines.length > 0 && lines.every((line) => line.startsWith("- "))) {
+            const list = document.createElement("ul");
+            list.className = "repo-docs__point-list";
+            for (const line of lines) {
+                const item = document.createElement("li");
+                item.className = "repo-docs__point";
+                appendInlineContent(item, line.slice(2));
+                list.appendChild(item);
+            }
+            container.appendChild(list);
+            continue;
+        }
+
+        const paragraph = document.createElement("p");
+        paragraph.className = "repo-docs__copy";
+        appendInlineContent(paragraph, lines.join(" "));
+        container.appendChild(paragraph);
+    }
+}
+
+function appendInlineContent(parent, text) {
+    const parts = String(text).split(/(`[^`]+`)/g).filter(Boolean);
+    for (const part of parts) {
+        if (part.startsWith("`") && part.endsWith("`")) {
+            const code = document.createElement("code");
+            code.textContent = part.slice(1, -1);
+            parent.appendChild(code);
+        } else {
+            parent.appendChild(document.createTextNode(part));
+        }
+    }
 }

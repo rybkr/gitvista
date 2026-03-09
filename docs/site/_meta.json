@@ -1,0 +1,66 @@
+{
+  "eyebrow": "Product Docs",
+  "title": "Start fast, understand the edges, and know when to switch modes.",
+  "lede": "GitVista is easiest to trust when the operating model is explicit. These docs cover how hosted mode behaves, when local mode is the better fit, what the core views are designed to show, and which URLs are now part of the hosted experience.",
+  "primaryCta": {
+    "label": "Read the workflow",
+    "href": "#hosted"
+  },
+  "secondaryCta": {
+    "label": "Open the landing page",
+    "href": "/"
+  },
+  "summary": [
+    {
+      "label": "Hosted",
+      "value": "Public GitHub repos in browser"
+    },
+    {
+      "label": "Local",
+      "value": "Run the binary against your checkout"
+    },
+    {
+      "label": "Routes",
+      "value": "/docs and /repo/:id path routing"
+    },
+    {
+      "label": "Best use",
+      "value": "Orientation before file-level inspection"
+    }
+  ],
+  "sections": [
+    {
+      "id": "hosted",
+      "label": "Hosted Mode",
+      "title": "Open a public GitHub repository directly in the browser.",
+      "file": "hosted-mode.md"
+    },
+    {
+      "id": "local",
+      "label": "Local Mode",
+      "title": "Run GitVista against your own checkout when you need live repository state.",
+      "file": "local-mode.md"
+    },
+    {
+      "id": "views",
+      "label": "Views",
+      "title": "Move from repository shape to exact file changes without leaving the app.",
+      "file": "views.md"
+    },
+    {
+      "id": "limits",
+      "label": "Limits",
+      "title": "Know the edges before you depend on the hosted path.",
+      "file": "limits.md"
+    }
+  ],
+  "help": {
+    "label": "Need More",
+    "title": "Use the product, then come back here when you hit a real question.",
+    "body": "This page is here to remove ambiguity, not bury the product in prose. Start with a public repository from the landing page, then switch to local mode when you need live repository state from your own machine.",
+    "primaryCta": {
+      "label": "Open GitVista",
+      "href": "/"
+    }
+  }
+}

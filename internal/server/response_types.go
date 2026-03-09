@@ -99,3 +99,38 @@ type mergeThreeWayDiffResponse struct {
 type graphCommitsResponse struct {
 	Commits []*gitcore.Commit `json:"commits"`
 }
+
+type docsCTAResponse struct {
+	Label string `json:"label"`
+	Href  string `json:"href"`
+}
+
+type docsSummaryItem struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+type docsSectionResponse struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
+type docsHelpResponse struct {
+	Label      string          `json:"label"`
+	Title      string          `json:"title"`
+	Body       string          `json:"body"`
+	PrimaryCTA docsCTAResponse `json:"primaryCta"`
+}
+
+type docsPageResponse struct {
+	Eyebrow      string                `json:"eyebrow"`
+	Title        string                `json:"title"`
+	Lede         string                `json:"lede"`
+	PrimaryCTA   docsCTAResponse       `json:"primaryCta"`
+	SecondaryCTA docsCTAResponse       `json:"secondaryCta"`
+	Summary      []docsSummaryItem     `json:"summary"`
+	Sections     []docsSectionResponse `json:"sections"`
+	Help         docsHelpResponse      `json:"help"`
+}

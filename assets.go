@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed all:web
+//go:embed all:web all:docs/site
 var embeddedFS embed.FS
 
 // GetWebFS returns the embedded filesystem for serving static web assets.
@@ -16,4 +16,13 @@ func GetWebFS() (fs.FS, error) {
 		return nil, err
 	}
 	return webFS, nil
+}
+
+// GetDocsFS returns the embedded filesystem for hosted docs source files.
+func GetDocsFS() (fs.FS, error) {
+	docsFS, err := fs.Sub(embeddedFS, "docs/site")
+	if err != nil {
+		return nil, err
+	}
+	return docsFS, nil
 }
