@@ -108,7 +108,8 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
 
     const heroPreview = createElement("div", "repo-landing__hero-preview");
     heroPreview.setAttribute("aria-hidden", "true");
-    heroPreview.appendChild(createHeroPreview(HERO_PREVIEW));
+    const heroPreviewFrame = createHeroPreview(HERO_PREVIEW);
+    heroPreview.appendChild(heroPreviewFrame);
 
     hero.appendChild(heroCopy);
     hero.appendChild(heroPreview);
@@ -190,6 +191,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         el,
         destroy() {
             window.clearTimeout(highlightTimer);
+            heroPreviewFrame.destroy?.();
             repoBrowser.destroy();
         },
     };
