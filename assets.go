@@ -3,10 +3,11 @@ package gitvista
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 )
 
-//go:embed all:web all:docs/site
+//go:embed all:web all:docs/site scripts/install.sh
 var embeddedFS embed.FS
 
 // GetWebFS returns the embedded filesystem for serving static web assets.
@@ -25,4 +26,13 @@ func GetDocsFS() (fs.FS, error) {
 		return nil, err
 	}
 	return docsFS, nil
+}
+
+// GetInstallScript returns the curlable installer script served by gitvista.io.
+func GetInstallScript() ([]byte, error) {
+	body, err := embeddedFS.ReadFile("scripts/install.sh")
+	if err != nil {
+		return nil, fmt.Errorf("read install script: %w", err)
+	}
+	return body, nil
 }

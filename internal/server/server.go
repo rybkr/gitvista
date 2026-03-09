@@ -274,6 +274,10 @@ func (s *Server) staticHandler() http.Handler {
 			s.serveIndexHTML(w, r)
 			return
 		}
+		if cleanPath == "/install.sh" {
+			s.serveInstallScript(w, r)
+			return
+		}
 		if cleanPath == "/api" || strings.HasPrefix(cleanPath, "/api/") {
 			http.NotFound(w, r)
 			return
@@ -301,6 +305,16 @@ func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(body))
+}
+
+func (s *Server) serveInstallScript(w http.ResponseWriter, r *http.Request) {
+	body, err := gitvista.GetInstallScript()
+	if err != nil {
+		http.Error(w, "install.sh not found", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	http.ServeContent(w, r, "install.sh", time.Time{}, bytes.NewReader(body))
 }
 
 func (s *Server) assetExists(name string) bool {

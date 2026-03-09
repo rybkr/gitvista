@@ -3,7 +3,8 @@ set -eu
 
 REPO="rybkr/gitvista"
 BINARY="gitvista"
-INSTALL_NAME="git-vista"
+INSTALL_NAME="gitvista"
+GIT_SUBCOMMAND_NAME="git-vista"
 INSTALL_DIR="${GITVISTA_INSTALL_DIR:-/usr/local/bin}"
 
 info()  { printf '  \033[1;34m[>]\033[0m %s\n' "$*"; }
@@ -93,14 +94,17 @@ install() {
 
     if [ -w "$INSTALL_DIR" ]; then
         mv "$BIN" "${INSTALL_DIR}/${INSTALL_NAME}"
+        ln -sf "${INSTALL_NAME}" "${INSTALL_DIR}/${GIT_SUBCOMMAND_NAME}"
     else
         info "Elevated permissions required to install to ${INSTALL_DIR}"
         sudo mv "$BIN" "${INSTALL_DIR}/${INSTALL_NAME}"
+        sudo ln -sf "${INSTALL_NAME}" "${INSTALL_DIR}/${GIT_SUBCOMMAND_NAME}"
     fi
 
     ok "Installed ${INSTALL_NAME} ${VERSION} to ${INSTALL_DIR}/${INSTALL_NAME}"
+    ok "Installed Git subcommand shim to ${INSTALL_DIR}/${GIT_SUBCOMMAND_NAME}"
     echo ""
-    echo "  Run 'git vista' inside any repository to visualize it."
+    echo "  Run '${INSTALL_NAME} --help' or 'git vista --help' to get started."
     echo ""
 }
 

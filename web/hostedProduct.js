@@ -5,6 +5,5 @@ export const PRODUCT_INFO = {
     repositoryUrl: "https://github.com/rybkr/gitvista",
     youtubeUrl: "https://youtube.com/@gitvista",
     license: "Apache 2.0",
-    installCommand: "go install github.com/rybkr/gitvista/cmd/vista@latest && vista",
+    installCommand: "curl -fsSL https://gitvista.io/install.sh | sh",
 };
-

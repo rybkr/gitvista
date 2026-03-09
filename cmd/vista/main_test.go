@@ -68,3 +68,41 @@ func TestResolveBindHost(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyInvocationDefaults(t *testing.T) {
+	tests := []struct {
+		name  string
+		argv0 string
+		flags appFlags
+		want  string
+	}{
+		{
+			name:  "git-vista defaults to current directory",
+			argv0: "git-vista",
+			flags: appFlags{},
+			want:  ".",
+		},
+		{
+			name:  "gitvista keeps hosted default",
+			argv0: "gitvista",
+			flags: appFlags{},
+			want:  "",
+		},
+		{
+			name:  "explicit repo path wins",
+			argv0: "git-vista",
+			flags: appFlags{repoPath: "/tmp/repo"},
+			want:  "/tmp/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := tt.flags
+			applyInvocationDefaults(&flags, tt.argv0)
+			if flags.repoPath != tt.want {
+				t.Fatalf("repoPath = %q, want %q", flags.repoPath, tt.want)
+			}
+		})
+	}
+}

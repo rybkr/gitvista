@@ -85,6 +85,23 @@ func TestStaticHandler_ServesAssetsAndMissingAssets(t *testing.T) {
 			t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
 		}
 	})
+
+	t.Run("install script", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/install.sh", nil)
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+		if body := w.Body.String(); !strings.Contains(body, "GITVISTA_INSTALL_DIR") {
+			t.Fatalf("expected install script body, got %q", body)
+		}
+		if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/plain") {
+			t.Fatalf("content-type = %q, want text/plain", got)
+		}
+	})
 }
 
 func TestStaticHandler_DoesNotOverrideAPIHandlers(t *testing.T) {

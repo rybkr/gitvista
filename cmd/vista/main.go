@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -56,6 +57,7 @@ func main() {
 	if err != nil {
 		os.Exit(2)
 	}
+	applyInvocationDefaults(&parsed, os.Args[0])
 
 	// Resolve color mode.
 	colorMode := cli.ColorAuto
@@ -267,6 +269,15 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+func applyInvocationDefaults(flags *appFlags, argv0 string) {
+	if flags.repoPath != "" {
+		return
+	}
+	if filepath.Base(argv0) == "git-vista" {
+		flags.repoPath = "."
+	}
+}
+
 // resolveBindHost chooses a safe default bind host.
 // In local mode (repoPath set), default to loopback when host is empty.
 // In hosted mode, preserve the existing empty-host behavior (all interfaces).
@@ -411,6 +422,7 @@ func printHelp(cw *cli.Writer) {
 	fmt.Println(cw.Bold("Examples:"))
 	fmt.Println("  gitvista -repo .              # local mode: current directory")
 	fmt.Println("  gitvista -repo /path/to/repo  # local mode: specific repo")
+	fmt.Println("  git vista                     # local mode via git subcommand")
 	fmt.Println("  gitvista                      # hosted mode: manage repos via API")
 	fmt.Println("  gitvista --port 3000")
 	fmt.Println("  gitvista -host localhost -port 9090")
