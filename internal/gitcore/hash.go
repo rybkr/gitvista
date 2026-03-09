@@ -38,14 +38,14 @@ func (h Hash) Short() string {
 	return string(h)[:7]
 }
 
-func fromHexChar(b byte) int8 {
+func fromHexChar(b byte) int {
 	switch {
 	case b >= '0' && b <= '9':
-		return int8(b - '0')
+		return int(b - '0')
 	case b >= 'a' && b <= 'f':
-		return int8(b-'a') + 10
+		return int(b-'a') + 10
 	case b >= 'A' && b <= 'F':
-		return int8(b-'A') + 10
+		return int(b-'A') + 10
 	default:
 		return -1
 	}

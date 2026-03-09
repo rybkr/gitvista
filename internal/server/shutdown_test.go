@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -214,6 +215,9 @@ func freePort(t *testing.T) string {
 	t.Helper()
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping listener test in restricted environment: %v", err)
+		}
 		t.Fatalf("freePort: %v", err)
 	}
 	defer ln.Close()

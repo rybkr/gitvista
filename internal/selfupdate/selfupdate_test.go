@@ -7,8 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,13 +52,11 @@ func TestCheckLatest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.statusCode)
-				fmt.Fprint(w, tt.body)
-			}))
-			defer srv.Close()
+			withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+				return newTestResponse(req, tt.statusCode, tt.body), nil
+			})
 
-			tag, err := checkLatestFrom(srv.URL)
+			tag, err := checkLatestFrom("https://example.test/releases/latest")
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -183,18 +181,22 @@ func TestUpdateFlow(t *testing.T) {
 	h := sha256.Sum256(archive)
 	archiveName := ArchiveName("gitvista", "v1.0.0")
 	checksums := fmt.Sprintf("%s  %s\n", hex.EncodeToString(h[:]), archiveName)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	baseURL := "https://example.test/releases/download/v1.0.0"
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/checksums.txt"):
-			fmt.Fprint(w, checksums)
-		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
-			w.Write(archive)
+		case req.URL.String() == baseURL+"/checksums.txt":
+			return newTestResponse(req, http.StatusOK, checksums), nil
+		case req.URL.String() == baseURL+"/"+archiveName:
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(archive)),
+				Request:    req,
+			}, nil
 		default:
-			http.NotFound(w, r)
+			return newTestResponse(req, http.StatusNotFound, "not found"), nil
 		}
-	}))
-	defer srv.Close()
+	})
 
 	// Create a fake executable to be replaced.
 	tmpDir := t.TempDir()
@@ -207,12 +209,12 @@ func TestUpdateFlow(t *testing.T) {
 	// and replacing the exec path resolution.
 	// Since we can't easily mock os.Executable, test the download/verify/extract
 	// portion by calling the internal pieces.
-	archiveData, err := httpGetBytes(srv.URL + "/" + archiveName)
+	archiveData, err := httpGetBytes(baseURL + "/" + archiveName)
 	if err != nil {
 		t.Fatalf("download archive: %v", err)
 	}
 
-	checksumsData, err := httpGetBytes(srv.URL + "/checksums.txt")
+	checksumsData, err := httpGetBytes(baseURL + "/checksums.txt")
 	if err != nil {
 		t.Fatalf("download checksums: %v", err)
 	}
@@ -229,6 +231,31 @@ func TestUpdateFlow(t *testing.T) {
 
 	if !bytes.Equal(extracted, binaryContent) {
 		t.Errorf("extracted binary mismatch: got %q, want %q", extracted, binaryContent)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func withMockHTTPClient(t *testing.T, fn roundTripFunc) {
+	t.Helper()
+
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: fn}
+	t.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
+}
+
+func newTestResponse(req *http.Request, statusCode int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
 	}
 }
 

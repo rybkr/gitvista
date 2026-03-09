@@ -6,6 +6,8 @@ GOCMD=go
 GOTEST=$(GOCMD) test
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
+export GOCACHE ?= $(CURDIR)/.cache/go-build
+export GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -145,7 +147,8 @@ check-vuln:
 lint:
 	@echo "Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null; then \
-		golangci-lint run --config=.golangci.yml ./...; \
+		mkdir -p "$(GOCACHE)" "$(GOLANGCI_LINT_CACHE)"; \
+		golangci-lint run --config=.golangci.yml .; \
 	else \
 		echo "golangci-lint not found - install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 		exit 1; \
