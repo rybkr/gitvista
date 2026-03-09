@@ -11,7 +11,7 @@
 import { subscribe, getState, setRepositoryAvailable } from "./errorState.js";
 import { apiUrl } from "./apiBase.js";
 
-export function createRepoUnavailableOverlay({ repoId } = {}) {
+export function createRepoUnavailableOverlay({ repoId, onNavigateHome } = {}) {
     const el = document.createElement("div");
     el.className = "repo-unavailable-overlay";
     el.setAttribute("role", "alertdialog");
@@ -48,11 +48,15 @@ export function createRepoUnavailableOverlay({ repoId } = {}) {
     if (repoId) {
         const backLink = document.createElement("a");
         backLink.className = "repo-unavailable-back";
-        backLink.href = "#";
+        backLink.href = "/";
         backLink.textContent = "Back to repositories";
         backLink.addEventListener("click", (e) => {
             e.preventDefault();
-            location.hash = "";
+            if (typeof onNavigateHome === "function") {
+                onNavigateHome();
+            } else {
+                location.href = "/";
+            }
         });
         card.appendChild(backLink);
     }

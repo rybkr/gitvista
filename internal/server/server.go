@@ -2,12 +2,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -197,7 +199,6 @@ func (s *Server) removeSession(id string) {
 // Start begins serving and blocks until the server exits or encounters a fatal error.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.FS(s.webFS)))
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
 
@@ -224,6 +225,7 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/repos", writeDeadline(s.rateLimiter.middleware(s.handleRepos)))
 		mux.HandleFunc("/api/repos/", writeDeadline(s.rateLimiter.middleware(s.handleRepoRoutes)))
 	}
+	mux.Handle("/", s.staticHandler())
 
 	// Build the handler chain: logging wraps the mux, and CORS wraps
 	// logging in hosted mode.
@@ -250,6 +252,64 @@ func (s *Server) Start() error {
 		return nil
 	}
 	return err
+}
+
+func (s *Server) staticHandler() http.Handler {
+	fileServer := http.FileServer(http.FS(s.webFS))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		cleanPath := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
+		if cleanPath == "/" {
+			s.serveIndexHTML(w, r)
+			return
+		}
+		if cleanPath == "/api" || strings.HasPrefix(cleanPath, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		assetPath := strings.TrimPrefix(cleanPath, "/")
+		if s.assetExists(assetPath) {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		if looksLikeStaticAsset(cleanPath) {
+			http.NotFound(w, r)
+			return
+		}
+
+		s.serveIndexHTML(w, r)
+	})
+}
+
+func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
+	body, err := fs.ReadFile(s.webFS, "index.html")
+	if err != nil {
+		http.Error(w, "index.html not found", http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(body))
+}
+
+func (s *Server) assetExists(name string) bool {
+	if name == "" || name == "." {
+		return false
+	}
+	info, err := fs.Stat(s.webFS, name)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func looksLikeStaticAsset(reqPath string) bool {
+	base := path.Base(reqPath)
+	return strings.Contains(base, ".")
 }
 
 func (s *Server) modeString() string {

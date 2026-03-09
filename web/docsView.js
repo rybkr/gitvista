@@ -49,7 +49,26 @@ const SECTIONS = [
     },
 ];
 
-export function createDocsView() {
+export function createDocsView({ navigateToPath } = {}) {
+    const bindHostedNavigation = (link, path) => {
+        link.href = path;
+        if (typeof navigateToPath !== "function") return;
+        link.addEventListener("click", (event) => {
+            if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+            ) {
+                return;
+            }
+            event.preventDefault();
+            navigateToPath(path);
+        });
+    };
+
     const el = document.createElement("div");
     el.className = "repo-docs";
 
@@ -65,7 +84,7 @@ export function createDocsView() {
 
     const brand = document.createElement("a");
     brand.className = "repo-landing__brand";
-    brand.href = "#";
+    bindHostedNavigation(brand, "/");
     brand.setAttribute("aria-label", "GitVista home");
 
     const brandMark = document.createElement("img");
@@ -86,14 +105,14 @@ export function createDocsView() {
 
     const homeLink = document.createElement("a");
     homeLink.className = "repo-landing__nav-link";
-    homeLink.href = "#";
     homeLink.textContent = "Home";
+    bindHostedNavigation(homeLink, "/");
 
     const docsLink = document.createElement("a");
     docsLink.className = "repo-landing__nav-link repo-landing__nav-link--active";
-    docsLink.href = "#docs";
     docsLink.textContent = "Docs";
     docsLink.setAttribute("aria-current", "page");
+    bindHostedNavigation(docsLink, "/docs");
 
     topbarLinks.appendChild(homeLink);
     topbarLinks.appendChild(docsLink);
@@ -128,6 +147,10 @@ export function createDocsView() {
             </div>
         </aside>
     `;
+    const heroLandingLink = hero.querySelector(".repo-docs__secondary-link");
+    if (heroLandingLink) {
+        bindHostedNavigation(heroLandingLink, "/");
+    }
 
     const sectionRail = document.createElement("aside");
     sectionRail.className = "repo-docs__rail";
@@ -196,6 +219,10 @@ export function createDocsView() {
             <a class="repo-landing__footer-link" href="https://github.com/rybkr/gitvista" target="_blank" rel="noopener noreferrer">${GITHUB_SVG} GitHub</a>
         </div>
     `;
+    const helpLandingLink = help.querySelector(".repo-docs__primary-link");
+    if (helpLandingLink) {
+        bindHostedNavigation(helpLandingLink, "/");
+    }
 
     content.appendChild(hero);
     content.appendChild(sectionRail);

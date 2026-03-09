@@ -1,10 +1,30 @@
-import { createGraphController } from "./graph/graphController.js";
-
 const FEATURED_REPOS = [
     { url: "https://github.com/rybkr/gitvista", name: "rybkr/gitvista", description: "Git history visualization for branches, diffs, and activity" },
     { url: "https://github.com/jqlang/jq", name: "jqlang/jq", description: "Command-line JSON processor" },
 ];
-const SNAPSHOT_REPO_URL = "https://github.com/rybkr/gitvista";
+const HERO_PREVIEW = {
+    path: "gitvista.io / repo / rybkr / gitvista",
+    name: "GitVista",
+    branch: "main",
+    head: "HEAD lane mode",
+    description: "Read the repository at branch level first, then drop into individual commits and diffs when you need proof.",
+    metrics: [
+        { label: "Commits", value: "14.2k", note: "history indexed" },
+        { label: "Branches", value: "38", note: "refs in view" },
+        { label: "Tags", value: "112", note: "release markers" },
+    ],
+    activity: [
+        { hash: "50c9298", title: "Fix landing preview loading and layout behavior", meta: "main • just now", tone: "main" },
+        { hash: "d6a11f2", title: "Stabilize hosted repo bootstrap after clone completion", meta: "preview-refresh • 12 min ago", tone: "branch" },
+        { hash: "4bb2e9c", title: "Merge lane layout polish into landing worktree", meta: "merge from ui-pass", tone: "merge" },
+        { hash: "9f90d8a", title: "Add repository overview cards and docs navigation", meta: "main • 34 min ago", tone: "main" },
+    ],
+    insights: [
+        { label: "Graph-first", value: "Branch motion stays visible while you inspect commits." },
+        { label: "Repo overview", value: "Head, refs, tags, and remotes stay in one rail." },
+        { label: "Diff-ready", value: "Open a commit only when you already know why it matters." },
+    ],
+};
 
 const DELETE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -49,77 +69,12 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     let activeStreams = new Map();
     let destroyed = false;
     let highlightTimer = null;
-    let snapshotRepoId = null;
-    let snapshotInitPromise = null;
-    let previewGraphController = null;
-    let previewGraphCommitMap = new Map();
 
     /** @type {Map<string, { id: string|null, state: string, error: string|null, phase: string, percent: number }>} keyed by URL */
     const featuredState = new Map();
 
     function normalizeRepoUrl(url) {
         return typeof url === "string" ? url.replace(/\/+$/, "") : "";
-    }
-
-    function deriveRemotePath(remotes) {
-        const origin = remotes?.origin || Object.values(remotes || {})[0] || "";
-        const clean = normalizeRepoUrl(origin).replace(/^https?:\/\//, "").replace(/^git@/, "");
-        const path = clean.includes(":") ? clean.split(":")[1] : clean.split("/").slice(1).join("/");
-        return path ? path.replace(/\.git$/, "") : "rybkr/gitvista";
-    }
-
-    function deriveRepoName(data) {
-        const remotePath = deriveRemotePath(data?.remotes);
-        const leaf = remotePath.split("/").pop() || "";
-        if (leaf.toLowerCase() === "gitvista") return "GitVista";
-        if (leaf) return leaf;
-        return data?.name || "GitVista";
-    }
-
-    function formatBranchName(name) {
-        if (!name) return "";
-        return name
-            .replace(/^refs\/heads\//, "")
-            .replace(/^refs\/remotes\/[^/]+\//, "")
-            .trim();
-    }
-
-    function buildSnapshotCommitHashes(summary, limit = 8) {
-        const allByHash = new Map((summary?.skeleton || []).map((commit) => [commit.h, commit]));
-        const headHash = summary?.headHash || summary?.skeleton?.[0]?.h || "";
-        const ordered = [];
-        const seen = new Set();
-        const queue = [];
-        if (headHash) {
-            queue.push(headHash);
-            let cursor = headHash;
-            for (let i = 0; cursor && i < 5; i++) {
-                const commit = allByHash.get(cursor);
-                cursor = commit?.p?.[0] || "";
-                if (cursor) queue.push(cursor);
-                const mergeParent = commit?.p?.[1] || "";
-                if (mergeParent) queue.push(mergeParent);
-            }
-        }
-
-        while (queue.length > 0 && ordered.length < limit) {
-            const hash = queue.shift();
-            if (!hash || seen.has(hash)) continue;
-            seen.add(hash);
-            const commit = allByHash.get(hash);
-            if (!commit) continue;
-            ordered.push(hash);
-            for (const parentHash of commit.p || []) {
-                if (!seen.has(parentHash)) {
-                    queue.push(parentHash);
-                }
-            }
-        }
-
-        if (ordered.length === 0) {
-            return (summary?.skeleton || []).slice(0, limit).map((commit) => commit.h);
-        }
-        return ordered;
     }
 
     function scrollToSection(target, { focus } = {}) {

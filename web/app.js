@@ -22,29 +22,9 @@ import { createGraphMinimap } from "./graphMinimap.js";
 import { createGraphSettings } from "./graphSettings.js";
 import { loadSettings } from "./graphSettingsDefaults.js";
 import { createTelemetryHud, telemetryStore } from "./telemetry.js";
+import { parseHostedPath, parseLocalHash } from "./routes.js";
 
-const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
-const REPO_HASH_RE = /^repo\/([^/]+)(?:\/([0-9a-f]{40}))?$/i;
 let activeViewCleanup = null;
-
-/** Parses the URL hash and resolves the hosted route. */
-function parseHash() {
-    const fragment = location.hash.slice(1);
-    if (!fragment) return { page: "landing", repoId: null, commitHash: null };
-
-    if (fragment === "docs") {
-        return { page: "docs", repoId: null, commitHash: null };
-    }
-
-    // Hosted: #repo/{id} or #repo/{id}/{commitHash}
-    const m = REPO_HASH_RE.exec(fragment);
-    if (m) return { page: "repo", repoId: m[1], commitHash: m[2] || null };
-
-    // Local: #{commitHash}
-    if (COMMIT_HASH_RE.test(fragment)) return { page: "repo", repoId: null, commitHash: fragment };
-
-    return { page: "landing", repoId: null, commitHash: null };
-}
 
 async function detectServerMode() {
     try {
@@ -84,37 +64,48 @@ document.addEventListener("DOMContentLoaded", async () => {
         mount(() => bootstrapGraph(root, repoId));
     };
 
-    const mountLanding = () => {
-        mount(() => showLanding(root));
+    const mountLanding = (navigateToPath) => {
+        mount(() => showLanding(root, navigateToPath));
     };
 
-    const mountDocs = () => {
-        mount(() => showDocs(root));
+    const mountDocs = (navigateToPath) => {
+        mount(() => showDocs(root, navigateToPath));
     };
 
     if (mode === "local") {
         mountGraph(null);
     } else {
-        const parsed = parseHash();
-        if (parsed.page === "repo" && parsed.repoId) {
-            setApiBase(`/api/repos/${parsed.repoId}`);
-            mountGraph(parsed.repoId);
-        } else if (parsed.page === "docs") {
-            mountDocs();
-        } else {
-            mountLanding();
-        }
+        const replaceHostedPath = (path) => {
+            const nextPath = typeof path === "string" && path ? path : "/";
+            history.replaceState(null, "", nextPath);
+        };
 
-        window.addEventListener("hashchange", () => {
-            const p = parseHash();
-            if (p.page === "repo" && p.repoId) {
-                setApiBase(`/api/repos/${p.repoId}`);
-                mountGraph(p.repoId);
-            } else if (p.page === "docs") {
-                mountDocs();
+        const mountFromLocation = () => {
+            const parsed = parseHostedPath(location.pathname);
+            if (parsed.page === "repo" && parsed.repoId) {
+                setApiBase(`/api/repos/${parsed.repoId}`);
+                mount(() => bootstrapGraph(root, parsed.repoId, {
+                    navigateToPath: navigateToHostedPath,
+                    replacePath: replaceHostedPath,
+                }));
+            } else if (parsed.page === "docs") {
+                mountDocs(navigateToHostedPath);
             } else {
-                mountLanding();
+                mountLanding(navigateToHostedPath);
             }
+        };
+
+        const navigateToHostedPath = (path) => {
+            const nextPath = typeof path === "string" && path ? path : "/";
+            if (location.pathname === nextPath && !location.search && !location.hash) return;
+            history.pushState(null, "", nextPath);
+            mountFromLocation();
+        };
+
+        mountFromLocation();
+
+        window.addEventListener("popstate", () => {
+            mountFromLocation();
         });
     }
 });
@@ -134,14 +125,14 @@ function clearRoot(root) {
 }
 
 /** Shows the hosted landing page. */
-function showLanding(root) {
+function showLanding(root, navigateToPath) {
     document.title = "GitVista";
     let destroyed = false;
     const landing = createRepoLanding({
         onRepoSelect: (id) => {
-            destroy();
-            location.hash = `repo/${id}`;
+            navigateToPath(`/repo/${id}`);
         },
+        onNavigate: navigateToPath,
     });
     root.appendChild(landing.el);
 
@@ -155,10 +146,10 @@ function showLanding(root) {
     return destroy;
 }
 
-function showDocs(root) {
+function showDocs(root, navigateToPath) {
     document.title = "GitVista Docs";
     let destroyed = false;
-    const docs = createDocsView();
+    const docs = createDocsView({ navigateToPath });
     root.appendChild(docs.el);
 
     function destroy() {
@@ -172,7 +163,9 @@ function showDocs(root) {
 }
 
 /** Bootstraps the graph view (works for both local and hosted modes). */
-function bootstrapGraph(root, repoId) {
+function bootstrapGraph(root, repoId, navigation = {}) {
+    const navigateToPath = typeof navigation.navigateToPath === "function" ? navigation.navigateToPath : null;
+    const replacePath = typeof navigation.replacePath === "function" ? navigation.replacePath : null;
     const statusIndicator = document.createElement("div");
     statusIndicator.className = "gv-connection-indicator";
     statusIndicator.setAttribute("data-gv-status-dot", "");
@@ -195,7 +188,10 @@ function bootstrapGraph(root, repoId) {
     const banner = createConnectionBanner();
     document.body.appendChild(banner.el);
 
-    const overlay = createRepoUnavailableOverlay({ repoId });
+    const overlay = createRepoUnavailableOverlay({
+        repoId,
+        onNavigateHome: repoId && navigateToPath ? () => navigateToPath("/") : null,
+    });
     document.body.appendChild(overlay.el);
 
     function setConnectionState(state) {
@@ -326,7 +322,7 @@ function bootstrapGraph(root, repoId) {
             <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg> Back to repos`;
         backBtn.addEventListener("click", () => {
-            location.hash = "";
+            navigateToPath?.("/");
         });
         repoTabContent.appendChild(backBtn);
     }
@@ -546,12 +542,7 @@ function bootstrapGraph(root, repoId) {
         },
         onCommitSelect: (hash) => {
             if (repoId) {
-                // Hosted: preserve repo prefix in hash
-                if (hash) {
-                    history.replaceState(null, "", `#repo/${repoId}/${hash}`);
-                } else {
-                    history.replaceState(null, "", `#repo/${repoId}`);
-                }
+                replacePath?.(hash ? `/repo/${repoId}/${hash}` : `/repo/${repoId}`);
             } else {
                 // Local mode
                 if (hash) {
@@ -744,7 +735,7 @@ function bootstrapGraph(root, repoId) {
 
     /** Extract a permalink commit hash for restore. */
     function getPermalinkHash() {
-        const parsed = parseHash();
+        const parsed = repoId ? parseHostedPath(location.pathname) : parseLocalHash(location.hash);
         return parsed?.commitHash || null;
     }
 
