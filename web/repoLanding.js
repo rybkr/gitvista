@@ -32,9 +32,10 @@ const ARROW_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
  *
  * @param {Object} opts
  * @param {(repoId: string) => void} opts.onRepoSelect — called when user clicks a ready repo
+ * @param {(path: string) => void} [opts.onNavigate] — called for hosted route navigation
  * @returns {{ el: HTMLElement, destroy: () => void }}
  */
-export function createRepoLanding({ onRepoSelect }) {
+export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const el = document.createElement("div");
     el.className = "repo-landing";
 
@@ -142,6 +143,25 @@ export function createRepoLanding({ onRepoSelect }) {
         }, 1600);
     }
 
+    function bindHostedNavigation(link, path) {
+        link.href = path;
+        if (typeof onNavigate !== "function") return;
+        link.addEventListener("click", (event) => {
+            if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+            ) {
+                return;
+            }
+            event.preventDefault();
+            onNavigate(path);
+        });
+    }
+
     // ── Shared helpers ────────────────────────────────────────────────────
 
     function startProgressStream(id, onUpdate) {
@@ -240,7 +260,7 @@ export function createRepoLanding({ onRepoSelect }) {
         { label: "Overview", targetId: "try" },
         { label: "Featured", targetId: "featured" },
         { label: "Local", targetId: "local" },
-        { label: "Docs", href: "#docs" },
+        { label: "Docs", href: "/docs" },
     ];
 
     for (const item of navItems) {
@@ -248,7 +268,7 @@ export function createRepoLanding({ onRepoSelect }) {
         link.className = "repo-landing__nav-link";
         link.textContent = item.label;
         if (item.href) {
-            link.href = item.href;
+            bindHostedNavigation(link, item.href);
         } else if (item.external) {
             link.href = item.href;
             link.target = "_blank";
@@ -364,6 +384,7 @@ export function createRepoLanding({ onRepoSelect }) {
     const previewGraph = document.createElement("div");
     previewGraph.className = "repo-landing__preview-graph";
     previewGraph.dataset.loading = "true";
+    previewGraph.dataset.state = "loading";
     previewGraph.innerHTML = `
         <div class="repo-landing__preview-graph-header"></div>
         <div class="repo-landing__preview-graph-shell">
@@ -375,6 +396,7 @@ export function createRepoLanding({ onRepoSelect }) {
     `;
     const previewGraphHeader = previewGraph.querySelector(".repo-landing__preview-graph-header");
     const previewGraphShell = previewGraph.querySelector(".repo-landing__preview-graph-shell");
+    const previewGraphLoadingText = previewGraph.querySelector(".repo-landing__preview-graph-loading-text");
     const previewGraphCanvas = document.createElement("div");
     previewGraphCanvas.className = "repo-landing__preview-graph-canvas";
     previewGraphShell.appendChild(previewGraphCanvas);
@@ -383,6 +405,7 @@ export function createRepoLanding({ onRepoSelect }) {
     const previewSidebar = document.createElement("div");
     previewSidebar.className = "repo-landing__preview-sidebar";
     previewSidebar.dataset.loading = "true";
+    previewSidebar.dataset.state = "loading";
 
     const previewSidebarHeader = document.createElement("div");
     previewSidebarHeader.className = "repo-landing__preview-sidebar-header";
@@ -623,10 +646,62 @@ export function createRepoLanding({ onRepoSelect }) {
         Promise.allSettled(promises);
     }
 
+    function setSnapshotMetricValues({ commits, branches, tags }) {
+        previewCommitItem.textContent = commits;
+        previewBranchItem.textContent = branches;
+        previewTagItem.textContent = tags;
+    }
+
+    function setSnapshotLoadingState(message = "Loading graph...") {
+        previewSidebar.dataset.loading = "true";
+        previewSidebar.dataset.state = "loading";
+        previewGraph.dataset.loading = "true";
+        previewGraph.dataset.state = "loading";
+        previewGraphLoadingText.textContent = message;
+    }
+
+    function applySnapshotPendingState(repo = {}, progress = null) {
+        if (destroyed) return;
+        const remotePath = deriveRemotePath({ remotes: { origin: repo.url || SNAPSHOT_REPO_URL } });
+        const phase = progress?.phase || repo.phase || "Preparing repository";
+        const percent = Number(progress?.percent ?? repo.percent ?? 0);
+        const progressLabel = percent > 0 ? `${phase} ${percent}%` : phase;
+
+        previewRepoName.textContent = "GitVista";
+        previewBranchPill.textContent = progressLabel;
+        previewHeadPill.textContent = repo.state === "pending" ? "Queued" : "Loading";
+        previewDescription.textContent = "Preparing the live GitVista snapshot for the landing page preview.";
+        setSnapshotMetricValues({
+            commits: percent > 0 ? `${percent}% cloned` : "Scanning history",
+            branches: "Detecting refs",
+            tags: "Detecting tags",
+        });
+        previewPath.textContent = `gitvista.io / repo / ${remotePath}`;
+        setSnapshotLoadingState(progressLabel);
+    }
+
+    function setSnapshotErrorState(message = "GitVista snapshot is unavailable right now.") {
+        if (destroyed) return;
+        previewRepoName.textContent = "GitVista";
+        previewBranchPill.textContent = "Snapshot unavailable";
+        previewHeadPill.textContent = "Retry later";
+        previewDescription.textContent = message;
+        setSnapshotMetricValues({
+            commits: "Unavailable",
+            branches: "Unavailable",
+            tags: "Unavailable",
+        });
+        previewSidebar.dataset.loading = "false";
+        previewSidebar.dataset.state = "error";
+        previewGraph.dataset.loading = "true";
+        previewGraph.dataset.state = "error";
+        previewGraphLoadingText.textContent = message;
+    }
+
     function applySnapshotOverview(data) {
         if (!data || destroyed) return;
         const repoName = deriveRepoName(data);
-        const branch = data.headDetached ? "Detached HEAD" : (data.currentBranch || "No branch");
+        const branch = data.headDetached ? "Detached HEAD" : (formatBranchName(data.currentBranch) || "No branch");
         const head = typeof data.headHash === "string" && data.headHash ? data.headHash.slice(0, 7) : "unknown";
         const description = (data.description || "").trim() || "Git history visualization.";
         const remotePath = deriveRemotePath(data.remotes);
@@ -635,11 +710,14 @@ export function createRepoLanding({ onRepoSelect }) {
         previewBranchPill.textContent = branch;
         previewHeadPill.textContent = `HEAD ${head}`;
         previewDescription.textContent = description;
-        previewCommitItem.textContent = `${Number(data.commitCount || 0).toLocaleString()} total`;
-        previewBranchItem.textContent = `${Number(data.branchCount || 0)} branches`;
-        previewTagItem.textContent = `${Number(data.tagCount || 0)} tags`;
+        setSnapshotMetricValues({
+            commits: `${Number(data.commitCount || 0).toLocaleString()} total`,
+            branches: `${Number(data.branchCount || 0)} branches`,
+            tags: `${Number(data.tagCount || 0)} tags`,
+        });
         previewPath.textContent = `gitvista.io / repo / ${remotePath}`;
         previewSidebar.dataset.loading = "false";
+        previewSidebar.dataset.state = "ready";
     }
 
     function buildSnapshotPreviewSummary(summary, limit = 8) {
@@ -683,13 +761,17 @@ export function createRepoLanding({ onRepoSelect }) {
         return previewGraphController;
     }
 
-    function renderSnapshotGraph(summary, metadata = {}, commits = []) {
-        if (!summary?.skeleton?.length) return;
+    function renderSnapshotGraph(summary, commits = []) {
+        if (!summary?.skeleton?.length) {
+            setSnapshotErrorState("GitVista snapshot loaded without graph data.");
+            return;
+        }
         previewGraphCommitMap = new Map(commits.map((commit) => [commit.hash, commit]));
         const controller = ensurePreviewGraphController();
         const previewSummary = buildSnapshotPreviewSummary(summary, 8);
         previewGraphHeader.innerHTML = "";
         previewGraph.dataset.loading = "false";
+        previewGraph.dataset.state = "ready";
         controller?.applySummary(previewSummary);
         controller?.refreshViewport?.();
         controller?.centerOnCommit(previewSummary.headHash || null);
@@ -722,7 +804,22 @@ export function createRepoLanding({ onRepoSelect }) {
         const visibleHashes = buildSnapshotCommitHashes(graphData, 8);
         const graphCommits = await fetchSnapshotCommits(id, visibleHashes).catch(() => []);
         applySnapshotOverview(repoData);
-        renderSnapshotGraph(graphData, repoData, graphCommits);
+        renderSnapshotGraph(graphData, graphCommits);
+    }
+
+    async function fetchSnapshotDataWithRetry(id, attempts = 6) {
+        let lastError = null;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            try {
+                await fetchSnapshotData(id);
+                return;
+            } catch (error) {
+                lastError = error;
+                if (attempt >= attempts - 1) break;
+                await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+            }
+        }
+        throw lastError || new Error("Snapshot data unavailable");
     }
 
     async function ensureSnapshotRepo(existingRepos = null) {
@@ -733,15 +830,21 @@ export function createRepoLanding({ onRepoSelect }) {
             snapshotRepoId = existing.id;
             addOrUpdateRepo(existing);
             if (existing.state === "ready") {
-                await fetchSnapshotData(existing.id);
+                await fetchSnapshotDataWithRetry(existing.id).catch(() => {
+                    setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
+                });
                 return;
             }
             if (existing.state === "cloning" || existing.state === "pending") {
+                applySnapshotPendingState(existing);
                 startProgressStream(existing.id, async (update) => {
                     if (destroyed) return;
                     addOrUpdateRepo({ ...existing, ...update, url: existing.url });
+                    applySnapshotPendingState(existing, update);
                     if (update.state === "ready") {
-                        await fetchSnapshotData(existing.id).catch(() => {});
+                        await fetchSnapshotDataWithRetry(existing.id).catch(() => {
+                            setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
+                        });
                     }
                 });
                 return;
@@ -761,24 +864,36 @@ export function createRepoLanding({ onRepoSelect }) {
         addOrUpdateRepo(repo);
 
         if (repo.state === "ready") {
-            await fetchSnapshotData(repo.id).catch(() => {});
+            await fetchSnapshotDataWithRetry(repo.id).catch(() => {
+                setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
+            });
             return;
         }
 
         if (repo.state === "cloning" || repo.state === "pending") {
+            applySnapshotPendingState(repo);
             startProgressStream(repo.id, async (update) => {
                 if (destroyed) return;
                 addOrUpdateRepo({ ...repo, ...update, url: SNAPSHOT_REPO_URL });
+                applySnapshotPendingState(repo, update);
                 if (update.state === "ready") {
-                    await fetchSnapshotData(repo.id).catch(() => {});
+                    await fetchSnapshotDataWithRetry(repo.id).catch(() => {
+                        setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
+                    });
                 }
             });
+            return;
         }
+
+        setSnapshotErrorState("GitVista snapshot is not ready yet.");
     }
 
     function initSnapshotRepo(existingRepos = null) {
         if (!snapshotInitPromise) {
-            snapshotInitPromise = ensureSnapshotRepo(existingRepos).catch(() => {});
+            setSnapshotLoadingState("Loading live GitVista snapshot...");
+            snapshotInitPromise = ensureSnapshotRepo(existingRepos).catch(() => {
+                setSnapshotErrorState("GitVista snapshot could not be initialized.");
+            });
         }
         return snapshotInitPromise;
     }

@@ -7649,8 +7649,8 @@ body {
 
 .repo-landing__hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(560px, 1fr);
-    gap: 40px;
+    grid-template-columns: minmax(0, 1.18fr) minmax(460px, 0.82fr);
+    gap: 32px;
     align-items: center;
     padding: 0;
     text-align: left;
@@ -7671,6 +7671,9 @@ body {
 
 .repo-landing__hero-preview {
     animation-delay: 90ms;
+    width: 100%;
+    max-width: 760px;
+    justify-self: end;
 }
 
 .repo-landing__eyebrow {
@@ -7831,7 +7834,7 @@ body {
     position: relative;
     display: grid;
     grid-template-rows: auto 1fr;
-    min-height: 620px;
+    height: clamp(520px, 68vh, 620px);
     border-radius: 28px;
     border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
     background:
@@ -7898,7 +7901,7 @@ body {
 
 .repo-landing__preview-body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(220px, 0.54fr) minmax(0, 1.46fr);
     min-height: 0;
 }
 
@@ -7986,6 +7989,17 @@ body {
     display: inline-flex;
 }
 
+.repo-landing__preview-graph[data-state="error"] .repo-landing__preview-graph-loading {
+    flex-direction: column;
+    gap: 10px;
+    padding: 24px;
+    text-align: center;
+}
+
+.repo-landing__preview-graph[data-state="error"] .repo-landing__preview-graph-spinner {
+    display: none;
+}
+
 .repo-landing__preview-graph-spinner {
     width: 18px;
     height: 18px;
@@ -8005,6 +8019,12 @@ body {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--text-secondary) 88%, var(--text-color));
+}
+
+.repo-landing__preview-graph[data-state="error"] .repo-landing__preview-graph-loading-text {
+    max-width: 28ch;
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--warning-color) 46%, var(--text-color));
 }
 
 .repo-landing__preview-guide {
@@ -8090,9 +8110,10 @@ body {
     position: relative;
     z-index: 1;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto auto 1fr;
     gap: 8px;
-    padding: 16px 12px;
+    min-height: 0;
+    padding: 16px 10px;
     border-right: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
     background: color-mix(in srgb, var(--surface-color) 94%, transparent);
 }
@@ -8145,8 +8166,14 @@ body {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 4%, transparent), 0 0 10px color-mix(in srgb, var(--node-color) 5%, transparent);
 }
 
+.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-pill {
+    border-color: color-mix(in srgb, var(--warning-color) 34%, var(--border-color));
+    color: color-mix(in srgb, var(--warning-color) 34%, var(--text-color));
+}
+
 .repo-landing__preview-sidebar-header strong {
     font-size: 20px;
+    line-height: 1;
 }
 
 .repo-landing__preview-sidebar-header span,
@@ -8182,6 +8209,16 @@ body {
 .repo-landing__preview-sidebar-meta span {
     color: var(--text-secondary);
     line-height: 1.4;
+}
+
+.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-sidebar-meta {
+    border-color: color-mix(in srgb, var(--warning-color) 24%, var(--border-color));
+    background: color-mix(in srgb, var(--warning-color) 8%, var(--surface-elevated));
+}
+
+.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-sidebar-meta span,
+.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-item span {
+    color: color-mix(in srgb, var(--warning-color) 32%, var(--text-color));
 }
 
 .repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span,
@@ -8922,7 +8959,7 @@ body {
     }
 
     .repo-landing__preview-frame {
-        min-height: 520px;
+        height: 520px;
     }
 
     .repo-landing__proof-strip,

@@ -1018,14 +1018,14 @@ export function createGraphController(rootElement, options = {}) {
     select(canvas).call(zoom).on("dblclick.zoom", null);
 
     const resize = () => {
-        // Read the canvas's own flex-computed size (not the parent's) to avoid
-        // a feedback loop: #root is a column flex container whose height is
-        // determined by body's cross-axis stretch.  Reading parent.clientHeight
-        // and writing it back as canvas.style.height would make #root grow on
-        // every call.  Fall back to window dimensions on the very first call
-        // before the browser has completed layout.
-        const cssWidth = canvas.clientWidth || window.innerWidth;
-        const cssHeight = canvas.clientHeight || window.innerHeight;
+        // Read the canvas's computed box first. If layout has not settled yet,
+        // fall back to the host element's box for width only. For height, do
+        // not fall back to window.innerHeight in embedded contexts such as the
+        // landing-page preview: that creates an intrinsic-height feedback loop
+        // where the canvas grows the host, ResizeObserver fires, and the cycle
+        // repeats. When height is still 0, bail and wait for layout/observer.
+        const cssWidth = canvas.clientWidth || rootElement.clientWidth || window.innerWidth;
+        const cssHeight = canvas.clientHeight || rootElement.clientHeight || 0;
         const dpr = window.devicePixelRatio || 1;
 
         // Guard against invalid dimensions that would put canvas in error state
