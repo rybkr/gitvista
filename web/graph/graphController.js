@@ -104,12 +104,12 @@ export function createGraphController(rootElement, options = {}) {
     });
     const laneStrategy = new LaneStrategy({ onTick: tick });
 
-    // Restore layout mode from localStorage, default to "force"
+    // Restore layout mode from localStorage, default to "lane"
     const STORAGE_KEY_LAYOUT_MODE = "gitvista-layout-mode";
     const savedMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
     const requestedMode = options.initialLayoutMode === "lane" ? "lane"
         : options.initialLayoutMode === "force" ? "force" : null;
-    const initialMode = requestedMode || (savedMode === "lane" ? "lane" : "force");
+    const initialMode = requestedMode || (savedMode === "force" ? "force" : "lane");
     const centerAnchorYFraction = Number.isFinite(options.centerAnchorYFraction)
         ? Math.max(0, Math.min(1, options.centerAnchorYFraction))
         : 0.25;
@@ -176,8 +176,8 @@ export function createGraphController(rootElement, options = {}) {
     rebalanceBtn.setAttribute("aria-label", "Rebalance force-directed layout");
     rebalanceBtn.disabled = !layoutStrategy.supportsRebalance;
 
-    controls.appendChild(forceBtn);
     controls.appendChild(laneBtn);
+    controls.appendChild(forceBtn);
     controls.appendChild(rebalanceBtn);
 
     const updateForceButtonAvailability = () => {
@@ -512,8 +512,35 @@ export function createGraphController(rootElement, options = {}) {
         }
     }
 
+    function collectVisibleForceHydrationHashes() {
+        if (lazyLoadingActive || nodes.length === 0) return [];
+
+        const width = viewportWidth || canvas.clientWidth || rootElement.clientWidth || 0;
+        const height = viewportHeight || canvas.clientHeight || rootElement.clientHeight || 0;
+        if (width <= 0 || height <= 0) return [];
+
+        const [minX, minY] = zoomTransform.invert([0, 0]);
+        const [maxX, maxY] = zoomTransform.invert([width, height]);
+        const padding = LINK_DISTANCE * 2;
+        const left = Math.min(minX, maxX) - padding;
+        const right = Math.max(minX, maxX) + padding;
+        const top = Math.min(minY, maxY) - padding;
+        const bottom = Math.max(minY, maxY) + padding;
+
+        const hashes = [];
+        for (const node of nodes) {
+            if (node.type !== "commit" || !node.hash) continue;
+            if (node.x < left || node.x > right || node.y < top || node.y > bottom) continue;
+            hashes.push(node.hash);
+            for (const parent of node.commit?.parents ?? []) {
+                hashes.push(parent);
+            }
+        }
+        return hashes;
+    }
+
     function enqueueHydration(hashes) {
-        if (!lazyLoadingActive || !options.fetchGraphCommits || !Array.isArray(hashes) || hashes.length === 0) return;
+        if (!options.fetchGraphCommits || !Array.isArray(hashes) || hashes.length === 0) return;
         for (const hash of hashes) {
             if (!hash || hydrationInflight.has(hash)) continue;
             const commit = commits.get(hash);
@@ -1080,6 +1107,8 @@ export function createGraphController(rootElement, options = {}) {
                 }
                 enqueueHydration(hashesToHydrate);
             }
+        } else {
+            enqueueHydration(collectVisibleForceHydrationHashes());
         }
     };
 
@@ -1508,6 +1537,8 @@ export function createGraphController(rootElement, options = {}) {
         if (layoutStrategy.shouldAutoCenter()) {
             centerOnLatestCommit();
         }
+
+        enqueueHydration(collectVisibleForceHydrationHashes());
 
     }
 

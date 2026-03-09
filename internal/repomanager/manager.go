@@ -274,7 +274,7 @@ func (rm *RepoManager) GetRepo(id string) (*gitcore.Repository, error) {
 	rm.mu.RUnlock()
 
 	if !exists {
-		return nil, fmt.Errorf("repo not found: %s", id)
+		return rm.recoverRepoFromDisk(id)
 	}
 
 	managed.mu.Lock()
@@ -291,6 +291,56 @@ func (rm *RepoManager) GetRepo(id string) (*gitcore.Repository, error) {
 	default:
 		return nil, fmt.Errorf("repo %s is in unknown state", id)
 	}
+}
+
+func (rm *RepoManager) recoverRepoFromDisk(id string) (*gitcore.Repository, error) {
+	diskPath := filepath.Join(rm.cfg.DataDir, id)
+	info, err := os.Stat(diskPath)
+	if err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("repo not found: %s", id)
+	}
+
+	repo, err := gitcore.NewRepository(diskPath)
+	if err != nil {
+		return nil, fmt.Errorf("repo not found: %s", id)
+	}
+
+	now := time.Now()
+	recovered := &ManagedRepo{
+		ID:         id,
+		State:      StateReady,
+		DiskPath:   diskPath,
+		Repo:       repo,
+		CreatedAt:  now,
+		LastAccess: now,
+		LastFetch:  now,
+	}
+
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	if managed, exists := rm.repos[id]; exists {
+		if err := repo.Close(); err != nil {
+			rm.logger.Warn("failed to close duplicate recovered repo", "id", id, "error", err)
+		}
+		managed.mu.Lock()
+		defer managed.mu.Unlock()
+		switch managed.State {
+		case StateReady:
+			managed.LastAccess = now
+			return managed.Repo, nil
+		case StatePending, StateCloning:
+			return nil, fmt.Errorf("repo %s is still %s", id, managed.State)
+		case StateError:
+			return nil, fmt.Errorf("repo %s has error: %s", id, managed.Error)
+		default:
+			return nil, fmt.Errorf("repo %s is in unknown state", id)
+		}
+	}
+
+	rm.repos[id] = recovered
+	rm.logger.Info("Recovered repo from disk", "id", id, "path", diskPath)
+	return repo, nil
 }
 
 // Status returns the current state, error message, and clone progress for a repo.

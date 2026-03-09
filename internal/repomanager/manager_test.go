@@ -2,6 +2,8 @@ package repomanager
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -145,6 +147,46 @@ func TestGetRepo_NotFound(t *testing.T) {
 	}
 }
 
+func TestGetRepo_RecoversFromDisk(t *testing.T) {
+	cfg := testConfig(t)
+	rm, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rm.Close()
+
+	id := "recoverable"
+	repoPath := filepath.Join(cfg.DataDir, id)
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+
+	runGit(t, repoPath, "init", "-b", "main")
+	runGit(t, repoPath, "config", "user.name", "GitVista Test")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	runGit(t, repoPath, "add", "README.md")
+	runGit(t, repoPath, "commit", "-m", "initial commit")
+
+	repo, err := rm.GetRepo(id)
+	if err != nil {
+		t.Fatalf("GetRepo() error: %v", err)
+	}
+	if repo == nil {
+		t.Fatal("GetRepo() returned nil repo")
+	}
+
+	state, _, _, err := rm.Status(id)
+	if err != nil {
+		t.Fatalf("Status() error after recovery: %v", err)
+	}
+	if state != StateReady {
+		t.Fatalf("state = %v, want %v", state, StateReady)
+	}
+}
+
 func TestGetRepo_Pending(t *testing.T) {
 	cfg := testConfig(t)
 	rm, err := New(cfg)
@@ -216,6 +258,16 @@ func TestRemove(t *testing.T) {
 
 	if rmErr := rm.Remove(id); rmErr == nil {
 		t.Error("Remove() should fail for already-removed repo")
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
 	}
 }
 
