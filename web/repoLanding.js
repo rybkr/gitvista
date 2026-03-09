@@ -1,6 +1,4 @@
-import { shortenHash } from "./utils/format.js";
-import { LaneStrategy } from "./graph/layout/laneStrategy.js";
-import { LANE_MARGIN, LANE_WIDTH } from "./graph/constants.js";
+import { createGraphController } from "./graph/graphController.js";
 
 const FEATURED_REPOS = [
     { url: "https://github.com/rybkr/gitvista", name: "rybkr/gitvista", description: "Git history visualization for branches, diffs, and activity" },
@@ -52,6 +50,8 @@ export function createRepoLanding({ onRepoSelect }) {
     let highlightTimer = null;
     let snapshotRepoId = null;
     let snapshotInitPromise = null;
+    let previewGraphController = null;
+    let previewGraphCommitMap = new Map();
 
     /** @type {Map<string, { id: string|null, state: string, error: string|null, phase: string, percent: number }>} keyed by URL */
     const featuredState = new Map();
@@ -83,22 +83,7 @@ export function createRepoLanding({ onRepoSelect }) {
             .trim();
     }
 
-    function escapeHtml(value) {
-        return String(value ?? "")
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#39;");
-    }
-
-    function truncateLabel(value, maxChars) {
-        const text = String(value ?? "").trim();
-        if (!text) return "";
-        return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
-    }
-
-    function buildSnapshotCommitHashes(summary, limit = 12) {
+    function buildSnapshotCommitHashes(summary, limit = 8) {
         const allByHash = new Map((summary?.skeleton || []).map((commit) => [commit.h, commit]));
         const headHash = summary?.headHash || summary?.skeleton?.[0]?.h || "";
         const ordered = [];
@@ -387,10 +372,13 @@ export function createRepoLanding({ onRepoSelect }) {
                 <span class="repo-landing__preview-graph-loading-text">Loading graph...</span>
             </div>
         </div>
-        <div class="repo-landing__preview-badge">live graph</div>
     `;
     const previewGraphHeader = previewGraph.querySelector(".repo-landing__preview-graph-header");
     const previewGraphShell = previewGraph.querySelector(".repo-landing__preview-graph-shell");
+    const previewGraphCanvas = document.createElement("div");
+    previewGraphCanvas.className = "repo-landing__preview-graph-canvas";
+    previewGraphShell.appendChild(previewGraphCanvas);
+    ensurePreviewGraphController();
 
     const previewSidebar = document.createElement("div");
     previewSidebar.className = "repo-landing__preview-sidebar";
@@ -654,160 +642,62 @@ export function createRepoLanding({ onRepoSelect }) {
         previewSidebar.dataset.loading = "false";
     }
 
+    function buildSnapshotPreviewSummary(summary, limit = 8) {
+        const visibleHashes = buildSnapshotCommitHashes(summary, limit);
+        const visibleHashSet = new Set(visibleHashes);
+        return {
+            headHash: summary.headHash || visibleHashes[0] || "",
+            branches: Object.fromEntries(
+                Object.entries(summary.branches || {}).filter(([, hash]) => visibleHashSet.has(hash))
+            ),
+            tags: {},
+            stashes: [],
+            skeleton: (summary.skeleton || [])
+                .filter((commit) => visibleHashSet.has(commit.h))
+                .map((commit) => ({
+                    h: commit.h,
+                    p: (commit.p || []).filter((parentHash) => visibleHashSet.has(parentHash)),
+                    t: commit.t,
+                    branchLabel: commit.branchLabel || "",
+                    branchLabelSource: commit.branchLabelSource || "",
+                })),
+        };
+    }
+
+    function ensurePreviewGraphController() {
+        if (previewGraphController || destroyed) return previewGraphController;
+        previewGraphController = createGraphController(previewGraphCanvas, {
+            centerAnchorYFraction: 0.25,
+            detailThresholds: {
+                message: 1,
+                author: 1,
+                date: 1,
+            },
+            initialLayoutMode: "lane",
+            showControls: false,
+            showRefDecorators: false,
+            fetchGraphCommits: async (hashes) => hashes
+                .map((hash) => previewGraphCommitMap.get(hash))
+                .filter(Boolean),
+        });
+        return previewGraphController;
+    }
+
     function renderSnapshotGraph(summary, metadata = {}, commits = []) {
         if (!summary?.skeleton?.length) return;
-
-        const width = 520;
-        const height = 500;
-        const top = 34;
-        const bottom = 26;
-        const visibleHashes = buildSnapshotCommitHashes(summary, 12);
-        const visibleHashSet = new Set(visibleHashes);
-        const allByHash = new Map(summary.skeleton.map((commit) => [commit.h, commit]));
-        const commitByHash = new Map(commits.map((commit) => [commit.hash, commit]));
-        const layoutCommits = new Map();
-        const nodes = [];
-        for (const hash of visibleHashes) {
-            const skeleton = allByHash.get(hash);
-            if (!skeleton) continue;
-            const details = commitByHash.get(hash) || {};
-            const commit = {
-                hash,
-                parents: (skeleton.p || []).filter((parentHash) => visibleHashSet.has(parentHash)),
-                message: details.message || "",
-                author: {
-                    name: details.author?.name || details.committer?.name || "",
-                    when: details.author?.when || details.committer?.when || (skeleton.t ? new Date(skeleton.t).toISOString() : ""),
-                },
-                committer: {
-                    name: details.committer?.name || details.author?.name || "",
-                    when: details.committer?.when || details.author?.when || (skeleton.t ? new Date(skeleton.t).toISOString() : ""),
-                },
-                branchLabel: skeleton.branchLabel || "",
-                branchLabelSource: skeleton.branchLabelSource || "",
-            };
-            layoutCommits.set(hash, commit);
-            nodes.push({ type: "commit", hash, commit, x: 0, y: 0 });
-        }
-        const branchMap = new Map(Object.entries(summary.branches || {}));
-        const laneStrategy = new LaneStrategy();
-        laneStrategy.updateGraph(nodes, [], layoutCommits, branchMap, { height: 900 });
-
-        const positionData = laneStrategy.getPositionData();
-        const targetPositions = positionData.transitionTargetPositions;
-        const laneInfo = laneStrategy.getLaneInfo();
-        const laidOut = nodes
-            .map((node) => {
-                const target = targetPositions.get(node.hash);
-                if (!target) return null;
-                const position = Math.round((target.x - LANE_MARGIN) / LANE_WIDTH);
-                return {
-                    hash: node.hash,
-                    commit: layoutCommits.get(node.hash),
-                    graphX: target.x,
-                    graphY: target.y,
-                    position,
-                    merge: (layoutCommits.get(node.hash)?.parents?.length || 0) > 1,
-                };
-            })
-            .filter(Boolean)
-            .sort((a, b) => a.graphY - b.graphY)
-            .slice(0, 10);
-        const visiblePositionSet = new Set(laidOut.map((item) => item.position));
-        const previewCenterX = 132;
-        const previewLaneStep = 68;
-        const yMin = laidOut[0]?.graphY || 0;
-        const yMax = laidOut[laidOut.length - 1]?.graphY || yMin;
-        const ySpan = Math.max(yMax - yMin, 1);
-        const positions = new Map(laidOut.map((item, index) => {
-            const x = previewCenterX + item.position * previewLaneStep;
-            const y = top + ((item.graphY - yMin) / ySpan) * (height - top - bottom);
-            return [item.hash, {
-                x,
-                y,
-                position: item.position,
-                merge: item.merge,
-            }];
-        }));
-
-        const laneLabels = laneInfo
-            .filter((lane) => visiblePositionSet.has(lane.position))
-            .map((lane) => {
-                const header = lane.segments?.find((segment) => segment.displayName)?.displayName || "";
-                return {
-                    position: lane.position,
-                    label: header,
-                };
-            })
-            .filter((lane) => lane.label)
-            .sort((a, b) => a.position - b.position);
-
-        const guides = [...visiblePositionSet]
-            .sort((a, b) => a - b)
-            .map((position) => {
-                const x = previewCenterX + position * previewLaneStep;
-                return `<line class="repo-landing__preview-guide ${position === 0 ? "is-main" : ""}" x1="${x}" y1="${top - 8}" x2="${x}" y2="${height - bottom + 8}" />`;
-            }).join("");
-
-        const edges = [];
-        for (const item of laidOut) {
-            const from = positions.get(item.hash);
-            if (!from) continue;
-            for (const parentHash of item.commit?.parents || []) {
-                const to = positions.get(parentHash);
-                if (!to) continue;
-                if (from.x === to.x) {
-                    edges.push(`<path class="repo-landing__preview-edge ${from.position === 0 ? "is-main" : "is-branch"}" d="M ${from.x} ${from.y} L ${to.x} ${to.y}" />`);
-                    continue;
-                }
-                const midY = from.y + (to.y - from.y) * 0.45;
-                const edgeTone = to.position === 0 ? "is-merge" : "is-branch";
-                edges.push(`<path class="repo-landing__preview-edge ${edgeTone}" d="M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}" />`);
-            }
-        }
-
-        const nodeMarkup = laidOut.map((item) => {
-            const pos = positions.get(item.hash);
-            const cls = pos.merge ? "is-merge" : (pos.position === 0 ? "is-main" : "is-branch");
-            return `<circle class="repo-landing__preview-node ${cls}" cx="${pos.x}" cy="${pos.y}" r="8" />`;
-        }).join("");
-
-        const labels = laidOut.map((item) => {
-            const pos = positions.get(item.hash);
-            const details = commitByHash.get(item.hash) || {};
-            const message = truncateLabel((details.message || "").split("\n")[0], 30);
-            const committer = truncateLabel(details.committer?.name || details.author?.name || "", 22);
-            const labelX = pos.x + 24;
-            const hashY = pos.y;
-            const messageY = pos.y + 18;
-            const authorY = pos.y + 34;
-
-            return `
-                <g class="repo-landing__preview-label">
-                    <text class="repo-landing__preview-label-hash" x="${labelX}" y="${hashY}">${escapeHtml(shortenHash(item.hash))}</text>
-                    ${message ? `<text class="repo-landing__preview-label-message" x="${labelX}" y="${messageY}">${escapeHtml(message)}</text>` : ""}
-                    ${committer ? `<text class="repo-landing__preview-label-author" x="${labelX}" y="${authorY}">${escapeHtml(committer)}</text>` : ""}
-                </g>
-            `;
-        }).join("");
-
-        const headerLabels = laneLabels.map((lane) => {
-            const x = previewCenterX + lane.position * previewLaneStep;
-            const tone = lane.position === 0 ? "is-main" : "is-branch";
-            return `<span class="repo-landing__preview-lane-label ${tone}" style="left:${(x / width) * 100}%">${escapeHtml(lane.label)}</span>`;
-        }).join("");
-
-        previewGraphHeader.innerHTML = headerLabels;
+        previewGraphCommitMap = new Map(commits.map((commit) => [commit.hash, commit]));
+        const controller = ensurePreviewGraphController();
+        const previewSummary = buildSnapshotPreviewSummary(summary, 8);
+        previewGraphHeader.innerHTML = "";
         previewGraph.dataset.loading = "false";
-
-        previewGraphShell.innerHTML = `
-            <svg class="repo-landing__preview-graph-svg" viewBox="0 0 ${width} ${height}" aria-hidden="true" preserveAspectRatio="xMinYMin meet">
-                ${guides}
-                ${edges.join("")}
-                ${nodeMarkup}
-                ${labels}
-            </svg>
-        `;
+        controller?.applySummary(previewSummary);
+        controller?.refreshViewport?.();
+        controller?.centerOnCommit(previewSummary.headHash || null);
+        window.requestAnimationFrame(() => {
+            if (destroyed || !previewGraphController) return;
+            previewGraphController.refreshViewport?.();
+            previewGraphController.centerOnCommit(previewSummary.headHash || null);
+        });
     }
 
     async function fetchSnapshotCommits(id, hashes) {
@@ -829,7 +719,7 @@ export function createRepoLanding({ onRepoSelect }) {
         if (!repoResp.ok) throw new Error(`HTTP ${repoResp.status}`);
         if (!graphResp.ok) throw new Error(`HTTP ${graphResp.status}`);
         const [repoData, graphData] = await Promise.all([repoResp.json(), graphResp.json()]);
-        const visibleHashes = buildSnapshotCommitHashes(graphData, 12);
+        const visibleHashes = buildSnapshotCommitHashes(graphData, 8);
         const graphCommits = await fetchSnapshotCommits(id, visibleHashes).catch(() => []);
         applySnapshotOverview(repoData);
         renderSnapshotGraph(graphData, repoData, graphCommits);
@@ -1186,6 +1076,8 @@ export function createRepoLanding({ onRepoSelect }) {
     function destroy() {
         destroyed = true;
         window.clearTimeout(highlightTimer);
+        previewGraphController?.destroy?.();
+        previewGraphController = null;
         for (const [, es] of activeStreams) {
             es.close();
         }

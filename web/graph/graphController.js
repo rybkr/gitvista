@@ -39,8 +39,14 @@ import { loadSettings, saveSettings, getDefaults } from "../graphSettingsDefault
  * @param {HTMLElement} rootElement DOM node that hosts the canvas.
  * @param {{
  *   fetchGraphCommits?: (hashes: string[]) => Promise<import("./types.js").GraphCommit[]>,
+  *   centerAnchorYFraction?: number,
+ *   detailThresholds?: { message?: number, author?: number, date?: number },
+ *   initialZoomScale?: number,
+ *   initialLayoutMode?: "force" | "lane",
  *   onCommitTreeClick?: (commit: import("./types.js").GraphCommit) => void,
  *   onCommitSelect?: (hash: string | null) => void,
+ *   showRefDecorators?: boolean,
+ *   showControls?: boolean,
  * }} [options] Optional callbacks.
  * @returns {{
  *   applyDelta(delta: unknown): void,
@@ -98,7 +104,17 @@ export function createGraphController(rootElement, options = {}) {
     // Restore layout mode from localStorage, default to "force"
     const STORAGE_KEY_LAYOUT_MODE = "gitvista-layout-mode";
     const savedMode = localStorage.getItem(STORAGE_KEY_LAYOUT_MODE);
-    const initialMode = savedMode === "lane" ? "lane" : "force";
+    const requestedMode = options.initialLayoutMode === "lane" ? "lane"
+        : options.initialLayoutMode === "force" ? "force" : null;
+    const initialMode = requestedMode || (savedMode === "lane" ? "lane" : "force");
+    const centerAnchorYFraction = Number.isFinite(options.centerAnchorYFraction)
+        ? Math.max(0, Math.min(1, options.centerAnchorYFraction))
+        : 0.25;
+    const initialZoomScale = Number.isFinite(options.initialZoomScale)
+        ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, options.initialZoomScale))
+        : null;
+    const showRefDecorators = options.showRefDecorators !== false;
+    const showControls = options.showControls !== false;
     let layoutStrategy = initialMode === "lane" ? laneStrategy : forceStrategy;
     state.layoutMode = initialMode;
 
@@ -181,7 +197,9 @@ export function createGraphController(rootElement, options = {}) {
     });
     controls.appendChild(headBtn);
 
-    rootElement.appendChild(controls);
+    if (showControls) {
+        rootElement.appendChild(controls);
+    }
 
     /**
      * Switch between force-directed and lane-based layout modes.
@@ -273,7 +291,9 @@ export function createGraphController(rootElement, options = {}) {
     });
 
     const tooltipManager = new TooltipManager(canvas);
-    const renderer = new GraphRenderer(canvas, buildPalette(canvas));
+    const renderer = new GraphRenderer(canvas, buildPalette(canvas), {
+        detailThresholds: options.detailThresholds,
+    });
 
     const updateTooltipPosition = () => {
         tooltipManager.updatePosition(zoomTransform);
@@ -330,6 +350,20 @@ export function createGraphController(rootElement, options = {}) {
         return bestNode;
     };
 
+    const translateViewTo = (x, y) => {
+        const vw = viewportWidth || canvas.width;
+        const vh = viewportHeight || canvas.height;
+        if (initialZoomScale && Math.abs((zoomTransform?.k ?? 1) - initialZoomScale) > 0.01) {
+            select(canvas).call(zoom.scaleTo, initialZoomScale);
+        }
+        select(canvas).call(
+            zoom.translateTo,
+            x,
+            y,
+            [vw / 2, vh * centerAnchorYFraction],
+        );
+    };
+
     const centerOnLatestCommit = () => {
         // Prefer the currently selected commit, then HEAD, then the layout
         // strategy's best guess (latest by timestamp).
@@ -340,14 +374,7 @@ export function createGraphController(rootElement, options = {}) {
             );
             if (targetNode) {
                 if (state.layoutMode === "lane") {
-                    const vw = viewportWidth || canvas.width;
-                    const vh = viewportHeight || canvas.height;
-                    select(canvas).call(
-                        zoom.translateTo,
-                        targetNode.x,
-                        targetNode.y,
-                        [vw / 2, vh / 4],
-                    );
+                    translateViewTo(targetNode.x, targetNode.y);
                 } else {
                     select(canvas).call(zoom.translateTo, targetNode.x, targetNode.y);
                 }
@@ -357,14 +384,7 @@ export function createGraphController(rootElement, options = {}) {
             if (lazyLoadingActive) {
                 const entry = commitIndex.getByHash(preferredHash);
                 if (entry) {
-                    const vw = viewportWidth || canvas.width;
-                    const vh = viewportHeight || canvas.height;
-                    select(canvas).call(
-                        zoom.translateTo,
-                        entry.x,
-                        entry.y,
-                        [vw / 2, vh / 4],
-                    );
+                    translateViewTo(entry.x, entry.y);
                     return;
                 }
             }
@@ -583,7 +603,7 @@ export function createGraphController(rootElement, options = {}) {
             const target = nodes.find((n) => n.type === "commit" && n.hash === hash);
             if (target) {
                 layoutStrategy.disableAutoCenter();
-                select(canvas).call(zoom.translateTo, target.x, target.y);
+                translateViewTo(target.x, target.y);
                 return;
             }
             // In lazy mode, the commit may be off-screen — use commitIndex
@@ -591,7 +611,7 @@ export function createGraphController(rootElement, options = {}) {
                 const entry = commitIndex.getByHash(hash);
                 if (entry) {
                     layoutStrategy.disableAutoCenter();
-                    select(canvas).call(zoom.translateTo, entry.x, entry.y);
+                    translateViewTo(entry.x, entry.y);
                     // The zoom handler will fire → ViewportWindow re-queries → rematerializes
                     return;
                 }
@@ -1418,11 +1438,11 @@ export function createGraphController(rootElement, options = {}) {
         const commitNodeByHash = new Map(
             commitReconciliation.nodes.map((node) => [node.hash, node]),
         );
-        const branchReconciliation = reconcileBranchNodes(
-            existingBranchNodes,
-            branches,
-            commitNodeByHash,
-        );
+            const branchReconciliation = reconcileBranchNodes(
+                existingBranchNodes,
+                branches,
+                commitNodeByHash,
+            );
         const tagReconciliation = reconcileTagNodes(
             existingTagNodes,
             state.tags,
@@ -1602,16 +1622,16 @@ export function createGraphController(rootElement, options = {}) {
         );
 
         // 8. Assemble state.nodes and state.links
-        const allNodes = [
-            ...commitNodes,
-            ...branchReconciliation.nodes,
-            ...tagReconciliation.nodes,
-        ];
-        const allLinks = [
-            ...commitLinks,
-            ...branchReconciliation.links,
-            ...tagReconciliation.links,
-        ];
+            const allNodes = [
+                ...commitNodes,
+                ...(showRefDecorators ? branchReconciliation.nodes : []),
+                ...(showRefDecorators ? tagReconciliation.nodes : []),
+            ];
+            const allLinks = [
+                ...commitLinks,
+                ...(showRefDecorators ? branchReconciliation.links : []),
+                ...(showRefDecorators ? tagReconciliation.links : []),
+            ];
 
         nodes.splice(0, nodes.length, ...allNodes);
         links.splice(0, links.length, ...allLinks);
@@ -1626,8 +1646,10 @@ export function createGraphController(rootElement, options = {}) {
         }
 
         // Snap decorators AFTER materialization so positions are set
-        snapBranchesToTargets(branchReconciliation.alignments);
-        snapTagsToTargets(tagReconciliation.alignments);
+        if (showRefDecorators) {
+            snapBranchesToTargets(branchReconciliation.alignments);
+            snapTagsToTargets(tagReconciliation.alignments);
+        }
 
         // Inject ghost merge node
         injectGhostMergeNode(commitNodeByHash);
@@ -1692,21 +1714,23 @@ export function createGraphController(rootElement, options = {}) {
         // Assemble
         const allNodes = [
             ...commitNodes,
-            ...branchReconciliation.nodes,
-            ...tagReconciliation.nodes,
+            ...(showRefDecorators ? branchReconciliation.nodes : []),
+            ...(showRefDecorators ? tagReconciliation.nodes : []),
         ];
         const allLinks = [
             ...commitLinks,
-            ...branchReconciliation.links,
-            ...tagReconciliation.links,
+            ...(showRefDecorators ? branchReconciliation.links : []),
+            ...(showRefDecorators ? tagReconciliation.links : []),
         ];
 
         nodes.splice(0, nodes.length, ...allNodes);
         links.splice(0, links.length, ...allLinks);
 
         // Snap decorators
-        snapBranchesToTargets(branchReconciliation.alignments);
-        snapTagsToTargets(tagReconciliation.alignments);
+        if (showRefDecorators) {
+            snapBranchesToTargets(branchReconciliation.alignments);
+            snapTagsToTargets(tagReconciliation.alignments);
+        }
 
         // Inject ghost merge node
         injectGhostMergeNode(commitNodeByHash);
@@ -2083,7 +2107,9 @@ export function createGraphController(rootElement, options = {}) {
         canvas.removeEventListener("pointermove", pointerHandlers.move);
         canvas.removeEventListener("pointerup", pointerHandlers.up);
         canvas.removeEventListener("pointercancel", pointerHandlers.cancel);
-        controls.remove();
+        if (showControls) {
+            controls.remove();
+        }
         tooltipManager.destroy();
     }
 

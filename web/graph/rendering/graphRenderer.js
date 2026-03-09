@@ -56,11 +56,17 @@ export class GraphRenderer {
     /**
      * @param {HTMLCanvasElement} canvas Canvas element receiving render output.
      * @param {import("../types.js").GraphPalette} palette Color palette derived from CSS variables.
+     * @param {{ detailThresholds?: { message?: number, author?: number, date?: number } }} [options]
      */
-    constructor(canvas, palette) {
+    constructor(canvas, palette, options = {}) {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d", { alpha: false });
         this.palette = palette;
+        this.detailThresholds = {
+            message: options.detailThresholds?.message ?? COMMIT_MESSAGE_ZOOM_THRESHOLD,
+            author: options.detailThresholds?.author ?? COMMIT_AUTHOR_ZOOM_THRESHOLD,
+            date: options.detailThresholds?.date ?? COMMIT_DATE_ZOOM_THRESHOLD,
+        };
     }
 
     /**
@@ -1441,7 +1447,7 @@ export class GraphRenderer {
         const messageSource = node.isStash && node.stashMessage
             ? node.stashMessage
             : node.commit.message;
-        if (zoomK >= COMMIT_MESSAGE_ZOOM_THRESHOLD && messageSource) {
+        if (zoomK >= this.detailThresholds.message && messageSource) {
             const firstLine = messageSource.split("\n")[0].trim();
             const maxChars = layoutMode === "lane" ? 30 : COMMIT_MESSAGE_MAX_CHARS;
             const truncated = firstLine.length > maxChars
@@ -1455,7 +1461,7 @@ export class GraphRenderer {
         }
 
         // Tier 2 (zoom >= 2.0): author name
-        if (zoomK >= COMMIT_AUTHOR_ZOOM_THRESHOLD && node.commit.author?.name) {
+        if (zoomK >= this.detailThresholds.author && node.commit.author?.name) {
             this.ctx.font = COMMIT_DETAIL_FONT;
             this.ctx.lineWidth = 3;
             this.ctx.lineJoin = "round";
@@ -1468,7 +1474,7 @@ export class GraphRenderer {
         }
 
         // Tier 3 (zoom >= 3.0): relative commit date
-        if (zoomK >= COMMIT_DATE_ZOOM_THRESHOLD) {
+        if (zoomK >= this.detailThresholds.date) {
             const rel = relativeTime(node.commit.author?.when);
             if (rel) {
                 this.ctx.font = COMMIT_DETAIL_FONT;

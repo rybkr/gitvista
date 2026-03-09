@@ -7898,23 +7898,21 @@ body {
 
 .repo-landing__preview-body {
     display: grid;
-    grid-template-columns: 156px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     min-height: 0;
 }
 
 .repo-landing__preview-graph {
     position: relative;
     min-height: 0;
-    padding: 20px 28px 30px;
+    padding: 0;
     background:
         linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 78%, transparent), transparent 18%),
         color-mix(in srgb, var(--surface-color) 58%, transparent);
 }
 
 .repo-landing__preview-graph-header {
-    position: relative;
-    height: 38px;
-    margin: 0 0 10px;
+    display: none;
 }
 
 .repo-landing__preview-lane-label {
@@ -7942,32 +7940,46 @@ body {
 }
 
 .repo-landing__preview-graph-shell {
-    width: 100%;
-    height: calc(100% - 44px);
-    min-height: 520px;
-}
-
-.repo-landing__preview-graph-svg {
+    position: relative;
+    display: flex;
     width: 100%;
     height: 100%;
     min-height: 520px;
-    overflow: visible;
+}
+
+.repo-landing__preview-graph-canvas {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
+.repo-landing__preview-graph-canvas canvas {
+    width: 100%;
+    height: 100%;
+    min-height: 520px;
+    background: transparent;
+    pointer-events: none;
+}
+
+.repo-landing__preview-graph-canvas .graph-controls {
+    display: none;
 }
 
 .repo-landing__preview-graph-loading {
     position: absolute;
-    inset: 58px 28px 30px;
+    inset: 0;
     display: none;
     align-items: center;
     justify-content: center;
     gap: 12px;
-    border-radius: 22px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+    border-radius: 0;
     background:
-        radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--node-color) 10%, transparent), transparent 34%),
-        radial-gradient(circle at 82% 32%, color-mix(in srgb, var(--branch-node-color) 10%, transparent), transparent 32%),
+        radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--node-color) 7%, transparent), transparent 34%),
+        radial-gradient(circle at 82% 32%, color-mix(in srgb, var(--branch-node-color) 7%, transparent), transparent 32%),
         linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent), color-mix(in srgb, var(--surface-color) 94%, transparent));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-elevated) 45%, transparent);
 }
 
 .repo-landing__preview-graph[data-loading="true"] .repo-landing__preview-graph-loading {
@@ -7983,8 +7995,8 @@ body {
     border-right-color: var(--branch-node-color);
     box-shadow:
         0 0 0 1px color-mix(in srgb, var(--surface-elevated) 42%, transparent),
-        0 0 18px color-mix(in srgb, var(--node-color) 10%, transparent);
-    animation: gv-preview-graph-spin 0.9s linear infinite;
+        0 0 12px color-mix(in srgb, var(--node-color) 7%, transparent);
+    animation: gv-preview-graph-spin 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
 }
 
 .repo-landing__preview-graph-loading-text {
@@ -7992,7 +8004,7 @@ body {
     font-size: 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--text-secondary);
+    color: color-mix(in srgb, var(--text-secondary) 88%, var(--text-color));
 }
 
 .repo-landing__preview-guide {
@@ -8074,24 +8086,6 @@ body {
     stroke-width: 4px;
 }
 
-.repo-landing__preview-badge {
-    position: absolute;
-    right: 28px;
-    bottom: 24px;
-    min-height: 34px;
-    padding: 0 14px;
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--node-color) 22%, var(--border-color));
-    background: color-mix(in srgb, var(--surface-color) 88%, transparent);
-    font-family: var(--gv-font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-secondary);
-}
-
 .repo-landing__preview-sidebar {
     position: relative;
     z-index: 1;
@@ -8148,7 +8142,7 @@ body {
 }
 
 .repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-pill {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 6%, transparent), 0 0 18px color-mix(in srgb, var(--node-color) 8%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 4%, transparent), 0 0 10px color-mix(in srgb, var(--node-color) 5%, transparent);
 }
 
 .repo-landing__preview-sidebar-header strong {
@@ -8248,32 +8242,54 @@ body {
     width: 100%;
     min-width: 0;
     color: transparent;
+    overflow: hidden;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface-recessed) 90%, var(--bg-color));
+    box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--border-color) 18%, transparent),
+        0 0 0 1px color-mix(in srgb, var(--node-color) 3%, transparent);
 }
 
 .repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span::after,
 .repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item span::after {
     content: "";
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 0.72em;
-    border-radius: 8px;
+    top: 0;
+    bottom: 0;
+    left: -58%;
+    width: 58%;
     background: linear-gradient(
         90deg,
-        color-mix(in srgb, var(--surface-recessed) 88%, var(--bg-color)) 0%,
-        color-mix(in srgb, var(--node-color) 16%, var(--surface-elevated)) 28%,
-        color-mix(in srgb, var(--surface-elevated) 98%, transparent) 50%,
-        color-mix(in srgb, var(--merge-node-color) 14%, var(--surface-elevated)) 72%,
-        color-mix(in srgb, var(--surface-recessed) 88%, var(--bg-color)) 100%
+        transparent 0%,
+        color-mix(in srgb, var(--surface-color) 94%, transparent) 24%,
+        color-mix(in srgb, var(--surface-elevated) 98%, transparent) 38%,
+        color-mix(in srgb, var(--node-color) 8%, var(--surface-elevated)) 50%,
+        color-mix(in srgb, var(--surface-color) 98%, transparent) 62%,
+        color-mix(in srgb, var(--surface-elevated) 94%, transparent) 76%,
+        transparent 100%
     );
-    background-size: 220% 100%;
-    box-shadow:
-        inset 0 0 0 1px color-mix(in srgb, var(--border-color) 22%, transparent),
-        0 0 0 1px color-mix(in srgb, var(--node-color) 4%, transparent);
-    opacity: 0.98;
-    transform: translateY(-50%);
-    animation: gv-skeleton-glide 1.15s linear infinite;
+    opacity: 0.95;
+    will-change: transform;
+    animation: gv-skeleton-glide 1.8s ease-in-out infinite;
+}
+
+.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span {
+    height: 0.8em;
+}
+
+.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item:nth-child(1) span {
+    width: 72%;
+    height: 0.8em;
+}
+
+.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item:nth-child(2) span {
+    width: 58%;
+    height: 0.8em;
+}
+
+.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item:nth-child(3) span {
+    width: 44%;
+    height: 0.8em;
 }
 
 .repo-landing__proof-strip {
@@ -8826,10 +8842,10 @@ body {
 
 @keyframes gv-skeleton-glide {
     0% {
-        background-position: 220% 0;
+        transform: translateX(0);
     }
     100% {
-        background-position: -20% 0;
+        transform: translateX(340%);
     }
 }
 
@@ -8924,7 +8940,7 @@ body {
         border-bottom: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
     }
 
-    .repo-landing__preview-graph-svg {
+    .repo-landing__preview-graph-canvas canvas {
         min-height: 340px;
     }
 
