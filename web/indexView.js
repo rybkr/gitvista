@@ -48,10 +48,6 @@ export function createIndexView() {
     title.className = "repo-overview-title";
     title.textContent = "Repository";
 
-    const subtitle = document.createElement("p");
-    subtitle.className = "repo-overview-subtitle";
-    subtitle.textContent = "Metadata and topology snapshot";
-
     const pillRow = document.createElement("div");
     pillRow.className = "repo-overview-pills";
 
@@ -66,7 +62,6 @@ export function createIndexView() {
 
     hero.appendChild(eyebrow);
     hero.appendChild(title);
-    hero.appendChild(subtitle);
     hero.appendChild(pillRow);
 
     const metricGrid = document.createElement("section");
