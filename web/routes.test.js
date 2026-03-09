@@ -6,6 +6,7 @@ import { parseHostedPath, parseLocalHash } from "./routes.js";
 describe("parseHostedPath", () => {
     it("parses hosted landing and docs routes", () => {
         assert.deepEqual(parseHostedPath("/"), { page: "landing", repoId: null, commitHash: null, docsSection: null });
+        assert.deepEqual(parseHostedPath("/install"), { page: "install", repoId: null, commitHash: null, docsSection: null });
         assert.deepEqual(parseHostedPath("/docs"), { page: "docs", repoId: null, commitHash: null, docsSection: null });
         assert.deepEqual(parseHostedPath("/docs/"), { page: "docs", repoId: null, commitHash: null, docsSection: null });
     });

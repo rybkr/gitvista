@@ -18,6 +18,7 @@ export function createDocsView({ navigateToPath, activeSection = null } = {}) {
         navigateToPath,
         navItems: [
             { label: "Home", path: "/" },
+            { label: "Install", path: "/install" },
             { label: "Docs", path: "/docs" },
         ],
     }));

@@ -5,6 +5,7 @@ const DOCS_PATH_RE = /^\/docs\/([^/]+)\/?$/i;
 export function parseHostedPath(pathname) {
     const normalized = normalizePathname(pathname);
     if (normalized === "/") return { page: "landing", repoId: null, commitHash: null, docsSection: null };
+    if (normalized === "/install") return { page: "install", repoId: null, commitHash: null, docsSection: null };
     if (normalized === "/docs") return { page: "docs", repoId: null, commitHash: null, docsSection: null };
 
     const docsMatch = DOCS_PATH_RE.exec(normalized);

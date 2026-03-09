@@ -53,6 +53,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         brandAction: () => scrollToSection(hero, { focus: input }),
         navItems: [
             { label: "Home", path: "/" },
+            { label: "Install", path: "/install" },
             { label: "Docs", path: "/docs" },
         ],
     });
@@ -93,7 +94,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     formMeta.appendChild(createElement("span", "repo-landing__hero-support", "Browser mode works best with public GitHub repositories. Switch to local mode when you need live checkout updates."));
     const installShortcut = createElement("button", "repo-landing__hero-link", "Prefer local mode?");
     installShortcut.type = "button";
-    installShortcut.addEventListener("click", () => scrollToSection(installSection));
+    installShortcut.addEventListener("click", () => onNavigate?.("/install"));
     formMeta.appendChild(installShortcut);
 
     const errorMsg = createElement("div", "repo-landing__error");

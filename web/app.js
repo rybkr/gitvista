@@ -14,6 +14,7 @@ import { setApiBase, apiUrl } from "./apiBase.js";
 import { apiFetch } from "./apiFetch.js";
 import { createRepoLanding } from "./repoLanding.js";
 import { createDocsView } from "./docsView.js";
+import { createInstallView } from "./installView.js";
 import { setConnectionState as setErrorConnectionState, setRepositoryAvailable } from "./errorState.js";
 import { createConnectionBanner } from "./connectionBanner.js";
 import { createRepoUnavailableOverlay } from "./repoUnavailableOverlay.js";
@@ -73,6 +74,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         mount(() => showDocs(root, navigateToPath, activeSection));
     };
 
+    const mountInstall = (navigateToPath) => {
+        mount(() => showInstall(root, navigateToPath));
+    };
+
     if (mode === "local") {
         mountGraph(null);
     } else {
@@ -89,6 +94,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     navigateToPath: navigateToHostedPath,
                     replacePath: replaceHostedPath,
                 }));
+            } else if (parsed.page === "install") {
+                mountInstall(navigateToHostedPath);
             } else if (parsed.page === "docs") {
                 mountDocs(navigateToHostedPath, parsed.docsSection);
             } else {
@@ -158,6 +165,22 @@ function showDocs(root, navigateToPath, activeSection) {
         destroyed = true;
         docs.destroy();
         docs.el.remove();
+    }
+
+    return destroy;
+}
+
+function showInstall(root, navigateToPath) {
+    document.title = `${PRODUCT_INFO.name} Install`;
+    let destroyed = false;
+    const install = createInstallView({ navigateToPath });
+    root.appendChild(install.el);
+
+    function destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        install.destroy();
+        install.el.remove();
     }
 
     return destroy;
