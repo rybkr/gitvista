@@ -101,14 +101,14 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const proofStrip = createElement("section", "repo-landing__proof-strip");
     proofStrip.id = "why";
     proofStrip.innerHTML = `
-        <div class="repo-landing__proof-item"><strong>Instant orientation</strong><span>Graph-first context before you inspect individual commits.</span></div>
-        <div class="repo-landing__proof-item"><strong>Example repos ready</strong><span>Jump into curated public repos without waiting on setup.</span></div>
-        <div class="repo-landing__proof-item"><strong>Local mode available</strong><span>Track your own <code>.git</code> directory when browser mode is not enough.</span></div>
+        <div class="repo-landing__proof-item"><strong>See the shape of the repo</strong><span>Follow branches, merges, and commit flow in one view before you drill into individual diffs.</span></div>
+        <div class="repo-landing__proof-item"><strong>Start instantly in the browser</strong><span>Open public GitHub repositories without setup and get useful context right away.</span></div>
+        <div class="repo-landing__proof-item"><strong>Switch to local when it matters</strong><span>Connect to your own <code>.git</code> directory when you need live working-tree and checkout updates.</span></div>
     `;
     const proofHeader = [
         createElement("p", "repo-landing__eyebrow", "Why GitVista"),
-        createElement("h2", "repo-landing__section-title repo-landing__proof-title", "One readable view for branches, merges, and the commits between them."),
-        createElement("p", "repo-landing__section-subtitle repo-landing__proof-intro", "Built for the moment when branch names, merge commits, and detached HEADs stop being legible in your head."),
+        createElement("h2", "repo-landing__section-title repo-landing__proof-title", "Git history becomes readable the moment you open it."),
+        createElement("p", "repo-landing__section-subtitle repo-landing__proof-intro", "GitVista turns branch movement, merge points, and commit-level changes into one clear workflow for inspection."),
     ];
     proofStrip.replaceChildren(...proofHeader, ...Array.from(proofStrip.children));
 
