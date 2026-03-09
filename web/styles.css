@@ -7850,7 +7850,6 @@ body {
 .repo-landing__list-heading,
 .repo-landing__card-name,
 .repo-landing__preview-path,
-.repo-landing__preview-label,
 .repo-landing__footer-license {
     font-family: var(--gv-font-mono);
 }
@@ -7862,8 +7861,8 @@ body {
 .repo-landing__preview-frame {
     position: relative;
     display: grid;
-    grid-template-rows: auto 1fr;
-    min-height: clamp(540px, 68vh, 660px);
+    grid-template-rows: auto 1fr auto;
+    min-height: clamp(320px, 38vw, 430px);
     border-radius: 28px;
     border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
     background:
@@ -7930,44 +7929,50 @@ body {
 
 .repo-landing__preview-body {
     display: grid;
-    grid-template-columns: minmax(220px, 0.52fr) minmax(0, 1.48fr);
+    grid-template-columns: minmax(0, 1.28fr) minmax(220px, 0.72fr);
     min-height: 0;
+    padding: 18px;
+    gap: 14px;
 }
 
-.repo-landing__preview-panel {
-    position: relative;
+.repo-landing__preview-graph-panel,
+.repo-landing__preview-focus {
     display: grid;
     align-content: start;
-    gap: 16px;
+    gap: 12px;
     min-height: 0;
-    padding: 20px 18px 18px;
-}
-
-.repo-landing__preview-panel--problem {
-    border-right: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+    padding: 16px;
+    border-radius: 22px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
     background:
-        linear-gradient(180deg, color-mix(in srgb, var(--danger-color) 6%, transparent), transparent 34%),
-        color-mix(in srgb, var(--surface-color) 94%, transparent);
+        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 96%, transparent), color-mix(in srgb, var(--surface-color) 92%, transparent));
+    box-shadow: var(--gv-card-shadow);
 }
 
-.repo-landing__preview-panel--solution {
+.repo-landing__preview-graph-panel {
     background:
-        radial-gradient(circle at top right, color-mix(in srgb, var(--node-color) 10%, transparent), transparent 34%),
-        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 82%, transparent), transparent 28%),
-        color-mix(in srgb, var(--surface-color) 70%, transparent);
+        radial-gradient(circle at top right, color-mix(in srgb, var(--node-color) 12%, transparent), transparent 34%),
+        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 96%, transparent), color-mix(in srgb, var(--surface-color) 92%, transparent));
 }
 
-.repo-landing__preview-panel-header {
+.repo-landing__preview-focus {
+    align-self: stretch;
+    background:
+        radial-gradient(circle at top left, color-mix(in srgb, var(--merge-node-color) 9%, transparent), transparent 34%),
+        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 94%, transparent), color-mix(in srgb, var(--surface-color) 92%, transparent));
+}
+
+.repo-landing__preview-header {
     display: grid;
     gap: 8px;
 }
 
-.repo-landing__preview-panel-header strong,
-.repo-landing__preview-clarity-card strong {
+.repo-landing__preview-heading {
     font-weight: 600;
+    line-height: 1.15;
 }
 
-.repo-landing__preview-panel-copy {
+.repo-landing__preview-copy {
     color: var(--text-secondary);
     line-height: 1.55;
 }
@@ -7980,61 +7985,22 @@ body {
     color: var(--text-secondary);
 }
 
-.repo-landing__preview-chaos {
-    display: grid;
-    gap: 10px;
-}
-
-.repo-landing__preview-chaos-row {
-    padding: 12px 14px;
-    border-radius: 16px;
-    border: 1px dashed color-mix(in srgb, var(--border-color) 72%, transparent);
-    background: color-mix(in srgb, var(--surface-elevated) 86%, transparent);
-    color: color-mix(in srgb, var(--text-secondary) 90%, var(--text-color));
-    font-family: var(--gv-font-mono);
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.repo-landing__preview-canvas {
-    display: grid;
-    grid-template-columns: minmax(0, 1.18fr) minmax(220px, 0.82fr);
-    gap: 14px;
-    align-items: start;
-}
-
-.repo-landing__preview-graph,
-.repo-landing__preview-inspector,
-.repo-landing__preview-diff,
-.repo-landing__preview-clarity-card {
-    display: grid;
-    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
-    background: color-mix(in srgb, var(--surface-color) 94%, transparent);
-    box-shadow: var(--gv-card-shadow);
-}
-
-.repo-landing__preview-graph {
-    gap: 12px;
-    padding: 14px 16px;
-    border-radius: 20px;
-}
-
 .repo-landing__preview-lanes {
     display: grid;
-    gap: 12px;
+    gap: 10px;
 }
 
 .repo-landing__preview-lane {
     display: grid;
-    gap: 10px;
+    gap: 8px;
 }
 
 .repo-landing__preview-lane-label {
     display: inline-flex;
     align-items: center;
     width: fit-content;
-    min-height: 28px;
-    padding: 0 10px;
+    min-height: 24px;
+    padding: 0 8px;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
     background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
@@ -8057,33 +8023,33 @@ body {
     border-color: color-mix(in srgb, var(--merge-node-color) 28%, var(--border-color));
 }
 
-.repo-landing__preview-lane-commits {
+.repo-landing__preview-lane-track {
     position: relative;
     display: grid;
-    gap: 10px;
-    padding-left: 20px;
+    gap: 8px;
+    padding-left: 16px;
 }
 
-.repo-landing__preview-lane-commits::before {
+.repo-landing__preview-lane-track::before {
     content: "";
     position: absolute;
     top: 4px;
     bottom: 4px;
-    left: 5px;
+    left: 4px;
     width: 2px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--border-color) 78%, transparent);
 }
 
-.repo-landing__preview-lane--main .repo-landing__preview-lane-commits::before {
+.repo-landing__preview-lane--main .repo-landing__preview-lane-track::before {
     background: color-mix(in srgb, var(--node-color) 32%, var(--border-color));
 }
 
-.repo-landing__preview-lane--branch .repo-landing__preview-lane-commits::before {
+.repo-landing__preview-lane--branch .repo-landing__preview-lane-track::before {
     background: color-mix(in srgb, var(--branch-node-color) 32%, var(--border-color));
 }
 
-.repo-landing__preview-lane--merge .repo-landing__preview-lane-commits::before {
+.repo-landing__preview-lane--merge .repo-landing__preview-lane-track::before {
     background: color-mix(in srgb, var(--merge-node-color) 32%, var(--border-color));
 }
 
@@ -8091,8 +8057,8 @@ body {
     position: relative;
     display: grid;
     gap: 4px;
-    padding: 12px 14px;
-    border-radius: 18px;
+    padding: 10px 12px;
+    border-radius: 16px;
     border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
     background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
 }
@@ -8100,34 +8066,36 @@ body {
 .repo-landing__preview-commit::before {
     content: "";
     position: absolute;
-    top: 16px;
-    left: -20px;
-    width: 12px;
-    height: 12px;
+    top: 14px;
+    left: -16px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
-    border: 3px solid color-mix(in srgb, var(--surface-color) 90%, transparent);
+    border: 2px solid color-mix(in srgb, var(--surface-color) 90%, transparent);
     background: var(--node-color);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 18%, transparent);
 }
 
+.repo-landing__preview-commit--branch::before,
 .repo-landing__preview-lane--branch .repo-landing__preview-commit::before {
     background: var(--branch-node-color);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--branch-node-color) 18%, transparent);
 }
 
+.repo-landing__preview-commit--merge::before,
 .repo-landing__preview-lane--merge .repo-landing__preview-commit::before {
     background: var(--merge-node-color);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--merge-node-color) 18%, transparent);
 }
 
-.repo-landing__preview-commit--active {
+.repo-landing__preview-commit.is-active {
     border-color: color-mix(in srgb, var(--node-color) 34%, var(--border-color));
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color) 10%, transparent), var(--gv-card-shadow);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 10%, transparent), var(--gv-card-shadow);
+    animation: gv-preview-node-pulse 2.8s ease-in-out infinite;
 }
 
 .repo-landing__preview-commit-hash,
-.repo-landing__preview-commit-meta,
-.repo-landing__preview-diff-stat {
+.repo-landing__preview-commit-meta {
     font-family: var(--gv-font-mono);
     font-size: 10px;
     letter-spacing: 0.08em;
@@ -8139,46 +8107,24 @@ body {
 }
 
 .repo-landing__preview-commit-title,
-.repo-landing__preview-inspector-title,
-.repo-landing__preview-diff-file {
+.repo-landing__preview-heading {
     font-size: 14px;
     line-height: 1.3;
 }
 
 .repo-landing__preview-commit-meta,
-.repo-landing__preview-inspector-copy {
+.repo-landing__preview-copy {
     color: var(--text-secondary);
     line-height: 1.5;
 }
 
-.repo-landing__preview-sidebar {
-    display: grid;
-    gap: 12px;
-}
-
-.repo-landing__preview-inspector,
-.repo-landing__preview-diff {
-    gap: 10px;
-    padding: 14px;
-    border-radius: 20px;
-}
-
-.repo-landing__preview-label {
-    color: var(--text-secondary);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.repo-landing__preview-pill-row,
-.repo-landing__preview-diff-stats {
+.repo-landing__preview-pill-row {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.repo-landing__preview-pill,
-.repo-landing__preview-diff-stat {
+.repo-landing__preview-pill {
     min-height: 24px;
     padding: 0 8px;
     display: inline-flex;
@@ -8188,59 +8134,16 @@ body {
     border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
 }
 
-.repo-landing__preview-diff-header,
-.repo-landing__preview-diff-copy {
-    display: grid;
-    gap: 10px;
-}
-
-.repo-landing__preview-clarity-card {
-    gap: 4px;
-    padding: 12px 14px;
-    border-radius: 18px;
-}
-
-.repo-landing__preview-diff-header {
-    gap: 12px;
-}
-
-.repo-landing__preview-diff-excerpt {
-    display: grid;
-    gap: 8px;
-}
-
-.repo-landing__preview-diff-line {
-    display: block;
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-    color: color-mix(in srgb, var(--text-secondary) 86%, var(--text-color));
-    font-family: var(--gv-font-mono);
-    font-size: 12px;
-    line-height: 1.45;
-}
-
-.repo-landing__preview-checklist {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-}
-
-.repo-landing__preview-clarity-card span {
-    color: var(--text-secondary);
-    line-height: 1.55;
-}
-
 .repo-landing__preview-chip-row {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    padding: 0 18px 18px;
 }
 
 .repo-landing__preview-chip {
-    min-height: 28px;
-    padding: 0 10px;
+    min-height: 24px;
+    padding: 0 8px;
     display: inline-flex;
     align-items: center;
     border-radius: 999px;
@@ -8314,6 +8217,7 @@ body {
 
 .repo-landing__featured-grid {
     margin-top: 28px;
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
 }
@@ -8326,6 +8230,9 @@ body {
 }
 
 .repo-landing__card {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 14px;
     min-height: 228px;
     padding: 22px;
     border-left: 3px solid color-mix(in srgb, var(--node-color) 35%, var(--border-color));
@@ -8355,6 +8262,13 @@ body {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color) 16%, transparent), var(--gv-panel-shadow);
 }
 
+.repo-landing__card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .repo-landing__card-name,
 .repo-landing__list-heading {
     font-family: var(--gv-font-mono);
@@ -8362,22 +8276,22 @@ body {
 
 .repo-landing__card-name {
     font-size: 13px;
+    line-height: 1.35;
     letter-spacing: 0.03em;
     text-transform: uppercase;
 }
 
 .repo-landing__card-desc {
-    margin-bottom: 10px;
-}
-
-.repo-landing__card-meta {
+    margin: 0;
     color: var(--text-secondary);
     line-height: 1.55;
-    margin: 0 0 18px;
 }
 
 .repo-landing__card-action {
     margin-top: auto;
+    display: flex;
+    align-items: flex-end;
+    min-height: 48px;
 }
 
 .repo-landing__badge {
@@ -8909,16 +8823,6 @@ body {
         grid-template-columns: 1fr;
     }
 
-    .repo-landing__preview-panel--problem {
-        border-right: none;
-        border-bottom: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
-    }
-
-    .repo-landing__preview-canvas,
-    .repo-landing__preview-checklist {
-        grid-template-columns: 1fr;
-    }
-
     .repo-landing__preview-frame {
         min-height: auto;
     }
@@ -8977,7 +8881,8 @@ body {
     .repo-landing__card,
     .repo-landing__item,
     .repo-landing__code-block,
-    .repo-landing__preview-panel,
+    .repo-landing__preview-graph-panel,
+    .repo-landing__preview-focus,
     .repo-docs__hero-panel,
     .repo-docs__rail,
     .repo-docs__section,
@@ -9001,12 +8906,16 @@ body {
         flex-direction: column;
     }
 
-    .repo-landing__preview-lane-commits {
-        padding-left: 16px;
+    .repo-landing__preview-body {
+        padding: 16px;
+    }
+
+    .repo-landing__preview-lane-track {
+        padding-left: 14px;
     }
 
     .repo-landing__preview-commit::before {
-        left: -16px;
+        left: -14px;
     }
 
     .repo-landing__preview-topbar {
@@ -9016,8 +8925,21 @@ body {
         padding-bottom: 14px;
     }
 
+    .repo-landing__preview-chip-row {
+        padding: 0 16px 16px;
+    }
+
     .repo-landing__footer {
         justify-items: start;
+    }
+}
+
+@keyframes gv-preview-node-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 10%, transparent), var(--gv-card-shadow);
+    }
+    50% {
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-color) 14%, transparent), 0 10px 22px color-mix(in srgb, var(--node-color) 16%, transparent);
     }
 }
 
@@ -9030,6 +8952,7 @@ body {
     .repo-landing__section,
     .repo-landing__footer,
     .repo-landing__card,
+    .repo-landing__preview-commit.is-active,
     .gv-connection-indicator__light {
         animation: none !important;
     }
