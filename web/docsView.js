@@ -1,6 +1,6 @@
 import { createHostedTopbar } from "./hostedChrome.js";
 import { PRODUCT_INFO } from "./hostedProduct.js";
-import { bindHashScroll, bindHostedPathNavigation, scrollToHashTarget } from "./hostedNavigation.js";
+import { bindHostedPathNavigation } from "./hostedNavigation.js";
 
 function createElement(tagName, className, text) {
     const el = document.createElement(tagName);
@@ -9,7 +9,7 @@ function createElement(tagName, className, text) {
     return el;
 }
 
-export function createDocsView({ navigateToPath } = {}) {
+export function createDocsView({ navigateToPath, activeSection = null } = {}) {
     const controller = new AbortController();
     const el = createElement("div", "repo-docs");
     const chrome = createElement("div", "repo-docs__chrome");
@@ -36,12 +36,7 @@ export function createDocsView({ navigateToPath } = {}) {
             if (!resp.ok) throw new Error(`docs request failed: ${resp.status}`);
             const docs = await resp.json();
             if (controller.signal.aborted) return;
-            renderDocs(content, docs, navigateToPath, el);
-            if (location.hash) {
-                requestAnimationFrame(() => {
-                    scrollToHashTarget(el, location.hash);
-                });
-            }
+            renderDocs(content, docs, navigateToPath, activeSection);
         } catch (error) {
             if (controller.signal.aborted) return;
             state.className = "repo-docs__state repo-docs__state--error";
@@ -58,28 +53,45 @@ export function createDocsView({ navigateToPath } = {}) {
     };
 }
 
-function renderDocs(content, docs, navigateToPath, root) {
+function renderDocs(content, docs, navigateToPath, activeSection) {
     content.replaceChildren();
+
+    const selectedSection = activeSection
+        ? (docs.sections || []).find((section) => section.id === activeSection) || null
+        : null;
+
+    if (activeSection && !selectedSection) {
+        content.appendChild(renderDocsNotFound(navigateToPath));
+        return;
+    }
 
     const hero = createElement("section", "repo-docs__hero");
     const heroCopy = createElement("div", "repo-docs__hero-copy");
-    heroCopy.appendChild(createElement("p", "repo-docs__eyebrow", docs.eyebrow || "Product Docs"));
-    heroCopy.appendChild(createElement("h1", "repo-docs__title", docs.title || `${PRODUCT_INFO.name} Docs`));
-    heroCopy.appendChild(createElement("p", "repo-docs__lede", docs.lede || ""));
+    heroCopy.appendChild(createElement("p", "repo-docs__eyebrow", activeSection ? "Docs Section" : (docs.eyebrow || "Product Docs")));
+    heroCopy.appendChild(createElement("h1", "repo-docs__title", activeSection ? selectedSection.title : (docs.title || `${PRODUCT_INFO.name} Docs`)));
+    heroCopy.appendChild(createElement("p", "repo-docs__lede", activeSection ? `Part of ${PRODUCT_INFO.name} Docs.` : (docs.lede || "")));
 
     const heroActions = createElement("div", "repo-docs__hero-actions");
-    const primaryLink = createDocsLink(docs.primaryCta, "repo-docs__primary-link", navigateToPath, root);
-    const secondaryLink = createDocsLink(docs.secondaryCta, "repo-docs__secondary-link", navigateToPath, root);
+    const primaryLink = createDocsLink(docs.primaryCta, "repo-docs__primary-link", navigateToPath);
+    const secondaryLink = createDocsLink(docs.secondaryCta, "repo-docs__secondary-link", navigateToPath);
     if (primaryLink) heroActions.appendChild(primaryLink);
     if (secondaryLink) heroActions.appendChild(secondaryLink);
     heroCopy.appendChild(heroActions);
 
     const heroPanel = createElement("aside", "repo-docs__hero-panel");
-    heroPanel.setAttribute("aria-label", "Docs summary");
-    heroPanel.appendChild(createElement("div", "repo-docs__panel-kicker", "At a glance"));
+    heroPanel.setAttribute("aria-label", activeSection ? "Current docs section" : "Docs summary");
+    heroPanel.appendChild(createElement("div", "repo-docs__panel-kicker", activeSection ? "Current section" : "At a glance"));
 
     const panelGrid = createElement("div", "repo-docs__panel-grid");
-    for (const item of docs.summary || []) {
+    const panelItems = activeSection
+        ? [
+            { label: "Section", value: selectedSection.label },
+            { label: "Path", value: getDocsSectionPath(selectedSection.id) },
+            { label: "Docs Home", value: "/docs" },
+        ]
+        : (docs.summary || []);
+
+    for (const item of panelItems) {
         const card = document.createElement("div");
         card.appendChild(createElement("strong", "", item.label));
         card.appendChild(createElement("span", "", item.value));
@@ -93,21 +105,21 @@ function renderDocs(content, docs, navigateToPath, root) {
     rail.setAttribute("aria-label", "Doc sections");
     rail.appendChild(createElement("p", "repo-docs__rail-label", "Sections"));
 
+    const overviewLink = createElement("a", "repo-docs__rail-link", "Overview");
+    if (!activeSection) overviewLink.setAttribute("aria-current", "page");
+    bindHostedPathNavigation(overviewLink, "/docs", navigateToPath);
+    rail.appendChild(overviewLink);
+
     const sections = createElement("div", "repo-docs__sections");
     for (const section of docs.sections || []) {
         const railLink = createElement("a", "repo-docs__rail-link", section.label);
-        bindHashScroll(railLink, `#${section.id}`, { root });
+        if (section.id === activeSection) railLink.setAttribute("aria-current", "page");
+        bindHostedPathNavigation(railLink, getDocsSectionPath(section.id), navigateToPath);
         rail.appendChild(railLink);
 
-        const article = createElement("section", "repo-docs__section");
-        article.id = section.id;
-        article.appendChild(createElement("p", "repo-docs__section-label", section.label));
-        article.appendChild(createElement("h2", "repo-docs__section-title", section.title));
-
-        const body = createElement("div", "repo-docs__section-body");
-        renderMarkdown(body, section.content || "");
-        article.appendChild(body);
-        sections.appendChild(article);
+        if (!activeSection || section.id === activeSection) {
+            sections.appendChild(renderDocsSection(section));
+        }
     }
 
     const help = createElement("section", "repo-docs__help");
@@ -117,7 +129,7 @@ function renderDocs(content, docs, navigateToPath, root) {
     helpCopy.appendChild(createElement("p", "repo-docs__section-body", docs.help?.body || ""));
 
     const helpActions = createElement("div", "repo-docs__help-actions");
-    const helpPrimaryLink = createDocsLink(docs.help?.primaryCta, "repo-docs__primary-link", navigateToPath, root);
+    const helpPrimaryLink = createDocsLink(docs.help?.primaryCta, "repo-docs__primary-link", navigateToPath);
     if (helpPrimaryLink) helpActions.appendChild(helpPrimaryLink);
 
     const githubLink = createElement("a", "repo-landing__footer-link", "GitHub");
@@ -135,15 +147,47 @@ function renderDocs(content, docs, navigateToPath, root) {
     content.appendChild(help);
 }
 
-function createDocsLink(cta, className, navigateToPath, root) {
+function createDocsLink(cta, className, navigateToPath) {
     if (!cta?.label || !cta?.href) return null;
     const link = createElement("a", className, cta.label);
-    if (cta.href.startsWith("#")) {
-        bindHashScroll(link, cta.href, { root });
-        return link;
-    }
-    bindHostedPathNavigation(link, cta.href, navigateToPath);
+    bindHostedPathNavigation(link, resolveDocsHref(cta.href), navigateToPath);
     return link;
+}
+
+function renderDocsSection(section, { headingTag = "h2" } = {}) {
+    const article = createElement("section", "repo-docs__section");
+    article.id = section.id;
+    article.appendChild(createElement("p", "repo-docs__section-label", section.label));
+    article.appendChild(createElement(headingTag, "repo-docs__section-title", section.title));
+
+    const body = createElement("div", "repo-docs__section-body");
+    renderMarkdown(body, section.content || "");
+    article.appendChild(body);
+    return article;
+}
+
+function renderDocsNotFound(navigateToPath) {
+    const state = createElement("section", "repo-docs__state repo-docs__state--error");
+    state.appendChild(createElement("h1", "repo-docs__title", "That docs page does not exist."));
+    state.appendChild(createElement("p", "repo-docs__copy", "Use the overview to pick one of the supported docs sections."));
+
+    const actions = createElement("div", "repo-docs__hero-actions");
+    const overviewLink = createElement("a", "repo-docs__primary-link", "Open Docs Overview");
+    bindHostedPathNavigation(overviewLink, "/docs", navigateToPath);
+    actions.appendChild(overviewLink);
+    state.appendChild(actions);
+
+    return state;
+}
+
+function resolveDocsHref(href) {
+    if (typeof href !== "string" || href === "") return href;
+    if (href.startsWith("#")) return getDocsSectionPath(href.slice(1));
+    return href;
+}
+
+function getDocsSectionPath(sectionID) {
+    return `/docs/${sectionID}`;
 }
 
 function renderMarkdown(container, markdown) {

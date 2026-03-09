@@ -14,7 +14,7 @@ func testDocsFS() fstest.MapFS {
 			"eyebrow":"Product Docs",
 			"title":"Docs Title",
 			"lede":"Docs lede",
-			"primaryCta":{"label":"Read","href":"#hosted"},
+			"primaryCta":{"label":"Read","href":"/docs/hosted"},
 			"secondaryCta":{"label":"Home","href":"/"},
 			"summary":[{"label":"Hosted","value":"Browser"}],
 			"sections":[

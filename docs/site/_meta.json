@@ -4,7 +4,7 @@
   "lede": "GitVista is easiest to trust when the operating model is explicit. These docs cover how hosted mode behaves, when local mode is the better fit, what the core views are designed to show, and which URLs are now part of the hosted experience.",
   "primaryCta": {
     "label": "Read the workflow",
-    "href": "#hosted"
+    "href": "/docs/hosted"
   },
   "secondaryCta": {
     "label": "Open the landing page",
@@ -21,7 +21,7 @@
     },
     {
       "label": "Routes",
-      "value": "/docs and /repo/:id path routing"
+      "value": "/docs, /docs/:section, and /repo/:id"
     },
     {
       "label": "Best use",

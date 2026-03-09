@@ -69,8 +69,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         mount(() => showLanding(root, navigateToPath));
     };
 
-    const mountDocs = (navigateToPath) => {
-        mount(() => showDocs(root, navigateToPath));
+    const mountDocs = (navigateToPath, activeSection) => {
+        mount(() => showDocs(root, navigateToPath, activeSection));
     };
 
     if (mode === "local") {
@@ -90,7 +90,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     replacePath: replaceHostedPath,
                 }));
             } else if (parsed.page === "docs") {
-                mountDocs(navigateToHostedPath);
+                mountDocs(navigateToHostedPath, parsed.docsSection);
             } else {
                 mountLanding(navigateToHostedPath);
             }
@@ -147,10 +147,10 @@ function showLanding(root, navigateToPath) {
     return destroy;
 }
 
-function showDocs(root, navigateToPath) {
+function showDocs(root, navigateToPath, activeSection) {
     document.title = `${PRODUCT_INFO.name} Docs`;
     let destroyed = false;
-    const docs = createDocsView({ navigateToPath });
+    const docs = createDocsView({ navigateToPath, activeSection });
     root.appendChild(docs.el);
 
     function destroy() {
