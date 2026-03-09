@@ -62,12 +62,12 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     hero.id = "try";
     const heroCopy = createElement("div", "repo-landing__hero-copy");
     heroCopy.appendChild(createElement("h1", "repo-landing__title", "Git history stops being guesswork."));
-    heroCopy.appendChild(createElement("p", "repo-landing__tagline", "Open a repository into one readable view with the branch graph, recent activity context, and commit diffs aligned before you start chasing hashes."));
+    heroCopy.appendChild(createElement("p", "repo-landing__tagline", "Open any public GitHub repository in one clear view with the branch graph, recent activity, and commit diffs aligned from the start."));
 
     const heroFormShell = createElement("div", "repo-landing__hero-form-shell");
     const formLead = createElement("div", "repo-landing__hero-form-lead");
-    formLead.appendChild(createElement("strong", "", "Start with a public GitHub repository"));
-    formLead.appendChild(createElement("span", "", "Paste a repository URL to open the live graph in your browser, or jump into a featured example if you want the fast path."));
+    formLead.appendChild(createElement("strong", "", "Try It Here"));
+    formLead.appendChild(createElement("span", "", "Drop in a public GitHub repository to trace branches, commits, and diffs in one readable view."));
 
     const form = createElement("form", "repo-landing__form");
     const input = createElement("input", "repo-landing__input");
@@ -76,32 +76,18 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     input.required = true;
     input.setAttribute("aria-label", "GitHub repository URL");
 
-    const addBtn = createElement("button", "repo-landing__add-btn", "Open Live Graph");
+    const addBtn = createElement("button", "repo-landing__add-btn", "Open");
     addBtn.type = "submit";
     form.appendChild(input);
     form.appendChild(addBtn);
 
-    const heroActions = createElement("div", "repo-landing__hero-actions");
-    const featuredShortcut = createElement("button", "repo-landing__cta-secondary", "Try a Featured Repo");
-    featuredShortcut.type = "button";
-    featuredShortcut.addEventListener("click", () => {
-        scrollToSection(repoBrowser.featuredSectionEl);
-        highlightElementTemporarily(repoBrowser.getFeaturedCard(FEATURED_REPOS[0].url));
-    });
-    heroActions.appendChild(featuredShortcut);
-
     const formMeta = createElement("div", "repo-landing__hero-form-meta");
-    formMeta.appendChild(createElement("span", "repo-landing__hero-support", "Browser mode works best with public GitHub repositories. Switch to local mode when you need live checkout updates."));
-    const installShortcut = createElement("button", "repo-landing__hero-link", "Prefer local mode?");
-    installShortcut.type = "button";
-    installShortcut.addEventListener("click", () => onNavigate?.("/install"));
-    formMeta.appendChild(installShortcut);
+    formMeta.appendChild(createElement("span", "repo-landing__hero-support", "No setup for public repos. Use local mode for live working-tree changes."));
 
     const errorMsg = createElement("div", "repo-landing__error");
 
     heroFormShell.appendChild(formLead);
     heroFormShell.appendChild(form);
-    heroFormShell.appendChild(heroActions);
     heroFormShell.appendChild(formMeta);
     heroFormShell.appendChild(errorMsg);
     heroFormShell.appendChild(repoBrowser.heroRecentListEl);
@@ -173,7 +159,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
             errorMsg.textContent = error.message;
         } finally {
             addBtn.disabled = false;
-            addBtn.textContent = "Open Live Graph";
+            addBtn.textContent = "Open";
         }
     });
 
