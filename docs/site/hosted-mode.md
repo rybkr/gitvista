@@ -1,6 +1,10 @@
-Hosted mode is the fastest path into GitVista. Paste a public GitHub URL on the landing page and GitVista prepares a repository-backed workspace with the commit graph, repository overview, and diff views already wired up.
+Hosted mode is the fastest way to get oriented in a public repository. Paste a GitHub URL, let GitVista prepare the repository-backed workspace, and you can start from graph shape instead of from raw commit hashes.
 
-- Best for quick inspection, demos, and sharing a repository view without asking someone to install anything.
-- Hosted docs now live at `/docs` with section pages at `/docs/:section`, and hosted repositories open at `/repo/:id`.
-- When a commit is selected in hosted mode, the URL updates to `/repo/:id/:commitHash` so the current view can be shared directly.
-- If a repository is still being prepared, GitVista streams progress until the graph is ready.
+It is best when the job is inspection rather than active development. Hosted mode is good for demos, code archaeology, design reviews, and sharing a specific repository or commit with someone who should not have to install anything first.
+
+- Hosted docs live at `/docs`, and section pages use `/docs/:section`.
+- Hosted repositories open at `/repo/:id`.
+- Selecting a commit updates the URL to `/repo/:id/:commitHash`, which makes the current view shareable.
+- If the repository is still preparing, GitVista streams progress until the graph is ready.
+
+The tradeoff is that the data is coming from a hosted clone, not your machine. That means hosted mode is about understanding repository history, not about watching your own working tree change in real time.

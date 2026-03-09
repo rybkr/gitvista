@@ -1,6 +1,9 @@
-Local mode runs the GitVista binary against a repository on your own machine, so branch movement, staged changes, and diffs reflect what is happening on disk right now. This is the right mode when you are actively working, not just inspecting history.
+Local mode points GitVista at a repository on your own machine, so the UI reflects what is actually happening on disk right now. This is the right choice when you are actively working and need staged changes, branch movement, or unpushed work to stay accurate.
+
+The interface stays familiar, but the source of truth changes. Instead of browsing a hosted clone, local mode reads your local `.git` directory directly, which makes it the safer and more faithful option for day-to-day engineering work.
 
 - Install or build the binary, then run `gitvista -repo /path/to/your/repo`.
-- Use local mode when you care about staged changes, immediate refresh, and unpushed work.
-- The browser UI stays familiar, but the data source is your local `.git` directory instead of a hosted clone.
-- Local mode is the safer choice for private repositories and sensitive work.
+- Use local mode when you care about staged changes, immediate refresh, and local-only history.
+- Prefer local mode for private repositories, sensitive work, and anything that should never leave your machine.
+
+If hosted mode helps you orient quickly, local mode is the version you keep nearby while you are actually changing code.

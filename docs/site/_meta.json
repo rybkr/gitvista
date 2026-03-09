@@ -1,14 +1,14 @@
 {
   "eyebrow": "Product Docs",
-  "title": "Start fast, understand the edges, and know when to switch modes.",
-  "lede": "GitVista is easiest to trust when the operating model is explicit. These docs cover how hosted mode behaves, when local mode is the better fit, what the core views are designed to show, and which URLs are now part of the hosted experience.",
+  "title": "Understand the product before you start chasing commits.",
+  "lede": "These notes explain what hosted mode is good at, when local mode is the better fit, how the major views work together, and where the hosted experience still has hard edges.",
   "primaryCta": {
-    "label": "Read the workflow",
-    "href": "/docs/hosted"
+    "label": "",
+    "href": ""
   },
   "secondaryCta": {
-    "label": "Open the landing page",
-    "href": "/"
+    "label": "",
+    "href": ""
   },
   "summary": [
     {
@@ -55,9 +55,9 @@
     }
   ],
   "help": {
-    "label": "Need More",
-    "title": "Use the product, then come back here when you hit a real question.",
-    "body": "This page is here to remove ambiguity, not bury the product in prose. Start with a public repository from the landing page, then switch to local mode when you need live repository state from your own machine.",
+    "label": "Reference",
+    "title": "Keep the docs lightweight and use the product to answer the rest.",
+    "body": "This page is meant to orient you quickly. Once you know which mode fits your job and which view to reach for, the product itself should do most of the explaining.",
     "primaryCta": {
       "label": "Open GitVista",
       "href": "/"
