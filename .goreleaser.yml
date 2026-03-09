@@ -36,21 +36,6 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
-brews:
-  - name: gitvista
-    repository:
-      owner: rybkr
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/rybkr/gitvista"
-    description: "Real-time Git repository visualization"
-    license: "MIT"
-    install: |
-      bin.install "gitvista"
-    test: |
-      system "#{bin}/gitvista", "-version"
-
 changelog:
   sort: asc
   filters:
