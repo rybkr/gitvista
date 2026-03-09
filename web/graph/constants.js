@@ -60,6 +60,9 @@ export const TREE_ICON_OFFSET = 2;
 export const LANE_WIDTH = 180; // Pixels between lane centers
 export const LANE_MARGIN = 90; // Left margin for lane 0
 export const LANE_VERTICAL_STEP = 70; // Dedicated vertical spacing for lane mode
+export const LANE_BRANCH_GUTTER_INSET = 12; // Left gutter inset for compact branch decorators
+export const LANE_BRANCH_CHIP_MAX_WIDTH = 120; // Max width for compact lane branch labels
+export const LANE_BRANCH_STACK_STEP = 18; // Vertical stack step for multiple branch chips on one commit
 export const LANE_TRANSITION_DURATION = 300; // ms for mode switch animation
 export const LANE_CORNER_RADIUS = 14; // Rounded corner radius for cross-lane stepped paths
 export const LANE_HEADER_HEIGHT = 24; // Screen-space height of the lane header bar (px)
@@ -93,4 +96,3 @@ export const COMMIT_DETAIL_FONT = "10px -apple-system, BlinkMacSystemFont, 'Sego
 // Hover glow effect
 export const HOVER_GLOW_EXTRA_RADIUS = 4;
 export const HOVER_GLOW_OPACITY = 0.25;
-

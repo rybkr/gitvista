@@ -12,7 +12,6 @@ export const FEATURED_REPOS = [
 ];
 
 export const HERO_PREVIEW = {
-    path: "gitvista.io / repo / rybkr / gitvista",
     alt: "GitVista graph view showing branch lanes, selected commit context, and repository history.",
     images: {
         desktopLight: "/images/landing/hero-preview-desktop-light.png",
@@ -20,6 +19,4 @@ export const HERO_PREVIEW = {
         mobileLight: "/images/landing/hero-preview-mobile-light.png",
         mobileDark: "/images/landing/hero-preview-mobile-dark.png",
     },
-    badge: "Live graph view",
-    chips: ["real interface", "branch graph", "commit context"],
 };

@@ -47,7 +47,9 @@
  * @typedef {GraphNodeBase & {
  *   type: "branch",
  *   branch: string,
- *   targetHash: string | null
+ *   targetHash: string | null,
+ *   compactLaneChip?: boolean,
+ *   maxPillWidth?: number
  * }} GraphNodeBranch
  */
 

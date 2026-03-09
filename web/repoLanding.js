@@ -60,7 +60,6 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const hero = createElement("section", "repo-landing__hero");
     hero.id = "try";
     const heroCopy = createElement("div", "repo-landing__hero-copy");
-    heroCopy.appendChild(createElement("p", "repo-landing__eyebrow", "Hosted mode"));
     heroCopy.appendChild(createElement("h1", "repo-landing__title", "Git history stops being guesswork."));
     heroCopy.appendChild(createElement("p", "repo-landing__tagline", "Open a repository into one readable view with the branch graph, recent activity context, and commit diffs aligned before you start chasing hashes."));
 

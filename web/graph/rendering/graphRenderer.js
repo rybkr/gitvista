@@ -639,6 +639,8 @@ export class GraphRenderer {
             color = source.laneColor || this.palette.link;
         }
 
+        if (linkKind === "branch" && source.type === "branch" && source.compactLaneChip) return;
+
         let targetRadius;
         if (target.type === "branch") {
             targetRadius = BRANCH_NODE_RADIUS;
@@ -1528,6 +1530,7 @@ export class GraphRenderer {
     renderBranchNode(node, highlightKey) {
         const isHighlighted = highlightKey && node.branch === highlightKey;
         const text = friendlyBranchName(node.branch ?? "");
+        const isLaneChip = !!node.compactLaneChip;
 
         const spawnProgress =
             typeof node.spawnPhase === "number" ? node.spawnPhase : 1;
@@ -1551,12 +1554,14 @@ export class GraphRenderer {
         this.ctx.translate(-node.x, -node.y);
         this.ctx.font = LABEL_FONT;
         this.ctx.textBaseline = "middle";
-        this.ctx.textAlign = "center";
+        this.ctx.textAlign = isLaneChip ? "left" : "center";
 
-        // Truncate text to fit within lane width constraint
+        // Truncate text to fit within the requested width budget.
         let displayText = text;
         if (node.maxPillWidth) {
-            const maxTextW = node.maxPillWidth - BRANCH_NODE_PADDING_X * 2;
+            const maxTextW = isLaneChip
+                ? node.maxPillWidth
+                : node.maxPillWidth - BRANCH_NODE_PADDING_X * 2;
             while (displayText.length > 1 && this.ctx.measureText(displayText + "\u2026").width > maxTextW) {
                 displayText = displayText.slice(0, -1);
             }
@@ -1565,32 +1570,43 @@ export class GraphRenderer {
 
         const metrics = this.ctx.measureText(displayText);
         const textHeight = metrics.actualBoundingBoxAscent ?? 9;
-        const width = metrics.width + BRANCH_NODE_PADDING_X * 2;
-        const height = textHeight + BRANCH_NODE_PADDING_Y * 2;
+        if (isLaneChip) {
+            this.ctx.lineWidth = 3 / scale;
+            this.ctx.lineJoin = "round";
+            this.ctx.strokeStyle = this.palette.labelHalo;
+            this.ctx.globalAlpha = previousAlpha * 0.9 * spawnAlpha;
+            this.ctx.strokeText(displayText, node.x, node.y);
+            this.ctx.fillStyle = this.palette.labelText;
+            this.ctx.globalAlpha = previousAlpha * (isHighlighted ? 1 : 0.96 * spawnAlpha);
+            this.ctx.fillText(displayText, node.x, node.y);
+        } else {
+            const width = metrics.width + BRANCH_NODE_PADDING_X * 2;
+            const height = textHeight + BRANCH_NODE_PADDING_Y * 2;
 
-        this.drawRoundedRect(
-            node.x - width / 2,
-            node.y - height / 2,
-            width,
-            height,
-            BRANCH_NODE_CORNER_RADIUS,
-        );
+            this.drawRoundedRect(
+                node.x - width / 2,
+                node.y - height / 2,
+                width,
+                height,
+                BRANCH_NODE_CORNER_RADIUS,
+            );
 
-        this.ctx.fillStyle = isHighlighted
-            ? this.palette.branchHighlight
-            : this.palette.branchNode;
-        this.applyShadow();
-        this.ctx.fill();
-        this.clearShadow();
-        const baseLineWidth = isHighlighted ? 2 : 1.5;
-        this.ctx.lineWidth = baseLineWidth / scale;
-        this.ctx.strokeStyle = isHighlighted
-            ? this.palette.branchHighlightRing
-            : this.palette.branchNodeBorder;
-        this.ctx.stroke();
+            this.ctx.fillStyle = isHighlighted
+                ? this.palette.branchHighlight
+                : this.palette.branchNode;
+            this.applyShadow();
+            this.ctx.fill();
+            this.clearShadow();
+            const baseLineWidth = isHighlighted ? 2 : 1.5;
+            this.ctx.lineWidth = baseLineWidth / scale;
+            this.ctx.strokeStyle = isHighlighted
+                ? this.palette.branchHighlightRing
+                : this.palette.branchNodeBorder;
+            this.ctx.stroke();
 
-        this.ctx.fillStyle = this.palette.branchLabelText;
-        this.ctx.fillText(displayText, node.x, node.y);
+            this.ctx.fillStyle = this.palette.branchLabelText;
+            this.ctx.fillText(displayText, node.x, node.y);
+        }
         this.ctx.globalAlpha = previousAlpha;
         this.ctx.restore();
     }

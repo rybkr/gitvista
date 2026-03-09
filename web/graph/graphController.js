@@ -10,6 +10,9 @@ import {
     BRANCH_NODE_OFFSET_Y,
     BRANCH_NODE_RADIUS,
     DRAG_ACTIVATION_DISTANCE,
+    LANE_BRANCH_CHIP_MAX_WIDTH,
+    LANE_BRANCH_GUTTER_INSET,
+    LANE_BRANCH_STACK_STEP,
     LANE_MARGIN,
     LANE_VERTICAL_STEP,
     LANE_WIDTH,
@@ -1869,15 +1872,16 @@ export function createGraphController(rootElement, options = {}) {
             }
 
             if (state.layoutMode === "lane") {
-                // In lane mode, center pills below the commit to stay
-                // within the lane column and avoid overlapping headers.
+                // In lane mode, move branch decorators into the lane gutter so
+                // they don't compete with commit labels beneath the node.
                 const key = targetNode.hash ?? (targetNode.laneIndex ?? 0);
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                branchNode.x = targetNode.x;
-                branchNode.y = targetNode.y + NODE_RADIUS + 14 + index * 25;
-                branchNode.maxPillWidth = LANE_WIDTH - 12;
+                branchNode.x = targetNode.x - LANE_WIDTH / 2 + LANE_BRANCH_GUTTER_INSET;
+                branchNode.y = targetNode.y - 2 + index * LANE_BRANCH_STACK_STEP;
+                branchNode.maxPillWidth = LANE_BRANCH_CHIP_MAX_WIDTH;
+                branchNode.compactLaneChip = true;
             } else {
                 // Force mode: small jitter is fine since simulation will settle
                 const baseX = targetNode.x ?? 0;
@@ -1885,6 +1889,8 @@ export function createGraphController(rootElement, options = {}) {
                 const jitter = (range) => (Math.random() - 0.5) * range;
                 branchNode.x = baseX - BRANCH_NODE_OFFSET_X + jitter(2);
                 branchNode.y = baseY + jitter(BRANCH_NODE_OFFSET_Y);
+                delete branchNode.maxPillWidth;
+                delete branchNode.compactLaneChip;
             }
 
             branchNode.vx = 0;
@@ -1963,9 +1969,10 @@ export function createGraphController(rootElement, options = {}) {
             if (!t) continue;
             const i = bCount.get(t.hash) || 0;
             bCount.set(t.hash, i + 1);
-            n.x = t.x;
-            n.y = t.y + NODE_RADIUS + 14 + i * 25;
-            n.maxPillWidth = LANE_WIDTH - 12;
+            n.x = t.x - LANE_WIDTH / 2 + LANE_BRANCH_GUTTER_INSET;
+            n.y = t.y - 2 + i * LANE_BRANCH_STACK_STEP;
+            n.maxPillWidth = LANE_BRANCH_CHIP_MAX_WIDTH;
+            n.compactLaneChip = true;
         }
         // Pass 2: position tags below branch pills
         const tCount = new Map();
@@ -1999,17 +2006,6 @@ export function createGraphController(rootElement, options = {}) {
         // Track per-commit tag count for stacking in lane mode
         const perCommitCount = new Map();
 
-        // Count branch pills per commit so tags stack below them
-        let branchesPerCommit = null;
-        if (state.layoutMode === "lane") {
-            branchesPerCommit = new Map();
-            for (const n of nodes) {
-                if (n.type === "branch" && n.targetHash) {
-                    branchesPerCommit.set(n.targetHash, (branchesPerCommit.get(n.targetHash) || 0) + 1);
-                }
-            }
-        }
-
         for (const pair of pairs) {
             if (!pair) continue;
             const { tagNode, targetNode } = pair;
@@ -2022,10 +2018,8 @@ export function createGraphController(rootElement, options = {}) {
                 const index = perCommitCount.get(key) || 0;
                 perCommitCount.set(key, index + 1);
 
-                const bc = branchesPerCommit.get(targetNode.hash) || 0;
-                const branchStackH = bc * 25 + (bc > 0 ? 4 : 0);
                 tagNode.x = targetNode.x;
-                tagNode.y = targetNode.y + NODE_RADIUS + 14 + branchStackH + index * 25;
+                tagNode.y = targetNode.y + NODE_RADIUS + 14 + index * 25;
             } else {
                 // Force mode: small jitter offset from target commit
                 const baseX = targetNode.x ?? 0;
