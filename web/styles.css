@@ -8446,6 +8446,8 @@ body {
 
 .repo-docs {
     --gv-docs-max-width: 1080px;
+    --gv-nav-height: 54px;
+    --gv-nav-clearance: calc(var(--gv-nav-height) + 22px);
     flex: 1;
     min-height: 0;
     height: 100%;
