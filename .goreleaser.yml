@@ -25,24 +25,6 @@ builds:
       - amd64
       - arm64
 
-  - id: gitvista-cli
-    main: ./cmd/gitcli
-    binary: gitvista-cli
-    env:
-      - CGO_ENABLED=0
-    ldflags:
-      - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.ShortCommit}}
-      - -X main.buildDate={{.Date}}
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-
 archives:
   - format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -76,13 +58,10 @@ brews:
     license: "MIT"
     ids:
       - gitvista
-      - gitvista-cli
     install: |
       bin.install "gitvista"
-      bin.install "gitvista-cli"
     test: |
       system "#{bin}/gitvista", "-version"
-      system "#{bin}/gitvista-cli", "version"
 
 changelog:
   sort: asc
