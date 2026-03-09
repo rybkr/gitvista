@@ -7443,7 +7443,8 @@ body {
     mask-image: radial-gradient(circle at center, black 36%, transparent 88%);
 }
 
-.repo-landing__chrome {
+.repo-landing__chrome,
+.repo-docs__chrome {
     position: fixed;
     top: 0;
     left: 0;
@@ -8453,17 +8454,10 @@ body {
     overflow-x: hidden;
 }
 
-.repo-docs__chrome {
-    position: sticky;
-    top: 16px;
-    z-index: 20;
-    padding-top: 16px;
-}
-
 .repo-docs__content {
     width: min(100%, var(--gv-docs-max-width));
     margin: 0 auto;
-    padding-top: calc(var(--gv-nav-clearance) + 18px);
+    padding-top: var(--gv-nav-clearance);
     display: grid;
     grid-template-columns: 240px minmax(0, 1fr);
     gap: 28px;
@@ -8942,18 +8936,16 @@ body {
         padding: 0 16px 36px;
     }
 
+    .repo-landing__chrome,
     .repo-docs__chrome {
         padding-top: 12px;
+        padding-left: 16px;
+        padding-right: 16px;
     }
 
     .repo-docs__panel-grid,
     .repo-docs__help {
         grid-template-columns: 1fr;
-    }
-
-    .repo-landing__chrome {
-        padding-left: 16px;
-        padding-right: 16px;
     }
 
     .repo-landing__topbar-nav {
