@@ -33,7 +33,7 @@ export function createHostedTopbar({ activePath = "/", navigateToPath, brandActi
     }
 
     const brandMark = createElement("img", "repo-landing__brand-mark");
-    brandMark.src = "/favicon.svg";
+    brandMark.src = "/favicon.png";
     brandMark.alt = "";
     brandMark.setAttribute("aria-hidden", "true");
 
@@ -93,4 +93,3 @@ export function createHostedFooter() {
     footer.appendChild(license);
     return footer;
 }
-
