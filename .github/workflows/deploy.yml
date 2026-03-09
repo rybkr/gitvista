@@ -41,7 +41,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          flyctl volumes list --app gitvista-staging --json | grep -q '"name":"gitvista_staging_data"' || {
+          flyctl volumes list --app gitvista-staging --json | grep -q '"name":\s*"gitvista_staging_data"' || {
             echo "Missing Fly volume gitvista_staging_data for app gitvista-staging"
             exit 1
           }
