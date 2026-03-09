@@ -7649,9 +7649,9 @@ body {
 
 .repo-landing__hero {
     display: grid;
-    grid-template-columns: minmax(0, 1.18fr) minmax(460px, 0.82fr);
-    gap: 32px;
-    align-items: center;
+    grid-template-columns: minmax(0, 1.02fr) minmax(480px, 0.98fr);
+    gap: 36px;
+    align-items: stretch;
     padding: 0;
     text-align: left;
 }
@@ -7666,13 +7666,13 @@ body {
     align-content: center;
     gap: 0;
     min-height: 100%;
-    padding: 12px 0;
+    padding: 18px 0;
 }
 
 .repo-landing__hero-preview {
     animation-delay: 90ms;
     width: 100%;
-    max-width: 760px;
+    max-width: 840px;
     justify-self: end;
 }
 
@@ -7701,6 +7701,13 @@ body {
     margin-top: 22px;
 }
 
+.repo-landing__hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+}
+
 .repo-landing__cta-primary,
 .repo-landing__cta-secondary,
 .repo-landing__hero-link {
@@ -7715,6 +7722,7 @@ body {
 }
 
 .repo-landing__hero-form-shell {
+    margin-top: 28px;
     padding: 22px;
     border-radius: 22px;
     border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
@@ -7773,6 +7781,9 @@ body {
 }
 
 .repo-landing__add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-height: 56px;
     padding: 0 20px;
     border-radius: 16px;
@@ -7780,9 +7791,28 @@ body {
     box-shadow: 0 16px 34px color-mix(in srgb, var(--node-color) 18%, transparent);
 }
 
+.repo-landing__cta-secondary {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+    background: color-mix(in srgb, var(--surface-color) 94%, transparent);
+    box-shadow: var(--gv-card-shadow);
+    color: var(--text-color);
+    font-family: var(--gv-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
 .repo-landing__add-btn:hover {
     opacity: 1;
     transform: translateY(-1px);
+}
+
+.repo-landing__cta-secondary:hover {
+    border-color: color-mix(in srgb, var(--node-color) 28%, var(--border-color));
+    color: var(--text-color);
 }
 
 .repo-landing__hero-form-meta {
@@ -7820,8 +7850,6 @@ body {
 .repo-landing__card-name,
 .repo-landing__preview-path,
 .repo-landing__preview-label,
-.repo-landing__preview-sidebar-header span,
-.repo-landing__preview-footer span,
 .repo-landing__footer-license {
     font-family: var(--gv-font-mono);
 }
@@ -7834,7 +7862,7 @@ body {
     position: relative;
     display: grid;
     grid-template-rows: auto 1fr;
-    height: clamp(520px, 68vh, 620px);
+    min-height: clamp(540px, 68vh, 660px);
     border-radius: 28px;
     border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
     background:
@@ -7901,432 +7929,327 @@ body {
 
 .repo-landing__preview-body {
     display: grid;
-    grid-template-columns: minmax(220px, 0.54fr) minmax(0, 1.46fr);
+    grid-template-columns: minmax(220px, 0.52fr) minmax(0, 1.48fr);
     min-height: 0;
 }
 
-.repo-landing__preview-graph {
+.repo-landing__preview-panel {
     position: relative;
+    display: grid;
+    align-content: start;
+    gap: 16px;
     min-height: 0;
-    padding: 0;
+    padding: 20px 18px 18px;
+}
+
+.repo-landing__preview-panel--problem {
+    border-right: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
     background:
-        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 78%, transparent), transparent 18%),
-        color-mix(in srgb, var(--surface-color) 58%, transparent);
+        linear-gradient(180deg, color-mix(in srgb, var(--danger-color) 6%, transparent), transparent 34%),
+        color-mix(in srgb, var(--surface-color) 94%, transparent);
 }
 
-.repo-landing__preview-graph-header {
-    display: none;
+.repo-landing__preview-panel--solution {
+    background:
+        radial-gradient(circle at top right, color-mix(in srgb, var(--node-color) 10%, transparent), transparent 34%),
+        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 82%, transparent), transparent 28%),
+        color-mix(in srgb, var(--surface-color) 70%, transparent);
 }
 
-.repo-landing__preview-lane-label {
-    position: absolute;
-    top: 0;
-    transform: translateX(-50%);
-    min-height: 26px;
-    padding: 0 10px;
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
-    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+.repo-landing__preview-panel-header {
+    display: grid;
+    gap: 8px;
+}
+
+.repo-landing__preview-panel-header strong,
+.repo-landing__preview-clarity-card strong {
+    font-weight: 600;
+}
+
+.repo-landing__preview-panel-copy {
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.repo-landing__preview-kicker {
     font-family: var(--gv-font-mono);
     font-size: 10px;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-secondary);
-    white-space: nowrap;
 }
 
-.repo-landing__preview-lane-label.is-main {
-    border-color: color-mix(in srgb, var(--node-color) 28%, var(--border-color));
-    color: var(--text-color);
-}
-
-.repo-landing__preview-graph-shell {
-    position: relative;
-    display: flex;
-    width: 100%;
-    height: 100%;
-    min-height: 520px;
-}
-
-.repo-landing__preview-graph-canvas {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-}
-
-.repo-landing__preview-graph-canvas canvas {
-    width: 100%;
-    height: 100%;
-    min-height: 520px;
-    background: transparent;
-    pointer-events: none;
-}
-
-.repo-landing__preview-graph-canvas .graph-controls {
-    display: none;
-}
-
-.repo-landing__preview-graph-loading {
-    position: absolute;
-    inset: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    border-radius: 0;
-    background:
-        radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--node-color) 7%, transparent), transparent 34%),
-        radial-gradient(circle at 82% 32%, color-mix(in srgb, var(--branch-node-color) 7%, transparent), transparent 32%),
-        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent), color-mix(in srgb, var(--surface-color) 94%, transparent));
-}
-
-.repo-landing__preview-graph[data-loading="true"] .repo-landing__preview-graph-loading {
-    display: inline-flex;
-}
-
-.repo-landing__preview-graph[data-state="error"] .repo-landing__preview-graph-loading {
-    flex-direction: column;
+.repo-landing__preview-chaos {
+    display: grid;
     gap: 10px;
-    padding: 24px;
-    text-align: center;
 }
 
-.repo-landing__preview-graph[data-state="error"] .repo-landing__preview-graph-spinner {
-    display: none;
-}
-
-.repo-landing__preview-graph-spinner {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 2px solid color-mix(in srgb, var(--border-color) 84%, transparent);
-    border-top-color: var(--node-color);
-    border-right-color: var(--branch-node-color);
-    box-shadow:
-        0 0 0 1px color-mix(in srgb, var(--surface-elevated) 42%, transparent),
-        0 0 12px color-mix(in srgb, var(--node-color) 7%, transparent);
-    animation: gv-preview-graph-spin 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
-}
-
-.repo-landing__preview-graph-loading-text {
+.repo-landing__preview-chaos-row {
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px dashed color-mix(in srgb, var(--border-color) 72%, transparent);
+    background: color-mix(in srgb, var(--surface-elevated) 86%, transparent);
+    color: color-mix(in srgb, var(--text-secondary) 90%, var(--text-color));
     font-family: var(--gv-font-mono);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--text-secondary) 88%, var(--text-color));
-}
-
-.repo-landing__preview-graph[data-state="error"] .repo-landing__preview-graph-loading-text {
-    max-width: 28ch;
+    font-size: 12px;
     line-height: 1.5;
-    color: color-mix(in srgb, var(--warning-color) 46%, var(--text-color));
 }
 
-.repo-landing__preview-guide {
-    stroke: color-mix(in srgb, var(--border-color) 42%, transparent);
-    stroke-width: 2;
-    stroke-linecap: round;
-}
-
-.repo-landing__preview-guide.is-main {
-    stroke: color-mix(in srgb, var(--node-color) 30%, var(--border-color));
-}
-
-.repo-landing__preview-edge {
-    fill: none;
-    stroke-width: 4.5;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-}
-
-.repo-landing__preview-edge.is-main {
-    stroke: color-mix(in srgb, var(--node-color) 78%, transparent);
-}
-
-.repo-landing__preview-edge.is-branch {
-    stroke: color-mix(in srgb, var(--branch-node-color) 82%, transparent);
-}
-
-.repo-landing__preview-edge.is-merge {
-    stroke: color-mix(in srgb, var(--merge-node-color) 82%, transparent);
-}
-
-.repo-landing__preview-node {
-    stroke: color-mix(in srgb, var(--surface-color) 92%, transparent);
-    stroke-width: 5.5;
-}
-
-.repo-landing__preview-node.is-main {
-    fill: var(--node-color);
-    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--node-color) 28%, transparent));
-}
-
-.repo-landing__preview-node.is-branch {
-    fill: var(--branch-node-color);
-    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--branch-node-color) 28%, transparent));
-}
-
-.repo-landing__preview-node.is-merge {
-    fill: var(--merge-node-color);
-    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--merge-node-color) 28%, transparent));
-}
-
-.repo-landing__preview-label text {
-    text-anchor: start;
-    dominant-baseline: middle;
-    paint-order: stroke;
-    stroke-linejoin: round;
-}
-
-.repo-landing__preview-label-hash {
-    font-family: var(--gv-font-mono);
-    font-size: 13px;
-    letter-spacing: 0.02em;
-    fill: color-mix(in srgb, var(--text-color) 94%, transparent);
-    stroke: color-mix(in srgb, var(--surface-color) 94%, transparent);
-    stroke-width: 4px;
-}
-
-.repo-landing__preview-label-message {
-    font-size: 15px;
-    fill: color-mix(in srgb, var(--text-color) 82%, transparent);
-    stroke: color-mix(in srgb, var(--surface-color) 92%, transparent);
-    stroke-width: 5px;
-}
-
-.repo-landing__preview-label-author {
-    font-size: 13px;
-    fill: color-mix(in srgb, var(--text-secondary) 96%, transparent);
-    stroke: color-mix(in srgb, var(--surface-color) 92%, transparent);
-    stroke-width: 4px;
-}
-
-.repo-landing__preview-sidebar {
-    position: relative;
-    z-index: 1;
+.repo-landing__preview-canvas {
     display: grid;
-    grid-template-rows: auto auto 1fr;
-    gap: 8px;
-    min-height: 0;
-    padding: 16px 10px;
-    border-right: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+    grid-template-columns: minmax(0, 1.18fr) minmax(220px, 0.82fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.repo-landing__preview-graph,
+.repo-landing__preview-inspector,
+.repo-landing__preview-diff,
+.repo-landing__preview-clarity-card {
+    display: grid;
+    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
     background: color-mix(in srgb, var(--surface-color) 94%, transparent);
-}
-
-.repo-landing__preview-sidebar-header {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.repo-landing__preview-eyebrow,
-.repo-landing__preview-pill {
-    font-family: var(--gv-font-mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.repo-landing__preview-eyebrow {
-    color: var(--text-secondary);
-}
-
-.repo-landing__preview-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 2px;
-}
-
-.repo-landing__preview-pill {
-    min-height: 26px;
-    padding: 0 10px;
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
-    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
-    color: var(--text-color);
-}
-
-.repo-landing__preview-pill--branch {
-    border-color: color-mix(in srgb, var(--branch-node-color) 34%, var(--border-color));
-}
-
-.repo-landing__preview-pill--head {
-    border-color: color-mix(in srgb, var(--node-color) 32%, var(--border-color));
-}
-
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-pill {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 4%, transparent), 0 0 10px color-mix(in srgb, var(--node-color) 5%, transparent);
-}
-
-.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-pill {
-    border-color: color-mix(in srgb, var(--warning-color) 34%, var(--border-color));
-    color: color-mix(in srgb, var(--warning-color) 34%, var(--text-color));
-}
-
-.repo-landing__preview-sidebar-header strong {
-    font-size: 20px;
-    line-height: 1;
-}
-
-.repo-landing__preview-sidebar-header span,
-.repo-landing__preview-item span,
-.repo-landing__proof-item span,
-.repo-landing__footer-brand span {
-    color: var(--text-secondary);
-}
-
-.repo-landing__preview-sidebar-meta {
-    display: grid;
-    gap: 4px;
-    padding: 8px 10px;
-    border-radius: 14px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
-    background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
     box-shadow: var(--gv-card-shadow);
 }
 
-.repo-landing__preview-sidebar-meta div {
+.repo-landing__preview-graph {
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 20px;
+}
+
+.repo-landing__preview-lanes {
     display: grid;
-    gap: 3px;
+    gap: 12px;
 }
 
-.repo-landing__preview-sidebar-meta strong {
-    font-family: var(--gv-font-mono);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-color);
+.repo-landing__preview-lane {
+    display: grid;
+    gap: 10px;
 }
 
-.repo-landing__preview-sidebar-meta span {
+.repo-landing__preview-lane-label {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+    background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
     color: var(--text-secondary);
-    line-height: 1.4;
-}
-
-.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-sidebar-meta {
-    border-color: color-mix(in srgb, var(--warning-color) 24%, var(--border-color));
-    background: color-mix(in srgb, var(--warning-color) 8%, var(--surface-elevated));
-}
-
-.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-sidebar-meta span,
-.repo-landing__preview-sidebar[data-state="error"] .repo-landing__preview-item span {
-    color: color-mix(in srgb, var(--warning-color) 32%, var(--text-color));
-}
-
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span,
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item span,
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-footer span {
-    color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
-}
-
-.repo-landing__preview-list {
-    display: grid;
-    gap: 6px;
-    align-content: start;
-}
-
-.repo-landing__preview-item {
-    display: grid;
-    gap: 2px;
-    padding: 0 0 6px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
-}
-
-.repo-landing__preview-item strong {
     font-family: var(--gv-font-mono);
-    font-size: 11px;
+    font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    line-height: 1.35;
 }
 
-.repo-landing__preview-item span {
-    line-height: 1.4;
+.repo-landing__preview-lane--main .repo-landing__preview-lane-label {
+    border-color: color-mix(in srgb, var(--node-color) 28%, var(--border-color));
 }
 
-.repo-landing__preview-footer {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 6px;
+.repo-landing__preview-lane--branch .repo-landing__preview-lane-label {
+    border-color: color-mix(in srgb, var(--branch-node-color) 28%, var(--border-color));
 }
 
-.repo-landing__preview-footer div {
-    display: grid;
-    gap: 2px;
-    padding-top: 8px;
-    border-top: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+.repo-landing__preview-lane--merge .repo-landing__preview-lane-label {
+    border-color: color-mix(in srgb, var(--merge-node-color) 28%, var(--border-color));
 }
 
-.repo-landing__preview-footer strong {
-    font-family: var(--gv-font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span,
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item span {
+.repo-landing__preview-lane-commits {
     position: relative;
-    display: block;
-    width: 100%;
-    min-width: 0;
-    color: transparent;
-    overflow: hidden;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--surface-recessed) 90%, var(--bg-color));
-    box-shadow:
-        inset 0 0 0 1px color-mix(in srgb, var(--border-color) 18%, transparent),
-        0 0 0 1px color-mix(in srgb, var(--node-color) 3%, transparent);
+    display: grid;
+    gap: 10px;
+    padding-left: 20px;
 }
 
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span::after,
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item span::after {
+.repo-landing__preview-lane-commits::before {
     content: "";
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -58%;
-    width: 58%;
-    background: linear-gradient(
-        90deg,
-        transparent 0%,
-        color-mix(in srgb, var(--surface-color) 94%, transparent) 24%,
-        color-mix(in srgb, var(--surface-elevated) 98%, transparent) 38%,
-        color-mix(in srgb, var(--node-color) 8%, var(--surface-elevated)) 50%,
-        color-mix(in srgb, var(--surface-color) 98%, transparent) 62%,
-        color-mix(in srgb, var(--surface-elevated) 94%, transparent) 76%,
-        transparent 100%
-    );
-    opacity: 0.95;
-    will-change: transform;
-    animation: gv-skeleton-glide 1.8s ease-in-out infinite;
+    top: 4px;
+    bottom: 4px;
+    left: 5px;
+    width: 2px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border-color) 78%, transparent);
 }
 
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span {
-    height: 0.8em;
+.repo-landing__preview-lane--main .repo-landing__preview-lane-commits::before {
+    background: color-mix(in srgb, var(--node-color) 32%, var(--border-color));
 }
 
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item:nth-child(1) span {
-    width: 72%;
-    height: 0.8em;
+.repo-landing__preview-lane--branch .repo-landing__preview-lane-commits::before {
+    background: color-mix(in srgb, var(--branch-node-color) 32%, var(--border-color));
 }
 
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item:nth-child(2) span {
-    width: 58%;
-    height: 0.8em;
+.repo-landing__preview-lane--merge .repo-landing__preview-lane-commits::before {
+    background: color-mix(in srgb, var(--merge-node-color) 32%, var(--border-color));
 }
 
-.repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item:nth-child(3) span {
-    width: 44%;
-    height: 0.8em;
+.repo-landing__preview-commit {
+    position: relative;
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+}
+
+.repo-landing__preview-commit::before {
+    content: "";
+    position: absolute;
+    top: 16px;
+    left: -20px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 3px solid color-mix(in srgb, var(--surface-color) 90%, transparent);
+    background: var(--node-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 18%, transparent);
+}
+
+.repo-landing__preview-lane--branch .repo-landing__preview-commit::before {
+    background: var(--branch-node-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--branch-node-color) 18%, transparent);
+}
+
+.repo-landing__preview-lane--merge .repo-landing__preview-commit::before {
+    background: var(--merge-node-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--merge-node-color) 18%, transparent);
+}
+
+.repo-landing__preview-commit--active {
+    border-color: color-mix(in srgb, var(--node-color) 34%, var(--border-color));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color) 10%, transparent), var(--gv-card-shadow);
+}
+
+.repo-landing__preview-commit-hash,
+.repo-landing__preview-commit-meta,
+.repo-landing__preview-diff-stat {
+    font-family: var(--gv-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.repo-landing__preview-commit-hash {
+    color: var(--text-secondary);
+}
+
+.repo-landing__preview-commit-title,
+.repo-landing__preview-inspector-title,
+.repo-landing__preview-diff-file {
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+.repo-landing__preview-commit-meta,
+.repo-landing__preview-inspector-copy {
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.repo-landing__preview-sidebar {
+    display: grid;
+    gap: 12px;
+}
+
+.repo-landing__preview-inspector,
+.repo-landing__preview-diff {
+    gap: 10px;
+    padding: 14px;
+    border-radius: 20px;
+}
+
+.repo-landing__preview-label {
+    color: var(--text-secondary);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.repo-landing__preview-pill-row,
+.repo-landing__preview-diff-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.repo-landing__preview-pill,
+.repo-landing__preview-diff-stat {
+    min-height: 24px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+}
+
+.repo-landing__preview-diff-header,
+.repo-landing__preview-diff-copy {
+    display: grid;
+    gap: 10px;
+}
+
+.repo-landing__preview-clarity-card {
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 18px;
+}
+
+.repo-landing__preview-diff-header {
+    gap: 12px;
+}
+
+.repo-landing__preview-diff-excerpt {
+    display: grid;
+    gap: 8px;
+}
+
+.repo-landing__preview-diff-line {
+    display: block;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+    color: color-mix(in srgb, var(--text-secondary) 86%, var(--text-color));
+    font-family: var(--gv-font-mono);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.repo-landing__preview-checklist {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.repo-landing__preview-clarity-card span {
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.repo-landing__preview-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.repo-landing__preview-chip {
+    min-height: 28px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-color) 96%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+    font-family: var(--gv-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
 }
 
 .repo-landing__proof-strip {
@@ -8355,6 +8278,11 @@ body {
 
 .repo-landing__proof-item strong {
     font-size: 15px;
+}
+
+.repo-landing__proof-item span,
+.repo-landing__footer-brand span {
+    color: var(--text-secondary);
 }
 
 .repo-landing__section {
@@ -8908,24 +8836,6 @@ body {
     }
 }
 
-@keyframes gv-skeleton-glide {
-    0% {
-        transform: translateX(0);
-    }
-    100% {
-        transform: translateX(340%);
-    }
-}
-
-@keyframes gv-preview-graph-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 @media (max-width: 760px) {
     .theme-toggle {
         right: 12px;
@@ -9003,13 +8913,18 @@ body {
         grid-template-columns: 1fr;
     }
 
-    .repo-landing__preview-sidebar {
+    .repo-landing__preview-panel--problem {
         border-right: none;
         border-bottom: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
     }
 
-    .repo-landing__preview-graph-canvas canvas {
-        min-height: 340px;
+    .repo-landing__preview-canvas,
+    .repo-landing__preview-checklist {
+        grid-template-columns: 1fr;
+    }
+
+    .repo-landing__preview-frame {
+        min-height: auto;
     }
 
     .repo-landing__hero-form-meta {
@@ -9068,7 +8983,7 @@ body {
     .repo-landing__card,
     .repo-landing__item,
     .repo-landing__code-block,
-    .repo-landing__preview-sidebar,
+    .repo-landing__preview-panel,
     .repo-docs__hero-panel,
     .repo-docs__rail,
     .repo-docs__section,
@@ -9092,6 +9007,14 @@ body {
         flex-direction: column;
     }
 
+    .repo-landing__preview-lane-commits {
+        padding-left: 16px;
+    }
+
+    .repo-landing__preview-commit::before {
+        left: -16px;
+    }
+
     .repo-landing__preview-topbar {
         align-items: flex-start;
         flex-direction: column;
@@ -9113,9 +9036,6 @@ body {
     .repo-landing__section,
     .repo-landing__footer,
     .repo-landing__card,
-    .repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-sidebar-meta span::after,
-    .repo-landing__preview-sidebar[data-loading="true"] .repo-landing__preview-item span::after,
-    .repo-landing__preview-graph-spinner,
     .gv-connection-indicator__light {
         animation: none !important;
     }

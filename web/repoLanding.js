@@ -4,26 +4,74 @@ const FEATURED_REPOS = [
 ];
 const HERO_PREVIEW = {
     path: "gitvista.io / repo / rybkr / gitvista",
-    name: "GitVista",
-    branch: "main",
-    head: "HEAD lane mode",
-    description: "Read the repository at branch level first, then drop into individual commits and diffs when you need proof.",
-    metrics: [
-        { label: "Commits", value: "14.2k", note: "history indexed" },
-        { label: "Branches", value: "38", note: "refs in view" },
-        { label: "Tags", value: "112", note: "release markers" },
-    ],
-    activity: [
-        { hash: "50c9298", title: "Fix landing preview loading and layout behavior", meta: "main • just now", tone: "main" },
-        { hash: "d6a11f2", title: "Stabilize hosted repo bootstrap after clone completion", meta: "preview-refresh • 12 min ago", tone: "branch" },
-        { hash: "4bb2e9c", title: "Merge lane layout polish into landing worktree", meta: "merge from ui-pass", tone: "merge" },
-        { hash: "9f90d8a", title: "Add repository overview cards and docs navigation", meta: "main • 34 min ago", tone: "main" },
-    ],
-    insights: [
-        { label: "Graph-first", value: "Branch motion stays visible while you inspect commits." },
-        { label: "Repo overview", value: "Head, refs, tags, and remotes stay in one rail." },
-        { label: "Diff-ready", value: "Open a commit only when you already know why it matters." },
-    ],
+    problem: {
+        kicker: "Without GitVista",
+        title: "Git feels like fragments.",
+        body: "Detached HEADs, branch names, and merge questions arrive as separate clues instead of one readable story.",
+        lines: [
+            "refs/remotes/origin/release/2.4 -> 0a71f8c",
+            "merge preview-refresh into main?",
+            "HEAD detached at 50c9298",
+        ],
+    },
+    solution: {
+        kicker: "With GitVista",
+        title: "The repository reads like a map.",
+        graph: {
+            label: "Branch graph",
+            summary: "See where work diverged, what rejoined, and which commit deserves inspection next.",
+            lanes: [
+                {
+                    label: "main",
+                    tone: "main",
+                    commits: [
+                        { hash: "f6a1c9e", title: "Release preview panel refresh", meta: "HEAD", emphasis: "active" },
+                        { hash: "9dc28b4", title: "Stabilize hosted repo bootstrap", meta: "2 commits back" },
+                    ],
+                },
+                {
+                    label: "preview-refresh",
+                    tone: "branch",
+                    commits: [
+                        { hash: "4fe12d7", title: "Prototype graph-first onboarding", meta: "feature branch" },
+                    ],
+                },
+                {
+                    label: "merge",
+                    tone: "merge",
+                    commits: [
+                        { hash: "82bd41f", title: "Merge preview-refresh into main", meta: "merge context" },
+                    ],
+                },
+            ],
+        },
+        inspector: {
+            label: "Focused commit",
+            title: "Release preview panel refresh",
+            summary: "Inspect one commit only after the branch context is obvious.",
+            pills: ["HEAD", "3 files changed", "+128 -32"],
+        },
+        diff: {
+            label: "Diff context",
+            file: "web/repoLanding.js",
+            stats: ["+82", "-18", "preview helpers"],
+            excerpt: [
+                "createHeroPreview(HERO_PREVIEW)",
+                "createPreviewGraphLane(lane)",
+                "highlightElementTemporarily(card)",
+            ],
+        },
+        checklist: [
+            { title: "Graph-first orientation", body: "Branch motion lands before commit detail." },
+            { title: "One rail for context", body: "HEAD, lane, and diff stay visible together." },
+            { title: "Commit detail on demand", body: "Open the diff when the why is already clear." },
+        ],
+        chips: [
+            "branch graph",
+            "activity context",
+            "commit diffs",
+        ],
+    },
 };
 
 const DELETE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -46,6 +94,166 @@ const GITHUB_SVG = `<svg width="18" height="18" viewBox="0 0 16 16" fill="curren
 const ARROW_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
+
+function createElement(tagName, className, text) {
+    const el = document.createElement(tagName);
+    if (className) el.className = className;
+    if (typeof text === "string") el.textContent = text;
+    return el;
+}
+
+function createPreviewPanelHeader({ kicker, title, body }) {
+    const header = createElement("div", "repo-landing__preview-panel-header");
+    header.appendChild(createElement("span", "repo-landing__preview-kicker", kicker));
+    header.appendChild(createElement("strong", "", title));
+    if (body) {
+        header.appendChild(createElement("p", "repo-landing__preview-panel-copy", body));
+    }
+    return header;
+}
+
+function createPreviewProblem(problem) {
+    const panel = createElement("section", "repo-landing__preview-panel repo-landing__preview-panel--problem");
+    panel.appendChild(createPreviewPanelHeader(problem));
+
+    const chaos = createElement("div", "repo-landing__preview-chaos");
+    for (const line of problem.lines) {
+        chaos.appendChild(createElement("div", "repo-landing__preview-chaos-row", line));
+    }
+    panel.appendChild(chaos);
+    return panel;
+}
+
+function createPreviewGraphLane(lane) {
+    const laneEl = createElement("div", `repo-landing__preview-lane repo-landing__preview-lane--${lane.tone}`);
+    laneEl.appendChild(createElement("span", "repo-landing__preview-lane-label", lane.label));
+
+    const commits = createElement("div", "repo-landing__preview-lane-commits");
+    for (const commit of lane.commits) {
+        const commitEl = createElement(
+            "article",
+            `repo-landing__preview-commit${commit.emphasis === "active" ? " repo-landing__preview-commit--active" : ""}`,
+        );
+        commitEl.appendChild(createElement("span", "repo-landing__preview-commit-hash", commit.hash));
+        commitEl.appendChild(createElement("strong", "repo-landing__preview-commit-title", commit.title));
+        commitEl.appendChild(createElement("span", "repo-landing__preview-commit-meta", commit.meta));
+        commits.appendChild(commitEl);
+    }
+
+    laneEl.appendChild(commits);
+    return laneEl;
+}
+
+function createPreviewGraph(graph) {
+    const graphEl = createElement("section", "repo-landing__preview-graph");
+    graphEl.appendChild(createPreviewPanelHeader({
+        kicker: graph.label,
+        title: "Branch movement first.",
+        body: graph.summary,
+    }));
+
+    const lanes = createElement("div", "repo-landing__preview-lanes");
+    for (const lane of graph.lanes) {
+        lanes.appendChild(createPreviewGraphLane(lane));
+    }
+    graphEl.appendChild(lanes);
+    return graphEl;
+}
+
+function createPreviewInspector(inspector) {
+    const card = createElement("section", "repo-landing__preview-inspector");
+    card.appendChild(createElement("span", "repo-landing__preview-label", inspector.label));
+    card.appendChild(createElement("strong", "repo-landing__preview-inspector-title", inspector.title));
+    card.appendChild(createElement("p", "repo-landing__preview-inspector-copy", inspector.summary));
+
+    const pills = createElement("div", "repo-landing__preview-pill-row");
+    for (const pill of inspector.pills) {
+        pills.appendChild(createElement("span", "repo-landing__preview-pill", pill));
+    }
+    card.appendChild(pills);
+    return card;
+}
+
+function createPreviewDiff(diff) {
+    const diffEl = createElement("section", "repo-landing__preview-diff");
+
+    const header = createElement("div", "repo-landing__preview-diff-header");
+    const copy = createElement("div", "repo-landing__preview-diff-copy");
+    copy.appendChild(createElement("span", "repo-landing__preview-label", diff.label));
+    copy.appendChild(createElement("strong", "repo-landing__preview-diff-file", diff.file));
+    header.appendChild(copy);
+
+    const stats = createElement("div", "repo-landing__preview-diff-stats");
+    for (const stat of diff.stats) {
+        stats.appendChild(createElement("span", "repo-landing__preview-diff-stat", stat));
+    }
+    header.appendChild(stats);
+    diffEl.appendChild(header);
+
+    const excerpt = createElement("div", "repo-landing__preview-diff-excerpt");
+    for (const line of diff.excerpt) {
+        excerpt.appendChild(createElement("code", "repo-landing__preview-diff-line", line));
+    }
+    diffEl.appendChild(excerpt);
+    return diffEl;
+}
+
+function createPreviewChecklist(items) {
+    const list = createElement("div", "repo-landing__preview-checklist");
+    for (const item of items) {
+        const card = createElement("div", "repo-landing__preview-clarity-card");
+        card.appendChild(createElement("strong", "", item.title));
+        card.appendChild(createElement("span", "", item.body));
+        list.appendChild(card);
+    }
+    return list;
+}
+
+function createPreviewChipRow(chips) {
+    const row = createElement("div", "repo-landing__preview-chip-row");
+    for (const chip of chips) {
+        row.appendChild(createElement("span", "repo-landing__preview-chip", chip));
+    }
+    return row;
+}
+
+function createPreviewSolution(solution) {
+    const panel = createElement("section", "repo-landing__preview-panel repo-landing__preview-panel--solution");
+    panel.appendChild(createPreviewPanelHeader(solution));
+
+    const canvas = createElement("div", "repo-landing__preview-canvas");
+    canvas.appendChild(createPreviewGraph(solution.graph));
+
+    const sidebar = createElement("div", "repo-landing__preview-sidebar");
+    sidebar.appendChild(createPreviewInspector(solution.inspector));
+    sidebar.appendChild(createPreviewDiff(solution.diff));
+    canvas.appendChild(sidebar);
+
+    panel.appendChild(canvas);
+    panel.appendChild(createPreviewChecklist(solution.checklist));
+    panel.appendChild(createPreviewChipRow(solution.chips));
+    return panel;
+}
+
+function createHeroPreview(previewData) {
+    const frame = createElement("div", "repo-landing__preview-frame");
+    const topbar = createElement("div", "repo-landing__preview-topbar");
+
+    const dots = createElement("div", "repo-landing__preview-dots");
+    dots.appendChild(createElement("span"));
+    dots.appendChild(createElement("span"));
+    dots.appendChild(createElement("span"));
+    topbar.appendChild(dots);
+    topbar.appendChild(createElement("div", "repo-landing__preview-path", previewData.path));
+
+    const body = createElement("div", "repo-landing__preview-body");
+    body.appendChild(createPreviewProblem(previewData.problem));
+    body.appendChild(createPreviewSolution(previewData.solution));
+
+    frame.appendChild(topbar);
+    frame.appendChild(body);
+    return frame;
+}
 
 /**
  * Creates the hosted-mode repo landing page.
@@ -250,20 +458,29 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const heroCopy = document.createElement("div");
     heroCopy.className = "repo-landing__hero-copy";
 
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "repo-landing__eyebrow";
+    eyebrow.textContent = "Hosted mode";
+
     const title = document.createElement("h1");
     title.className = "repo-landing__title";
-    title.textContent = "Bring your Git history into view at a glance.";
+    title.textContent = "Git history stops being guesswork.";
 
     const tagline = document.createElement("p");
     tagline.className = "repo-landing__tagline";
-    tagline.textContent = "GitVista turns a repository into a readable branch graph, recent activity view, and commit-by-commit workspace. Start with a public GitHub URL in the browser, then switch to local mode when you need live updates from your own checkout.";
+    tagline.textContent = "Open a repository into one readable view with the branch graph, recent activity context, and commit diffs aligned before you start chasing hashes.";
 
     const heroFormShell = document.createElement("div");
     heroFormShell.className = "repo-landing__hero-form-shell";
 
     const formLead = document.createElement("div");
     formLead.className = "repo-landing__hero-form-lead";
-    formLead.innerHTML = `<strong>Try it now</strong><span>Open a public repository directly in the browser.</span>`;
+    const formLeadTitle = document.createElement("strong");
+    formLeadTitle.textContent = "Start with a public GitHub repository";
+    const formLeadCopy = document.createElement("span");
+    formLeadCopy.textContent = "Paste a repository URL to open the live graph in your browser, or jump into a featured example if you want the fast path.";
+    formLead.appendChild(formLeadTitle);
+    formLead.appendChild(formLeadCopy);
 
     const form = document.createElement("form");
     form.className = "repo-landing__form";
@@ -278,17 +495,30 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const addBtn = document.createElement("button");
     addBtn.type = "submit";
     addBtn.className = "repo-landing__add-btn";
-    addBtn.textContent = "Open Repository";
+    addBtn.textContent = "Open Live Graph";
 
     form.appendChild(input);
     form.appendChild(addBtn);
+
+    const heroActions = document.createElement("div");
+    heroActions.className = "repo-landing__hero-actions";
+
+    const featuredShortcut = document.createElement("button");
+    featuredShortcut.type = "button";
+    featuredShortcut.className = "repo-landing__cta-secondary";
+    featuredShortcut.textContent = "Try a Featured Repo";
+    featuredShortcut.addEventListener("click", () => {
+        scrollToSection(featuredSection);
+        highlightElementTemporarily(featuredGrid.querySelector(".repo-landing__card"));
+    });
+    heroActions.appendChild(featuredShortcut);
 
     const formMeta = document.createElement("div");
     formMeta.className = "repo-landing__hero-form-meta";
 
     const heroSupport = document.createElement("span");
     heroSupport.className = "repo-landing__hero-support";
-    heroSupport.textContent = "Works best with public GitHub repositories.";
+    heroSupport.textContent = "Browser mode works best with public GitHub repositories. Switch to local mode when you need live checkout updates.";
 
     const installShortcut = document.createElement("button");
     installShortcut.type = "button";
@@ -309,107 +539,20 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
 
     heroFormShell.appendChild(formLead);
     heroFormShell.appendChild(form);
+    heroFormShell.appendChild(heroActions);
     heroFormShell.appendChild(formMeta);
     heroFormShell.appendChild(errorMsg);
     heroFormShell.appendChild(listContainer);
 
+    heroCopy.appendChild(eyebrow);
     heroCopy.appendChild(title);
+    heroCopy.appendChild(tagline);
     heroCopy.appendChild(heroFormShell);
 
     const heroPreview = document.createElement("div");
     heroPreview.className = "repo-landing__hero-preview";
     heroPreview.setAttribute("aria-hidden", "true");
-
-    const previewFrame = document.createElement("div");
-    previewFrame.className = "repo-landing__preview-frame";
-
-    const previewTopbar = document.createElement("div");
-    previewTopbar.className = "repo-landing__preview-topbar";
-    previewTopbar.innerHTML = `
-        <div class="repo-landing__preview-dots">
-            <span></span><span></span><span></span>
-        </div>
-        <div class="repo-landing__preview-path">gitvista.io / repo / rybkr / gitvista</div>
-    `;
-    const previewPath = previewTopbar.querySelector(".repo-landing__preview-path");
-
-    const previewBody = document.createElement("div");
-    previewBody.className = "repo-landing__preview-body";
-
-    const previewGraph = document.createElement("div");
-    previewGraph.className = "repo-landing__preview-graph";
-    previewGraph.dataset.loading = "true";
-    previewGraph.dataset.state = "loading";
-    previewGraph.innerHTML = `
-        <div class="repo-landing__preview-graph-header"></div>
-        <div class="repo-landing__preview-graph-shell">
-            <div class="repo-landing__preview-graph-loading">
-                <span class="repo-landing__preview-graph-spinner" aria-hidden="true"></span>
-                <span class="repo-landing__preview-graph-loading-text">Loading graph...</span>
-            </div>
-        </div>
-    `;
-    const previewGraphHeader = previewGraph.querySelector(".repo-landing__preview-graph-header");
-    const previewGraphShell = previewGraph.querySelector(".repo-landing__preview-graph-shell");
-    const previewGraphLoadingText = previewGraph.querySelector(".repo-landing__preview-graph-loading-text");
-    const previewGraphCanvas = document.createElement("div");
-    previewGraphCanvas.className = "repo-landing__preview-graph-canvas";
-    previewGraphShell.appendChild(previewGraphCanvas);
-    ensurePreviewGraphController();
-
-    const previewSidebar = document.createElement("div");
-    previewSidebar.className = "repo-landing__preview-sidebar";
-    previewSidebar.dataset.loading = "true";
-    previewSidebar.dataset.state = "loading";
-
-    const previewSidebarHeader = document.createElement("div");
-    previewSidebarHeader.className = "repo-landing__preview-sidebar-header";
-    previewSidebarHeader.innerHTML = `
-        <div class="repo-landing__preview-eyebrow">Repository overview</div>
-        <strong>GitVista</strong>
-        <div class="repo-landing__preview-pills">
-            <span class="repo-landing__preview-pill repo-landing__preview-pill--branch">main</span>
-            <span class="repo-landing__preview-pill repo-landing__preview-pill--head">HEAD loading</span>
-        </div>
-    `;
-    const previewRepoName = previewSidebarHeader.querySelector("strong");
-    const previewBranchPill = previewSidebarHeader.querySelector(".repo-landing__preview-pill--branch");
-    const previewHeadPill = previewSidebarHeader.querySelector(".repo-landing__preview-pill--head");
-
-    const previewSidebarMeta = document.createElement("div");
-    previewSidebarMeta.className = "repo-landing__preview-sidebar-meta";
-    previewSidebarMeta.innerHTML = `
-        <div><strong>Description</strong><span>Loading repository metadata...</span></div>
-    `;
-    const previewDescription = previewSidebarMeta.querySelector("span");
-
-    const previewList = document.createElement("div");
-    previewList.className = "repo-landing__preview-list";
-    previewList.innerHTML = `
-        <div class="repo-landing__preview-item">
-            <strong>Commits</strong>
-            <span>...</span>
-        </div>
-        <div class="repo-landing__preview-item">
-            <strong>Branches</strong>
-            <span>...</span>
-        </div>
-        <div class="repo-landing__preview-item">
-            <strong>Tags</strong>
-            <span>...</span>
-        </div>
-    `;
-    const [previewCommitItem, previewBranchItem, previewTagItem] = previewList.querySelectorAll(".repo-landing__preview-item span");
-
-    previewSidebar.appendChild(previewSidebarHeader);
-    previewSidebar.appendChild(previewSidebarMeta);
-    previewSidebar.appendChild(previewList);
-
-    previewBody.appendChild(previewSidebar);
-    previewBody.appendChild(previewGraph);
-    previewFrame.appendChild(previewTopbar);
-    previewFrame.appendChild(previewBody);
-    heroPreview.appendChild(previewFrame);
+    heroPreview.appendChild(createHeroPreview(HERO_PREVIEW));
 
     hero.appendChild(heroCopy);
     hero.appendChild(heroPreview);
@@ -423,7 +566,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     `;
     const proofIntro = document.createElement("p");
     proofIntro.className = "repo-landing__section-subtitle repo-landing__proof-intro";
-    proofIntro.textContent = tagline.textContent;
+    proofIntro.textContent = "Built for the moment when branch names, merge commits, and detached HEADs stop being legible in your head.";
     proofStrip.prepend(proofIntro);
 
     // ── 2. Featured Repos ─────────────────────────────────────────────────
@@ -601,258 +744,6 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         Promise.allSettled(promises);
     }
 
-    function setSnapshotMetricValues({ commits, branches, tags }) {
-        previewCommitItem.textContent = commits;
-        previewBranchItem.textContent = branches;
-        previewTagItem.textContent = tags;
-    }
-
-    function setSnapshotLoadingState(message = "Loading graph...") {
-        previewSidebar.dataset.loading = "true";
-        previewSidebar.dataset.state = "loading";
-        previewGraph.dataset.loading = "true";
-        previewGraph.dataset.state = "loading";
-        previewGraphLoadingText.textContent = message;
-    }
-
-    function applySnapshotPendingState(repo = {}, progress = null) {
-        if (destroyed) return;
-        const remotePath = deriveRemotePath({ remotes: { origin: repo.url || SNAPSHOT_REPO_URL } });
-        const phase = progress?.phase || repo.phase || "Preparing repository";
-        const percent = Number(progress?.percent ?? repo.percent ?? 0);
-        const progressLabel = percent > 0 ? `${phase} ${percent}%` : phase;
-
-        previewRepoName.textContent = "GitVista";
-        previewBranchPill.textContent = progressLabel;
-        previewHeadPill.textContent = repo.state === "pending" ? "Queued" : "Loading";
-        previewDescription.textContent = "Preparing the live GitVista snapshot for the landing page preview.";
-        setSnapshotMetricValues({
-            commits: percent > 0 ? `${percent}% cloned` : "Scanning history",
-            branches: "Detecting refs",
-            tags: "Detecting tags",
-        });
-        previewPath.textContent = `gitvista.io / repo / ${remotePath}`;
-        setSnapshotLoadingState(progressLabel);
-    }
-
-    function setSnapshotErrorState(message = "GitVista snapshot is unavailable right now.") {
-        if (destroyed) return;
-        previewRepoName.textContent = "GitVista";
-        previewBranchPill.textContent = "Snapshot unavailable";
-        previewHeadPill.textContent = "Retry later";
-        previewDescription.textContent = message;
-        setSnapshotMetricValues({
-            commits: "Unavailable",
-            branches: "Unavailable",
-            tags: "Unavailable",
-        });
-        previewSidebar.dataset.loading = "false";
-        previewSidebar.dataset.state = "error";
-        previewGraph.dataset.loading = "true";
-        previewGraph.dataset.state = "error";
-        previewGraphLoadingText.textContent = message;
-    }
-
-    function applySnapshotOverview(data) {
-        if (!data || destroyed) return;
-        const repoName = deriveRepoName(data);
-        const branch = data.headDetached ? "Detached HEAD" : (formatBranchName(data.currentBranch) || "No branch");
-        const head = typeof data.headHash === "string" && data.headHash ? data.headHash.slice(0, 7) : "unknown";
-        const description = (data.description || "").trim() || "Git history visualization.";
-        const remotePath = deriveRemotePath(data.remotes);
-
-        previewRepoName.textContent = repoName;
-        previewBranchPill.textContent = branch;
-        previewHeadPill.textContent = `HEAD ${head}`;
-        previewDescription.textContent = description;
-        setSnapshotMetricValues({
-            commits: `${Number(data.commitCount || 0).toLocaleString()} total`,
-            branches: `${Number(data.branchCount || 0)} branches`,
-            tags: `${Number(data.tagCount || 0)} tags`,
-        });
-        previewPath.textContent = `gitvista.io / repo / ${remotePath}`;
-        previewSidebar.dataset.loading = "false";
-        previewSidebar.dataset.state = "ready";
-    }
-
-    function buildSnapshotPreviewSummary(summary, limit = 8) {
-        const visibleHashes = buildSnapshotCommitHashes(summary, limit);
-        const visibleHashSet = new Set(visibleHashes);
-        return {
-            headHash: summary.headHash || visibleHashes[0] || "",
-            branches: Object.fromEntries(
-                Object.entries(summary.branches || {}).filter(([, hash]) => visibleHashSet.has(hash))
-            ),
-            tags: {},
-            stashes: [],
-            skeleton: (summary.skeleton || [])
-                .filter((commit) => visibleHashSet.has(commit.h))
-                .map((commit) => ({
-                    h: commit.h,
-                    p: (commit.p || []).filter((parentHash) => visibleHashSet.has(parentHash)),
-                    t: commit.t,
-                    branchLabel: commit.branchLabel || "",
-                    branchLabelSource: commit.branchLabelSource || "",
-                })),
-        };
-    }
-
-    function ensurePreviewGraphController() {
-        if (previewGraphController || destroyed) return previewGraphController;
-        previewGraphController = createGraphController(previewGraphCanvas, {
-            centerAnchorYFraction: 0.25,
-            detailThresholds: {
-                message: 1,
-                author: 1,
-                date: 1,
-            },
-            initialLayoutMode: "lane",
-            showControls: false,
-            showRefDecorators: false,
-            fetchGraphCommits: async (hashes) => hashes
-                .map((hash) => previewGraphCommitMap.get(hash))
-                .filter(Boolean),
-        });
-        return previewGraphController;
-    }
-
-    function renderSnapshotGraph(summary, commits = []) {
-        if (!summary?.skeleton?.length) {
-            setSnapshotErrorState("GitVista snapshot loaded without graph data.");
-            return;
-        }
-        previewGraphCommitMap = new Map(commits.map((commit) => [commit.hash, commit]));
-        const controller = ensurePreviewGraphController();
-        const previewSummary = buildSnapshotPreviewSummary(summary, 8);
-        previewGraphHeader.innerHTML = "";
-        previewGraph.dataset.loading = "false";
-        previewGraph.dataset.state = "ready";
-        controller?.applySummary(previewSummary);
-        controller?.refreshViewport?.();
-        controller?.centerOnCommit(previewSummary.headHash || null);
-        window.requestAnimationFrame(() => {
-            if (destroyed || !previewGraphController) return;
-            previewGraphController.refreshViewport?.();
-            previewGraphController.centerOnCommit(previewSummary.headHash || null);
-        });
-    }
-
-    async function fetchSnapshotCommits(id, hashes) {
-        const unique = [...new Set((hashes || []).filter((hash) => typeof hash === "string" && hash.length > 0))];
-        if (unique.length === 0) return [];
-        const params = new URLSearchParams();
-        params.set("hashes", unique.join(","));
-        const resp = await fetch(`/api/repos/${id}/graph/commits?${params.toString()}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const payload = await resp.json();
-        return Array.isArray(payload?.commits) ? payload.commits : [];
-    }
-
-    async function fetchSnapshotData(id) {
-        const [repoResp, graphResp] = await Promise.all([
-            fetch(`/api/repos/${id}/repository`),
-            fetch(`/api/repos/${id}/graph/summary`),
-        ]);
-        if (!repoResp.ok) throw new Error(`HTTP ${repoResp.status}`);
-        if (!graphResp.ok) throw new Error(`HTTP ${graphResp.status}`);
-        const [repoData, graphData] = await Promise.all([repoResp.json(), graphResp.json()]);
-        const visibleHashes = buildSnapshotCommitHashes(graphData, 8);
-        const graphCommits = await fetchSnapshotCommits(id, visibleHashes).catch(() => []);
-        applySnapshotOverview(repoData);
-        renderSnapshotGraph(graphData, graphCommits);
-    }
-
-    async function fetchSnapshotDataWithRetry(id, attempts = 6) {
-        let lastError = null;
-        for (let attempt = 0; attempt < attempts; attempt++) {
-            try {
-                await fetchSnapshotData(id);
-                return;
-            } catch (error) {
-                lastError = error;
-                if (attempt >= attempts - 1) break;
-                await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
-            }
-        }
-        throw lastError || new Error("Snapshot data unavailable");
-    }
-
-    async function ensureSnapshotRepo(existingRepos = null) {
-        const knownRepos = Array.isArray(existingRepos) ? existingRepos : repos;
-        const existing = knownRepos.find((repo) => normalizeRepoUrl(repo.url) === normalizeRepoUrl(SNAPSHOT_REPO_URL));
-
-        if (existing) {
-            snapshotRepoId = existing.id;
-            addOrUpdateRepo(existing);
-            if (existing.state === "ready") {
-                await fetchSnapshotDataWithRetry(existing.id).catch(() => {
-                    setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
-                });
-                return;
-            }
-            if (existing.state === "cloning" || existing.state === "pending") {
-                applySnapshotPendingState(existing);
-                startProgressStream(existing.id, async (update) => {
-                    if (destroyed) return;
-                    addOrUpdateRepo({ ...existing, ...update, url: existing.url });
-                    applySnapshotPendingState(existing, update);
-                    if (update.state === "ready") {
-                        await fetchSnapshotDataWithRetry(existing.id).catch(() => {
-                            setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
-                        });
-                    }
-                });
-                return;
-            }
-        }
-
-        const resp = await fetch("/api/repos", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: SNAPSHOT_REPO_URL }),
-        });
-        if (!resp.ok) return;
-
-        const repo = await resp.json();
-        if (destroyed) return;
-        snapshotRepoId = repo.id;
-        addOrUpdateRepo(repo);
-
-        if (repo.state === "ready") {
-            await fetchSnapshotDataWithRetry(repo.id).catch(() => {
-                setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
-            });
-            return;
-        }
-
-        if (repo.state === "cloning" || repo.state === "pending") {
-            applySnapshotPendingState(repo);
-            startProgressStream(repo.id, async (update) => {
-                if (destroyed) return;
-                addOrUpdateRepo({ ...repo, ...update, url: SNAPSHOT_REPO_URL });
-                applySnapshotPendingState(repo, update);
-                if (update.state === "ready") {
-                    await fetchSnapshotDataWithRetry(repo.id).catch(() => {
-                        setSnapshotErrorState("GitVista snapshot stats could not be loaded.");
-                    });
-                }
-            });
-            return;
-        }
-
-        setSnapshotErrorState("GitVista snapshot is not ready yet.");
-    }
-
-    function initSnapshotRepo(existingRepos = null) {
-        if (!snapshotInitPromise) {
-            setSnapshotLoadingState("Loading live GitVista snapshot...");
-            snapshotInitPromise = ensureSnapshotRepo(existingRepos).catch(() => {
-                setSnapshotErrorState("GitVista snapshot could not be initialized.");
-            });
-        }
-        return snapshotInitPromise;
-    }
-
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
         errorMsg.textContent = "";
@@ -915,7 +806,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
             errorMsg.textContent = err.message;
         } finally {
             addBtn.disabled = false;
-            addBtn.textContent = "Open Repository";
+            addBtn.textContent = "Open Live Graph";
         }
     });
 
@@ -940,7 +831,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         for (const s of featuredState.values()) {
             if (s.id) featuredIds.add(s.id);
         }
-        const userRepos = repos.filter((r) => !featuredIds.has(r.id) && r.id !== snapshotRepoId);
+        const userRepos = repos.filter((r) => !featuredIds.has(r.id));
 
         if (userRepos.length === 0) return;
 
@@ -1135,19 +1026,15 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
                     });
                 }
             }
-            initSnapshotRepo(list);
             renderUserRepos();
         } catch {
             // Silently fail initial load
-            initSnapshotRepo();
         }
     })();
 
     function destroy() {
         destroyed = true;
         window.clearTimeout(highlightTimer);
-        previewGraphController?.destroy?.();
-        previewGraphController = null;
         for (const [, es] of activeStreams) {
             es.close();
         }
