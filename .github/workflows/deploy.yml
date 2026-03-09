@@ -29,20 +29,22 @@ jobs:
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
 
-      - name: Ensure staging app exists
+      - name: Verify staging app access
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          flyctl status --app gitvista-staging >/dev/null 2>&1 || flyctl apps create gitvista-staging
+          flyctl status --app gitvista-staging >/dev/null
 
-      - name: Ensure staging volume exists
+      - name: Verify staging volume exists
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          flyctl volumes list --app gitvista-staging --json | grep -q '"name":"gitvista_staging_data"' || \
-            flyctl volumes create gitvista_staging_data --app gitvista-staging --region iad --size 10 --yes
+          flyctl volumes list --app gitvista-staging --json | grep -q '"name":"gitvista_staging_data"' || {
+            echo "Missing Fly volume gitvista_staging_data for app gitvista-staging"
+            exit 1
+          }
 
       - name: Deploy to staging
         env:
@@ -73,14 +75,24 @@ jobs:
           done
 
           curl -fsS --max-time 10 "${BASE_URL}/health"
-          curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
+          mode=$(curl -fsS --max-time 10 "${BASE_URL}/api/config" | python3 -c "import json,sys; print(json.load(sys.stdin).get('mode',''))")
+          [ -n "$mode" ]
+          if [ "$mode" = "hosted" ]; then
+            curl -fsS --max-time 10 "${BASE_URL}/api/repos" | python3 -c "import json,sys; data=json.load(sys.stdin); assert isinstance(data, list)"
+          else
+            curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
+          fi
           status=$(curl -sS -o /dev/null -w '%{http_code}' \
             -H "Upgrade: websocket" \
             -H "Connection: Upgrade" \
             -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
             -H "Sec-WebSocket-Version: 13" \
-            "${BASE_URL}/api/ws" || true)
-          [ "$status" = "101" ] || [ "$status" = "400" ]
+            "$(if [ "$mode" = "hosted" ]; then printf '%s' "${BASE_URL}/api/repos"; else printf '%s' "${BASE_URL}/api/ws"; fi)" || true)
+          if [ "$mode" = "hosted" ]; then
+            [ "$status" = "405" ] || [ "$status" = "404" ]
+          else
+            [ "$status" = "101" ] || [ "$status" = "400" ]
+          fi
 
   deploy-production:
     name: Deploy to Production
@@ -95,6 +107,21 @@ jobs:
 
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+
+      - name: Verify production app access
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl status --app gitvista >/dev/null
+
+      - name: Verify production volume exists
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          flyctl volumes list --app gitvista --json | grep -q '"name":"gitvista_data"' || {
+            echo "Missing Fly volume gitvista_data for app gitvista"
+            exit 1
+          }
 
       - name: Deploy to production
         env:
@@ -125,14 +152,24 @@ jobs:
           done
 
           curl -fsS --max-time 10 "${BASE_URL}/health"
-          curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
+          mode=$(curl -fsS --max-time 10 "${BASE_URL}/api/config" | python3 -c "import json,sys; print(json.load(sys.stdin).get('mode',''))")
+          [ -n "$mode" ]
+          if [ "$mode" = "hosted" ]; then
+            curl -fsS --max-time 10 "${BASE_URL}/api/repos" | python3 -c "import json,sys; data=json.load(sys.stdin); assert isinstance(data, list)"
+          else
+            curl -fsS --max-time 10 "${BASE_URL}/api/repository" | python3 -c "import json,sys; json.load(sys.stdin)"
+          fi
           status=$(curl -sS -o /dev/null -w '%{http_code}' \
             -H "Upgrade: websocket" \
             -H "Connection: Upgrade" \
             -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
             -H "Sec-WebSocket-Version: 13" \
-            "${BASE_URL}/api/ws" || true)
-          [ "$status" = "101" ] || [ "$status" = "400" ]
+            "$(if [ "$mode" = "hosted" ]; then printf '%s' "${BASE_URL}/api/repos"; else printf '%s' "${BASE_URL}/api/ws"; fi)" || true)
+          if [ "$mode" = "hosted" ]; then
+            [ "$status" = "405" ] || [ "$status" = "404" ]
+          else
+            [ "$status" = "101" ] || [ "$status" = "400" ]
+          fi
 
       - name: Publish deploy summary
         run: |
