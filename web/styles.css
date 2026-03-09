@@ -7641,6 +7641,7 @@ body {
 .repo-landing__brand:focus-visible,
 .repo-landing__cta-primary:focus-visible,
 .repo-landing__cta-secondary:focus-visible,
+.repo-landing__scroll-cue:focus-visible,
 .repo-landing__hero-link:focus-visible,
 .repo-landing__card-cta:focus-visible,
 .repo-landing__copy-btn:focus-visible,
@@ -7657,7 +7658,7 @@ body {
     align-items: stretch;
     min-height: calc(100vh - var(--gv-nav-clearance) - var(--gv-space-6));
     min-height: calc(100dvh - var(--gv-nav-clearance) - var(--gv-space-6));
-    padding: 20px 0 8px;
+    padding: 20px 0 72px;
     text-align: left;
     overflow: visible;
 }
@@ -7709,6 +7710,67 @@ body {
     min-height: 100%;
     justify-self: stretch;
     pointer-events: none;
+}
+
+.repo-landing__scroll-cue {
+    position: absolute;
+    left: 50%;
+    bottom: 36px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 112px;
+    padding: 12px 16px 10px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+    border-radius: 999px;
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 88%, transparent), color-mix(in srgb, var(--surface-color) 78%, transparent));
+    box-shadow:
+        0 14px 32px color-mix(in srgb, var(--node-shadow-color) 12%, transparent),
+        inset 0 1px 0 color-mix(in srgb, var(--surface-elevated) 82%, transparent);
+    backdrop-filter: blur(14px) saturate(1.05);
+    cursor: pointer;
+    opacity: 1;
+    transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, color 180ms ease, opacity 180ms ease;
+    z-index: 2;
+}
+
+.repo-landing__scroll-cue:hover,
+.repo-landing__scroll-cue:focus-visible {
+    transform: translateX(-50%) translateY(-2px);
+    border-color: color-mix(in srgb, var(--node-color) 34%, var(--border-color));
+    box-shadow:
+        0 18px 38px color-mix(in srgb, var(--node-shadow-color) 16%, transparent),
+        inset 0 1px 0 color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+}
+
+.repo-landing__scroll-cue--hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(8px);
+}
+
+.repo-landing__scroll-cue-label {
+    font-family: var(--gv-font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.repo-landing__scroll-cue-arrow {
+    width: 12px;
+    height: 12px;
+    margin-top: -8px;
+    border-right: 1.5px solid color-mix(in srgb, var(--text-color) 88%, transparent);
+    border-bottom: 1.5px solid color-mix(in srgb, var(--text-color) 88%, transparent);
+    transform: rotate(45deg);
+    animation: gv-scroll-nudge 1.8s ease-in-out infinite;
+    transform-origin: center;
+    opacity: 0.92;
 }
 
 .repo-landing__eyebrow {
@@ -7964,36 +8026,80 @@ body {
 }
 
 .repo-landing__proof-strip {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
+    gap: 18px;
+    align-content: center;
+    min-height: min(70vh, 760px);
+    padding: 28px 0 8px;
     animation: gv-reveal-up 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
     animation-delay: 140ms;
 }
 
+.repo-landing__proof-strip::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 68%, transparent);
+    background:
+        radial-gradient(circle at top center, color-mix(in srgb, var(--node-color) 8%, transparent), transparent 52%);
+    pointer-events: none;
+}
+
+.repo-landing__proof-strip > * {
+    position: relative;
+    z-index: 1;
+}
+
+.repo-landing__proof-title,
 .repo-landing__proof-intro {
     grid-column: 1 / -1;
-    max-width: 64ch;
-    margin: 0 0 4px;
+}
+
+.repo-landing__proof-title {
+    max-width: 14ch;
+}
+
+.repo-landing__proof-intro {
+    max-width: 58ch;
+    margin: 2px 0 12px;
 }
 
 .repo-landing__proof-item {
     display: grid;
-    gap: 8px;
-    padding: 18px 20px;
-    border-radius: 18px;
-    border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
-    background: color-mix(in srgb, var(--surface-color) 94%, transparent);
-    box-shadow: var(--gv-card-shadow);
+    align-content: start;
+    gap: 10px;
+    min-height: 180px;
+    padding: 22px 22px 20px;
+    border-radius: 20px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 96%, transparent), color-mix(in srgb, var(--surface-color) 92%, var(--bg-color)));
+    box-shadow:
+        0 18px 36px color-mix(in srgb, var(--node-shadow-color) 10%, transparent),
+        inset 0 1px 0 color-mix(in srgb, var(--surface-elevated) 82%, transparent);
+}
+
+.repo-landing__proof-item::before {
+    content: "";
+    width: 36px;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--node-color), color-mix(in srgb, var(--merge-node-color) 68%, var(--node-color)));
 }
 
 .repo-landing__proof-item strong {
-    font-size: 15px;
+    font-family: var(--gv-font-display);
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.02em;
 }
 
 .repo-landing__proof-item span,
 .repo-landing__footer-brand span {
     color: var(--text-secondary);
+    line-height: 1.6;
 }
 
 .repo-landing__section {
@@ -8855,9 +8961,14 @@ body {
         min-height: auto;
         grid-template-columns: 1fr;
         gap: 24px;
+        padding-bottom: 16px;
     }
 
     .repo-landing__hero-preview {
+        display: none;
+    }
+
+    .repo-landing__scroll-cue {
         display: none;
     }
 
@@ -8944,9 +9055,26 @@ body {
         grid-template-columns: 1fr;
     }
 
+    .repo-landing__proof-strip {
+        min-height: auto;
+    }
+
     .repo-landing__hero-form-meta {
         align-items: flex-start;
         flex-direction: column;
+    }
+}
+
+@keyframes gv-scroll-nudge {
+    0%,
+    100% {
+        transform: rotate(45deg) translate(0, 0);
+        opacity: 0.72;
+    }
+
+    50% {
+        transform: rotate(45deg) translate(2px, 2px);
+        opacity: 1;
     }
 }
 

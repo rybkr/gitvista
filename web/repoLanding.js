@@ -25,6 +25,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const chrome = createElement("div", "repo-landing__chrome");
     const content = createElement("div", "repo-landing__content");
     let highlightTimer = null;
+    let scrollCueObserver = null;
 
     function scrollToSection(target, { focus } = {}) {
         target?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -66,7 +67,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
 
     const heroFormShell = createElement("div", "repo-landing__hero-form-shell");
     const formLead = createElement("div", "repo-landing__hero-form-lead");
-    formLead.appendChild(createElement("strong", "", "Try It Here"));
+    formLead.appendChild(createElement("strong", "", "Try it here"));
     formLead.appendChild(createElement("span", "", "Drop in a public GitHub repository to trace branches, commits, and diffs in one readable view."));
 
     const form = createElement("form", "repo-landing__form");
@@ -90,7 +91,6 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     heroFormShell.appendChild(form);
     heroFormShell.appendChild(formMeta);
     heroFormShell.appendChild(errorMsg);
-    heroFormShell.appendChild(repoBrowser.heroRecentListEl);
     heroCopy.appendChild(heroFormShell);
 
     const heroPreview = createElement("div", "repo-landing__hero-preview");
@@ -98,17 +98,42 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const heroPreviewFrame = createHeroPreview(HERO_PREVIEW);
     heroPreview.appendChild(heroPreviewFrame);
 
-    hero.appendChild(heroCopy);
-    hero.appendChild(heroPreview);
-
     const proofStrip = createElement("section", "repo-landing__proof-strip");
+    proofStrip.id = "why";
     proofStrip.innerHTML = `
         <div class="repo-landing__proof-item"><strong>Instant orientation</strong><span>Graph-first context before you inspect individual commits.</span></div>
         <div class="repo-landing__proof-item"><strong>Example repos ready</strong><span>Jump into curated public repos without waiting on setup.</span></div>
         <div class="repo-landing__proof-item"><strong>Local mode available</strong><span>Track your own <code>.git</code> directory when browser mode is not enough.</span></div>
     `;
-    const proofIntro = createElement("p", "repo-landing__section-subtitle repo-landing__proof-intro", "Built for the moment when branch names, merge commits, and detached HEADs stop being legible in your head.");
-    proofStrip.prepend(proofIntro);
+    const proofHeader = [
+        createElement("p", "repo-landing__eyebrow", "Why GitVista"),
+        createElement("h2", "repo-landing__section-title repo-landing__proof-title", "One readable view for branches, merges, and the commits between them."),
+        createElement("p", "repo-landing__section-subtitle repo-landing__proof-intro", "Built for the moment when branch names, merge commits, and detached HEADs stop being legible in your head."),
+    ];
+    proofStrip.replaceChildren(...proofHeader, ...Array.from(proofStrip.children));
+
+    const scrollCue = createElement("button", "repo-landing__scroll-cue");
+    scrollCue.type = "button";
+    scrollCue.setAttribute("aria-label", "Scroll to the next section");
+    scrollCue.appendChild(createElement("span", "repo-landing__scroll-cue-label", "See More"));
+    scrollCue.appendChild(createElement("span", "repo-landing__scroll-cue-arrow", ""));
+    scrollCue.addEventListener("click", () => scrollToSection(proofStrip));
+
+    hero.appendChild(heroCopy);
+    hero.appendChild(heroPreview);
+    hero.appendChild(scrollCue);
+
+    if ("IntersectionObserver" in window) {
+        scrollCueObserver = new IntersectionObserver(
+            ([entry]) => {
+                scrollCue.classList.toggle("repo-landing__scroll-cue--hidden", entry.intersectionRatio < 0.8);
+            },
+            {
+                threshold: [0.8, 1],
+            },
+        );
+        scrollCueObserver.observe(hero);
+    }
 
     const installSection = createElement("section", "repo-landing__section repo-landing__install");
     installSection.id = "local";
@@ -178,6 +203,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         el,
         destroy() {
             window.clearTimeout(highlightTimer);
+            scrollCueObserver?.disconnect();
             heroPreviewFrame.destroy?.();
             repoBrowser.destroy();
         },
