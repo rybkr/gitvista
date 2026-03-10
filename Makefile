@@ -189,12 +189,12 @@ build: build-cli
 ## build-site: Build the hosted site binary
 build-site:
 	@echo "Building hosted site binary..."
-	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-site ./cmd/gitvista-site
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-site ./cmd/site
 
 ## build-cli: Build the gitvista-cli binary
 build-cli:
 	@echo "Building CLI binary..."
-	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-cli ./cmd/gitcli
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-cli ./cmd/cli
 
 ## docker-build: Build Docker image
 docker-build:

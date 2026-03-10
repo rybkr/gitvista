@@ -39,7 +39,7 @@ go install github.com/golang/vuln/cmd/govulncheck@latest
 go run ./cmd/vista
 
 # Run the CLI tool
-go run ./cmd/gitcli --help
+go run ./cmd/cli --help
 
 # Build binaries
 make build
@@ -184,7 +184,7 @@ go list -u -m all
 go build -o gitvista ./cmd/vista
 
 # Build CLI binary
-go build -o gitvista-cli ./cmd/gitcli
+go build -o gitvista-cli ./cmd/cli
 
 # Build both
 make build

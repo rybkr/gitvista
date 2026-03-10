@@ -14,7 +14,7 @@ ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
-    -o /gitvista-site ./cmd/gitvista-site
+    -o /gitvista-site ./cmd/site
 
 # Runtime stage
 FROM alpine:3.21

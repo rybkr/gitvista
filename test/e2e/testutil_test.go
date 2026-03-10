@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/gitcli")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/cli")
 	cmd.Dir = repoRoot
 	out, err := cmd.CombinedOutput()
 	if err != nil {
