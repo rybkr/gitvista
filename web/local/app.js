@@ -1,7 +1,7 @@
 import { logger } from "../logger.js";
 import { initThemeToggle } from "../themeToggle.js";
 import { clearRoot, cleanupActiveView, bootstrapGraph } from "../gitvista/app.js";
-import { parseLocalHash } from "../gitvista/routes.js";
+import { parseLocalHash, parseLocalLaunchTarget } from "../gitvista/routes.js";
 
 let activeViewCleanup = null;
 
@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
     clearRoot(root);
     activeViewCleanup = bootstrapGraph(root, {
         parsePermalinkHash: () => parseLocalHash(location.hash)?.commitHash || null,
+        parseLaunchTarget: () => parseLocalLaunchTarget(location.search, location.hash),
         productName: "GitVista",
     });
 });

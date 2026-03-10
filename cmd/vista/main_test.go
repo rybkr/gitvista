@@ -2,12 +2,15 @@ package main
 
 import "testing"
 
-func TestParseFlagsDefaultsPort(t *testing.T) {
+func TestParseFlagsDefaultsToOpen(t *testing.T) {
 	flags, err := parseFlags(nil, func(key, fallback string) string {
 		return fallback
 	})
 	if err != nil {
 		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if flags.command != commandOpen {
+		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandOpen)
 	}
 	if flags.port != "8080" {
 		t.Fatalf("parseFlags default port = %q, want %q", flags.port, "8080")
@@ -21,8 +24,41 @@ func TestParseFlagsAcceptsLongPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags returned error: %v", err)
 	}
+	if flags.command != commandOpen {
+		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandOpen)
+	}
 	if flags.port != "9090" {
 		t.Fatalf("parseFlags port = %q, want %q", flags.port, "9090")
+	}
+}
+
+func TestParseFlagsRecognizesServe(t *testing.T) {
+	flags, err := parseFlags([]string{"serve", "--port", "9090"}, func(key, fallback string) string {
+		return fallback
+	})
+	if err != nil {
+		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if flags.command != commandServe {
+		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandServe)
+	}
+	if flags.port != "9090" {
+		t.Fatalf("parseFlags port = %q, want %q", flags.port, "9090")
+	}
+}
+
+func TestParseFlagsOpenTarget(t *testing.T) {
+	flags, err := parseFlags([]string{"open", "HEAD~2"}, func(key, fallback string) string {
+		return fallback
+	})
+	if err != nil {
+		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if flags.command != commandOpen {
+		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandOpen)
+	}
+	if flags.targetRev != "HEAD~2" {
+		t.Fatalf("parseFlags targetRev = %q, want %q", flags.targetRev, "HEAD~2")
 	}
 }
 
@@ -70,4 +106,18 @@ func TestApplyInvocationDefaults(t *testing.T) {
 			t.Fatalf("repoPath = %q, want %q", flags.repoPath, "/tmp/repo")
 		}
 	})
+}
+
+func TestBuildURLs(t *testing.T) {
+	base, open := buildURLs("127.0.0.1:8080", launchTarget{
+		CommitHash: "abcdef1234567890abcdef1234567890abcdef12",
+		Path:       "internal/server",
+	})
+	if base != "http://127.0.0.1:8080" {
+		t.Fatalf("base = %q", base)
+	}
+	wantOpen := "http://127.0.0.1:8080?path=internal%2Fserver#abcdef1234567890abcdef1234567890abcdef12"
+	if open != wantOpen {
+		t.Fatalf("open = %q, want %q", open, wantOpen)
+	}
 }

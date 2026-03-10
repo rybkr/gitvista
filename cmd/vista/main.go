@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	neturl "net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +28,10 @@ import (
 const (
 	modeLocal      = "local"
 	outputFormatJS = "json"
+	commandOpen    = "open"
+	commandServe   = "serve"
+	commandURL     = "url"
+	commandDoctor  = "doctor"
 )
 
 // Build-time variables set via -ldflags.
@@ -34,6 +42,7 @@ var (
 )
 
 type appFlags struct {
+	command      string
 	repoPath     string
 	port         string
 	host         string
@@ -43,6 +52,41 @@ type appFlags struct {
 	checkUpdate  bool
 	showHelp     bool
 	outputFormat string
+	noBrowser    bool
+	printURL     bool
+	branch       string
+	targetRev    string
+	targetPath   string
+	jsonOutput   bool
+}
+
+type launchTarget struct {
+	CommitHash gitcore.Hash
+	Path       string
+}
+
+type startupInfo struct {
+	Version    string `json:"version"`
+	Commit     string `json:"commit"`
+	BuildDate  string `json:"build_date"`
+	Mode       string `json:"mode"`
+	Listen     string `json:"listen"`
+	OpenURL    string `json:"open_url,omitempty"`
+	RepoPath   string `json:"repo_path,omitempty"`
+	RepoLoadMs int64  `json:"repo_load_ms,omitempty"`
+	Command    string `json:"command,omitempty"`
+}
+
+type doctorCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type doctorReport struct {
+	OK      bool          `json:"ok"`
+	Command string        `json:"command"`
+	Checks  []doctorCheck `json:"checks"`
 }
 
 func main() {
@@ -66,10 +110,16 @@ func main() {
 	}
 	cw := cli.NewWriter(os.Stdout, colorMode)
 
+	if parsed.command == "" {
+		parsed.command = commandOpen
+	}
+
 	portNum, _ := strconv.Atoi(parsed.port)
-	if err := validateConfig(parsed.repoPath, parsed.outputFormat, portNum); err != nil {
-		fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("error:"), err) // #nosec G705
-		os.Exit(1)
+	if parsed.command == commandOpen || parsed.command == commandServe || parsed.command == commandDoctor || parsed.command == commandURL {
+		if err := validateConfig(parsed.repoPath, parsed.outputFormat, portNum); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("error:"), err) // #nosec G705
+			os.Exit(1)
+		}
 	}
 
 	switch {
@@ -80,62 +130,47 @@ func main() {
 		runCheckUpdate(cw)
 		os.Exit(0)
 	case parsed.showHelp:
-		printHelp(cw)
+		printHelp(cw, parsed.command)
 		os.Exit(0)
 	}
 
-	spin := cli.NewSpinner("Loading repository...")
-	spin.Start()
-	repoLoadStart := time.Now()
-	repo, err := gitcore.NewRepository(parsed.repoPath)
-	repoLoadDur := time.Since(repoLoadStart).Round(time.Millisecond)
-	spin.Stop()
-	if err != nil {
-		slog.Error("Failed to load repository", "path", parsed.repoPath, "err", err)
+	switch parsed.command {
+	case commandServe:
+		os.Exit(runServe(parsed, cw, false))
+	case commandOpen:
+		os.Exit(runServe(parsed, cw, true))
+	case commandURL:
+		os.Exit(runURL(parsed))
+	case commandDoctor:
+		os.Exit(runDoctor(parsed, cw))
+	default:
+		fmt.Fprintf(os.Stderr, "%s unknown command %q\n", cw.Red("error:"), parsed.command)
 		os.Exit(1)
-	}
-
-	addr := fmt.Sprintf("%s:%s", resolveBindHost(parsed.host), parsed.port)
-	serv, err := app.NewServer(repo, addr)
-	if err != nil {
-		slog.Error("Failed to load local frontend", "err", err)
-		os.Exit(1)
-	}
-
-	slog.Info("Starting GitVista", "version", version, "mode", modeLocal)
-	slog.Info("Repository loaded", "path", parsed.repoPath)
-	slog.Info("Listening", "addr", "http://"+addr)
-
-	if parsed.outputFormat == outputFormatJS {
-		printStartupJSON(addr, parsed.repoPath, repoLoadDur)
-	} else {
-		printStartupBanner(cw, addr, parsed.repoPath, repoLoadDur)
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- serv.Start()
-	}()
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			slog.Error("Server error", "err", err)
-			os.Exit(1)
-		}
-	case <-ctx.Done():
-		slog.Info("Shutdown initiated, press Ctrl+C again to force exit")
-		stop()
-		serv.Shutdown()
 	}
 }
 
 func parseFlags(args []string, getenv func(string, string) string) (appFlags, error) {
-	flags := appFlags{}
-	fs := flag.NewFlagSet("gitvista", flag.ContinueOnError)
+	flags := appFlags{
+		command: commandOpen,
+	}
+	if len(args) > 0 {
+		switch args[0] {
+		case commandOpen, commandServe, commandURL, commandDoctor:
+			flags.command = args[0]
+			args = args[1:]
+		case "help":
+			flags.showHelp = true
+			if len(args) > 1 {
+				switch args[1] {
+				case commandOpen, commandServe, commandURL, commandDoctor:
+					flags.command = args[1]
+				}
+			}
+			return flags, nil
+		}
+	}
+
+	fs := flag.NewFlagSet("gitvista "+flags.command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&flags.repoPath, "repo", getenv("GITVISTA_REPO", ""), "Path to git repository")
 	fs.StringVar(&flags.port, "port", getenv("GITVISTA_PORT", "8080"), "Port to listen on")
@@ -145,8 +180,42 @@ func parseFlags(args []string, getenv func(string, string) string) (appFlags, er
 	fs.BoolVar(&flags.showVersion, "version", false, "Show version and exit")
 	fs.BoolVar(&flags.checkUpdate, "check-update", false, "Check for a newer release and exit")
 	fs.BoolVar(&flags.showHelp, "help", false, "Show help and exit")
-	fs.StringVar(&flags.outputFormat, "output", "", "Startup output format: json (default: human-readable)")
-	return flags, fs.Parse(args)
+	fs.BoolVar(&flags.showHelp, "h", false, "Show help and exit")
+
+	switch flags.command {
+	case commandOpen:
+		fs.StringVar(&flags.outputFormat, "output", "", "Startup output format: json")
+		fs.BoolVar(&flags.noBrowser, "no-browser", false, "Start GitVista without launching a browser")
+		fs.BoolVar(&flags.printURL, "print-url", false, "Print the resolved launch URL")
+		fs.StringVar(&flags.branch, "branch", "", "Open the graph focused on a branch tip")
+		fs.StringVar(&flags.targetRev, "commit", "", "Open the graph focused on a commit or revision")
+		fs.StringVar(&flags.targetPath, "path", "", "Open the file explorer focused on a path")
+	case commandServe:
+		fs.StringVar(&flags.outputFormat, "output", "", "Startup output format: json")
+	case commandURL:
+		fs.StringVar(&flags.branch, "branch", "", "Build a URL focused on a branch tip")
+		fs.StringVar(&flags.targetRev, "commit", "", "Build a URL focused on a commit or revision")
+		fs.StringVar(&flags.targetPath, "path", "", "Build a URL focused on a path")
+		fs.BoolVar(&flags.jsonOutput, "json", false, "Print structured JSON output")
+	case commandDoctor:
+		fs.BoolVar(&flags.jsonOutput, "json", false, "Print structured JSON output")
+	}
+
+	if err := fs.Parse(args); err != nil {
+		return flags, err
+	}
+
+	rest := fs.Args()
+	if len(rest) == 0 {
+		return flags, nil
+	}
+
+	if flags.command == commandOpen && len(rest) == 1 && flags.targetRev == "" {
+		flags.targetRev = rest[0]
+		return flags, nil
+	}
+
+	return flags, fmt.Errorf("unexpected argument: %s", rest[0])
 }
 
 func initLogger() {
@@ -239,64 +308,315 @@ func validateConfig(repoPath, outputFormat string, portNum int) error {
 	return nil
 }
 
-func printStartupBanner(cw *cli.Writer, addr, repoPath string, repoLoadDur time.Duration) {
+func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
+	spin := cli.NewSpinner("Loading repository...")
+	spin.Start()
+	repoLoadStart := time.Now()
+	repo, err := gitcore.NewRepository(parsed.repoPath)
+	repoLoadDur := time.Since(repoLoadStart).Round(time.Millisecond)
+	spin.Stop()
+	if err != nil {
+		slog.Error("Failed to load repository", "path", parsed.repoPath, "err", err)
+		return 1
+	}
+
+	target, err := resolveLaunchTarget(repo, parsed)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("error:"), err)
+		return 1
+	}
+
+	addr := fmt.Sprintf("%s:%s", resolveBindHost(parsed.host), parsed.port)
+	baseURL, openURL := buildURLs(addr, target)
+
+	serv, err := app.NewServer(repo, addr)
+	if err != nil {
+		slog.Error("Failed to load local frontend", "err", err)
+		return 1
+	}
+
+	slog.Info("Starting GitVista", "version", version, "mode", modeLocal, "command", parsed.command)
+	slog.Info("Repository loaded", "path", parsed.repoPath)
+	slog.Info("Listening", "addr", baseURL)
+
+	if parsed.outputFormat == outputFormatJS {
+		printStartupJSON(parsed.command, baseURL, openURL, parsed.repoPath, repoLoadDur)
+	} else {
+		printStartupBanner(cw, parsed.command, baseURL, openURL, parsed.repoPath, repoLoadDur, launchBrowser)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- serv.Start()
+	}()
+
+	if launchBrowser && !parsed.noBrowser {
+		if parsed.printURL {
+			fmt.Println(openURL)
+		}
+		go func(url string) {
+			time.Sleep(150 * time.Millisecond)
+			if err := openBrowser(url); err != nil {
+				slog.Warn("Failed to open browser", "url", url, "err", err)
+			}
+		}(openURL)
+	} else if parsed.printURL {
+		fmt.Println(openURL)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			slog.Error("Server error", "err", err)
+			return 1
+		}
+	case <-ctx.Done():
+		slog.Info("Shutdown initiated, press Ctrl+C again to force exit")
+		stop()
+		serv.Shutdown()
+	}
+
+	return 0
+}
+
+func runURL(parsed appFlags) int {
+	repo, err := gitcore.NewRepository(parsed.repoPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	target, err := resolveLaunchTarget(repo, parsed)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	addr := fmt.Sprintf("%s:%s", resolveBindHost(parsed.host), parsed.port)
+	baseURL, openURL := buildURLs(addr, target)
+
+	if parsed.jsonOutput {
+		data, _ := json.Marshal(struct {
+			Command string `json:"command"`
+			Listen  string `json:"listen"`
+			OpenURL string `json:"open_url"`
+		}{
+			Command: commandURL,
+			Listen:  baseURL,
+			OpenURL: openURL,
+		})
+		fmt.Println(string(data))
+		return 0
+	}
+
+	fmt.Println(openURL)
+	return 0
+}
+
+func runDoctor(parsed appFlags, cw *cli.Writer) int {
+	addr := fmt.Sprintf("%s:%s", resolveBindHost(parsed.host), parsed.port)
+	report := doctorReport{
+		OK:      true,
+		Command: commandDoctor,
+		Checks:  make([]doctorCheck, 0, 3),
+	}
+
+	repo, err := gitcore.NewRepository(parsed.repoPath)
+	if err != nil {
+		report.OK = false
+		report.Checks = append(report.Checks, doctorCheck{
+			Name:    "repository",
+			Status:  "fail",
+			Message: err.Error(),
+		})
+	} else {
+		report.Checks = append(report.Checks, doctorCheck{
+			Name:    "repository",
+			Status:  "ok",
+			Message: fmt.Sprintf("loaded %s", parsed.repoPath),
+		})
+		_ = repo
+	}
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		report.OK = false
+		report.Checks = append(report.Checks, doctorCheck{
+			Name:    "listener",
+			Status:  "fail",
+			Message: err.Error(),
+		})
+	} else {
+		_ = ln.Close()
+		report.Checks = append(report.Checks, doctorCheck{
+			Name:    "listener",
+			Status:  "ok",
+			Message: fmt.Sprintf("can bind %s", addr),
+		})
+	}
+
+	if launcher, err := browserLauncher(); err != nil {
+		report.Checks = append(report.Checks, doctorCheck{
+			Name:    "browser",
+			Status:  "warn",
+			Message: err.Error(),
+		})
+	} else {
+		report.Checks = append(report.Checks, doctorCheck{
+			Name:    "browser",
+			Status:  "ok",
+			Message: fmt.Sprintf("launcher %s", strings.Join(launcher, " ")),
+		})
+	}
+
+	if parsed.jsonOutput {
+		data, _ := json.Marshal(report)
+		fmt.Println(string(data))
+		if report.OK {
+			return 0
+		}
+		return 1
+	}
+
+	fmt.Printf("%s %s\n", cw.Command("GitVista doctor"), cw.Muted(version))
+	for _, check := range report.Checks {
+		label := check.Status
+		switch check.Status {
+		case "ok":
+			label = cw.Green("ok")
+		case "warn":
+			label = cw.Yellow("warn")
+		case "fail":
+			label = cw.Red("fail")
+		}
+		fmt.Printf("  %-10s %s  %s\n", check.Name+":", label, check.Message)
+	}
+
+	if report.OK {
+		return 0
+	}
+	return 1
+}
+
+func resolveLaunchTarget(repo *gitcore.Repository, parsed appFlags) (launchTarget, error) {
+	target := launchTarget{
+		Path: parsed.targetPath,
+	}
+	if parsed.branch != "" && parsed.targetRev != "" {
+		return target, fmt.Errorf("use either --branch or --commit, not both")
+	}
+	if parsed.branch != "" {
+		hash, ok := repo.Branches()[parsed.branch]
+		if !ok {
+			return target, fmt.Errorf("unknown branch: %s", parsed.branch)
+		}
+		target.CommitHash = hash
+	}
+	if parsed.targetRev != "" {
+		hash, err := resolveHash(repo, parsed.targetRev)
+		if err != nil {
+			return target, err
+		}
+		target.CommitHash = hash
+	}
+	if target.Path != "" && target.CommitHash == "" {
+		head := repo.Head()
+		if head == "" {
+			return target, fmt.Errorf("HEAD is not set")
+		}
+		target.CommitHash = head
+	}
+	return target, nil
+}
+
+func buildURLs(addr string, target launchTarget) (string, string) {
+	base := (&neturl.URL{
+		Scheme: "http",
+		Host:   addr,
+	}).String()
+	launch := &neturl.URL{
+		Scheme: "http",
+		Host:   addr,
+	}
+	if target.Path != "" {
+		q := launch.Query()
+		q.Set("path", target.Path)
+		launch.RawQuery = q.Encode()
+	}
+	if target.CommitHash != "" {
+		launch.Fragment = string(target.CommitHash)
+	}
+	return base, launch.String()
+}
+
+func printStartupBanner(cw *cli.Writer, command, baseURL, openURL, repoPath string, repoLoadDur time.Duration, launchBrowser bool) {
 	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
-	fmt.Printf("  %s    %s\n", cw.Cyan("mode:"), modeLocal)
-	timing := fmt.Sprintf("(loaded in %s)", cw.Yellow(repoLoadDur.String()))
-	fmt.Printf("  %s    %s  %s\n", cw.Cyan("repo:"), repoPath, timing)
-	fmt.Printf("  %s  http://%s\n", cw.Cyan("listen:"), addr)
-	fmt.Printf("  %s  %s\n", cw.Cyan("commit:"), commit)
+	fmt.Printf("  %s    %s  (%s)\n", cw.Cyan("cmd:"), command, modeLocal)
+	timing := fmt.Sprintf("loaded in %s", cw.Yellow(repoLoadDur.String()))
+	fmt.Printf("  %s   %s  (%s)\n", cw.Cyan("repo:"), repoPath, timing)
+	fmt.Printf("  %s %s\n", cw.Cyan("listen:"), baseURL)
+	if openURL != baseURL {
+		fmt.Printf("  %s   %s\n", cw.Cyan("open:"), openURL)
+	}
+	if launchBrowser {
+		fmt.Printf("  %s %s\n", cw.Cyan("browser:"), "launching")
+	}
+	fmt.Printf("  %s %s\n", cw.Cyan("commit:"), commit)
 	if cli.IsTerminal(os.Stdout.Fd()) {
 		fmt.Printf("\n%s\n", cw.Bold("Press Ctrl+C to stop."))
 	}
 }
 
-type startupInfo struct {
-	Version    string `json:"version"`
-	Commit     string `json:"commit"`
-	BuildDate  string `json:"build_date"`
-	Mode       string `json:"mode"`
-	Listen     string `json:"listen"`
-	RepoPath   string `json:"repo_path,omitempty"`
-	RepoLoadMs int64  `json:"repo_load_ms,omitempty"`
-}
-
-func printStartupJSON(addr, repoPath string, repoLoadDur time.Duration) {
+func printStartupJSON(command, baseURL, openURL, repoPath string, repoLoadDur time.Duration) {
 	info := startupInfo{
 		Version:    version,
 		Commit:     commit,
 		BuildDate:  buildDate,
 		Mode:       modeLocal,
-		Listen:     "http://" + addr,
+		Listen:     baseURL,
+		OpenURL:    openURL,
 		RepoPath:   repoPath,
 		RepoLoadMs: repoLoadDur.Milliseconds(),
+		Command:    command,
 	}
 	data, _ := json.Marshal(info)
 	fmt.Println(string(data))
 }
 
-func printHelp(cw *cli.Writer) {
+func printHelp(cw *cli.Writer, command string) {
 	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
 	fmt.Println("Real-time local Git repository visualization")
 	fmt.Println()
 	fmt.Println(cw.Bold("Usage:"))
-	fmt.Println("  gitvista [flags]")
+	fmt.Println("  gitvista [open] [flags]")
+	fmt.Println("  gitvista serve [flags]")
+	fmt.Println("  gitvista url [flags]")
+	fmt.Println("  gitvista doctor [flags]")
 	fmt.Println()
-	fmt.Println(cw.Bold("Flags:"))
+	fmt.Println(cw.Bold("Commands:"))
+	fmt.Println("  open     Start GitVista and launch the browser (default)")
+	fmt.Println("  serve    Start GitVista without launching the browser")
+	fmt.Println("  url      Print the resolved launch URL")
+	fmt.Println("  doctor   Validate repo, listener, and browser readiness")
+	fmt.Println()
+	fmt.Println(cw.Bold("Global flags:"))
 	fmt.Printf("  %s string\n", cw.Flag("-repo"))
 	fmt.Println("        Path to git repository (default: current directory)")
-	fmt.Println("        Environment: GITVISTA_REPO")
 	fmt.Println()
 	fmt.Printf("  %s string\n", cw.Flag("-port, --port"))
 	fmt.Println("        Port to listen on (default: 8080; long form accepted)")
-	fmt.Println("        Environment: GITVISTA_PORT")
 	fmt.Println()
 	fmt.Printf("  %s string\n", cw.Flag("-host"))
 	fmt.Println("        Host to bind to (default: 127.0.0.1)")
-	fmt.Println("        Environment: GITVISTA_HOST")
 	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Flag("-output"))
-	fmt.Println("        Startup output format: json (default: human-readable)")
+	fmt.Printf("  %s string\n", cw.Flag("-color"))
+	fmt.Println("        Color output: auto, always, never")
+	fmt.Println()
+	fmt.Printf("  %s\n", cw.Flag("-no-color"))
+	fmt.Println("        Disable color output")
 	fmt.Println()
 	fmt.Printf("  %s\n", cw.Flag("-version"))
 	fmt.Println("        Show version and exit")
@@ -304,14 +624,64 @@ func printHelp(cw *cli.Writer) {
 	fmt.Printf("  %s\n", cw.Flag("-check-update"))
 	fmt.Println("        Check for a newer release and exit")
 	fmt.Println()
-	fmt.Printf("  %s\n", cw.Flag("-help"))
-	fmt.Println("        Show this help message")
+	fmt.Printf("  %s\n", cw.Flag("-help, -h"))
+	fmt.Println("        Show help and exit")
 	fmt.Println()
+
+	switch command {
+	case commandOpen:
+		fmt.Println(cw.Bold("Open flags:"))
+		fmt.Printf("  %s string\n", cw.Flag("-commit"))
+		fmt.Println("        Open focused on a commit or revision")
+		fmt.Println()
+		fmt.Printf("  %s string\n", cw.Flag("-branch"))
+		fmt.Println("        Open focused on a branch tip")
+		fmt.Println()
+		fmt.Printf("  %s string\n", cw.Flag("-path"))
+		fmt.Println("        Open the file explorer focused on a path")
+		fmt.Println()
+		fmt.Printf("  %s\n", cw.Flag("-no-browser"))
+		fmt.Println("        Start the server without opening a browser")
+		fmt.Println()
+		fmt.Printf("  %s\n", cw.Flag("-print-url"))
+		fmt.Println("        Print the resolved launch URL")
+		fmt.Println()
+		fmt.Printf("  %s string\n", cw.Flag("-output"))
+		fmt.Println("        Startup output format: json")
+		fmt.Println()
+	case commandServe:
+		fmt.Println(cw.Bold("Serve flags:"))
+		fmt.Printf("  %s string\n", cw.Flag("-output"))
+		fmt.Println("        Startup output format: json")
+		fmt.Println()
+	case commandURL:
+		fmt.Println(cw.Bold("URL flags:"))
+		fmt.Printf("  %s string\n", cw.Flag("-commit"))
+		fmt.Println("        Build a URL focused on a commit or revision")
+		fmt.Println()
+		fmt.Printf("  %s string\n", cw.Flag("-branch"))
+		fmt.Println("        Build a URL focused on a branch tip")
+		fmt.Println()
+		fmt.Printf("  %s string\n", cw.Flag("-path"))
+		fmt.Println("        Build a URL focused on a path")
+		fmt.Println()
+		fmt.Printf("  %s\n", cw.Flag("-json"))
+		fmt.Println("        Print structured JSON output")
+		fmt.Println()
+	case commandDoctor:
+		fmt.Println(cw.Bold("Doctor flags:"))
+		fmt.Printf("  %s\n", cw.Flag("-json"))
+		fmt.Println("        Print structured JSON output")
+		fmt.Println()
+	}
+
 	fmt.Println(cw.Bold("Examples:"))
 	fmt.Println("  gitvista")
-	fmt.Println("  gitvista -repo /path/to/repo")
-	fmt.Println("  gitvista --port 3000")
-	fmt.Println("  git vista")
+	fmt.Println("  git vista open --branch main")
+	fmt.Println("  git vista open --path internal/server")
+	fmt.Println("  git vista serve --port 3000")
+	fmt.Println("  git vista url --commit HEAD~1")
+	fmt.Println("  git vista doctor")
 	fmt.Println()
 	fmt.Println(cw.Bold("Environment Variables:"))
 	fmt.Println("  GITVISTA_REPO         Repository path (default: current directory)")
@@ -319,4 +689,104 @@ func printHelp(cw *cli.Writer) {
 	fmt.Println("  GITVISTA_HOST         Default host")
 	fmt.Println("  GITVISTA_LOG_LEVEL    Log level: debug, info, warn, error (default: info)")
 	fmt.Println("  GITVISTA_LOG_FORMAT   Log format: text, json (default: text)")
+}
+
+func resolveHash(repo *gitcore.Repository, rev string) (gitcore.Hash, error) {
+	if rev == "HEAD" {
+		h := repo.Head()
+		if h == "" {
+			return "", fmt.Errorf("HEAD is not set")
+		}
+		return h, nil
+	}
+
+	if len(rev) == 40 {
+		if _, err := gitcore.NewHash(rev); err == nil {
+			return gitcore.Hash(rev), nil
+		}
+	}
+
+	if hash, ok := repo.Branches()[rev]; ok {
+		return hash, nil
+	}
+
+	if hashStr, ok := repo.Tags()[rev]; ok {
+		return gitcore.Hash(hashStr), nil
+	}
+
+	if strings.HasPrefix(rev, "HEAD~") {
+		n, err := strconv.Atoi(strings.TrimPrefix(rev, "HEAD~"))
+		if err != nil {
+			return "", fmt.Errorf("unknown revision: %s", rev)
+		}
+		current := repo.Head()
+		if current == "" {
+			return "", fmt.Errorf("HEAD is not set")
+		}
+		for i := 0; i < n; i++ {
+			commit, err := repo.GetCommit(current)
+			if err != nil {
+				return "", err
+			}
+			if len(commit.Parents) == 0 {
+				return "", fmt.Errorf("unknown revision: %s", rev)
+			}
+			current = commit.Parents[0]
+		}
+		return current, nil
+	}
+
+	if len(rev) >= 4 && len(rev) < 40 {
+		commits := repo.Commits()
+		var match gitcore.Hash
+		count := 0
+		for hash := range commits {
+			if strings.HasPrefix(string(hash), rev) {
+				match = hash
+				count++
+				if count > 1 {
+					return "", fmt.Errorf("short hash %q is ambiguous", rev)
+				}
+			}
+		}
+		if count == 1 {
+			return match, nil
+		}
+	}
+
+	return "", fmt.Errorf("unknown revision: %s", rev)
+}
+
+func browserLauncher() ([]string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		path, err := exec.LookPath("open")
+		if err != nil {
+			return nil, fmt.Errorf("browser launcher not found: open")
+		}
+		return []string{path}, nil
+	case "linux":
+		path, err := exec.LookPath("xdg-open")
+		if err != nil {
+			return nil, fmt.Errorf("browser launcher not found: xdg-open")
+		}
+		return []string{path}, nil
+	case "windows":
+		path, err := exec.LookPath("rundll32")
+		if err != nil {
+			return nil, fmt.Errorf("browser launcher not found: rundll32")
+		}
+		return []string{path, "url.dll,FileProtocolHandler"}, nil
+	default:
+		return nil, fmt.Errorf("browser launch is unsupported on %s", runtime.GOOS)
+	}
+}
+
+func openBrowser(url string) error {
+	launcher, err := browserLauncher()
+	if err != nil {
+		return err
+	}
+	args := append(launcher[1:], url)
+	return exec.Command(launcher[0], args...).Start()
 }

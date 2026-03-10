@@ -34,6 +34,13 @@ export function parseLocalHash(hash) {
     return { page: "repo", repoId: null, commitHash: null, docsSection: null };
 }
 
+export function parseLocalLaunchTarget(search, hash) {
+    const params = new URLSearchParams(typeof search === "string" ? search : "");
+    const path = params.get("path") || null;
+    const commitHash = parseLocalHash(hash)?.commitHash || null;
+    return { path, commitHash };
+}
+
 function normalizePathname(pathname) {
     if (typeof pathname !== "string" || pathname.trim() === "") return "/";
     const trimmed = pathname.trim();
