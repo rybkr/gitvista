@@ -34,26 +34,70 @@ export function createInstallView({ navigateToPath } = {}) {
     const content = createElement("div", "repo-install__content");
     const hero = createElement("section", "repo-install__hero");
     const heroCopy = createElement("div", "repo-install__hero-copy");
-    heroCopy.appendChild(createElement("p", "repo-install__eyebrow", "Install GitVista"));
-    heroCopy.appendChild(createElement("h1", "repo-install__title", "Run GitVista beside your repo."));
-    heroCopy.appendChild(createElement("p", "repo-install__lede", "This page is the start of the local setup flow. For now, it just gives you the install command and the shortest path into local mode."));
+    heroCopy.appendChild(createElement("h1", "repo-install__title", "Install the local app."));
+    heroCopy.appendChild(createElement("p", "repo-install__lede", "Install GitVista, start it against a local repository, and inspect the graph, diffs, and current repository state."));
+    hero.appendChild(heroCopy);
 
-    const heroMeta = createElement("div", "repo-install__hero-meta");
-    const docsLink = createElement("a", "repo-install__context-link", "Read product docs");
+    const installBlock = createElement("section", "repo-install__install-block");
+    installBlock.appendChild(createElement("p", "repo-install__section-label", "Install"));
+    installBlock.appendChild(createElement("h2", "repo-install__section-title", "Install and launch"));
+    installBlock.appendChild(createElement("p", "repo-install__section-body", "Requirements: a local Git checkout, shell access to run the install script, and a browser on the same machine."));
+
+    installBlock.appendChild(createOrderedStep(
+        "1",
+        "Run the install script once to set up GitVista locally.",
+        "This downloads and configures the local app so the CLI command is available in your shell.",
+        PRODUCT_INFO.installCommand,
+    ));
+    installBlock.appendChild(createOrderedStep(
+        "2",
+        "Run GitVista from your shell.",
+        "Pass the repository path directly so GitVista opens the checkout you want to inspect.",
+        "git vista open -repo /path/to/repo",
+    ));
+    installBlock.appendChild(createOrderedStep(
+        "3",
+        "Analyze the repository.",
+        "GitVista loads the branch graph, diffs, and current local state for the repository you opened.",
+    ));
+
+    const docsLink = createElement("a", "repo-install__docs-link", "Read the full docs");
     bindHostedPathNavigation(docsLink, "/docs", navigateToPath);
-    heroMeta.appendChild(docsLink);
-    heroCopy.appendChild(heroMeta);
+    installBlock.appendChild(docsLink);
 
-    const commandCard = createElement("aside", "repo-install__command-card");
-    commandCard.appendChild(createElement("div", "repo-install__panel-kicker", "Command"));
-    commandCard.appendChild(createElement("p", "repo-install__command-label", "Install and launch"));
+    content.appendChild(hero);
+    content.appendChild(installBlock);
+    content.appendChild(createHostedFooter());
 
-    const codeBlock = createElement("div", "repo-landing__code-block repo-install__code-block");
-    const codeText = createElement("code", "", PRODUCT_INFO.installCommand);
+    el.appendChild(chrome);
+    el.appendChild(content);
+
+    return {
+        el,
+        destroy() {},
+    };
+}
+
+function createOrderedStep(index, title, description, command = "") {
+    const item = createElement("div", "repo-install__ordered-step");
+    item.appendChild(createElement("span", "repo-install__ordered-index", index));
+    const content = createElement("div", "repo-install__ordered-body");
+    content.appendChild(createElement("p", "repo-install__ordered-title", title));
+    content.appendChild(createElement("p", "repo-install__ordered-copy", description));
+    item.appendChild(content);
+    if (command) {
+        item.appendChild(createCopyCodeBlock(command));
+    }
+    return item;
+}
+
+function createCopyCodeBlock(command) {
+    const codeBlock = createElement("div", "repo-landing__code-block repo-install__code-block repo-install__step-code");
+    const codeText = createElement("code", "", command);
     const copyBtn = createElement("button", "repo-landing__copy-btn");
     copyBtn.type = "button";
-    copyBtn.title = "Copy install command";
-    copyBtn.setAttribute("aria-label", "Copy install command");
+    copyBtn.title = "Copy command";
+    copyBtn.setAttribute("aria-label", "Copy command");
     copyBtn.innerHTML = COPY_SVG;
     copyBtn.addEventListener("click", async () => {
         try {
@@ -68,38 +112,5 @@ export function createInstallView({ navigateToPath } = {}) {
     });
     codeBlock.appendChild(codeText);
     codeBlock.appendChild(copyBtn);
-    commandCard.appendChild(codeBlock);
-    commandCard.appendChild(createElement("p", "repo-install__command-note", "After launch, point GitVista at a local checkout so commit, diff, and worktree state stay live."));
-
-    const steps = createElement("section", "repo-install__steps");
-    steps.appendChild(createElement("p", "repo-install__section-label", "Scaffold"));
-    steps.appendChild(createElement("h2", "repo-install__section-title", "More setup detail will land here next."));
-    steps.appendChild(createElement("p", "repo-install__section-body", "I’ve kept this intentionally light for now: one command, one destination, and enough framing to make the route real."));
-
-    const stepGrid = createElement("div", "repo-install__step-grid");
-    const cards = [
-        ["1. Install", "Use the command above to add the local app."],
-        ["2. Launch", "Start GitVista from your shell."],
-        ["3. Open a repo", "Point it at a checkout and inspect live state."],
-    ];
-    for (const [title, body] of cards) {
-        const card = createElement("article", "repo-install__step-card");
-        card.appendChild(createElement("strong", "repo-install__step-title", title));
-        card.appendChild(createElement("p", "repo-install__step-body", body));
-        stepGrid.appendChild(card);
-    }
-    steps.appendChild(stepGrid);
-
-    content.appendChild(hero);
-    content.appendChild(commandCard);
-    content.appendChild(steps);
-    content.appendChild(createHostedFooter());
-
-    el.appendChild(chrome);
-    el.appendChild(content);
-
-    return {
-        el,
-        destroy() {},
-    };
+    return codeBlock;
 }
