@@ -8162,6 +8162,10 @@ body {
 }
 
 .repo-landing__install-link {
+
+.repo-landing__install .repo-install__docs-link {
+    margin-top: 0;
+}
     width: min(100%, 640px);
     display: grid;
     gap: 8px;

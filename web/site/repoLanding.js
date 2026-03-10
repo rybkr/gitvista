@@ -145,11 +145,8 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     installSection.appendChild(createElement("h2", "repo-landing__section-title", "Run GitVista beside your repository when you need live local state."));
     installSection.appendChild(createElement("p", "repo-landing__section-subtitle", "Browser mode is the fastest way to inspect a public repo. Head to the install page for the desktop app command and local setup flow."));
 
-    const installLink = createElement("a", "repo-landing__install-link");
-    installLink.appendChild(createElement("span", "repo-landing__install-link-kicker", "Install"));
-    installLink.appendChild(createElement("strong", "repo-landing__install-link-title", "Open the setup page"));
-    installLink.appendChild(createElement("span", "repo-landing__install-link-copy", "Get the command, launch steps, and local setup details."));
-    installLink.appendChild(createElement("span", "repo-landing__install-link-arrow", "->"));
+    const installLink = createElement("a", "repo-install__docs-link");
+    installLink.textContent = "Open the setup page";
     bindHostedPathNavigation(installLink, "/install", onNavigate);
     installSection.appendChild(installLink);
 
