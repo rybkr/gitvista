@@ -83,7 +83,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     form.appendChild(addBtn);
 
     const formMeta = createElement("div", "repo-landing__hero-form-meta");
-    formMeta.appendChild(createElement("span", "repo-landing__hero-support", "No setup for public repos. Use local mode for live working-tree changes."));
+    formMeta.appendChild(createElement("span", "repo-landing__hero-support", "No setup for public repos. Use the desktop app for live working-tree changes."));
 
     const errorMsg = createElement("div", "repo-landing__error");
 
@@ -103,7 +103,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     proofStrip.innerHTML = `
         <div class="repo-landing__proof-item"><strong>See the shape of the repo</strong><span>Follow branches, merges, and commit flow in one view before you drill into individual diffs.</span></div>
         <div class="repo-landing__proof-item"><strong>Start instantly in the browser</strong><span>Open public GitHub repositories without setup and get useful context right away.</span></div>
-        <div class="repo-landing__proof-item"><strong>Switch to local when it matters</strong><span>Connect to your own <code>.git</code> directory when you need live working-tree and checkout updates.</span></div>
+        <div class="repo-landing__proof-item"><strong>Stay live when it matters</strong><span>Connect to your own <code>.git</code> directory when you need live working-tree and checkout updates.</span></div>
     `;
     const proofHeader = [
         createElement("p", "repo-landing__eyebrow", "Why GitVista"),
@@ -137,9 +137,9 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
 
     const installSection = createElement("section", "repo-landing__section repo-landing__install");
     installSection.id = "local";
-    installSection.appendChild(createElement("p", "repo-landing__eyebrow", "Local mode"));
+    installSection.appendChild(createElement("p", "repo-landing__eyebrow", "Desktop app"));
     installSection.appendChild(createElement("h2", "repo-landing__section-title", "Run GitVista beside your repository when you need live local state."));
-    installSection.appendChild(createElement("p", "repo-landing__section-subtitle", "Browser mode is the fastest way to inspect a public repo. Local mode connects directly to your .git directory so new commits, staged changes, and diff views update the moment you make them."));
+    installSection.appendChild(createElement("p", "repo-landing__section-subtitle", "Browser mode is the fastest way to inspect a public repo. The desktop app connects directly to your .git directory so new commits, staged changes, and diff views update the moment you make them."));
 
     const codeBlock = createElement("div", "repo-landing__code-block");
     const codeText = createElement("code", "", PRODUCT_INFO.installCommand);
