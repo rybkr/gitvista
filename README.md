@@ -2,7 +2,7 @@
 
 **Real-time Git repository visualization in your browser.**
 
-GitVista is a lightweight, self-hosted tool that renders your Git history as an interactive graph — with live updates as you commit, branch, and merge. No electron, no desktop app, no git CLI dependency for core parsing. Just a single binary that serves a web UI.
+GitVista is a lightweight local tool that renders your Git history as an interactive graph, with live updates as you commit, branch, and merge. The installable `gitvista` binary now ships only the localhost product. The public `gitvista.io` site is built separately.
 
 ## Features
 
@@ -43,15 +43,6 @@ make build
 
 Then open [http://localhost:8080](http://localhost:8080).
 
-### Docker
-
-```bash
-docker build -t gitvista .
-
-# Mount a local repo (read-only is fine)
-docker run --rm -p 8080:8080 -v /path/to/repo:/repo:ro gitvista -repo /repo
-```
-
 ## Configuration
 
 All options can be set via CLI flags or environment variables.
@@ -60,7 +51,7 @@ All options can be set via CLI flags or environment variables.
 |------|-------------|---------|-------------|
 | `-repo` | `GITVISTA_REPO` | `.` | Path to git repository |
 | `-port` | `GITVISTA_PORT` | `8080` | Server port |
-| `-host` | `GITVISTA_HOST` | Local mode: `127.0.0.1`; Hosted mode: *(all interfaces)* | Bind address |
+| `-host` | `GITVISTA_HOST` | `127.0.0.1` | Bind address |
 | | `GITVISTA_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | | `GITVISTA_LOG_FORMAT` | `text` | Log format: `text`, `json` |
 | | `GITVISTA_CACHE_SIZE` | `500` | LRU cache capacity (blame + diff entries) |
@@ -68,10 +59,13 @@ All options can be set via CLI flags or environment variables.
 ## Architecture
 
 ```
-cmd/vista/          Entry point, CLI parsing, signal handling
-internal/gitcore/   Pure Go git object parsing (no git CLI)
-internal/server/    HTTP + WebSocket server, caching, rate limiting
-web/                Vanilla JS frontend (ES modules, D3.js, Canvas)
+cmd/vista/              Local GitVista binary
+cmd/gitvista-site/      Hosted gitvista.io binary
+internal/gitcore/       Pure Go git object parsing (no git CLI)
+internal/server/        Shared HTTP + WebSocket server components
+internal/app/           App composition for local and hosted products
+web/gitvista/           Shared GitVista repository experience
+web/local + web/site/   Thin local and hosted shells
 ```
 
 **Backend**: Go 1.24, two dependencies (`fsnotify`, `gorilla/websocket`). Parses `.git/` directly — loose objects, pack files, refs, tags, blame, working tree status, and diffs. No git CLI required for core parsing.
@@ -80,14 +74,22 @@ web/                Vanilla JS frontend (ES modules, D3.js, Canvas)
 
 **Real-time pipeline**: `fsnotify` watches `.git/` → debounced reload → delta computation → WebSocket broadcast to all connected clients.
 
-## Deploy to Fly.io
+## Deploy Local Binary
 
 ```bash
+make build
+./gitvista
+```
+
+## Deploy Hosted Site
+
+```bash
+make build-site
 fly launch --no-deploy
 fly deploy
 ```
 
-The included `fly.toml` and `Dockerfile` are ready for deployment. Set `GITVISTA_REPO` to the path of a git repo inside the container, or mount one via volume.
+The included `fly.toml` and `Dockerfile` target the hosted deployment path. The local binary remains the default release artifact for end users.
 
 ## Development
 

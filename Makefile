@@ -1,4 +1,4 @@
-.PHONY: unit test ci ci-local ci-remote lint integration e2e build build-cli clean help setup-hooks \
+.PHONY: unit test ci ci-local ci-remote lint integration e2e build build-cli build-site clean help setup-hooks \
          format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
          imports-check check-vuln docker-build deps-check deploy-staging deploy-production
 
@@ -181,10 +181,15 @@ validate-js:
 	fi
 	@echo "JavaScript validation passed"
 
-## build: Build all binaries
+## build: Build the local binary and CLI helper
 build: build-cli
 	@echo "Building main binary..."
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista ./cmd/vista
+
+## build-site: Build the hosted site binary
+build-site:
+	@echo "Building hosted site binary..."
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-site ./cmd/gitvista-site
 
 ## build-cli: Build the gitvista-cli binary
 build-cli:
@@ -241,7 +246,7 @@ ci: ci-remote
 clean:
 	@echo "Cleaning..."
 	$(GOCLEAN)
-	@rm -f gitvista vista gitvista-cli
+	@rm -f gitvista vista gitvista-cli gitvista-site
 	@rm -rf test/cover/
 	@echo "Clean complete"
 

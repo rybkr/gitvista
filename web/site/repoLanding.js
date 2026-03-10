@@ -1,8 +1,8 @@
 import { createHostedFooter, createHostedTopbar } from "./hostedChrome.js";
 import { PRODUCT_INFO } from "./hostedProduct.js";
-import { createHeroPreview } from "./landing/preview.js";
-import { FEATURED_REPOS, HERO_PREVIEW } from "./landing/content.js";
-import { createRepoBrowser } from "./landing/repoBrowser.js";
+import { createHeroPreview } from "../landing/preview.js";
+import { FEATURED_REPOS, HERO_PREVIEW } from "../landing/content.js";
+import { createRepoBrowser } from "../landing/repoBrowser.js";
 
 const COPY_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/>

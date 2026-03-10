@@ -14,23 +14,20 @@ ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
-    -o /gitvista ./cmd/vista
+    -o /gitvista-site ./cmd/gitvista-site
 
 # Runtime stage
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata git openssh-client
 
-COPY --from=build /gitvista /usr/local/bin/gitvista
-
-# Default repo path — mount or clone a repo here
-RUN mkdir -p /repo
+COPY --from=build /gitvista-site /usr/local/bin/gitvista-site
 
 # Data directory for managed/cloned repos
 RUN mkdir -p /data/repos
-WORKDIR /repo
+WORKDIR /data/repos
 
 EXPOSE 8080
 
-ENTRYPOINT ["gitvista"]
+ENTRYPOINT ["gitvista-site"]
 CMD ["-host", "0.0.0.0"]

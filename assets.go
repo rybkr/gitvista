@@ -7,21 +7,33 @@ import (
 	"io/fs"
 )
 
-//go:embed all:web all:docs/site scripts/install.sh
-var embeddedFS embed.FS
+//go:embed all:web/*.js all:web/*.css all:web/*.png all:web/graph all:web/tooltips all:web/utils all:web/vendor all:web/images all:web/gitvista all:web/local
+var localEmbeddedFS embed.FS
 
-// GetWebFS returns the embedded filesystem for serving static web assets.
-func GetWebFS() (fs.FS, error) {
-	webFS, err := fs.Sub(embeddedFS, "web")
+//go:embed all:web/*.js all:web/*.css all:web/*.png all:web/graph all:web/tooltips all:web/utils all:web/vendor all:web/images all:web/gitvista all:web/site all:web/landing all:docs/site scripts/install.sh
+var siteEmbeddedFS embed.FS
+
+// GetLocalWebFS returns the embedded filesystem for the local app shell.
+func GetLocalWebFS() (fs.FS, error) {
+	webFS, err := fs.Sub(localEmbeddedFS, "web")
 	if err != nil {
 		return nil, err
 	}
 	return webFS, nil
 }
 
-// GetDocsFS returns the embedded filesystem for hosted docs source files.
-func GetDocsFS() (fs.FS, error) {
-	docsFS, err := fs.Sub(embeddedFS, "docs/site")
+// GetSiteWebFS returns the embedded filesystem for the public hosted site.
+func GetSiteWebFS() (fs.FS, error) {
+	webFS, err := fs.Sub(siteEmbeddedFS, "web")
+	if err != nil {
+		return nil, err
+	}
+	return webFS, nil
+}
+
+// GetSiteDocsFS returns the embedded filesystem for hosted docs source files.
+func GetSiteDocsFS() (fs.FS, error) {
+	docsFS, err := fs.Sub(siteEmbeddedFS, "docs/site")
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +42,7 @@ func GetDocsFS() (fs.FS, error) {
 
 // GetInstallScript returns the curlable installer script served by gitvista.io.
 func GetInstallScript() ([]byte, error) {
-	body, err := embeddedFS.ReadFile("scripts/install.sh")
+	body, err := siteEmbeddedFS.ReadFile("scripts/install.sh")
 	if err != nil {
 		return nil, fmt.Errorf("read install script: %w", err)
 	}

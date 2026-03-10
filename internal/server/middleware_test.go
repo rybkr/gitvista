@@ -68,9 +68,9 @@ func TestShouldLogRequestAtDebug(t *testing.T) {
 	}{
 		{name: "graph commits", path: "/api/graph/commits", status: http.StatusOK, want: true},
 		{name: "websocket", path: "/api/ws", status: http.StatusOK, want: true},
-		{name: "asset", path: "/app.js", status: http.StatusOK, want: true},
+		{name: "asset", path: "/local/app.js", status: http.StatusOK, want: true},
 		{name: "api summary", path: "/api/graph/summary", status: http.StatusOK, want: false},
-		{name: "error remains info", path: "/app.js", status: http.StatusNotFound, want: false},
+		{name: "error remains info", path: "/local/app.js", status: http.StatusNotFound, want: false},
 	}
 
 	for _, tt := range tests {

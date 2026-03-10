@@ -38,6 +38,8 @@ type Server struct {
 	addr        string
 	webFS       fs.FS
 	docsFS      fs.FS
+	indexPath   string
+	spaFallback bool
 	rateLimiter *rateLimiter
 	httpServer  *http.Server
 	logger      *slog.Logger
@@ -48,6 +50,7 @@ type Server struct {
 	sessions       map[string]*RepoSession  // non-nil in hosted mode
 	repoManager    *repomanager.RepoManager // non-nil in hosted mode
 	allowedOrigins map[string]bool          // CORS allowlist (hosted mode)
+	installScript  func() ([]byte, error)
 	cacheSize      int
 	fetchInterval  time.Duration
 
@@ -68,12 +71,12 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
-	docsFS, _ := gitvista.GetDocsFS()
 
 	s := &Server{
 		addr:        addr,
 		webFS:       webFS,
-		docsFS:      docsFS,
+		indexPath:   "local/index.html",
+		spaFallback: false,
 		rateLimiter: rl,
 		logger:      slog.Default(),
 		mode:        ModeLocal,
@@ -101,18 +104,21 @@ func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allo
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
-	docsFS, _ := gitvista.GetDocsFS()
+	docsFS, _ := gitvista.GetSiteDocsFS()
 
 	return &Server{
 		addr:           addr,
 		webFS:          webFS,
 		docsFS:         docsFS,
+		indexPath:      "site/index.html",
+		spaFallback:    true,
 		rateLimiter:    rl,
 		logger:         slog.Default(),
 		mode:           ModeHosted,
 		sessions:       make(map[string]*RepoSession),
 		repoManager:    rm,
 		allowedOrigins: allowedOrigins,
+		installScript:  gitvista.GetInstallScript,
 		cacheSize:      cacheSize,
 		fetchInterval:  10 * time.Second,
 		ctx:            ctx,
@@ -207,7 +213,9 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
-	mux.HandleFunc("/api/docs", s.handleDocs)
+	if s.docsFS != nil {
+		mux.HandleFunc("/api/docs", s.handleDocs)
+	}
 
 	if s.mode == ModeLocal {
 		ls := s.localSession
@@ -270,11 +278,11 @@ func (s *Server) staticHandler() http.Handler {
 		}
 
 		cleanPath := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
-		if cleanPath == "/" {
+		if cleanPath == "/" || cleanPath == "/index.html" {
 			s.serveIndexHTML(w, r)
 			return
 		}
-		if cleanPath == "/install.sh" {
+		if cleanPath == "/install.sh" && s.installScript != nil {
 			s.serveInstallScript(w, r)
 			return
 		}
@@ -294,21 +302,30 @@ func (s *Server) staticHandler() http.Handler {
 			return
 		}
 
-		s.serveIndexHTML(w, r)
+		if s.spaFallback {
+			s.serveIndexHTML(w, r)
+			return
+		}
+
+		http.NotFound(w, r)
 	})
 }
 
 func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
-	body, err := fs.ReadFile(s.webFS, "index.html")
+	body, err := fs.ReadFile(s.webFS, s.indexPath)
 	if err != nil {
-		http.Error(w, "index.html not found", http.StatusInternalServerError)
+		http.Error(w, "frontend index not found", http.StatusInternalServerError)
 		return
 	}
-	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(body))
+	http.ServeContent(w, r, path.Base(s.indexPath), time.Time{}, bytes.NewReader(body))
 }
 
 func (s *Server) serveInstallScript(w http.ResponseWriter, r *http.Request) {
-	body, err := gitvista.GetInstallScript()
+	if s.installScript == nil {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := s.installScript()
 	if err != nil {
 		http.Error(w, "install.sh not found", http.StatusInternalServerError)
 		return

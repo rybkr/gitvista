@@ -28,81 +28,46 @@ func TestParseFlagsAcceptsLongPort(t *testing.T) {
 
 func TestResolveBindHost(t *testing.T) {
 	tests := []struct {
-		name     string
-		repoPath string
-		host     string
-		want     string
+		name string
+		host string
+		want string
 	}{
 		{
-			name:     "local mode defaults to loopback",
-			repoPath: "/tmp/repo",
-			host:     "",
-			want:     "127.0.0.1",
+			name: "defaults to loopback",
+			host: "",
+			want: "127.0.0.1",
 		},
 		{
-			name:     "hosted mode keeps all-interfaces default",
-			repoPath: "",
-			host:     "",
-			want:     "",
-		},
-		{
-			name:     "explicit host wins in local mode",
-			repoPath: "/tmp/repo",
-			host:     "0.0.0.0",
-			want:     "0.0.0.0",
-		},
-		{
-			name:     "explicit host wins in hosted mode",
-			repoPath: "",
-			host:     "0.0.0.0",
-			want:     "0.0.0.0",
+			name: "explicit host wins",
+			host: "0.0.0.0",
+			want: "0.0.0.0",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveBindHost(tt.repoPath, tt.host)
+			got := resolveBindHost(tt.host)
 			if got != tt.want {
-				t.Errorf("resolveBindHost(%q, %q) = %q, want %q", tt.repoPath, tt.host, got, tt.want)
+				t.Errorf("resolveBindHost(%q) = %q, want %q", tt.host, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestApplyInvocationDefaults(t *testing.T) {
-	tests := []struct {
-		name  string
-		argv0 string
-		flags appFlags
-		want  string
-	}{
-		{
-			name:  "git-vista defaults to current directory",
-			argv0: "git-vista",
-			flags: appFlags{},
-			want:  ".",
-		},
-		{
-			name:  "gitvista keeps hosted default",
-			argv0: "gitvista",
-			flags: appFlags{},
-			want:  "",
-		},
-		{
-			name:  "explicit repo path wins",
-			argv0: "git-vista",
-			flags: appFlags{repoPath: "/tmp/repo"},
-			want:  "/tmp/repo",
-		},
-	}
+	t.Run("defaults to current directory", func(t *testing.T) {
+		flags := appFlags{}
+		applyInvocationDefaults(&flags)
+		if flags.repoPath != "." {
+			t.Fatalf("repoPath = %q, want %q", flags.repoPath, ".")
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			flags := tt.flags
-			applyInvocationDefaults(&flags, tt.argv0)
-			if flags.repoPath != tt.want {
-				t.Fatalf("repoPath = %q, want %q", flags.repoPath, tt.want)
-			}
-		})
-	}
+	t.Run("explicit repo path wins", func(t *testing.T) {
+		flags := appFlags{repoPath: "/tmp/repo"}
+		applyInvocationDefaults(&flags)
+		if flags.repoPath != "/tmp/repo" {
+			t.Fatalf("repoPath = %q, want %q", flags.repoPath, "/tmp/repo")
+		}
+	})
 }

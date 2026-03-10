@@ -53,7 +53,7 @@ func TestServerIntegration(t *testing.T) {
 
 	// Create a minimal test FS for static files
 	testFS := fstest.MapFS{
-		"index.html": &fstest.MapFile{Data: []byte("<html></html>")},
+		"local/index.html": &fstest.MapFile{Data: []byte("<html></html>")},
 	}
 
 	// Preflight: integration test needs to bind a local TCP listener.
@@ -317,7 +317,7 @@ func TestServerShutdown(t *testing.T) {
 	}
 
 	testFS := fstest.MapFS{
-		"index.html": &fstest.MapFile{Data: []byte("<html></html>")},
+		"local/index.html": &fstest.MapFile{Data: []byte("<html></html>")},
 	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
