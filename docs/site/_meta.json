@@ -1,7 +1,7 @@
 {
   "eyebrow": "Product Docs",
   "title": "Understand the product before you start chasing commits.",
-  "lede": "These notes explain what hosted mode is good at, when local mode is the better fit, how the major views work together, and where the hosted experience still has hard edges.",
+  "lede": "Read this like a quick manual: what GitVista is for, when to use each mode, how the UI is organized, and which CLI commands matter.",
   "primaryCta": {
     "label": "",
     "href": ""
@@ -30,18 +30,6 @@
   ],
   "sections": [
     {
-      "id": "hosted",
-      "label": "Hosted Mode",
-      "title": "Open a public GitHub repository directly in the browser.",
-      "file": "hosted-mode.md"
-    },
-    {
-      "id": "local",
-      "label": "Local Mode",
-      "title": "Run GitVista against your own checkout when you need live repository state.",
-      "file": "local-mode.md"
-    },
-    {
       "id": "views",
       "label": "Views",
       "title": "Move from repository shape to exact file changes without leaving the app.",
@@ -52,6 +40,12 @@
       "label": "Limits",
       "title": "Know the edges before you depend on the hosted path.",
       "file": "limits.md"
+    },
+    {
+      "id": "cli",
+      "label": "CLI",
+      "title": "Use the CLI to open the current repo fast or target a specific repository, commit, branch, or path.",
+      "file": "cli.md"
     }
   ],
   "help": {

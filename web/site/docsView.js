@@ -84,74 +84,29 @@ function renderDocs(content, docs, navigateToPath, activeSection) {
 
     hero.appendChild(heroCopy);
 
-    if (activeSection) {
-        const heroPanel = createElement("aside", "repo-docs__hero-panel");
-        heroPanel.setAttribute("aria-label", "Current docs section");
-        heroPanel.appendChild(createElement("div", "repo-docs__panel-kicker", "Current section"));
+    const nav = createElement("nav", "repo-docs__nav");
+    nav.setAttribute("aria-label", "Doc sections");
 
-        const panelGrid = createElement("div", "repo-docs__panel-grid");
-        const panelItems = [
-            { label: "Section", value: selectedSection.label },
-            { label: "Path", value: getDocsSectionPath(selectedSection.id) },
-            { label: "Docs Home", value: "/docs" },
-        ];
-
-        for (const item of panelItems) {
-            const card = document.createElement("div");
-            card.appendChild(createElement("strong", "", item.label));
-            card.appendChild(createElement("span", "", item.value));
-            panelGrid.appendChild(card);
-        }
-        heroPanel.appendChild(panelGrid);
-        hero.appendChild(heroPanel);
-    }
-
-    const rail = createElement("aside", "repo-docs__rail");
-    rail.setAttribute("aria-label", "Doc sections");
-    rail.appendChild(createElement("p", "repo-docs__rail-label", "Sections"));
-
-    const overviewLink = createElement("a", "repo-docs__rail-link", "Overview");
+    const overviewLink = createElement("a", "repo-docs__nav-link", "Overview");
     if (!activeSection) overviewLink.setAttribute("aria-current", "page");
     bindHostedPathNavigation(overviewLink, "/docs", navigateToPath);
-    rail.appendChild(overviewLink);
+    nav.appendChild(overviewLink);
 
     const sections = createElement("div", activeSection ? "repo-docs__sections repo-docs__sections--single" : "repo-docs__sections repo-docs__sections--overview");
     for (const section of docs.sections || []) {
-        const railLink = createElement("a", "repo-docs__rail-link", section.label);
-        if (section.id === activeSection) railLink.setAttribute("aria-current", "page");
-        bindHostedPathNavigation(railLink, getDocsSectionPath(section.id), navigateToPath);
-        rail.appendChild(railLink);
+        const navLink = createElement("a", "repo-docs__nav-link", section.label);
+        if (section.id === activeSection) navLink.setAttribute("aria-current", "page");
+        bindHostedPathNavigation(navLink, getDocsSectionPath(section.id), navigateToPath);
+        nav.appendChild(navLink);
 
         if (!activeSection || section.id === activeSection) {
             sections.appendChild(activeSection ? renderDocsSection(section) : renderDocsSectionCard(section, navigateToPath));
         }
     }
 
-    const help = createElement("section", "repo-docs__help");
-    const helpCopy = document.createElement("div");
-    helpCopy.appendChild(createElement("p", "repo-docs__section-label", docs.help?.label || "Need More"));
-    helpCopy.appendChild(createElement("h2", "repo-docs__section-title", docs.help?.title || ""));
-    helpCopy.appendChild(createElement("p", "repo-docs__section-body", docs.help?.body || ""));
-    const helpMeta = createElement("div", "repo-docs__help-meta");
-    const githubLink = createElement("a", "repo-docs__context-link", "Project on GitHub");
-    githubLink.href = PRODUCT_INFO.repositoryUrl;
-    githubLink.target = "_blank";
-    githubLink.rel = "noopener noreferrer";
-    helpMeta.appendChild(githubLink);
-
-    if (docs.help?.primaryCta?.label && docs.help?.primaryCta?.href) {
-        const helpLink = createElement("a", "repo-docs__context-link", docs.help.primaryCta.label);
-        bindHostedPathNavigation(helpLink, resolveDocsHref(docs.help.primaryCta.href), navigateToPath);
-        helpMeta.appendChild(helpLink);
-    }
-
-    help.appendChild(helpCopy);
-    help.appendChild(helpMeta);
-
     content.appendChild(hero);
-    content.appendChild(rail);
+    content.appendChild(nav);
     content.appendChild(sections);
-    content.appendChild(help);
     content.appendChild(createHostedFooter());
 }
 
@@ -222,21 +177,19 @@ function getDocsSectionPath(sectionID) {
 }
 
 function parseSectionContent(markdown) {
-    const blocks = String(markdown)
-        .trim()
-        .split(/\n\s*\n/)
-        .map((block) => block.trim())
-        .filter(Boolean);
+    const blocks = parseMarkdownBlocks(markdown);
 
     const paragraphs = [];
     const points = [];
 
     for (const block of blocks) {
-        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-        if (lines.length > 0 && lines.every((line) => line.startsWith("- "))) {
+        if (block.type === "list") {
+            const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
             for (const line of lines) points.push(line.slice(2));
             continue;
         }
+        if (block.type !== "paragraph") continue;
+        const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
         paragraphs.push(lines.join(" "));
     }
 
@@ -248,15 +201,11 @@ function parseSectionContent(markdown) {
 }
 
 function renderMarkdown(container, markdown) {
-    const blocks = String(markdown)
-        .trim()
-        .split(/\n\s*\n/)
-        .map((block) => block.trim())
-        .filter(Boolean);
+    const blocks = parseMarkdownBlocks(markdown);
 
     for (const block of blocks) {
-        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-        if (lines.length > 0 && lines.every((line) => line.startsWith("- "))) {
+        if (block.type === "list") {
+            const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
             const list = createElement("ul", "repo-docs__point-list");
             for (const line of lines) {
                 const item = createElement("li", "repo-docs__point");
@@ -267,7 +216,17 @@ function renderMarkdown(container, markdown) {
             continue;
         }
 
+        if (block.type === "code") {
+            const pre = createElement("pre", "repo-docs__code");
+            const code = document.createElement("code");
+            code.textContent = block.content;
+            pre.appendChild(code);
+            container.appendChild(pre);
+            continue;
+        }
+
         const paragraph = createElement("p", "repo-docs__copy");
+        const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
         appendInlineContent(paragraph, lines.join(" "));
         container.appendChild(paragraph);
     }
@@ -284,4 +243,64 @@ function appendInlineContent(parent, text) {
         }
         parent.appendChild(document.createTextNode(part));
     }
+}
+
+function parseMarkdownBlocks(markdown) {
+    const normalized = String(markdown || "").trim();
+    if (!normalized) return [];
+
+    const blocks = [];
+    const lines = normalized.split("\n");
+    let index = 0;
+
+    while (index < lines.length) {
+        const line = lines[index];
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+            index += 1;
+            continue;
+        }
+
+        if (trimmed.startsWith("```")) {
+            const codeLines = [];
+            index += 1;
+            while (index < lines.length && !lines[index].trim().startsWith("```")) {
+                codeLines.push(lines[index]);
+                index += 1;
+            }
+            if (index < lines.length) index += 1;
+            blocks.push({ type: "code", content: codeLines.join("\n").trimEnd() });
+            continue;
+        }
+
+        if (trimmed.startsWith("- ")) {
+            const items = [];
+            while (index < lines.length) {
+                const current = lines[index].trim();
+                if (!current.startsWith("- ")) break;
+                items.push(current);
+                index += 1;
+            }
+            blocks.push({ type: "list", content: items.join("\n") });
+            continue;
+        }
+
+        const paragraphLines = [];
+        while (index < lines.length) {
+            const current = lines[index].trim();
+            if (!current) {
+                index += 1;
+                break;
+            }
+            if (current.startsWith("```") || current.startsWith("- ")) break;
+            paragraphLines.push(current);
+            index += 1;
+        }
+        if (paragraphLines.length > 0) {
+            blocks.push({ type: "paragraph", content: paragraphLines.join("\n") });
+        }
+    }
+
+    return blocks;
 }
