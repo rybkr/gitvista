@@ -1,17 +1,8 @@
 import { createHostedFooter, createHostedTopbar } from "./hostedChrome.js";
-import { PRODUCT_INFO } from "./hostedProduct.js";
+import { bindHostedPathNavigation } from "./hostedNavigation.js";
 import { createHeroPreview } from "../landing/preview.js";
-import { FEATURED_REPOS, HERO_PREVIEW } from "../landing/content.js";
+import { FEATURED_REPOS, HERO_PREVIEW, PUBLIC_REPO_SAMPLES } from "../landing/content.js";
 import { createRepoBrowser } from "../landing/repoBrowser.js";
-
-const COPY_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
-    <path d="M3 11V3a1.5 1.5 0 011.5-1.5H11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-</svg>`;
-
-const CHECK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M3 8.5l3.5 3.5 6.5-8" stroke="var(--success-color)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
 
 function createElement(tagName, className, text) {
     const el = document.createElement(tagName);
@@ -25,6 +16,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     const chrome = createElement("div", "repo-landing__chrome");
     const content = createElement("div", "repo-landing__content");
     let highlightTimer = null;
+    let sampleRotationTimer = null;
     let scrollCueObserver = null;
 
     function scrollToSection(target, { focus } = {}) {
@@ -71,16 +63,28 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     formLead.appendChild(createElement("span", "", "Drop in a public GitHub repository to trace branches, commits, and diffs in one readable view."));
 
     const form = createElement("form", "repo-landing__form");
+    const inputShell = createElement("div", "repo-landing__input-shell");
     const input = createElement("input", "repo-landing__input");
     input.type = "url";
-    input.placeholder = "https://github.com/owner/repo";
+    input.placeholder = "";
     input.required = true;
     input.setAttribute("aria-label", "GitHub repository URL");
+    input.autocomplete = "off";
+
+    const sampleHint = createElement("div", "repo-landing__input-sample");
+    sampleHint.setAttribute("aria-hidden", "true");
+    const sampleHintText = createElement("span", "repo-landing__input-sample-text");
+    sampleHint.appendChild(sampleHintText);
 
     const addBtn = createElement("button", "repo-landing__add-btn", "Open");
     addBtn.type = "submit";
-    form.appendChild(input);
+    inputShell.appendChild(input);
+    inputShell.appendChild(sampleHint);
+    form.appendChild(inputShell);
     form.appendChild(addBtn);
+
+    const sampleUrls = PUBLIC_REPO_SAMPLES.length ? PUBLIC_REPO_SAMPLES : FEATURED_REPOS.map((repo) => repo.url);
+    let sampleIndex = 0;
 
     const formMeta = createElement("div", "repo-landing__hero-form-meta");
     formMeta.appendChild(createElement("span", "repo-landing__hero-support", "No setup for public repos. Use the desktop app for live working-tree changes."));
@@ -139,29 +143,47 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
     installSection.id = "local";
     installSection.appendChild(createElement("p", "repo-landing__eyebrow", "Desktop app"));
     installSection.appendChild(createElement("h2", "repo-landing__section-title", "Run GitVista beside your repository when you need live local state."));
-    installSection.appendChild(createElement("p", "repo-landing__section-subtitle", "Browser mode is the fastest way to inspect a public repo. The desktop app connects directly to your .git directory so new commits, staged changes, and diff views update the moment you make them."));
+    installSection.appendChild(createElement("p", "repo-landing__section-subtitle", "Browser mode is the fastest way to inspect a public repo. Head to the install page for the desktop app command and local setup flow."));
 
-    const codeBlock = createElement("div", "repo-landing__code-block");
-    const codeText = createElement("code", "", PRODUCT_INFO.installCommand);
-    const copyBtn = createElement("button", "repo-landing__copy-btn");
-    copyBtn.title = "Copy to clipboard";
-    copyBtn.innerHTML = COPY_SVG;
-    copyBtn.addEventListener("click", async () => {
-        try {
-            await navigator.clipboard.writeText(codeText.textContent);
-            copyBtn.innerHTML = CHECK_SVG;
-            setTimeout(() => {
-                copyBtn.innerHTML = COPY_SVG;
-            }, 2000);
-        } catch {
-            // Clipboard API not available.
-        }
-    });
-    codeBlock.appendChild(codeText);
-    codeBlock.appendChild(copyBtn);
-    installSection.appendChild(codeBlock);
+    const installLink = createElement("a", "repo-landing__install-link");
+    installLink.appendChild(createElement("span", "repo-landing__install-link-kicker", "Install"));
+    installLink.appendChild(createElement("strong", "repo-landing__install-link-title", "Open the setup page"));
+    installLink.appendChild(createElement("span", "repo-landing__install-link-copy", "Get the command, launch steps, and local setup details."));
+    installLink.appendChild(createElement("span", "repo-landing__install-link-arrow", "->"));
+    bindHostedPathNavigation(installLink, "/install", onNavigate);
+    installSection.appendChild(installLink);
 
     const footer = createHostedFooter();
+
+    function syncSampleVisibility() {
+        const shouldHide = document.activeElement === input || Boolean(input.value.trim());
+        sampleHint.classList.toggle("repo-landing__input-sample--hidden", shouldHide);
+    }
+
+    function updateSample(nextIndex) {
+        if (!sampleUrls.length) return;
+        sampleIndex = nextIndex % sampleUrls.length;
+        const sampleUrl = sampleUrls[sampleIndex];
+        sampleHintText.textContent = sampleUrl;
+        sampleHint.title = sampleUrl;
+        sampleHint.classList.remove("repo-landing__input-sample--animate");
+        // Force the animation to restart for each repo sample.
+        void sampleHint.offsetWidth;
+        sampleHint.classList.add("repo-landing__input-sample--animate");
+        syncSampleVisibility();
+    }
+
+    inputShell.addEventListener("click", () => input.focus());
+    input.addEventListener("focus", syncSampleVisibility);
+    input.addEventListener("blur", syncSampleVisibility);
+    input.addEventListener("input", syncSampleVisibility);
+
+    updateSample(sampleIndex);
+    if (sampleUrls.length > 1) {
+        sampleRotationTimer = window.setInterval(() => {
+            updateSample(sampleIndex + 1);
+        }, 2400);
+    }
 
     form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -174,11 +196,14 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         try {
             const result = await repoBrowser.openRepository(url);
             input.value = "";
+            syncSampleVisibility();
+            if (result?.id) {
+                onRepoSelect?.(result.id);
+                return;
+            }
             if (result?.kind === "featured") {
                 scrollToSection(repoBrowser.featuredSectionEl);
                 highlightElementTemporarily(result.element);
-            } else if (result?.kind === "repo") {
-                scrollToSection(heroFormShell);
             }
         } catch (error) {
             errorMsg.textContent = error.message;
@@ -203,6 +228,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         el,
         destroy() {
             window.clearTimeout(highlightTimer);
+            window.clearInterval(sampleRotationTimer);
             scrollCueObserver?.disconnect();
             heroPreviewFrame.destroy?.();
             repoBrowser.destroy();

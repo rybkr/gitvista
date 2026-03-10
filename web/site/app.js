@@ -6,9 +6,11 @@ import { parseHostedPath } from "../gitvista/routes.js";
 import { createRepoLanding } from "./repoLanding.js";
 import { createDocsView } from "./docsView.js";
 import { createInstallView } from "./installView.js";
+import { createRepoLoadingView } from "./repoLoadingView.js";
 import { PRODUCT_INFO } from "./hostedProduct.js";
 
 let activeViewCleanup = null;
+let navigationToken = 0;
 
 document.addEventListener("DOMContentLoaded", () => {
     logger.info("Bootstrapping site frontend");
@@ -35,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.title = PRODUCT_INFO.name;
         let destroyed = false;
         const landing = createRepoLanding({
-            onRepoSelect: (id) => navigateToPath(`/repo/${id}`),
+            onRepoSelect: (id) => navigateToPath(`/repo/${id}/loading`),
             onNavigate: navigateToPath,
         });
         root.appendChild(landing.el);
@@ -46,6 +48,35 @@ document.addEventListener("DOMContentLoaded", () => {
             landing.destroy();
             landing.el.remove();
         };
+    };
+
+    const showRepoLoading = ({ repoId, navigateToPath, replacePath, onRouteChange, initialStatus }) => {
+        document.title = `${PRODUCT_INFO.name} Loading`;
+        let destroyed = false;
+        const view = createRepoLoadingView({ repoId, navigateToPath, replacePath, onRouteChange, initialStatus });
+        root.appendChild(view.el);
+
+        return () => {
+            if (destroyed) return;
+            destroyed = true;
+            view.destroy();
+            view.el.remove();
+        };
+    };
+
+    const fetchRepoStatus = async (repoId) => {
+        const resp = await fetch(`/api/repos/${repoId}/status`);
+        if (!resp.ok) {
+            let message = `Repository status request failed (${resp.status})`;
+            try {
+                const text = (await resp.text()).trim();
+                if (text) message = text;
+            } catch {
+                // Ignore body parse failures.
+            }
+            throw new Error(message);
+        }
+        return resp.json();
     };
 
     const showDocs = (navigateToPath, activeSection) => {
@@ -80,22 +111,59 @@ document.addEventListener("DOMContentLoaded", () => {
         const nextPath = typeof path === "string" && path ? path : "/";
         if (location.pathname === nextPath && !location.search && !location.hash) return;
         history.pushState(null, "", nextPath);
-        mountFromLocation();
+        void mountFromLocation();
     };
 
-    const mountFromLocation = () => {
+    const mountFromLocation = async () => {
+        const token = ++navigationToken;
         const parsed = parseHostedPath(location.pathname);
-        if (parsed.page === "repo" && parsed.repoId) {
-            setApiBase(`/api/repos/${parsed.repoId}`);
-            mount(() => bootstrapGraph(root, {
+        if ((parsed.page === "repo" || parsed.page === "repo-loading") && parsed.repoId) {
+            let status = null;
+            try {
+                status = await fetchRepoStatus(parsed.repoId);
+            } catch (error) {
+                status = {
+                    id: parsed.repoId,
+                    state: "error",
+                    error: error.message || "Unable to load repository status.",
+                    phase: "",
+                    percent: 0,
+                };
+            }
+            if (token !== navigationToken) return;
+
+            if (status.state === "ready") {
+                if (parsed.page === "repo-loading") {
+                    replaceHostedPath(`/repo/${parsed.repoId}`);
+                }
+                document.title = PRODUCT_INFO.name;
+                setApiBase(`/api/repos/${parsed.repoId}`);
+                mount(() => bootstrapGraph(root, {
+                    repoId: parsed.repoId,
+                    navigateToPath: navigateToHostedPath,
+                    replacePath: replaceHostedPath,
+                    parsePermalinkHash: () => parseHostedPath(location.pathname)?.commitHash || null,
+                    productName: PRODUCT_INFO.name,
+                }));
+                return;
+            }
+
+            if (parsed.page === "repo") {
+                replaceHostedPath(`/repo/${parsed.repoId}/loading`);
+            }
+            setApiBase("");
+            mount(() => showRepoLoading({
                 repoId: parsed.repoId,
                 navigateToPath: navigateToHostedPath,
                 replacePath: replaceHostedPath,
-                parsePermalinkHash: () => parseHostedPath(location.pathname)?.commitHash || null,
-                productName: PRODUCT_INFO.name,
+                onRouteChange: () => {
+                    void mountFromLocation();
+                },
+                initialStatus: status,
             }));
             return;
         }
+        if (token !== navigationToken) return;
         setApiBase("");
         if (parsed.page === "install") {
             mount(() => showInstall(navigateToHostedPath));
@@ -106,6 +174,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    mountFromLocation();
-    window.addEventListener("popstate", mountFromLocation);
+    void mountFromLocation();
+    window.addEventListener("popstate", () => {
+        void mountFromLocation();
+    });
 });

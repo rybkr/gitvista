@@ -266,16 +266,39 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
     async function openRepository(url) {
         const normalized = normalizeRepoUrl(url);
         const featuredEntry = featuredRepos.find((entry) => normalizeRepoUrl(entry.url) === normalized);
-        if (featuredEntry && featuredState.has(featuredEntry.url)) {
-            return { kind: "featured", element: getFeaturedCard(featuredEntry.url) };
-        }
-
         const repo = await createRepo(url);
         if (destroyed) return { kind: "destroyed", element: null };
 
+        if (featuredEntry) {
+            featuredState.set(featuredEntry.url, {
+                id: repo.id,
+                state: repo.state,
+                error: repo.error || "",
+                phase: repo.phase || "",
+                percent: repo.percent || 0,
+            });
+            renderFeaturedCard(featuredEntry);
+
+            if (repo.state === "cloning" || repo.state === "pending") {
+                startProgressStream(repo.id, (update) => {
+                    if (destroyed) return;
+                    featuredState.set(featuredEntry.url, {
+                        id: update.id,
+                        state: update.state,
+                        error: update.error,
+                        phase: update.phase || "",
+                        percent: update.percent || 0,
+                    });
+                    renderFeaturedCard(featuredEntry);
+                });
+            }
+
+            return { kind: "featured", id: repo.id, state: repo.state, element: getFeaturedCard(featuredEntry.url) };
+        }
+
         for (const [featuredUrl, state] of featuredState.entries()) {
             if (state.id === repo.id) {
-                return { kind: "featured", element: getFeaturedCard(featuredUrl) };
+                return { kind: "featured", id: repo.id, state: repo.state, element: getFeaturedCard(featuredUrl) };
             }
         }
 
@@ -289,7 +312,7 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
                 renderUserRepos();
             });
         }
-        return { kind: "repo", element: heroRecentListEl };
+        return { kind: "repo", id: repo.id, state: repo.state, element: heroRecentListEl };
     }
 
     function getFeaturedCard(url) {

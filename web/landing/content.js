@@ -11,6 +11,14 @@ export const FEATURED_REPOS = [
     },
 ];
 
+export const PUBLIC_REPO_SAMPLES = [
+    "https://github.com/rybkr/gitvista",
+    "https://github.com/tsenart/vegeta",
+    "https://github.com/junegunn/fzf",
+    "https://github.com/jqlang/jq",
+    "https://github.com/cli/safeexec",
+];
+
 export const HERO_PREVIEW = {
     alt: "GitVista swimlanes view showing a vertical line of commits on transparent background.",
     images: {
