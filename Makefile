@@ -269,7 +269,7 @@ deploy-production:
 cloc:
 	@echo "Counting lines of code..."
 	@if command -v cloc >/dev/null; then \
-		cloc .; \
+		cloc . --fullpath --not-match-d="web/vendor"; \
 	else \
 		echo "cloc not found - install with: brew install cloc or apt install cloc"; \
 	fi
