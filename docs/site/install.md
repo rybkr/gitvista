@@ -20,9 +20,3 @@ Install GitVista locally when you want to view a repository you already have on 
    ```bash
    git vista open --repo /path/to/repo
    ```
-
----
-
-To learn more about `git vista` cli options:
-
-[Open the CLI docs](/docs/cli)
