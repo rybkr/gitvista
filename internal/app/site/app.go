@@ -7,10 +7,10 @@ import (
 )
 
 // NewServer constructs the hosted GitVista site server.
-func NewServer(rm *repomanager.RepoManager, addr string, allowedOrigins map[string]bool) (*server.Server, error) {
+func NewServer(rm *repomanager.RepoManager, addr string, allowedOrigins map[string]bool, hostedStore server.HostedStore) (*server.Server, error) {
 	webFS, err := gitvista.GetSiteWebFS()
 	if err != nil {
 		return nil, err
 	}
-	return server.NewHostedServer(rm, addr, webFS, allowedOrigins), nil
+	return server.NewHostedServerWithStore(rm, addr, webFS, allowedOrigins, hostedStore), nil
 }

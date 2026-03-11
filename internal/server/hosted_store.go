@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -43,6 +44,7 @@ type HostedStore interface {
 	GetRepo(accountSlug, repoID string) (HostedRepo, error)
 	AuthorizeRepo(accountSlug, repoID, accessToken string) (HostedRepo, error)
 	RemoveRepo(accountSlug, repoID string) error
+	Close() error
 }
 
 type memoryHostedStore struct {
@@ -177,11 +179,32 @@ func (s *memoryHostedStore) RemoveRepo(accountSlug, repoID string) error {
 
 	s.mu.Lock()
 	delete(s.repos[repo.AccountSlug], repo.ID)
+	shouldRemoveManaged := true
+	for slug, repos := range s.repos {
+		for _, existing := range repos {
+			if slug == repo.AccountSlug && existing.ID == repo.ID {
+				continue
+			}
+			if existing.ManagedRepoID == repo.ManagedRepoID {
+				shouldRemoveManaged = false
+				break
+			}
+		}
+		if !shouldRemoveManaged {
+			break
+		}
+	}
 	s.mu.Unlock()
 
-	if err := s.repoManager.Remove(repo.ManagedRepoID); err != nil {
-		return err
+	if shouldRemoveManaged {
+		if err := s.repoManager.Remove(repo.ManagedRepoID); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func (s *memoryHostedStore) Close() error {
 	return nil
 }
 
@@ -246,4 +269,8 @@ func hostedRepoDisplayName(rawURL string) string {
 	}
 
 	return rawURL
+}
+
+func hostedStoreContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
 }

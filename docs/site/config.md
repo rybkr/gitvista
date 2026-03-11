@@ -20,6 +20,7 @@ Use these when you run the hosted GitVista site instead of the local desktop-sty
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `GITVISTA_DATA_DIR` | `/data/repos` | Storage path for managed hosted repositories |
+| `GITVISTA_DATABASE_URL` | unset | PostgreSQL connection string for persistent hosted account and repository metadata |
 | `GITVISTA_PORT` | `8080` | HTTP port for the hosted server |
 | `GITVISTA_HOST` | `` | Bind host for the hosted server |
 | `GITVISTA_CORS_ORIGINS` | unset | Comma-separated list of allowed browser origins |

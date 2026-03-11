@@ -101,11 +101,20 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 
 // NewHostedServer constructs a Server in hosted mode backed by a RepoManager.
 func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowedOrigins map[string]bool) *Server {
+	return NewHostedServerWithStore(rm, addr, webFS, allowedOrigins, nil)
+}
+
+// NewHostedServerWithStore constructs a Server in hosted mode backed by a RepoManager
+// and an optionally injected HostedStore.
+func NewHostedServerWithStore(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowedOrigins map[string]bool, hostedStore HostedStore) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
 	docsFS, _ := gitvista.GetSiteDocsFS()
+	if hostedStore == nil {
+		hostedStore = newMemoryHostedStore(rm)
+	}
 
 	return &Server{
 		addr:           addr,
@@ -117,7 +126,7 @@ func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allo
 		logger:         slog.Default(),
 		mode:           ModeHosted,
 		sessions:       make(map[string]*RepoSession),
-		hostedStore:    newMemoryHostedStore(rm),
+		hostedStore:    hostedStore,
 		repoManager:    rm,
 		allowedOrigins: allowedOrigins,
 		installScript:  gitvista.GetInstallScript,
@@ -574,6 +583,12 @@ func (s *Server) Shutdown() {
 			delete(s.sessions, id)
 		}
 		s.sessionsMu.Unlock()
+	}
+
+	if s.hostedStore != nil {
+		if err := s.hostedStore.Close(); err != nil {
+			s.logger.Error("Failed to close hosted store", "err", err)
+		}
 	}
 
 	s.logger.Info("Server shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))

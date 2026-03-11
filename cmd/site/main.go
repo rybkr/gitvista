@@ -15,6 +15,7 @@ import (
 
 	app "github.com/rybkr/gitvista/internal/app/site"
 	"github.com/rybkr/gitvista/internal/repomanager"
+	"github.com/rybkr/gitvista/internal/server"
 )
 
 var (
@@ -55,9 +56,15 @@ func main() {
 	}
 	defer rm.Close()
 
+	hostedStore, err := server.NewHostedStore(rm, os.Getenv("GITVISTA_DATABASE_URL"))
+	if err != nil {
+		slog.Error("Failed to create hosted store", "err", err)
+		os.Exit(1)
+	}
+
 	addr := fmt.Sprintf("%s:%s", flags.host, flags.port)
 	corsOrigins := parseCORSOrigins(os.Getenv("GITVISTA_CORS_ORIGINS"))
-	serv, err := app.NewServer(rm, addr, corsOrigins)
+	serv, err := app.NewServer(rm, addr, corsOrigins, hostedStore)
 	if err != nil {
 		slog.Error("Failed to load hosted frontend", "err", err)
 		os.Exit(1)
