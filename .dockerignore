@@ -5,6 +5,8 @@
 vista
 **/*.exe
 **/*.out
+!web/gitvista
+!web/gitvista/**
 
 # Test coverage
 **/coverage.out
