@@ -6,6 +6,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pterm/pterm v0.12.83
+	github.com/yuin/goldmark v1.4.13
 	golang.org/x/term v0.40.0
 )
 

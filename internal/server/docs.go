@@ -1,10 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
 )
 
 type docsMeta struct {
@@ -86,14 +91,36 @@ func loadDocsPage(docsFS fs.FS) (docsPageResponse, error) {
 		if err != nil {
 			return docsPageResponse{}, fmt.Errorf("read docs section %s: %w", section.File, err)
 		}
+		contentHTML, err := renderDocsMarkdown(body)
+		if err != nil {
+			return docsPageResponse{}, fmt.Errorf("render docs section %s: %w", section.File, err)
+		}
 		sections = append(sections, docsSectionResponse{
-			ID:      section.ID,
-			Label:   section.Label,
-			Title:   section.Title,
-			Content: string(body),
+			ID:          section.ID,
+			Label:       section.Label,
+			Title:       section.Title,
+			Content:     string(body),
+			ContentHTML: contentHTML,
 		})
 	}
 	page.Sections = sections
 
 	return page, nil
+}
+
+var docsMarkdown = goldmark.New(
+	goldmark.WithExtensions(
+		extension.GFM,
+	),
+	goldmark.WithParserOptions(
+		parser.WithAutoHeadingID(),
+	),
+)
+
+func renderDocsMarkdown(src []byte) (string, error) {
+	var buf bytes.Buffer
+	if err := docsMarkdown.Convert(src, &buf); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }

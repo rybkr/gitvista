@@ -1,10 +1,12 @@
-GitVista is designed to answer one question first: what is this repository doing right now? The major views exist to move from broad orientation into exact evidence without forcing you to lose your place.
+GitVista works best when you move from broad context to exact evidence instead of jumping straight into a raw diff.
 
-Start with the graph when you need branch shape, merge flow, and the overall path of recent commits. Move to the repository overview when you need to confirm branch state, HEAD, remotes, tags, and the current repository context.
+- Use `Graph` to read branch shape, merge flow, and commit order before you focus on any one revision.
+- Use `Repository` to confirm the current branch, HEAD, commit counts, tags, remotes, and basic repository metadata.
+- Use `File Explorer` to browse the tree at the selected commit, inspect blame, and open commit-level or file-level diffs.
+- Use `Lifecycle` when you care about what is unstaged, staged, recently committed locally, or ahead and behind the tracked upstream.
+- Use `Analytics` for commit velocity, author activity, and diff-based hotspots over a selected time window.
+- Use `Compare` to preview a merge between two branches before you actually attempt it.
 
-- Use the graph to understand flow before reading individual commits.
-- Use the repository overview to confirm where the repository stands right now.
-- Use file explorer, blame, and diff views when you are ready to inspect exact file-level changes.
-- Hosted repo URLs preserve the repository identity, and hosted commit permalinks preserve the selected commit.
+The usual rhythm is simple: orient in `Graph`, confirm the repository state, then move into `File Explorer`, `Lifecycle`, or `Compare` only when you need exact file-level evidence.
 
-The intended rhythm is simple: orient in the graph, confirm in the overview, then drill into diffs only once the shape of the history makes sense.
+In hosted mode, the repository and selected commit stay in the URL so the current view is shareable.

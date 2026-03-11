@@ -43,6 +43,34 @@ func TestLoadDocsPage(t *testing.T) {
 	if page.Sections[0].Content == "" {
 		t.Fatal("expected first section content to be populated")
 	}
+	if page.Sections[0].ContentHTML == "" {
+		t.Fatal("expected first section html content to be populated")
+	}
+	if !strings.Contains(page.Sections[0].ContentHTML, "<p>Hosted paragraph.</p>") {
+		t.Fatalf("expected rendered paragraph html, got %q", page.Sections[0].ContentHTML)
+	}
+	if !strings.Contains(page.Sections[0].ContentHTML, "<ul>") {
+		t.Fatalf("expected rendered list html, got %q", page.Sections[0].ContentHTML)
+	}
+}
+
+func TestRenderDocsMarkdown(t *testing.T) {
+	html, err := renderDocsMarkdown([]byte("# Title\n\nParagraph with `code`.\n\n- one\n  - two\n\n```bash\necho hi\n```\n"))
+	if err != nil {
+		t.Fatalf("renderDocsMarkdown() error = %v", err)
+	}
+	if !strings.Contains(html, "<h1 id=\"title\">Title</h1>") {
+		t.Fatalf("expected heading in html, got %q", html)
+	}
+	if !strings.Contains(html, "<code>code</code>") {
+		t.Fatalf("expected inline code in html, got %q", html)
+	}
+	if !strings.Contains(html, "<pre><code class=\"language-bash\">echo hi") {
+		t.Fatalf("expected fenced code block in html, got %q", html)
+	}
+	if !strings.Contains(html, "<ul>") {
+		t.Fatalf("expected list html, got %q", html)
+	}
 }
 
 func TestHandleDocs(t *testing.T) {

@@ -1,7 +1,7 @@
 {
   "eyebrow": "Documentation",
   "title": "GitVista documentation",
-  "lede": "Reference material for the GitVista interface and CLI.",
+  "lede": "Start with install and the CLI, then use the view guide to move from graph shape to exact file changes.",
   "primaryCta": {
     "label": "",
     "href": ""
@@ -17,40 +17,40 @@
     },
     {
       "label": "Local",
-      "value": "Run the binary against your checkout"
+      "value": "Your checkout, working tree, and local branches"
     },
     {
-      "label": "Routes",
-      "value": "/docs, /docs/:section, and /repo/:id"
+      "label": "CLI",
+      "value": "`git vista` open, serve, url, and doctor"
     },
     {
       "label": "Best use",
-      "value": "Orientation before file-level inspection"
+      "value": "Orient fast, then drill into evidence"
     }
   ],
   "sections": [
     {
       "id": "install",
       "label": "Install",
-      "title": "Install GitVista locally and open a repository from your shell.",
+      "title": "Install GitVista and open a repository from your shell.",
       "file": "install.md"
     },
     {
       "id": "views",
       "label": "Views",
-      "title": "Move from repository shape to exact file changes without leaving the app.",
+      "title": "Choose the right view before you drill into commits or files.",
       "file": "views.md"
     },
     {
       "id": "limits",
       "label": "Limits",
-      "title": "Know the edges before you depend on the hosted path.",
+      "title": "Know when to use hosted mode, local mode, or a quick diagnostic.",
       "file": "limits.md"
     },
     {
       "id": "cli",
       "label": "CLI",
-      "title": "Use the CLI to open the current repo fast or target a specific repository, commit, branch, or path.",
+      "title": "Open a repo, print the launch URL, or check your local setup from the command line.",
       "file": "cli.md"
     }
   ],

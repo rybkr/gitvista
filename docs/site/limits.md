@@ -1,9 +1,9 @@
-GitVista is meant to make Git behavior legible, but it still inherits the realities of repository size, remote accessibility, and the difference between hosted and local execution. The product is useful when those boundaries are explicit rather than hidden.
+GitVista makes Git history easier to read, but the right mode still depends on where the repository lives and what kind of state you need to see.
 
-Hosted mode is intentionally scoped. It is aimed at public GitHub repositories, and very large histories can take longer to prepare before the graph is available.
+- Hosted mode is for public GitHub repositories that GitVista can clone and prepare on the server.
+- Local mode is the right choice for private repositories, sensitive work, local-only branches, staged changes, and working tree diffs.
+- Hosted repositories with large or complicated histories can take longer to prepare before the graph is ready.
+- Local mode still depends on a readable repository path and a free local port. `git vista doctor` is the fastest way to check those basics.
+- Unknown app routes fall back to the app shell, while missing static assets and unknown API routes return `404`.
 
-- Private repositories, local-only branches, and sensitive work should use local mode.
-- Hosted mode may take longer to prepare repositories with large or complicated histories.
-- Unknown hosted URLs still fall back to the app shell, while missing static assets and unknown API routes return `404`.
-
-If the hosted path feels slow, incomplete, or too public for the job, that is usually the signal to switch modes rather than to push harder against the hosted boundary.
+If the hosted path feels slow, incomplete, or too public for the job, that is usually the signal to switch to local mode rather than keep forcing the hosted path.

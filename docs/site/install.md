@@ -1,42 +1,22 @@
-Install GitVista locally when you want to inspect a repository on your own machine.
+Install GitVista locally when you want to view a repository you already have on disk in real time.
 
-- Requires a local Git checkout, shell access, and a browser on the same machine.
-- Install once, then open whichever repository you want from the CLI.
+- Requires a local Git repository checkout, shell access, and a browser on your machine.
+- The install script adds a `git-vista` executable to your `PATH`, effectively registering `vista` as a `git` subcommand.
 
 1. Install GitVista.
 
-```bash
+```
 curl -fsSL https://gitvista.io/install.sh | sh
 ```
 
-2. Open a repository directly.
+2. Verify the command is available.
 
-```bash
-git vista open -repo /path/to/repo
+```
+git vista --help
 ```
 
-3. Or run it from inside the repository you want to inspect.
+3. Open the current repository or point GitVista at a different checkout.
 
-```bash
-git vista open
 ```
-
-Useful follow-up commands:
-
-```bash
-git vista open --branch main
+git vista open --repo /path/to/repo
 ```
-
-```bash
-git vista open --commit HEAD~1
-```
-
-```bash
-git vista open --path internal/server
-```
-
-```bash
-git vista serve --port 3000
-```
-
-If you run `git vista open` inside a repository, GitVista uses the current directory by default.

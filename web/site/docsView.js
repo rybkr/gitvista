@@ -158,7 +158,12 @@ function renderDocsSection(section, { headingTag = "h2" } = {}) {
     article.id = section.id;
 
     const body = createElement("div", "repo-docs__section-body");
-    renderMarkdown(body, section.content || "");
+    if (section.contentHtml) {
+        body.innerHTML = section.contentHtml;
+        enhanceRenderedMarkdown(body);
+    } else {
+        renderMarkdown(body, section.content || "");
+    }
     article.appendChild(body);
     return article;
 }
@@ -277,6 +282,24 @@ function createCopyButton(text) {
         }
     });
     return btn;
+}
+
+function enhanceRenderedMarkdown(container) {
+    for (const externalLink of container.querySelectorAll("a[href]")) {
+        const href = externalLink.getAttribute("href") || "";
+        if (/^https?:\/\//.test(href)) {
+            externalLink.setAttribute("target", "_blank");
+            externalLink.setAttribute("rel", "noopener noreferrer");
+        }
+    }
+
+    for (const pre of container.querySelectorAll("pre")) {
+        if (pre.querySelector(".repo-docs__copy-btn")) continue;
+        const code = pre.querySelector("code");
+        if (!code) continue;
+        pre.classList.add("repo-docs__code");
+        pre.appendChild(createCopyButton(code.textContent || ""));
+    }
 }
 
 function stripListMarker(line) {

@@ -111,10 +111,11 @@ type docsSummaryItem struct {
 }
 
 type docsSectionResponse struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Title       string `json:"title"`
+	Content     string `json:"content"`
+	ContentHTML string `json:"contentHtml,omitempty"`
 }
 
 type docsHelpResponse struct {

@@ -1,11 +1,11 @@
-The CLI is the fastest way to point GitVista at a repository you already have. If you run `git vista open` with no repo flag, GitVista uses the current directory as the repository path.
+The `git vista` command is the fastest way to point GitVista at a repository you already have. The install also gives you the `gitvista` binary, but the Git subcommand form is the standard entrypoint in these docs.
 
-- Use `git vista open` to start GitVista and launch the browser.
-- Use `git vista serve` to start the server without launching the browser.
-- Use `git vista url` to print the exact URL GitVista would open.
-- Use `git vista doctor` to verify repository, listener, and browser readiness.
+- `git vista open` starts GitVista and launches the browser. It is the default command.
+- `git vista serve` starts the server without launching the browser.
+- `git vista url` prints the exact URL GitVista would open.
+- `git vista doctor` checks repository loading, port binding, and browser launcher readiness.
 
-Common commands:
+Common tasks:
 
 ```bash
 git vista open
@@ -18,17 +18,18 @@ git vista url --commit HEAD~1
 git vista doctor
 ```
 
-Useful flags:
+Useful behavior to know:
 
-- `-repo /path/to/repo` opens a repository other than the current directory.
-- `--branch main` opens the graph focused on a branch tip.
-- `--commit HEAD~1` opens the graph focused on a specific revision.
-- `--path internal/server` opens the file explorer focused on a repository path.
-- `--no-browser` starts the server without launching a browser window.
-- `--print-url` prints the resolved launch URL.
+- `git vista open` uses the current directory when you do not pass `-repo`.
+- `git vista open HEAD~1` is shorthand for `git vista open --commit HEAD~1`.
+- `--branch` and `--commit` are mutually exclusive.
+- `--path` opens the file explorer focused on a repository path and falls back to `HEAD` if you did not also pick a commit.
+- `--no-browser` and `--print-url` apply to `git vista open`.
 
 Environment defaults:
 
 - `GITVISTA_REPO` sets the default repository path.
 - `GITVISTA_PORT` sets the default port.
 - `GITVISTA_HOST` sets the default bind host.
+- `GITVISTA_LOG_LEVEL` sets the log level.
+- `GITVISTA_LOG_FORMAT` sets `text` or `json` logging.
