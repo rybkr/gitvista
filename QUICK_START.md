@@ -49,7 +49,7 @@ make dev-check  # ~10s - format, imports, vet
 ```bash
 make test       # Unit tests
 make lint       # Linters
-make build      # Build binaries
+make build      # Build vista and cli
 ```
 
 ### Full CI Suite (replicates GitHub)
@@ -300,10 +300,10 @@ go test ./internal/git
 ### Faster Builds
 ```bash
 # Skip trimpath for local builds
-go build -o gitvista ./cmd/vista
+go build -o vista ./cmd/vista
 
 # For production builds:
-go build -trimpath -ldflags="-s -w" -o gitvista ./cmd/vista
+go build -trimpath -ldflags="-s -w" -o vista ./cmd/vista
 ```
 
 ### Faster CI

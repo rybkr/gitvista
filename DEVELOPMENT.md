@@ -41,11 +41,14 @@ go run ./cmd/vista
 # Run the CLI tool
 go run ./cmd/cli --help
 
-# Build binaries
+# Build the local binaries
 make build
 
+# Run the hosted site entrypoint directly
+go run ./cmd/site
+
 # Run with a specific Git repository
-./gitvista -repo=/path/to/git/repo
+./vista -repo=/path/to/git/repo
 ```
 
 ## Development Workflow
@@ -180,14 +183,17 @@ go list -u -m all
 ### Building
 
 ```bash
-# Build main binary
-go build -o gitvista ./cmd/vista
+# Build main local binary
+go build -o vista ./cmd/vista
 
 # Build CLI binary
-go build -o gitvista-cli ./cmd/cli
+go build -o cli ./cmd/cli
 
-# Build both
+# Build both local binaries
 make build
+
+# Run the hosted site directly from its own entrypoint
+go run ./cmd/site
 
 # Build Docker image
 docker build -t gitvista:latest .
@@ -568,9 +574,9 @@ go test ./...  # no -cover flag
 go build ./...  # Uses go build cache
 
 # Skip trimpath for faster local builds
-go build -o gitvista ./cmd/vista
+go build -o vista ./cmd/vista
 # vs. (slower, for production)
-go build -trimpath -ldflags="-s -w" -o gitvista ./cmd/vista
+go build -trimpath -ldflags="-s -w" -o vista ./cmd/vista
 ```
 
 ### Faster Linting

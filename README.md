@@ -38,7 +38,7 @@ gitvista -repo /path/to/your/repo
 git clone https://github.com/rybkr/gitvista.git
 cd gitvista
 make build
-./gitvista -repo /path/to/your/repo
+./vista -repo /path/to/your/repo
 ```
 
 Then open [http://localhost:8080](http://localhost:8080).
@@ -78,13 +78,18 @@ web/local + web/site/   Thin local and hosted shells
 
 ```bash
 make build
-./gitvista
+./vista
+```
+
+## Run Hosted Site
+
+```bash
+go run ./cmd/site
 ```
 
 ## Deploy Hosted Site
 
 ```bash
-make build-site
 fly launch --no-deploy
 fly deploy
 ```
