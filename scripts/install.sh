@@ -2,8 +2,8 @@
 set -eu
 
 REPO="rybkr/gitvista"
-BINARY="gitvista"
-INSTALL_NAME="gitvista"
+BINARY="vista"
+INSTALL_NAME="vista"
 GIT_SUBCOMMAND_NAME="git-vista"
 INSTALL_DIR="${GITVISTA_INSTALL_DIR:-/usr/local/bin}"
 

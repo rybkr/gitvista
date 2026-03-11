@@ -156,7 +156,7 @@ jobs:
         run: make docker-build
 
       - name: Archive binaries
-        run: tar -czf gitvista-binaries.tar.gz gitvista gitvista-cli
+        run: tar -czf gitvista-binaries.tar.gz vista cli
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -169,7 +169,7 @@ jobs:
         run: |
           {
             echo "### Build Summary"
-            echo "- Binaries built: gitvista, gitvista-cli"
+            echo "- Binaries built: vista, cli"
             echo "- Docker build: passed"
             echo "- Artifact uploaded: build-artifacts"
           } >> "$GITHUB_STEP_SUMMARY"

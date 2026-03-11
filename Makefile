@@ -1,4 +1,4 @@
-.PHONY: unit test ci ci-local lint integration e2e build build-cli run-site clean help setup-hooks \
+.PHONY: unit test ci ci-local lint integration e2e build build-cli build-site run-site clean help setup-hooks \
          format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
          imports-check check-vuln docker-build deps-check deploy-staging deploy-production
 
@@ -54,7 +54,7 @@ cover-html: cover
 integration:
 	$(GOTEST) -v -race -tags=integration -timeout=60s ./test/integration/...
 
-## e2e: Run end-to-end tests (builds gitvista-cli, compares output against git)
+## e2e: Run end-to-end tests (builds cli, compares output against git)
 e2e:
 	$(GOTEST) -v -race -tags=e2e -timeout=60s ./test/e2e/...
 
@@ -181,7 +181,7 @@ validate-js:
 	fi
 	@echo "JavaScript validation passed"
 
-## build: Build the local-only binaries (vista and cli)
+## build: Build the local binaries (vista and cli)
 build: build-cli
 	@echo "Building main binary..."
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o vista ./cmd/vista
@@ -190,6 +190,11 @@ build: build-cli
 build-cli:
 	@echo "Building CLI binary..."
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o cli ./cmd/cli
+
+## build-site: Build the hosted site binary
+build-site:
+	@echo "Building hosted site binary..."
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-site ./cmd/site
 
 ## run-site: Run the hosted site entrypoint directly from cmd/site
 run-site:
@@ -246,7 +251,7 @@ ci: ci-remote
 clean:
 	@echo "Cleaning..."
 	$(GOCLEAN)
-	@rm -f vista cli gitvista gitvista-cli
+	@rm -f vista cli gitvista-site
 	@rm -rf test/cover/
 	@echo "Clean complete"
 

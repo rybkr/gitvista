@@ -37,12 +37,12 @@ func runUpdate(args []string) int {
 
 	if checkOnly {
 		fmt.Printf("Update available: %s → %s\n", version, latest)
-		fmt.Println("Run 'gitvista-cli update' to install it.")
+		fmt.Println("Run 'cli update' to install it.")
 		return 0
 	}
 
 	fmt.Printf("Updating to %s...\n", latest)
-	if err := selfupdate.Update(ghRepo, "gitvista-cli", latest); err != nil {
+	if err := selfupdate.Update(ghRepo, "cli", latest); err != nil {
 		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 		return 1
 	}
