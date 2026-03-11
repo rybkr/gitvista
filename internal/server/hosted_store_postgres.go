@@ -257,32 +257,8 @@ func (s *postgresHostedStore) Close() error {
 }
 
 func (s *postgresHostedStore) bootstrap(ctx context.Context) error {
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS hosted_accounts (
-			id TEXT PRIMARY KEY,
-			slug TEXT NOT NULL UNIQUE,
-			name TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS hosted_repositories (
-			id TEXT PRIMARY KEY,
-			account_slug TEXT NOT NULL REFERENCES hosted_accounts(slug) ON DELETE CASCADE,
-			managed_repo_id TEXT NOT NULL,
-			url TEXT NOT NULL,
-			display_name TEXT NOT NULL,
-			access_token TEXT NOT NULL UNIQUE,
-			created_at TIMESTAMPTZ NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS hosted_repositories_account_slug_created_at_idx
-			ON hosted_repositories (account_slug, created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS hosted_repositories_managed_repo_id_idx
-			ON hosted_repositories (managed_repo_id)`,
-	}
-
-	for _, stmt := range statements {
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("bootstrap hosted store schema: %w", err)
-		}
+	if err := applyHostedStoreMigrations(ctx, s.db); err != nil {
+		return fmt.Errorf("bootstrap hosted store schema: %w", err)
 	}
 	return nil
 }
