@@ -19,10 +19,10 @@ func TestLocalUpgrader_CheckOrigin(t *testing.T) {
 			want:   true,
 		},
 		{
-			name:   "allows localhost origin",
+			name:   "rejects alternate loopback host",
 			host:   "127.0.0.1:8080",
 			origin: "http://localhost:8080",
-			want:   true,
+			want:   false,
 		},
 		{
 			name:   "allows loopback ipv6 origin",

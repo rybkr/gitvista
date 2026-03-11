@@ -2,7 +2,6 @@ package server
 
 import (
 	"compress/flate"
-	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -18,7 +17,8 @@ const (
 )
 
 // localUpgrader validates local-mode origins. It allows same-host requests and
-// loopback origins to prevent cross-site WebSocket hijacking.
+// exact same-host requests to prevent cross-site WebSocket hijacking from
+// other local applications running on loopback.
 var localUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
@@ -29,18 +29,7 @@ var localUpgrader = websocket.Upgrader{
 		if err != nil {
 			return false
 		}
-		// Allow same-host requests, plus loopback origins for local development.
-		if u.Host == r.Host {
-			return true
-		}
-		host := u.Hostname()
-		if host == "localhost" {
-			return true
-		}
-		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-			return true
-		}
-		return false
+		return u.Host == r.Host
 	},
 	EnableCompression: true,
 }

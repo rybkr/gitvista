@@ -137,6 +137,8 @@ type RepoManager struct {
 	wg           sync.WaitGroup
 }
 
+const managedRepoIDLength = 16
+
 // New creates a RepoManager and ensures the data directory exists.
 func New(cfg Config) (*RepoManager, error) {
 	cfg.defaults()
@@ -291,6 +293,10 @@ func (rm *RepoManager) Info(id string) (RepoInfo, error) {
 // GetRepo returns the loaded *gitcore.Repository for the given ID.
 // Returns an error if the repo is not ready.
 func (rm *RepoManager) GetRepo(id string) (*gitcore.Repository, error) {
+	if !validManagedRepoID(id) {
+		return nil, fmt.Errorf("repo not found: %s", id)
+	}
+
 	rm.mu.RLock()
 	managed, exists := rm.repos[id]
 	rm.mu.RUnlock()
@@ -363,6 +369,21 @@ func (rm *RepoManager) recoverRepoFromDisk(id string) (*gitcore.Repository, erro
 	rm.repos[id] = recovered
 	rm.logger.Info("Recovered repo from disk", "id", id, "path", diskPath)
 	return repo, nil
+}
+
+func validManagedRepoID(id string) bool {
+	if len(id) != managedRepoIDLength {
+		return false
+	}
+	for _, ch := range id {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Status returns the current state, error message, and clone progress for a repo.

@@ -170,6 +170,22 @@ func TestGetRepo_NotFound(t *testing.T) {
 	}
 }
 
+func TestGetRepo_RejectsInvalidID(t *testing.T) {
+	cfg := testConfig(t)
+	rm, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rm.Close()
+
+	parentRepoPath := filepath.Dir(cfg.DataDir)
+	runGit(t, parentRepoPath, "init", "-b", "main")
+
+	if _, err := rm.GetRepo(".."); err == nil {
+		t.Fatal("GetRepo(..) should fail")
+	}
+}
+
 func TestGetRepo_RecoversFromDisk(t *testing.T) {
 	cfg := testConfig(t)
 	rm, err := New(cfg)
@@ -178,7 +194,7 @@ func TestGetRepo_RecoversFromDisk(t *testing.T) {
 	}
 	defer rm.Close()
 
-	id := "recoverable"
+	id := "abcdef1234567890"
 	repoPath := filepath.Join(cfg.DataDir, id)
 	if err := os.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error: %v", err)
