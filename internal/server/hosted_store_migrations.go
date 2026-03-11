@@ -46,6 +46,33 @@ func hostedStoreMigrations() []hostedStoreMigration {
 					ON hosted_repositories (managed_repo_id)`,
 			},
 		},
+		{
+			version: 3,
+			name:    "create_hosted_users",
+			upSQL: []string{
+				`CREATE TABLE hosted_users (
+					id TEXT PRIMARY KEY,
+					email TEXT NOT NULL UNIQUE,
+					display_name TEXT NOT NULL,
+					created_at TIMESTAMPTZ NOT NULL
+				)`,
+			},
+		},
+		{
+			version: 4,
+			name:    "create_account_memberships",
+			upSQL: []string{
+				`CREATE TABLE account_memberships (
+					account_slug TEXT NOT NULL REFERENCES hosted_accounts(slug) ON DELETE CASCADE,
+					user_id TEXT NOT NULL REFERENCES hosted_users(id) ON DELETE CASCADE,
+					role TEXT NOT NULL,
+					created_at TIMESTAMPTZ NOT NULL,
+					PRIMARY KEY (account_slug, user_id)
+				)`,
+				`CREATE INDEX account_memberships_user_id_idx
+					ON account_memberships (user_id)`,
+			},
+		},
 	}
 }
 

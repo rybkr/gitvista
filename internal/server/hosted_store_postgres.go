@@ -17,6 +17,7 @@ const postgresDriverName = "postgres"
 type postgresHostedStore struct {
 	db             *sql.DB
 	repoManager    *repomanager.RepoManager
+	systemUserID   string
 	defaultAccount HostedAccount
 }
 
@@ -42,13 +43,15 @@ func NewPostgresHostedStore(dataSourceName string, rm *repomanager.RepoManager) 
 	}
 
 	store := &postgresHostedStore{
-		db:          db,
-		repoManager: rm,
+		db:           db,
+		repoManager:  rm,
+		systemUserID: "usr_system",
 		defaultAccount: HostedAccount{
 			ID:        "acct_" + DefaultHostedAccountSlug,
 			Slug:      DefaultHostedAccountSlug,
 			Name:      "Personal",
 			CreatedAt: time.Now().UTC(),
+			IsDefault: true,
 		},
 	}
 
@@ -74,6 +77,100 @@ func NewPostgresHostedStore(dataSourceName string, rm *repomanager.RepoManager) 
 
 func (s *postgresHostedStore) DefaultAccount() HostedAccount {
 	return s.defaultAccount
+}
+
+func (s *postgresHostedStore) CreateAccount(name, slug string) (HostedAccount, error) {
+	normalizedSlug, err := normalizeHostedAccountSlug(slug)
+	if err != nil {
+		return HostedAccount{}, err
+	}
+
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		trimmedName = normalizedSlug
+	}
+
+	existing, err := s.GetAccount(normalizedSlug)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, errHostedAccountNotFound) {
+		return HostedAccount{}, err
+	}
+
+	now := time.Now().UTC()
+	account := HostedAccount{
+		ID:        "acct_" + normalizedSlug,
+		Slug:      normalizedSlug,
+		Name:      trimmedName,
+		IsDefault: normalizedSlug == s.defaultAccount.Slug,
+		CreatedAt: now,
+	}
+
+	ctx, cancel := hostedStoreContext()
+	defer cancel()
+
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO hosted_accounts (id, slug, name, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (slug) DO NOTHING
+	`, account.ID, account.Slug, account.Name, account.CreatedAt); err != nil {
+		return HostedAccount{}, fmt.Errorf("create account: %w", err)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO account_memberships (account_slug, user_id, role, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (account_slug, user_id) DO NOTHING
+	`, account.Slug, s.systemUserID, "owner", now); err != nil {
+		return HostedAccount{}, fmt.Errorf("create default account membership: %w", err)
+	}
+
+	return s.GetAccount(account.Slug)
+}
+
+func (s *postgresHostedStore) GetAccount(slug string) (HostedAccount, error) {
+	ctx, cancel := hostedStoreContext()
+	defer cancel()
+	return s.lookupAccount(ctx, slug)
+}
+
+func (s *postgresHostedStore) ListAccounts() ([]HostedAccount, error) {
+	ctx, cancel := hostedStoreContext()
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, slug, name, created_at
+		FROM hosted_accounts
+		ORDER BY created_at ASC, slug ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []HostedAccount
+	for rows.Next() {
+		var account HostedAccount
+		if err := rows.Scan(&account.ID, &account.Slug, &account.Name, &account.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan account: %w", err)
+		}
+		account.IsDefault = account.Slug == s.defaultAccount.Slug
+		accounts = append(accounts, account)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate accounts: %w", err)
+	}
+	sort.Slice(accounts, func(i, j int) bool {
+		if accounts[i].IsDefault != accounts[j].IsDefault {
+			return accounts[i].IsDefault
+		}
+		if accounts[i].CreatedAt.Equal(accounts[j].CreatedAt) {
+			return accounts[i].Slug < accounts[j].Slug
+		}
+		return accounts[i].CreatedAt.Before(accounts[j].CreatedAt)
+	})
+	return accounts, nil
 }
 
 func (s *postgresHostedStore) AddRepo(accountSlug, rawURL string) (HostedRepo, error) {
@@ -264,13 +361,29 @@ func (s *postgresHostedStore) bootstrap(ctx context.Context) error {
 }
 
 func (s *postgresHostedStore) ensureDefaultAccount(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO hosted_users (id, email, display_name, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (email) DO NOTHING
+	`, s.systemUserID, "system@gitvista.local", "System", time.Now().UTC()); err != nil {
+		return fmt.Errorf("ensure system user: %w", err)
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO hosted_accounts (id, slug, name, created_at)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (slug) DO NOTHING
+	        ON CONFLICT (slug) DO NOTHING
 	`, s.defaultAccount.ID, s.defaultAccount.Slug, s.defaultAccount.Name, s.defaultAccount.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("ensure default account: %w", err)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO account_memberships (account_slug, user_id, role, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (account_slug, user_id) DO NOTHING
+	`, s.defaultAccount.Slug, s.systemUserID, "owner", time.Now().UTC()); err != nil {
+		return fmt.Errorf("ensure default account membership: %w", err)
 	}
 	return nil
 }
@@ -289,10 +402,11 @@ func (s *postgresHostedStore) lookupAccount(ctx context.Context, accountSlug str
 	`, slug)
 	if err := row.Scan(&account.ID, &account.Slug, &account.Name, &account.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return HostedAccount{}, fmt.Errorf("account %q not found", slug)
+			return HostedAccount{}, fmt.Errorf("%w: %s", errHostedAccountNotFound, slug)
 		}
 		return HostedAccount{}, fmt.Errorf("lookup account: %w", err)
 	}
+	account.IsDefault = account.Slug == s.defaultAccount.Slug
 	return account, nil
 }
 

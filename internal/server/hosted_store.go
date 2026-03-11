@@ -19,11 +19,13 @@ import (
 const DefaultHostedAccountSlug = "personal"
 
 var errHostedRepoNotFound = errors.New("hosted repo not found")
+var errHostedAccountNotFound = errors.New("hosted account not found")
 
 type HostedAccount struct {
 	ID        string
 	Slug      string
 	Name      string
+	IsDefault bool
 	CreatedAt time.Time
 }
 
@@ -39,6 +41,9 @@ type HostedRepo struct {
 
 type HostedStore interface {
 	DefaultAccount() HostedAccount
+	CreateAccount(name, slug string) (HostedAccount, error)
+	GetAccount(slug string) (HostedAccount, error)
+	ListAccounts() ([]HostedAccount, error)
 	AddRepo(accountSlug, rawURL string) (HostedRepo, error)
 	ListRepos(accountSlug string) ([]HostedRepo, error)
 	GetRepo(accountSlug, repoID string) (HostedRepo, error)
@@ -61,6 +66,7 @@ func newMemoryHostedStore(rm *repomanager.RepoManager) HostedStore {
 		ID:        "acct_" + DefaultHostedAccountSlug,
 		Slug:      DefaultHostedAccountSlug,
 		Name:      "Personal",
+		IsDefault: true,
 		CreatedAt: now,
 	}
 	return &memoryHostedStore{
@@ -75,6 +81,59 @@ func newMemoryHostedStore(rm *repomanager.RepoManager) HostedStore {
 
 func (s *memoryHostedStore) DefaultAccount() HostedAccount {
 	return s.defaultAccount
+}
+
+func (s *memoryHostedStore) CreateAccount(name, slug string) (HostedAccount, error) {
+	normalizedSlug, err := normalizeHostedAccountSlug(slug)
+	if err != nil {
+		return HostedAccount{}, err
+	}
+
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		trimmedName = normalizedSlug
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if account, ok := s.accounts[normalizedSlug]; ok {
+		return account, nil
+	}
+
+	account := HostedAccount{
+		ID:        "acct_" + normalizedSlug,
+		Slug:      normalizedSlug,
+		Name:      trimmedName,
+		IsDefault: normalizedSlug == s.defaultAccount.Slug,
+		CreatedAt: time.Now(),
+	}
+	s.accounts[normalizedSlug] = account
+	return account, nil
+}
+
+func (s *memoryHostedStore) GetAccount(slug string) (HostedAccount, error) {
+	return s.requireAccount(slug)
+}
+
+func (s *memoryHostedStore) ListAccounts() ([]HostedAccount, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	accounts := make([]HostedAccount, 0, len(s.accounts))
+	for _, account := range s.accounts {
+		accounts = append(accounts, account)
+	}
+	sort.Slice(accounts, func(i, j int) bool {
+		if accounts[i].IsDefault != accounts[j].IsDefault {
+			return accounts[i].IsDefault
+		}
+		if accounts[i].CreatedAt.Equal(accounts[j].CreatedAt) {
+			return accounts[i].Slug < accounts[j].Slug
+		}
+		return accounts[i].CreatedAt.Before(accounts[j].CreatedAt)
+	})
+	return accounts, nil
 }
 
 func (s *memoryHostedStore) AddRepo(accountSlug, rawURL string) (HostedRepo, error) {
@@ -218,7 +277,7 @@ func (s *memoryHostedStore) requireAccount(accountSlug string) (HostedAccount, e
 	account, ok := s.accounts[slug]
 	s.mu.RUnlock()
 	if !ok {
-		return HostedAccount{}, fmt.Errorf("account %q not found", slug)
+		return HostedAccount{}, fmt.Errorf("%w: %s", errHostedAccountNotFound, slug)
 	}
 	return account, nil
 }

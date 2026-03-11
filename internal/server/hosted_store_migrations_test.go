@@ -26,7 +26,7 @@ func TestHostedStoreMigrations_StrictlyIncrease(t *testing.T) {
 func TestHostedStoreMigrations_CurrentVersionMatchesLastMigration(t *testing.T) {
 	migrations := hostedStoreMigrations()
 	got := migrations[len(migrations)-1].version
-	if got != 2 {
-		t.Fatalf("latest hosted store schema version = %d, want 2", got)
+	if got != 4 {
+		t.Fatalf("latest hosted store schema version = %d, want 4", got)
 	}
 }

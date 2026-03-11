@@ -254,6 +254,7 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
 		// Repo management endpoints (hosted mode only)
+		mux.HandleFunc("/api/accounts", writeDeadline(s.rateLimiter.middleware(s.handleAccounts)))
 		mux.HandleFunc("/api/accounts/", writeDeadline(s.rateLimiter.middleware(s.handleAccountRoutes)))
 		mux.HandleFunc("/api/repos", writeDeadline(s.rateLimiter.middleware(s.handleRepos)))
 		mux.HandleFunc("/api/repos/", writeDeadline(s.rateLimiter.middleware(s.handleRepoRoutes)))
