@@ -29,10 +29,10 @@ func isAllowedHost(host string, allowed []string) bool {
 	return false
 }
 
-// normalizeURL canonicalizes a Git remote URL for deduplication.
-// It lowercases the hostname, strips .git suffix and trailing slashes,
-// removes embedded credentials, and converts SSH shorthand to ssh:// form.
-// The allowedHosts parameter restricts which hostnames are permitted.
+// normalizeURL canonicalizes a Git remote URL for deduplication and clone
+// execution. It lowercases the hostname, strips .git suffix and trailing
+// slashes, strips embedded credentials, and converts SSH shorthand to ssh://
+// form. The allowedHosts parameter restricts which hostnames are permitted.
 func normalizeURL(rawURL string, allowedHosts []string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
@@ -61,8 +61,8 @@ func normalizeURL(rawURL string, allowedHosts []string) (string, error) {
 		if isPrivateHost(host) {
 			return "", fmt.Errorf("cloning from private/internal addresses is not allowed")
 		}
-		path := strings.TrimSuffix(m[3], ".git")
-		path = strings.TrimRight(path, "/")
+		path := strings.TrimRight(m[3], "/")
+		path = strings.TrimSuffix(path, ".git")
 		return "ssh://" + host + "/" + path, nil
 	}
 
@@ -74,6 +74,11 @@ func normalizeURL(rawURL string, allowedHosts []string) (string, error) {
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "https" && scheme != "http" && scheme != "ssh" {
 		return "", fmt.Errorf("unsupported scheme: %s", scheme)
+	}
+	if scheme == "ssh" && parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			return "", fmt.Errorf("ssh URLs must not include passwords")
+		}
 	}
 
 	host := strings.ToLower(parsed.Hostname())
@@ -98,8 +103,8 @@ func normalizeURL(rawURL string, allowedHosts []string) (string, error) {
 	}
 
 	path := parsed.Path
-	path = strings.TrimSuffix(path, ".git")
 	path = strings.TrimRight(path, "/")
+	path = strings.TrimSuffix(path, ".git")
 
 	return scheme + "://" + hostPart + path, nil
 }

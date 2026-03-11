@@ -45,9 +45,10 @@ type Server struct {
 	logger      *slog.Logger
 
 	mode           Mode
-	localSession   *RepoSession             // non-nil in local mode
-	sessionsMu     sync.RWMutex             // guards sessions map
-	sessions       map[string]*RepoSession  // non-nil in hosted mode
+	localSession   *RepoSession            // non-nil in local mode
+	sessionsMu     sync.RWMutex            // guards sessions map
+	sessions       map[string]*RepoSession // non-nil in hosted mode
+	hostedStore    HostedStore
 	repoManager    *repomanager.RepoManager // non-nil in hosted mode
 	allowedOrigins map[string]bool          // CORS allowlist (hosted mode)
 	installScript  func() ([]byte, error)
@@ -116,6 +117,7 @@ func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allo
 		logger:         slog.Default(),
 		mode:           ModeHosted,
 		sessions:       make(map[string]*RepoSession),
+		hostedStore:    newMemoryHostedStore(rm),
 		repoManager:    rm,
 		allowedOrigins: allowedOrigins,
 		installScript:  gitvista.GetInstallScript,
@@ -139,13 +141,19 @@ func readCacheSize() int {
 
 // getOrCreateSession returns an existing session or lazily creates one when a
 // Hosted repo is ready. Uses double-checked locking.
-func (s *Server) getOrCreateSession(id string) (*RepoSession, error) {
+func hostedSessionKey(accountSlug, repoID string) string {
+	return accountSlug + "/" + repoID
+}
+
+func (s *Server) getOrCreateSession(hostedRepo HostedRepo) (*RepoSession, error) {
 	if s.mode == ModeLocal {
 		if s.localSession != nil {
 			return s.localSession, nil
 		}
 		return nil, fmt.Errorf("no local session available")
 	}
+
+	id := hostedSessionKey(hostedRepo.AccountSlug, hostedRepo.ID)
 
 	// Fast path: read lock
 	s.sessionsMu.RLock()
@@ -156,7 +164,7 @@ func (s *Server) getOrCreateSession(id string) (*RepoSession, error) {
 	}
 
 	// Check that the repo exists and is ready in the RepoManager
-	repo, err := s.repoManager.GetRepo(id)
+	repo, err := s.repoManager.GetRepo(hostedRepo.ManagedRepoID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +182,7 @@ func (s *Server) getOrCreateSession(id string) (*RepoSession, error) {
 		ID:          id,
 		InitialRepo: repo,
 		ReloadFn: func() (*gitcore.Repository, error) {
-			return rm.GetRepo(id)
+			return rm.GetRepo(hostedRepo.ManagedRepoID)
 		},
 		CacheSize: s.cacheSize,
 		Logger:    s.logger,
@@ -237,6 +245,7 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
 	} else {
 		// Repo management endpoints (hosted mode only)
+		mux.HandleFunc("/api/accounts/", writeDeadline(s.rateLimiter.middleware(s.handleAccountRoutes)))
 		mux.HandleFunc("/api/repos", writeDeadline(s.rateLimiter.middleware(s.handleRepos)))
 		mux.HandleFunc("/api/repos/", writeDeadline(s.rateLimiter.middleware(s.handleRepoRoutes)))
 	}
@@ -376,13 +385,57 @@ func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
 
 // handleRepos dispatches /api/repos to the correct handler based on HTTP method.
 func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
+	accountSlug := DefaultHostedAccountSlug
 	switch r.Method {
 	case http.MethodPost:
-		s.handleAddRepo(w, r)
+		s.handleAddRepo(w, r, accountSlug)
 	case http.MethodGet:
-		s.handleListRepos(w, r)
+		s.handleListRepos(w, r, accountSlug)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAccountRoutes dispatches /api/accounts/{account}/repos... requests to
+// account-scoped hosted handlers while leaving legacy /api/repos paths intact.
+func (s *Server) handleAccountRoutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
+	if path == "" || path == r.URL.Path {
+		http.Error(w, "Missing account slug", http.StatusBadRequest)
+		return
+	}
+
+	accountSlug := path
+	remainder := ""
+	if idx := strings.IndexByte(path, '/'); idx >= 0 {
+		accountSlug = path[:idx]
+		remainder = path[idx:]
+	}
+	if accountSlug == "" {
+		http.Error(w, "Missing account slug", http.StatusBadRequest)
+		return
+	}
+
+	switch {
+	case remainder == "/repos":
+		switch r.Method {
+		case http.MethodPost:
+			s.handleAddRepo(w, r, accountSlug)
+		case http.MethodGet:
+			s.handleListRepos(w, r, accountSlug)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	case strings.HasPrefix(remainder, "/repos/"):
+		rewritten := *r.URL
+		rewritten.Path = strings.TrimPrefix(remainder, "/repos")
+		nextReq := r.Clone(r.Context())
+		nextReq.URL = &rewritten
+		s.handleAccountRepoRoutes(w, nextReq, accountSlug)
+		return
+	default:
+		http.Error(w, "Not found", http.StatusNotFound)
 	}
 }
 
@@ -390,8 +443,15 @@ func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
 // It rewrites r.URL.Path from /api/repos/{id}/tree/{hash} to /api/tree/{hash}
 // so that existing handlers (which strip /api/tree/ etc.) work unchanged.
 func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
+	s.handleAccountRepoRoutes(w, r, DefaultHostedAccountSlug)
+}
+
+func (s *Server) handleAccountRepoRoutes(w http.ResponseWriter, r *http.Request, accountSlug string) {
 	// Strip /api/repos/ prefix to get "{id}" or "{id}/..."
-	path := r.URL.Path[len("/api/repos/"):]
+	path := strings.TrimPrefix(r.URL.Path, "/api/repos/")
+	if path == r.URL.Path {
+		path = strings.TrimPrefix(r.URL.Path, "/")
+	}
 	if path == "" {
 		http.Error(w, "Missing repo ID", http.StatusBadRequest)
 		return
@@ -406,30 +466,38 @@ func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Non-session routes: status, progress, and delete operate on the repo ID directly.
+	hostedRepo, err := s.authorizeHostedRepo(accountSlug, id, r)
+	if err != nil {
+		http.Error(w, "Repository not available", http.StatusNotFound)
+		return
+	}
+
 	switch {
 	case remainder == "/status" && r.Method == http.MethodGet:
-		s.handleRepoStatus(w, r, id)
+		s.handleRepoStatus(w, r, hostedRepo)
 		return
 	case remainder == "/progress" && r.Method == http.MethodGet:
-		s.handleRepoProgress(w, r, id)
+		s.handleRepoProgress(w, r, hostedRepo)
 		return
 	case remainder == "" && r.Method == http.MethodDelete:
-		s.handleRemoveRepo(w, r, id)
+		s.handleRemoveRepo(w, r, hostedRepo)
 		return
 	}
 
 	// Session-scoped routes: resolve the session using the already-extracted
 	// ID, then rewrite the URL path so handlers see the same prefix they
 	// expect in local mode (e.g. /api/tree/{hash}).
-	session, err := s.getOrCreateSession(id)
+	session, err := s.getOrCreateSession(hostedRepo)
 	if err != nil {
-		s.logger.Error("Failed to get or create session", "id", id, "err", err)
+		s.logger.Error("Failed to get or create session", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
 		http.Error(w, "Repository not available", http.StatusNotFound)
 		return
 	}
 
 	r.URL.Path = "/api" + remainder
-	r = r.WithContext(withSessionCtx(r.Context(), session))
+	ctx := withSessionCtx(r.Context(), session)
+	ctx = withHostedRepoCtx(ctx, hostedRepo)
+	r = r.WithContext(ctx)
 
 	switch {
 	case remainder == "/repository" && r.Method == http.MethodGet:

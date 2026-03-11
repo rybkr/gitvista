@@ -11,7 +11,7 @@ function createElement(tagName, className, text) {
     return el;
 }
 
-export function createRepoLanding({ onRepoSelect, onNavigate }) {
+export function createRepoLanding({ accountSlug = "personal", onRepoSelect, onNavigate }) {
     const el = createElement("div", "repo-landing");
     const chrome = createElement("div", "repo-landing__chrome");
     const content = createElement("div", "repo-landing__content");
@@ -38,7 +38,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         }, 1600);
     }
 
-    const repoBrowser = createRepoBrowser({ featuredRepos: FEATURED_REPOS, onRepoSelect });
+    const repoBrowser = createRepoBrowser({ accountSlug, featuredRepos: FEATURED_REPOS, onRepoSelect });
 
     const topbar = createHostedTopbar({
         activePath: "/",

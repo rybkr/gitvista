@@ -46,6 +46,8 @@ func TestStaticHandler_ServesSPAForFrontendRoutes(t *testing.T) {
 		"/docs/install",
 		"/docs/hosted",
 		"/docs/local",
+		"/a/personal/r/test-repo",
+		"/a/personal/r/test-repo/loading",
 		"/repo/test-repo",
 		"/repo/test-repo/1234567890abcdef1234567890abcdef12345678",
 	}

@@ -1,18 +1,12 @@
+import { buildHostedRepoApiBase, buildHostedRepoLoadingPath, buildHostedRepoPath } from "../gitvista/routes.js";
 import { createHostedFooter, createHostedTopbar } from "./hostedChrome.js";
+import { getHostedRepoAccess } from "./hostedAccess.js";
 
 function createElement(tagName, className, text) {
     const el = document.createElement(tagName);
     if (className) el.className = className;
     if (typeof text === "string") el.textContent = text;
     return el;
-}
-
-function getLoadingPath(repoId) {
-    return `/repo/${repoId}/loading`;
-}
-
-function getRepoPath(repoId) {
-    return `/repo/${repoId}`;
 }
 
 function describePhase(phase) {
@@ -22,8 +16,15 @@ function describePhase(phase) {
         .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-async function fetchRepoStatus(repoId, signal) {
-    const resp = await fetch(`/api/repos/${repoId}/status`, { signal });
+async function fetchRepoStatus(accountSlug, repoId, signal) {
+    const access = getHostedRepoAccess(repoId);
+    if (!access?.accessToken) {
+        throw new Error("This browser no longer has access to that repository.");
+    }
+    const resp = await fetch(`${buildHostedRepoApiBase(accountSlug, repoId)}/status`, {
+        signal,
+        headers: { "X-GitVista-Repo-Token": access.accessToken },
+    });
     if (!resp.ok) {
         let message = `Repository status request failed (${resp.status})`;
         try {
@@ -37,7 +38,7 @@ async function fetchRepoStatus(repoId, signal) {
     return resp.json();
 }
 
-export function createRepoLoadingView({ repoId, navigateToPath, replacePath, onRouteChange, initialStatus = null } = {}) {
+export function createRepoLoadingView({ accountSlug, repoId, navigateToPath, replacePath, onRouteChange, initialStatus = null } = {}) {
     const controller = new AbortController();
     let progressStream = null;
     let reconnectTimer = null;
@@ -62,7 +63,7 @@ export function createRepoLoadingView({ repoId, navigateToPath, replacePath, onR
     heroCopy.appendChild(createElement("p", "repo-loading__lede", "GitVista is cloning the repository and preparing the graph view. You will move into the full tool automatically as soon as it is ready."));
 
     const heroMeta = createElement("div", "repo-loading__hero-meta");
-    const repoLabel = createElement("span", "repo-loading__repo-id", repoId);
+    const repoLabel = createElement("span", "repo-loading__repo-id", initialStatus?.displayName || repoId);
     const stateBadge = createElement("span", "repo-loading__badge");
     heroMeta.appendChild(repoLabel);
     heroMeta.appendChild(stateBadge);
@@ -131,13 +132,14 @@ export function createRepoLoadingView({ repoId, navigateToPath, replacePath, onR
         redirected = true;
         closeProgressStream();
         clearReconnectTimer();
-        replacePath?.(getRepoPath(repoId));
+        replacePath?.(buildHostedRepoPath(accountSlug, repoId));
         onRouteChange?.();
     }
 
     function renderStatus(status) {
         const state = status?.state || "pending";
         const percent = Math.max(0, Math.min(100, Number(status?.percent) || 0));
+        repoLabel.textContent = status?.displayName || repoId;
         stateBadge.className = `repo-loading__badge repo-loading__badge--${state}`;
         stateBadge.textContent = state;
         phaseLabel.textContent = describePhase(status?.phase);
@@ -172,7 +174,19 @@ export function createRepoLoadingView({ repoId, navigateToPath, replacePath, onR
 
     function startProgressStream() {
         closeProgressStream();
-        progressStream = new EventSource(`/api/repos/${repoId}/progress`);
+        const access = getHostedRepoAccess(repoId);
+        if (!access?.accessToken) {
+            renderStatus({
+                state: "error",
+                error: "This browser no longer has access to that repository.",
+                phase: "",
+                percent: 0,
+            });
+            return;
+        }
+        const url = new URL(`${buildHostedRepoApiBase(accountSlug, repoId)}/progress`, window.location.origin);
+        url.searchParams.set("access_token", access.accessToken);
+        progressStream = new EventSource(url.toString());
 
         progressStream.onmessage = (event) => {
             try {
@@ -214,7 +228,7 @@ export function createRepoLoadingView({ repoId, navigateToPath, replacePath, onR
         clearReconnectTimer();
 
         try {
-            const status = await fetchRepoStatus(repoId, controller.signal);
+            const status = await fetchRepoStatus(accountSlug, repoId, controller.signal);
             if (controller.signal.aborted) return;
 
             renderStatus(status);
@@ -224,8 +238,8 @@ export function createRepoLoadingView({ repoId, navigateToPath, replacePath, onR
             }
             if (status.state === "error") return;
 
-            if (location.pathname !== getLoadingPath(repoId)) {
-                replacePath?.(getLoadingPath(repoId));
+            if (location.pathname !== buildHostedRepoLoadingPath(accountSlug, repoId)) {
+                replacePath?.(buildHostedRepoLoadingPath(accountSlug, repoId));
             }
             startProgressStream();
         } catch (error) {

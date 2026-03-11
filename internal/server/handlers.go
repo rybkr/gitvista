@@ -76,9 +76,13 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 
 	branches := repo.Branches()
 	tagNames := repo.TagNames()
+	repoName := repo.Name()
+	if hostedRepo, ok := hostedRepoFromCtx(r.Context()); ok && hostedRepo.DisplayName != "" {
+		repoName = hostedRepo.DisplayName
+	}
 
 	response := repositoryResponse{
-		Name:          repo.Name(),
+		Name:          repoName,
 		CurrentBranch: currentBranch,
 		HeadDetached:  repo.HeadDetached(),
 		HeadHash:      repo.Head(),

@@ -35,6 +35,13 @@ func requestWithSession(method, target string, session *RepoSession) *http.Reque
 	return req.WithContext(ctx)
 }
 
+func requestWithHostedRepo(method, target string, session *RepoSession, hostedRepo HostedRepo) *http.Request {
+	req := httptest.NewRequest(method, target, nil)
+	ctx := withSessionCtx(req.Context(), session)
+	ctx = withHostedRepoCtx(ctx, hostedRepo)
+	return req.WithContext(ctx)
+}
+
 func TestIsBinaryContent(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -166,6 +173,32 @@ func TestHandleRepository_NoSession(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleRepository_UsesHostedDisplayName(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	req := requestWithHostedRepo("GET", "/api/repository", session, HostedRepo{
+		ID:          "abc123",
+		DisplayName: "golang/example",
+	})
+	w := httptest.NewRecorder()
+
+	s.handleRepository(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var response repositoryResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if response.Name != "golang/example" {
+		t.Fatalf("name = %q, want %q", response.Name, "golang/example")
 	}
 }
 

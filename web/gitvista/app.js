@@ -36,6 +36,7 @@ export function clearRoot(root) {
 export function bootstrapGraph(root, options = {}) {
     const {
         repoId = null,
+        repoPathBuilder = null,
         navigateToPath = null,
         replacePath = null,
         parsePermalinkHash = null,
@@ -418,7 +419,7 @@ export function bootstrapGraph(root, options = {}) {
         },
         onCommitSelect: (hash) => {
             if (repoId) {
-                replacePath?.(hash ? `/repo/${repoId}/${hash}` : `/repo/${repoId}`);
+                replacePath?.(repoPathBuilder ? repoPathBuilder(repoId, hash) : (hash ? `/repo/${repoId}/${hash}` : `/repo/${repoId}`));
             } else {
                 // Local mode
                 if (hash) {

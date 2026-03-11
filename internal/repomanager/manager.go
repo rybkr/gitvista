@@ -245,7 +245,7 @@ func (rm *RepoManager) AddRepo(rawURL string) (string, error) {
 	now := time.Now()
 	managed := &ManagedRepo{
 		ID:         id,
-		URL:        rawURL,
+		URL:        normURL,
 		NormURL:    normURL,
 		State:      StatePending,
 		DiskPath:   filepath.Join(rm.cfg.DataDir, id),
@@ -264,6 +264,28 @@ func (rm *RepoManager) AddRepo(rawURL string) (string, error) {
 	}
 
 	return id, nil
+}
+
+// Info returns a read-only snapshot of a single managed repository.
+func (rm *RepoManager) Info(id string) (RepoInfo, error) {
+	rm.mu.RLock()
+	managed, exists := rm.repos[id]
+	rm.mu.RUnlock()
+	if !exists {
+		return RepoInfo{}, fmt.Errorf("repo not found: %s", id)
+	}
+
+	managed.mu.RLock()
+	defer managed.mu.RUnlock()
+	return RepoInfo{
+		ID:         managed.ID,
+		URL:        managed.URL,
+		State:      managed.State,
+		Error:      managed.Error,
+		CreatedAt:  managed.CreatedAt,
+		LastAccess: managed.LastAccess,
+		LastFetch:  managed.LastFetch,
+	}, nil
 }
 
 // GetRepo returns the loaded *gitcore.Repository for the given ID.

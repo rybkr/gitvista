@@ -1,3 +1,6 @@
+import { buildHostedRepoApiBase, buildHostedReposApiPath } from "../gitvista/routes.js";
+import { getHostedRepoAccess, listHostedRepoAccess, removeHostedRepoAccess, saveHostedRepoAccess } from "../site/hostedAccess.js";
+
 const DELETE_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
 </svg>`;
@@ -17,7 +20,7 @@ function normalizeRepoUrl(url) {
     return typeof url === "string" ? url.replace(/\/+$/, "") : "";
 }
 
-export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
+export function createRepoBrowser({ accountSlug = "personal", featuredRepos, onRepoSelect }) {
     let repos = [];
     let destroyed = false;
     const activeStreams = new Map();
@@ -42,8 +45,12 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
 
     function startProgressStream(id, onUpdate) {
         if (activeStreams.has(id)) return;
+        const access = getHostedRepoAccess(id);
+        if (!access?.accessToken) return;
 
-        const es = new EventSource(`/api/repos/${id}/progress`);
+        const url = new URL(`${buildHostedRepoApiBase(accountSlug, id)}/progress`, window.location.origin);
+        url.searchParams.set("access_token", access.accessToken);
+        const es = new EventSource(url.toString());
         activeStreams.set(id, es);
 
         es.onmessage = (event) => {
@@ -68,7 +75,9 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
 
         es.onerror = () => {
             destroyStream(id);
-            fetch(`/api/repos/${id}/status`)
+            fetch(`${buildHostedRepoApiBase(accountSlug, id)}/status`, {
+                headers: { "X-GitVista-Repo-Token": access.accessToken },
+            })
                 .then((resp) => resp.ok ? resp.json() : null)
                 .then((data) => {
                     if (destroyed || !data) return;
@@ -132,7 +141,7 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
             cta.innerHTML = `Open Live View ${ARROW_SVG}`;
             cta.addEventListener("click", (event) => {
                 event.stopPropagation();
-                onRepoSelect(state.id);
+                onRepoSelect(state.id, accountSlug);
             });
             action.appendChild(cta);
         } else if (state.state === "error") {
@@ -155,7 +164,7 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
         card.appendChild(desc);
         card.appendChild(action);
 
-        card.onclick = state.state === "ready" ? () => onRepoSelect(state.id) : null;
+        card.onclick = state.state === "ready" ? () => onRepoSelect(state.id, accountSlug) : null;
         if (!existing) featuredGrid.appendChild(card);
     }
 
@@ -196,14 +205,14 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
             item.appendChild(info);
             item.appendChild(deleteBtn);
             if (repo.state === "ready") {
-                item.addEventListener("click", () => onRepoSelect(repo.id));
+                item.addEventListener("click", () => onRepoSelect(repo.id, accountSlug));
             }
             heroRecentListEl.appendChild(item);
         }
     }
 
     async function createRepo(url) {
-        const resp = await fetch("/api/repos", {
+        const resp = await fetch(buildHostedReposApiPath(accountSlug), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url }),
@@ -212,7 +221,13 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
             const text = await resp.text();
             throw new Error(text || `HTTP ${resp.status}`);
         }
-        return resp.json();
+        const repo = await resp.json();
+        saveHostedRepoAccess({
+            id: repo.id,
+            url: repo.url,
+            accessToken: repo.accessToken,
+        });
+        return repo;
     }
 
     async function initFeaturedRepo(entry) {
@@ -254,8 +269,14 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
 
     async function deleteRepo(id) {
         try {
-            await fetch(`/api/repos/${id}`, { method: "DELETE" });
+            const access = getHostedRepoAccess(id);
+            if (!access?.accessToken) return;
+            await fetch(buildHostedRepoApiBase(accountSlug, id), {
+                method: "DELETE",
+                headers: { "X-GitVista-Repo-Token": access.accessToken },
+            });
             repos = repos.filter((repo) => repo.id !== id);
+            removeHostedRepoAccess(id);
             destroyStream(id);
             renderUserRepos();
         } catch {
@@ -326,27 +347,30 @@ export function createRepoBrowser({ featuredRepos, onRepoSelect }) {
         });
         Promise.allSettled(featuredRepos.map((entry) => initFeaturedRepo(entry)));
 
-        try {
-            const resp = await fetch("/api/repos");
-            if (!resp.ok) return;
-
-            const list = await resp.json();
-            if (destroyed) return;
-
-            for (const repo of list) {
-                addOrUpdateRepo(repo);
+        for (const access of listHostedRepoAccess()) {
+            try {
+                const resp = await fetch(`${buildHostedRepoApiBase(accountSlug, access.id)}/status`, {
+                    headers: { "X-GitVista-Repo-Token": access.accessToken },
+                });
+                if (!resp.ok) {
+                    removeHostedRepoAccess(access.id);
+                    continue;
+                }
+                const repo = await resp.json();
+                if (destroyed) return;
+                addOrUpdateRepo({ ...repo, url: access.url || repo.url });
                 if (repo.state === "cloning" || repo.state === "pending") {
                     startProgressStream(repo.id, (update) => {
                         if (destroyed) return;
-                        addOrUpdateRepo(update);
+                        addOrUpdateRepo({ ...update, url: access.url || repo.url });
                         renderUserRepos();
                     });
                 }
+            } catch {
+                // Ignore inaccessible session-local repos.
             }
-            renderUserRepos();
-        } catch {
-            // Silently fail initial load.
         }
+        renderUserRepos();
     }
 
     function destroy() {

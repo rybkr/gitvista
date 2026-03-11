@@ -131,6 +131,29 @@ func TestAddRepo_InvalidURL(t *testing.T) {
 	if err == nil {
 		t.Error("AddRepo('file://') should fail")
 	}
+
+}
+
+func TestAddRepo_StoresSanitizedURL(t *testing.T) {
+	cfg := testConfig(t)
+	rm, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rm.Close()
+
+	id, err := rm.AddRepo("https://github.com/user/repo.git/")
+	if err != nil {
+		t.Fatalf("AddRepo() error: %v", err)
+	}
+
+	info, err := rm.Info(id)
+	if err != nil {
+		t.Fatalf("Info() error: %v", err)
+	}
+	if info.URL != "https://github.com/user/repo" {
+		t.Fatalf("Info().URL = %q, want %q", info.URL, "https://github.com/user/repo")
+	}
 }
 
 func TestGetRepo_NotFound(t *testing.T) {

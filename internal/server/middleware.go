@@ -13,7 +13,10 @@ import (
 
 type contextKey int
 
-const sessionKey contextKey = iota
+const (
+	sessionKey contextKey = iota
+	hostedRepoKey
+)
 
 // apiWriteDeadline is the per-response write deadline for API handlers.
 const apiWriteDeadline = 30 * time.Second
@@ -23,11 +26,20 @@ func withSessionCtx(ctx context.Context, rs *RepoSession) context.Context {
 	return context.WithValue(ctx, sessionKey, rs)
 }
 
+func withHostedRepoCtx(ctx context.Context, repo HostedRepo) context.Context {
+	return context.WithValue(ctx, hostedRepoKey, repo)
+}
+
 // sessionFromCtx extracts the RepoSession from the request context.
 // Returns nil if no session is present.
 func sessionFromCtx(ctx context.Context) *RepoSession {
 	rs, _ := ctx.Value(sessionKey).(*RepoSession)
 	return rs
+}
+
+func hostedRepoFromCtx(ctx context.Context) (HostedRepo, bool) {
+	repo, ok := ctx.Value(hostedRepoKey).(HostedRepo)
+	return repo, ok
 }
 
 // withLocalSession wraps a handler to inject the given (local-mode) session

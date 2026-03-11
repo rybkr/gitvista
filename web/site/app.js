@@ -2,11 +2,12 @@ import { logger } from "../logger.js";
 import { initThemeToggle } from "../themeToggle.js";
 import { setApiBase } from "../apiBase.js";
 import { clearRoot, cleanupActiveView, bootstrapGraph } from "../gitvista/app.js";
-import { parseHostedPath } from "../gitvista/routes.js";
+import { buildHostedRepoApiBase, buildHostedRepoLoadingPath, buildHostedRepoPath, parseHostedPath } from "../gitvista/routes.js";
 import { createRepoLanding } from "./repoLanding.js";
 import { createDocsView } from "./docsView.js";
 import { createRepoLoadingView } from "./repoLoadingView.js";
 import { PRODUCT_INFO } from "./hostedProduct.js";
+import { getHostedRepoAccess } from "./hostedAccess.js";
 
 let activeViewCleanup = null;
 let navigationToken = 0;
@@ -36,7 +37,8 @@ document.addEventListener("DOMContentLoaded", () => {
         document.title = PRODUCT_INFO.name;
         let destroyed = false;
         const landing = createRepoLanding({
-            onRepoSelect: (id) => navigateToPath(`/repo/${id}/loading`),
+            accountSlug: parseHostedPath(location.pathname).accountSlug,
+            onRepoSelect: (id, accountSlug) => navigateToPath(buildHostedRepoLoadingPath(accountSlug, id)),
             onNavigate: navigateToPath,
         });
         root.appendChild(landing.el);
@@ -49,10 +51,10 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     };
 
-    const showRepoLoading = ({ repoId, navigateToPath, replacePath, onRouteChange, initialStatus }) => {
+    const showRepoLoading = ({ accountSlug, repoId, navigateToPath, replacePath, onRouteChange, initialStatus }) => {
         document.title = `${PRODUCT_INFO.name} Loading`;
         let destroyed = false;
-        const view = createRepoLoadingView({ repoId, navigateToPath, replacePath, onRouteChange, initialStatus });
+        const view = createRepoLoadingView({ accountSlug, repoId, navigateToPath, replacePath, onRouteChange, initialStatus });
         root.appendChild(view.el);
 
         return () => {
@@ -63,8 +65,14 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     };
 
-    const fetchRepoStatus = async (repoId) => {
-        const resp = await fetch(`/api/repos/${repoId}/status`);
+    const fetchRepoStatus = async (accountSlug, repoId) => {
+        const access = getHostedRepoAccess(repoId);
+        if (!access?.accessToken) {
+            throw new Error("This browser no longer has access to that repository.");
+        }
+        const resp = await fetch(`${buildHostedRepoApiBase(accountSlug, repoId)}/status`, {
+            headers: { "X-GitVista-Repo-Token": access.accessToken },
+        });
         if (!resp.ok) {
             let message = `Repository status request failed (${resp.status})`;
             try {
@@ -105,10 +113,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if ((parsed.page === "repo" || parsed.page === "repo-loading") && parsed.repoId) {
             let status = null;
             try {
-                status = await fetchRepoStatus(parsed.repoId);
+                status = await fetchRepoStatus(parsed.accountSlug, parsed.repoId);
             } catch (error) {
                 status = {
                     id: parsed.repoId,
+                    accountId: parsed.accountSlug,
                     state: "error",
                     error: error.message || "Unable to load repository status.",
                     phase: "",
@@ -119,12 +128,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (status.state === "ready") {
                 if (parsed.page === "repo-loading") {
-                    replaceHostedPath(`/repo/${parsed.repoId}`);
+                    replaceHostedPath(buildHostedRepoPath(parsed.accountSlug, parsed.repoId));
                 }
                 document.title = PRODUCT_INFO.name;
-                setApiBase(`/api/repos/${parsed.repoId}`);
+                setApiBase(
+                    buildHostedRepoApiBase(parsed.accountSlug, parsed.repoId),
+                    getHostedRepoAccess(parsed.repoId)?.accessToken || "",
+                );
                 mount(() => bootstrapGraph(root, {
                     repoId: parsed.repoId,
+                    repoPathBuilder: (repoId, hash) => buildHostedRepoPath(parsed.accountSlug, repoId, hash),
                     navigateToPath: navigateToHostedPath,
                     replacePath: replaceHostedPath,
                     parsePermalinkHash: () => parseHostedPath(location.pathname)?.commitHash || null,
@@ -134,10 +147,11 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             if (parsed.page === "repo") {
-                replaceHostedPath(`/repo/${parsed.repoId}/loading`);
+                replaceHostedPath(buildHostedRepoLoadingPath(parsed.accountSlug, parsed.repoId));
             }
-            setApiBase("");
+            setApiBase("", "");
             mount(() => showRepoLoading({
+                accountSlug: parsed.accountSlug,
                 repoId: parsed.repoId,
                 navigateToPath: navigateToHostedPath,
                 replacePath: replaceHostedPath,
@@ -149,7 +163,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         if (token !== navigationToken) return;
-        setApiBase("");
+        setApiBase("", "");
         if (parsed.page === "docs") {
             mount(() => showDocs(navigateToHostedPath, parsed.docsSection));
         } else {

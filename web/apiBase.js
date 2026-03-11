@@ -1,11 +1,17 @@
 let base = "/api"; // local mode default
+let repoToken = "";
 
-export function setApiBase(newBase) {
+export function setApiBase(newBase, nextRepoToken = "") {
     base = newBase;
+    repoToken = nextRepoToken;
 }
 
 export function getApiBase() {
     return base;
+}
+
+export function getRepoToken() {
+    return repoToken;
 }
 
 export function apiUrl(path) {
@@ -14,5 +20,9 @@ export function apiUrl(path) {
 
 export function wsUrl() {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
-    return `${protocol}://${location.host}${base}/ws`;
+    const url = new URL(`${protocol}://${location.host}${base}/ws`);
+    if (repoToken) {
+        url.searchParams.set("access_token", repoToken);
+    }
+    return url.toString();
 }
