@@ -36,6 +36,18 @@
       "file": "install.md"
     },
     {
+      "id": "cli",
+      "label": "CLI",
+      "title": "Open a repo, print the launch URL, or check your local setup from the command line.",
+      "file": "cli.md"
+    },
+    {
+      "id": "config",
+      "label": "Config",
+      "title": "Set defaults for local and hosted GitVista with environment variables and flag precedence.",
+      "file": "config.md"
+    },
+    {
       "id": "views",
       "label": "Views",
       "title": "Choose the right view before you drill into commits or files.",
@@ -46,12 +58,6 @@
       "label": "Limits",
       "title": "Know when to use hosted mode, local mode, or a quick diagnostic.",
       "file": "limits.md"
-    },
-    {
-      "id": "cli",
-      "label": "CLI",
-      "title": "Open a repo, print the launch URL, or check your local setup from the command line.",
-      "file": "cli.md"
     }
   ],
   "help": {

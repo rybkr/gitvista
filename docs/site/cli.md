@@ -28,10 +28,6 @@ git vista doctor
 - `--path` opens the file explorer focused on a repository path and falls back to `HEAD` if you did not also pick a commit.
 - `--no-browser` and `--print-url` apply to `git vista open`.
 
-## Environment defaults
+## Configuration
 
-- `GITVISTA_REPO` sets the default repository path.
-- `GITVISTA_PORT` sets the default port.
-- `GITVISTA_HOST` sets the default bind host.
-- `GITVISTA_LOG_LEVEL` sets the log level.
-- `GITVISTA_LOG_FORMAT` sets `text` or `json` logging.
+Environment-variable defaults live in the `Config` reference so command behavior and deployment settings stay separate. Use that page for flag precedence, local defaults, and hosted-mode variables.
