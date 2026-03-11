@@ -8955,8 +8955,8 @@ body {
 
 .repo-docs__toc-list {
     display: grid;
-    gap: 14px;
-    margin-top: 18px;
+    gap: 2px;
+    margin-top: 14px;
 }
 
 .repo-docs__sidebar-nav {
@@ -8985,37 +8985,30 @@ body {
 
 .repo-docs__toc-item {
     display: block;
-    padding: 22px 24px;
+    padding: 10px 0;
     color: inherit;
     text-decoration: none;
-    transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+    transition: color 180ms ease, transform 180ms ease;
 }
 
 .repo-docs__toc-item:hover,
 .repo-docs__toc-item:focus-visible {
-    transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--node-color) 24%, var(--border-color));
-    background: color-mix(in srgb, var(--surface-color) 95%, transparent);
+    color: var(--text-color);
+    transform: translateX(2px);
 }
 
 .repo-docs__toc-item-title {
-    font-family: var(--gv-font-display);
-    font-size: clamp(20px, 2vw, 26px);
-    line-height: 1.15;
-    max-width: 30ch;
+    display: block;
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--text-secondary);
 }
 
 .repo-docs__section-body {
     margin-top: 0;
     max-width: 62ch;
     line-height: 1.72;
-    color: var(--text-secondary);
-}
-
-.repo-docs__toc-item-summary {
-    margin-top: 12px;
-    max-width: 62ch;
-    line-height: 1.7;
     color: var(--text-secondary);
 }
 

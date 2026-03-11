@@ -165,14 +165,9 @@ function renderDocsSection(section, { headingTag = "h2" } = {}) {
 
 function renderDocsSectionCard(section, navigateToPath) {
     const article = createElement("a", "repo-docs__toc-item");
-    const parsed = parseSectionContent(section.content || "");
     bindHostedPathNavigation(article, getDocsSectionPath(section.id), navigateToPath);
 
-    article.appendChild(createElement("h3", "repo-docs__toc-item-title", section.title));
-
-    if (parsed.summary) {
-        article.appendChild(createElement("p", "repo-docs__toc-item-summary", parsed.summary));
-    }
+    article.appendChild(createElement("span", "repo-docs__toc-item-title", section.label));
 
     return article;
 }
