@@ -1583,15 +1583,41 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         } else {
             for (const row of rows.slice(0, 15)) {
                 const tr = document.createElement("tr");
-                tr.innerHTML = `
-                    <td class="analytics-hotspot-path">${row.path || "unknown"}</td>
-                    <td><span class="analytics-hotspot-risk is-${signalStatus(row.status)}">${Number(row.riskScore || 0)}</span></td>
-                    <td>${Number(row.churnCount || 0)}</td>
-                    <td>${Number(row.reworkRate || 0).toFixed(1)}%</td>
-                    <td>${Number(row.largeChangeShare || 0).toFixed(1)}%</td>
-                    <td title="${row.topAuthor || "unknown"}">${Number(row.topAuthorShare || 0).toFixed(1)}%</td>
-                    <td class="analytics-hotspot-rec">${row.recommendation || "Monitor changes."}</td>
-                `;
+
+                const pathCell = document.createElement("td");
+                pathCell.className = "analytics-hotspot-path";
+                pathCell.textContent = row.path || "unknown";
+                tr.appendChild(pathCell);
+
+                const riskCell = document.createElement("td");
+                const riskBadge = document.createElement("span");
+                riskBadge.className = `analytics-hotspot-risk is-${signalStatus(row.status)}`;
+                riskBadge.textContent = String(Number(row.riskScore || 0));
+                riskCell.appendChild(riskBadge);
+                tr.appendChild(riskCell);
+
+                const churnCell = document.createElement("td");
+                churnCell.textContent = String(Number(row.churnCount || 0));
+                tr.appendChild(churnCell);
+
+                const reworkCell = document.createElement("td");
+                reworkCell.textContent = `${Number(row.reworkRate || 0).toFixed(1)}%`;
+                tr.appendChild(reworkCell);
+
+                const largeCell = document.createElement("td");
+                largeCell.textContent = `${Number(row.largeChangeShare || 0).toFixed(1)}%`;
+                tr.appendChild(largeCell);
+
+                const ownerCell = document.createElement("td");
+                ownerCell.title = row.topAuthor || "unknown";
+                ownerCell.textContent = `${Number(row.topAuthorShare || 0).toFixed(1)}%`;
+                tr.appendChild(ownerCell);
+
+                const recommendationCell = document.createElement("td");
+                recommendationCell.className = "analytics-hotspot-rec";
+                recommendationCell.textContent = row.recommendation || "Monitor changes.";
+                tr.appendChild(recommendationCell);
+
                 hotspotBody.appendChild(tr);
             }
         }
