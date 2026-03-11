@@ -177,3 +177,25 @@ func TestCorsMiddleware_Preflight(t *testing.T) {
 		t.Error("expected Access-Control-Allow-Methods on preflight")
 	}
 }
+
+func TestSecurityHeadersMiddleware(t *testing.T) {
+	h := securityHeadersMiddleware(nopHandler)
+
+	req := httptest.NewRequest("GET", "/repo/test", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeHTTP(w, req)
+
+	if got := w.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'self'") {
+		t.Fatalf("Content-Security-Policy = %q", got)
+	}
+	if got := w.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q, want %q", got, "no-referrer")
+	}
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want %q", got, "nosniff")
+	}
+	if got := w.Header().Get("Permissions-Policy"); got == "" {
+		t.Fatal("Permissions-Policy header not set")
+	}
+}

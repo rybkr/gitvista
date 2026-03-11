@@ -15,9 +15,9 @@
  *   data-theme attribute, which is set by themeToggle.js.
  */
 
-const HLJS_CSS_DARK  = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css";
-const HLJS_CSS_LIGHT = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css";
-const HLJS_JS        = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js";
+const HLJS_CSS_DARK  = "/vendor/highlight/github-dark.min.css";
+const HLJS_CSS_LIGHT = "/vendor/highlight/github.min.css";
+const HLJS_JS        = "/vendor/highlight/highlight.min.js";
 
 // Stylesheet elements created once and reused across theme switches
 let darkLink  = null;

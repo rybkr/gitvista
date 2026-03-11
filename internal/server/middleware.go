@@ -146,3 +146,25 @@ func corsMiddleware(allowedOrigins map[string]bool, next http.Handler) http.Hand
 		next.ServeHTTP(w, r)
 	})
 }
+
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers := w.Header()
+		headers.Set("Content-Security-Policy", strings.Join([]string{
+			"default-src 'self'",
+			"script-src 'self'",
+			"style-src 'self'",
+			"img-src 'self' data:",
+			"font-src 'self' data:",
+			"connect-src 'self' ws: wss:",
+			"object-src 'none'",
+			"base-uri 'self'",
+			"frame-ancestors 'none'",
+			"form-action 'self'",
+		}, "; "))
+		headers.Set("Referrer-Policy", "no-referrer")
+		headers.Set("X-Content-Type-Options", "nosniff")
+		headers.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
+}

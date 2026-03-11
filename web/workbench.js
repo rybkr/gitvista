@@ -1,4 +1,4 @@
-import { createDockview } from "https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/dist/dockview-core.esm.js";
+import { createDockview } from "./vendor/dockview/dockview-core.esm.js";
 
 const STORAGE_KEY = "gitvista-workbench-dockview";
 const PANEL_COMPONENT = "gitvista-panel";

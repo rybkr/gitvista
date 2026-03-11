@@ -257,6 +257,7 @@ func (s *Server) Start() error {
 	if s.mode == ModeHosted {
 		handler = corsMiddleware(s.allowedOrigins, handler)
 	}
+	handler = securityHeadersMiddleware(handler)
 
 	s.httpServer = s.newHTTPServer(handler)
 
