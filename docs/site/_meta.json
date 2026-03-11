@@ -1,7 +1,7 @@
 {
-  "eyebrow": "Product Docs",
-  "title": "Understand the product before you start chasing commits.",
-  "lede": "Read this like a quick manual: what GitVista is for, when to use each mode, how the UI is organized, and which CLI commands matter.",
+  "eyebrow": "Documentation",
+  "title": "GitVista documentation",
+  "lede": "Reference material for the GitVista interface and CLI.",
   "primaryCta": {
     "label": "",
     "href": ""
@@ -29,6 +29,12 @@
     }
   ],
   "sections": [
+    {
+      "id": "install",
+      "label": "Install",
+      "title": "Install GitVista locally and open a repository from your shell.",
+      "file": "install.md"
+    },
     {
       "id": "views",
       "label": "Views",

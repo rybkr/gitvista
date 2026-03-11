@@ -1,6 +1,14 @@
 import { createHostedFooter, createHostedTopbar } from "./hostedChrome.js";
-import { PRODUCT_INFO } from "./hostedProduct.js";
 import { bindHostedPathNavigation } from "./hostedNavigation.js";
+
+const COPY_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M3 11V3a1.5 1.5 0 011.5-1.5H11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
+const CHECK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M3 8.5l3.5 3.5 6.5-8" stroke="var(--success-color)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
 
 function createElement(tagName, className, text) {
     const el = document.createElement(tagName);
@@ -18,7 +26,6 @@ export function createDocsView({ navigateToPath, activeSection = null } = {}) {
         navigateToPath,
         navItems: [
             { label: "Home", path: "/" },
-            { label: "Install", path: "/install" },
             { label: "Docs", path: "/docs" },
         ],
     }));
@@ -68,53 +75,87 @@ function renderDocs(content, docs, navigateToPath, activeSection) {
         return;
     }
 
-    const hero = createElement("section", activeSection ? "repo-docs__hero" : "repo-docs__hero repo-docs__hero--overview");
-    const heroCopy = createElement("div", "repo-docs__hero-copy");
-    heroCopy.appendChild(createElement("p", "repo-docs__eyebrow", activeSection ? "Docs Section" : (docs.eyebrow || "Product Docs")));
-    heroCopy.appendChild(createElement("h1", "repo-docs__title", activeSection ? selectedSection.title : (docs.title || `${PRODUCT_INFO.name} Docs`)));
-    heroCopy.appendChild(createElement("p", "repo-docs__lede", activeSection ? `Part of ${PRODUCT_INFO.name} Docs.` : (docs.lede || "")));
-
     if (activeSection) {
-        const context = createElement("div", "repo-docs__hero-meta");
-        const overviewLink = createElement("a", "repo-docs__context-link", "Back to docs overview");
-        bindHostedPathNavigation(overviewLink, "/docs", navigateToPath);
-        context.appendChild(overviewLink);
-        heroCopy.appendChild(context);
+        content.appendChild(renderDocsPage(selectedSection, docs.sections || [], navigateToPath));
+    } else {
+        content.appendChild(renderDocsOverview(docs, navigateToPath));
     }
+    content.appendChild(createHostedFooter());
+}
 
-    hero.appendChild(heroCopy);
+function renderDocsOverview(docs, navigateToPath) {
+    const layout = createElement("div", "repo-docs__page");
+    layout.appendChild(renderDocsSidebar(docs.sections || [], null, navigateToPath));
 
-    const nav = createElement("nav", "repo-docs__nav");
-    nav.setAttribute("aria-label", "Doc sections");
+    const main = createElement("div", "repo-docs__main");
+    const header = createElement("section", "repo-docs__header");
+    if (docs.eyebrow) {
+        header.appendChild(createElement("p", "repo-docs__eyebrow", docs.eyebrow));
+    }
+    header.appendChild(createElement("h1", "repo-docs__title", docs.title || "Documentation"));
+    if (docs.lede) {
+        header.appendChild(createElement("p", "repo-docs__lede", docs.lede));
+    }
+    main.appendChild(header);
 
-    const overviewLink = createElement("a", "repo-docs__nav-link", "Overview");
-    if (!activeSection) overviewLink.setAttribute("aria-current", "page");
+    const toc = createElement("section", "repo-docs__toc");
+    toc.appendChild(createElement("h2", "repo-docs__toc-title", "Table of contents"));
+    const tocList = createElement("div", "repo-docs__toc-list");
+    for (const section of docs.sections || []) {
+        tocList.appendChild(renderDocsSectionCard(section, navigateToPath));
+    }
+    toc.appendChild(tocList);
+    main.appendChild(toc);
+
+    layout.appendChild(main);
+    return layout;
+}
+
+function renderDocsPage(section, sections, navigateToPath) {
+    const layout = createElement("div", "repo-docs__page");
+    layout.appendChild(renderDocsSidebar(sections, section.id, navigateToPath));
+
+    const main = createElement("div", "repo-docs__main");
+    const header = createElement("section", "repo-docs__header repo-docs__header--page");
+    header.appendChild(createElement("p", "repo-docs__eyebrow", section.label));
+    header.appendChild(createElement("h1", "repo-docs__title", section.title));
+    const backLink = createElement("a", "repo-docs__context-link", "Back to overview");
+    bindHostedPathNavigation(backLink, "/docs", navigateToPath);
+    const headerMeta = createElement("div", "repo-docs__header-meta");
+    headerMeta.appendChild(backLink);
+    header.appendChild(headerMeta);
+    main.appendChild(header);
+    main.appendChild(renderDocsSection(section, { headingTag: "h2" }));
+    layout.appendChild(main);
+
+    return layout;
+}
+
+function renderDocsSidebar(sections, activeSectionID, navigateToPath) {
+    const sidebar = createElement("aside", "repo-docs__sidebar");
+    sidebar.setAttribute("aria-label", "Documentation navigation");
+    sidebar.appendChild(createElement("p", "repo-docs__sidebar-label", "Contents"));
+
+    const nav = createElement("nav", "repo-docs__sidebar-nav");
+    const overviewLink = createElement("a", "repo-docs__sidebar-link", "Overview");
+    if (!activeSectionID) overviewLink.setAttribute("aria-current", "page");
     bindHostedPathNavigation(overviewLink, "/docs", navigateToPath);
     nav.appendChild(overviewLink);
 
-    const sections = createElement("div", activeSection ? "repo-docs__sections repo-docs__sections--single" : "repo-docs__sections repo-docs__sections--overview");
-    for (const section of docs.sections || []) {
-        const navLink = createElement("a", "repo-docs__nav-link", section.label);
-        if (section.id === activeSection) navLink.setAttribute("aria-current", "page");
-        bindHostedPathNavigation(navLink, getDocsSectionPath(section.id), navigateToPath);
+    for (const entry of sections) {
+        const navLink = createElement("a", "repo-docs__sidebar-link", entry.label);
+        if (entry.id === activeSectionID) navLink.setAttribute("aria-current", "page");
+        bindHostedPathNavigation(navLink, getDocsSectionPath(entry.id), navigateToPath);
         nav.appendChild(navLink);
-
-        if (!activeSection || section.id === activeSection) {
-            sections.appendChild(activeSection ? renderDocsSection(section) : renderDocsSectionCard(section, navigateToPath));
-        }
     }
 
-    content.appendChild(hero);
-    content.appendChild(nav);
-    content.appendChild(sections);
-    content.appendChild(createHostedFooter());
+    sidebar.appendChild(nav);
+    return sidebar;
 }
 
 function renderDocsSection(section, { headingTag = "h2" } = {}) {
     const article = createElement("section", "repo-docs__section");
     article.id = section.id;
-    article.appendChild(createElement("p", "repo-docs__section-label", section.label));
-    article.appendChild(createElement(headingTag, "repo-docs__section-title", section.title));
 
     const body = createElement("div", "repo-docs__section-body");
     renderMarkdown(body, section.content || "");
@@ -123,31 +164,15 @@ function renderDocsSection(section, { headingTag = "h2" } = {}) {
 }
 
 function renderDocsSectionCard(section, navigateToPath) {
-    const article = createElement("section", "repo-docs__section repo-docs__section--card");
+    const article = createElement("a", "repo-docs__toc-item");
     const parsed = parseSectionContent(section.content || "");
+    bindHostedPathNavigation(article, getDocsSectionPath(section.id), navigateToPath);
 
-    article.appendChild(createElement("p", "repo-docs__section-label", section.label));
-    article.appendChild(createElement("h2", "repo-docs__section-title", section.title));
+    article.appendChild(createElement("h3", "repo-docs__toc-item-title", section.title));
 
     if (parsed.summary) {
-        article.appendChild(createElement("p", "repo-docs__section-preview", parsed.summary));
+        article.appendChild(createElement("p", "repo-docs__toc-item-summary", parsed.summary));
     }
-
-    if (parsed.points.length > 0) {
-        const list = createElement("ul", "repo-docs__point-list repo-docs__point-list--compact");
-        for (const point of parsed.points.slice(0, 3)) {
-            const item = createElement("li", "repo-docs__point");
-            appendInlineContent(item, point);
-            list.appendChild(item);
-        }
-        article.appendChild(list);
-    }
-
-    const footer = createElement("div", "repo-docs__section-footer");
-    const link = createElement("a", "repo-docs__context-link", "Open section");
-    bindHostedPathNavigation(link, getDocsSectionPath(section.id), navigateToPath);
-    footer.appendChild(link);
-    article.appendChild(footer);
 
     return article;
 }
@@ -178,16 +203,9 @@ function getDocsSectionPath(sectionID) {
 
 function parseSectionContent(markdown) {
     const blocks = parseMarkdownBlocks(markdown);
-
     const paragraphs = [];
-    const points = [];
 
     for (const block of blocks) {
-        if (block.type === "list") {
-            const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
-            for (const line of lines) points.push(line.slice(2));
-            continue;
-        }
         if (block.type !== "paragraph") continue;
         const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
         paragraphs.push(lines.join(" "));
@@ -196,7 +214,6 @@ function parseSectionContent(markdown) {
     return {
         summary: paragraphs[0] || "",
         paragraphs,
-        points,
     };
 }
 
@@ -204,12 +221,12 @@ function renderMarkdown(container, markdown) {
     const blocks = parseMarkdownBlocks(markdown);
 
     for (const block of blocks) {
-        if (block.type === "list") {
+        if (block.type === "ulist" || block.type === "olist") {
             const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
-            const list = createElement("ul", "repo-docs__point-list");
+            const list = createElement(block.type === "olist" ? "ol" : "ul", "repo-docs__list");
             for (const line of lines) {
-                const item = createElement("li", "repo-docs__point");
-                appendInlineContent(item, line.slice(2));
+                const item = createElement("li", "repo-docs__list-item");
+                appendInlineContent(item, stripListMarker(line));
                 list.appendChild(item);
             }
             container.appendChild(list);
@@ -220,7 +237,9 @@ function renderMarkdown(container, markdown) {
             const pre = createElement("pre", "repo-docs__code");
             const code = document.createElement("code");
             code.textContent = block.content;
+            const copyBtn = createCopyButton(block.content);
             pre.appendChild(code);
+            pre.appendChild(copyBtn);
             container.appendChild(pre);
             continue;
         }
@@ -243,6 +262,30 @@ function appendInlineContent(parent, text) {
         }
         parent.appendChild(document.createTextNode(part));
     }
+}
+
+function createCopyButton(text) {
+    const btn = createElement("button", "repo-docs__copy-btn");
+    btn.type = "button";
+    btn.title = "Copy command";
+    btn.setAttribute("aria-label", "Copy command");
+    btn.innerHTML = COPY_SVG;
+    btn.addEventListener("click", async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            btn.innerHTML = CHECK_SVG;
+            window.setTimeout(() => {
+                btn.innerHTML = COPY_SVG;
+            }, 2000);
+        } catch {
+            // Clipboard API may be unavailable.
+        }
+    });
+    return btn;
+}
+
+function stripListMarker(line) {
+    return String(line).replace(/^(?:- |\d+\.\s+)/, "");
 }
 
 function parseMarkdownBlocks(markdown) {
@@ -282,7 +325,19 @@ function parseMarkdownBlocks(markdown) {
                 items.push(current);
                 index += 1;
             }
-            blocks.push({ type: "list", content: items.join("\n") });
+            blocks.push({ type: "ulist", content: items.join("\n") });
+            continue;
+        }
+
+        if (/^\d+\.\s+/.test(trimmed)) {
+            const items = [];
+            while (index < lines.length) {
+                const current = lines[index].trim();
+                if (!/^\d+\.\s+/.test(current)) break;
+                items.push(current);
+                index += 1;
+            }
+            blocks.push({ type: "olist", content: items.join("\n") });
             continue;
         }
 
@@ -293,7 +348,7 @@ function parseMarkdownBlocks(markdown) {
                 index += 1;
                 break;
             }
-            if (current.startsWith("```") || current.startsWith("- ")) break;
+            if (current.startsWith("```") || current.startsWith("- ") || /^\d+\.\s+/.test(current)) break;
             paragraphLines.push(current);
             index += 1;
         }

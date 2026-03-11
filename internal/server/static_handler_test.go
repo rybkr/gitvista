@@ -43,6 +43,7 @@ func TestStaticHandler_ServesSPAForFrontendRoutes(t *testing.T) {
 	tests := []string{
 		"/",
 		"/docs",
+		"/docs/install",
 		"/docs/hosted",
 		"/docs/local",
 		"/repo/test-repo",

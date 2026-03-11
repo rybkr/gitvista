@@ -5,7 +5,6 @@ import { clearRoot, cleanupActiveView, bootstrapGraph } from "../gitvista/app.js
 import { parseHostedPath } from "../gitvista/routes.js";
 import { createRepoLanding } from "./repoLanding.js";
 import { createDocsView } from "./docsView.js";
-import { createInstallView } from "./installView.js";
 import { createRepoLoadingView } from "./repoLoadingView.js";
 import { PRODUCT_INFO } from "./hostedProduct.js";
 
@@ -93,20 +92,6 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     };
 
-    const showInstall = (navigateToPath) => {
-        document.title = `${PRODUCT_INFO.name} Install`;
-        let destroyed = false;
-        const install = createInstallView({ navigateToPath });
-        root.appendChild(install.el);
-
-        return () => {
-            if (destroyed) return;
-            destroyed = true;
-            install.destroy();
-            install.el.remove();
-        };
-    };
-
     const navigateToHostedPath = (path) => {
         const nextPath = typeof path === "string" && path ? path : "/";
         if (location.pathname === nextPath && !location.search && !location.hash) return;
@@ -165,9 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (token !== navigationToken) return;
         setApiBase("");
-        if (parsed.page === "install") {
-            mount(() => showInstall(navigateToHostedPath));
-        } else if (parsed.page === "docs") {
+        if (parsed.page === "docs") {
             mount(() => showDocs(navigateToHostedPath, parsed.docsSection));
         } else {
             mount(() => showLanding(navigateToHostedPath));

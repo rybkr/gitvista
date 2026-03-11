@@ -50,7 +50,6 @@ export function createRepoLoadingView({ repoId, navigateToPath, replacePath, onR
         navigateToPath,
         navItems: [
             { label: "Home", path: "/" },
-            { label: "Install", path: "/install" },
             { label: "Docs", path: "/docs" },
         ],
     }));

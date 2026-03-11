@@ -46,7 +46,6 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
         brandAction: () => scrollToSection(hero, { focus: input }),
         navItems: [
             { label: "Home", path: "/" },
-            { label: "Install", path: "/install" },
             { label: "Docs", path: "/docs" },
         ],
     });
@@ -147,7 +146,7 @@ export function createRepoLanding({ onRepoSelect, onNavigate }) {
 
     const installLink = createElement("a", "repo-install__docs-link");
     installLink.textContent = "Open the setup page";
-    bindHostedPathNavigation(installLink, "/install", onNavigate);
+    bindHostedPathNavigation(installLink, "/docs/install", onNavigate);
     installSection.appendChild(installLink);
 
     const footer = createHostedFooter();
