@@ -10,11 +10,11 @@ import (
 // Command describes a single CLI subcommand.
 type Command struct {
 	Name      string
-	Summary   string   // one-line description for help listing
-	Usage     string   // full usage string for per-command help
-	Examples  []string // example invocations
+	Summary   string
+	Usage     string
+	Examples  []string
 	Run       func(args []string) int
-	NeedsRepo bool // whether the command requires a loaded repository
+	NeedsRepo bool
 }
 
 // App is a lightweight CLI application with subcommand dispatch.
@@ -23,7 +23,7 @@ type App struct {
 	Version  string
 	Stderr   io.Writer
 	commands map[string]*Command
-	order    []string // insertion order preserved for help
+	order    []string
 }
 
 // NewApp creates a new App with the given name and version.
@@ -62,10 +62,10 @@ func (a *App) CommandNames() []string {
 // Run dispatches args to the appropriate command. It returns an exit code.
 //
 // Dispatch rules:
-//  1. Empty args → print app help to stderr, return 1
-//  2. "help" / "-h" / "--help" → print app or per-command help, return 0
-//  3. Known command → intercept -h/--help in sub-args, else call cmd.Run
-//  4. Unknown command → error + suggestion + hint, return 1
+//  1. Empty args -> print app help to stderr, return 1
+//  2. "help" / "-h" / "--help" -> print app or per-command help, return 0
+//  3. Known command -> intercept -h/--help in sub-args, else call cmd.Run
+//  4. Unknown command -> error + suggestion + hint, return 1
 func (a *App) Run(args []string, cw *Writer) int {
 	if len(args) == 0 {
 		FormatAppHelp(a, cw)

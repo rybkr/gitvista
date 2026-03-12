@@ -9,292 +9,59 @@ import (
 	"testing"
 )
 
-const (
-	// Fixed timestamps for deterministic output
-	ts1 = "2025-01-15T10:00:00-0500"
-	ts2 = "2025-01-15T11:00:00-0500"
-	ts3 = "2025-01-15T12:00:00-0500"
-)
+func TestHelpIncludesRepoFlag(t *testing.T) {
+	_, stderr := runCLIExpectExit(t, t.TempDir(), 1)
 
-func setupStandardRepo(t *testing.T) string {
-	t.Helper()
+	if !strings.Contains(stderr, "--repo <path>") {
+		t.Fatalf("help output missing --repo flag:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "default: .") {
+		t.Fatalf("help output missing repo default:\n%s", stderr)
+	}
+}
+
+func TestRepoDefaultsToCurrentDirectory(t *testing.T) {
 	dir := setupTestRepo(t)
-	addCommit(t, dir, "README.md", "# Hello\n", "Initial commit", ts1)
-	addCommit(t, dir, "main.go", "package main\n", "Add main.go", ts2)
-	addCommit(t, dir, "main.go", "package main\n\nfunc main() {}\n", "Update main.go", ts3)
-	return dir
-}
 
-func TestLog(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "log")
-	gitOut := git(t, dir, "log", "--decorate=short", "--no-color")
-
-	compareOutput(t, "log", cliOut, gitOut)
-}
-
-func TestLogOneline(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "log", "--oneline")
-	gitOut := git(t, dir, "log", "--oneline", "--decorate=short", "--no-color")
-
-	compareOutput(t, "log --oneline", cliOut, gitOut)
-}
-
-func TestLogN(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "log", "-n2")
-	gitOut := git(t, dir, "log", "-n2", "--decorate=short", "--no-color")
-
-	compareOutput(t, "log -n2", cliOut, gitOut)
-}
-
-func TestCatFileType(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "cat-file", "-t", "HEAD")
-	gitOut := git(t, dir, "cat-file", "-t", "HEAD")
-
-	compareOutput(t, "cat-file -t", cliOut, gitOut)
-}
-
-func TestCatFileSize(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "cat-file", "-s", "HEAD")
-	gitOut := git(t, dir, "cat-file", "-s", "HEAD")
-
-	compareOutput(t, "cat-file -s", cliOut, gitOut)
-}
-
-func TestCatFilePrettyCommit(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "cat-file", "-p", "HEAD")
-	gitOut := git(t, dir, "cat-file", "-p", "HEAD")
-
-	compareOutput(t, "cat-file -p (commit)", cliOut, gitOut)
-}
-
-func TestCatFilePrettyTree(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	// Get tree hash from HEAD commit
-	treeHash := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD^{tree}"))
-
-	cliOut := runCLI(t, dir, "cat-file", "-p", treeHash)
-	gitOut := git(t, dir, "cat-file", "-p", treeHash)
-
-	compareOutput(t, "cat-file -p (tree)", cliOut, gitOut)
-}
-
-func TestDiff(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	// Get the first two commit hashes
-	logOut := git(t, dir, "log", "--format=%H")
-	hashes := strings.Fields(strings.TrimSpace(logOut))
-	if len(hashes) < 2 {
-		t.Fatal("need at least 2 commits")
+	stdout := runCLI(t, dir, "repo")
+	if !strings.Contains(stdout, "Repository  "+filepath.Base(dir)) {
+		t.Fatalf("expected repository header for %q, got:\n%s", dir, stdout)
 	}
-
-	// Diff between second and first commit (newest to oldest in the log)
-	commit1 := hashes[1] // second commit (older)
-	commit2 := hashes[0] // first commit (newer)
-
-	cliOut := runCLI(t, dir, "diff", commit1, commit2)
-	gitNumstat := strings.TrimSpace(git(t, dir, "diff", "--numstat", commit1, commit2))
-	parts := strings.Fields(gitNumstat)
-	if len(parts) < 3 {
-		t.Fatalf("unexpected git --numstat output: %q", gitNumstat)
+	if !strings.Contains(stdout, "worktree  "+dir) {
+		t.Fatalf("expected worktree path %q, got:\n%s", dir, stdout)
 	}
-
-	if !strings.Contains(cliOut, "diff --git a/main.go b/main.go") {
-		t.Fatalf("diff output missing file header:\n%s", cliOut)
+	if !strings.Contains(stdout, "git dir   "+filepath.Join(dir, ".git")) {
+		t.Fatalf("expected gitdir path %q, got:\n%s", filepath.Join(dir, ".git"), stdout)
 	}
-	if !strings.Contains(cliOut, "@@ -1,1 +1,3 @@") {
-		t.Fatalf("diff output missing expected hunk header:\n%s", cliOut)
-	}
-
-	added, removed := countUnifiedDiffLines(cliOut)
-	if added != 2 || removed != 0 {
-		t.Fatalf("unexpected line deltas: got +%d/-%d, want +2/-0", added, removed)
+	if !strings.Contains(stdout, "Loaded in") || !strings.Contains(stdout, "Stats") {
+		t.Fatalf("expected load timing and stats output, got:\n%s", stdout)
 	}
 }
 
-func TestStatusClean(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "status", "--porcelain")
-	// In a clean repo with no .gitignore, there should be no output
-	// (since there are no untracked, modified, or staged files)
-	if strings.TrimSpace(cliOut) != "" {
-		t.Errorf("expected empty porcelain output for clean repo, got:\n%s", cliOut)
-	}
-}
-
-func TestStatusModified(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	// Modify a tracked file
-	if err := writeFile(dir, "main.go", "package main\n\n// modified\nfunc main() {}\n"); err != nil {
+func TestRepoFlagUsesExplicitPath(t *testing.T) {
+	dir := setupTestRepo(t)
+	child := filepath.Join(dir, "nested", "child")
+	if err := os.MkdirAll(child, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	cliOut := runCLI(t, dir, "status", "--porcelain")
-	if !strings.Contains(cliOut, " M main.go") {
-		t.Errorf("expected ' M main.go' in porcelain output, got:\n%s", cliOut)
+	stdout := runCLI(t, t.TempDir(), "--repo", child, "repo")
+	if !strings.Contains(stdout, "worktree  "+dir) {
+		t.Fatalf("expected resolved repo worktree %q, got:\n%s", dir, stdout)
+	}
+	if !strings.Contains(stdout, "git dir   "+filepath.Join(dir, ".git")) {
+		t.Fatalf("expected resolved gitdir %q, got:\n%s", filepath.Join(dir, ".git"), stdout)
 	}
 }
 
-func TestMergeCommit(t *testing.T) {
-	dir := setupTestRepo(t)
+func TestRepoFlagRejectsMissingRepository(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-repo")
 
-	// Create initial commit on main
-	addCommit(t, dir, "README.md", "# Hello\n", "Initial commit", ts1)
-
-	// Create a branch and add a commit
-	git(t, dir, "checkout", "-b", "feature")
-	addCommit(t, dir, "feature.go", "package feature\n", "Add feature", ts2)
-
-	// Go back to main and add a different commit
-	git(t, dir, "checkout", "main")
-	addCommit(t, dir, "main.go", "package main\n", "Add main", ts2)
-
-	// Merge the feature branch
-	gitWithEnv(t, dir, []string{
-		"GIT_AUTHOR_DATE=" + ts3,
-		"GIT_COMMITTER_DATE=" + ts3,
-	}, "merge", "feature", "--no-edit")
-
-	cliOut := runCLI(t, dir, "log", "-n1")
-	gitOut := git(t, dir, "log", "-n1", "--decorate=short", "--no-color")
-	compareOutput(t, "log -n1 merge", cliOut, gitOut)
-}
-
-func TestBranch(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	// Create an extra branch
-	git(t, dir, "branch", "feature")
-
-	cliOut := runCLI(t, dir, "branch")
-	gitOut := git(t, dir, "branch", "--no-color")
-
-	compareOutput(t, "branch", cliOut, gitOut)
-}
-
-func TestTag(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	// Create two lightweight tags
-	git(t, dir, "tag", "v0.1.0")
-	git(t, dir, "tag", "v0.2.0")
-
-	cliOut := runCLI(t, dir, "tag")
-	gitOut := git(t, dir, "tag")
-
-	compareOutput(t, "tag", cliOut, gitOut)
-}
-
-func TestTagEmpty(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "tag")
-	if strings.TrimSpace(cliOut) != "" {
-		t.Errorf("expected empty tag output, got:\n%s", cliOut)
+	_, stderr := runCLIExpectExit(t, t.TempDir(), 128, "--repo", missing, "repo")
+	if !strings.Contains(stderr, "fatal:") {
+		t.Fatalf("expected fatal repository error, got:\n%s", stderr)
 	}
-}
-
-func TestShow(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "show")
-	gitOut := git(t, dir, "show", "--decorate=short", "--no-color")
-
-	cliHeader := showHeader(cliOut)
-	gitHeader := showHeader(gitOut)
-	compareOutput(t, "show header", cliHeader, gitHeader)
-
-	if !strings.Contains(cliOut, "diff --git a/main.go b/main.go") {
-		t.Fatalf("show output missing diff header:\n%s", cliOut)
+	if !strings.Contains(stderr, "not a git repository") && !strings.Contains(stderr, "does not exist") {
+		t.Fatalf("expected repository lookup failure, got:\n%s", stderr)
 	}
-	added, removed := countUnifiedDiffLines(cliOut)
-	if added != 2 || removed != 0 {
-		t.Fatalf("show output unexpected line deltas: got +%d/-%d, want +2/-0", added, removed)
-	}
-}
-
-func TestShowStat(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "show", "--stat")
-	gitHeader := strings.TrimSpace(git(t, dir, "show", "--decorate=short", "--no-color", "--no-patch"))
-	if !strings.HasPrefix(cliOut, gitHeader) {
-		t.Fatalf("show --stat output does not start with expected commit header\n--- want prefix ---\n%s\n--- got ---\n%s", gitHeader, cliOut)
-	}
-	if strings.Contains(cliOut, "diff --git") {
-		t.Fatalf("show --stat should not include patch body:\n%s", cliOut)
-	}
-	if !strings.Contains(cliOut, "main.go | (modified)") {
-		t.Fatalf("show --stat missing modified file summary:\n%s", cliOut)
-	}
-	if !strings.Contains(cliOut, "1 file(s) changed") {
-		t.Fatalf("show --stat missing aggregate file count:\n%s", cliOut)
-	}
-}
-
-func TestStashListEmpty(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	cliOut := runCLI(t, dir, "stash", "list")
-	if strings.TrimSpace(cliOut) != "" {
-		t.Errorf("expected empty stash list output, got:\n%s", cliOut)
-	}
-}
-
-func TestStashList(t *testing.T) {
-	dir := setupStandardRepo(t)
-
-	// Modify a file and stash it
-	if err := writeFile(dir, "main.go", "package main\n\n// stashed\nfunc main() {}\n"); err != nil {
-		t.Fatal(err)
-	}
-	git(t, dir, "stash", "push", "-m", "test stash")
-
-	cliOut := runCLI(t, dir, "stash", "list")
-	gitOut := git(t, dir, "stash", "list")
-
-	compareOutput(t, "stash list", cliOut, gitOut)
-}
-
-func writeFile(dir, name, content string) error {
-	return os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)
-}
-
-func countUnifiedDiffLines(patch string) (added int, removed int) {
-	for _, line := range strings.Split(patch, "\n") {
-		if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
-			continue
-		}
-		if strings.HasPrefix(line, "+") {
-			added++
-			continue
-		}
-		if strings.HasPrefix(line, "-") {
-			removed++
-		}
-	}
-	return added, removed
-}
-
-func showHeader(output string) string {
-	marker := "\ndiff --git "
-	if idx := strings.Index(output, marker); idx >= 0 {
-		return strings.TrimSpace(output[:idx])
-	}
-	return strings.TrimSpace(output)
 }

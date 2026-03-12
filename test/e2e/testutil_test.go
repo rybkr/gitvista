@@ -115,7 +115,7 @@ func gitWithEnv(t *testing.T, dir string, env []string, args ...string) string {
 func runCLI(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(binaryPath, args...)
-	cmd.Env = append(os.Environ(), "GIT_DIR="+filepath.Join(dir, ".git"))
+	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -123,6 +123,29 @@ func runCLI(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("gitvista-cli %s failed: %v\nstderr: %s", strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.String()
+}
+
+func runCLIExpectExit(t *testing.T, dir string, code int, args ...string) (string, string) {
+	t.Helper()
+	cmd := exec.Command(binaryPath, args...)
+	cmd.Dir = dir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		t.Fatalf("gitvista-cli %s exited successfully, want %d", strings.Join(args, " "), code)
+	}
+
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("gitvista-cli %s returned non-exit error: %v", strings.Join(args, " "), err)
+	}
+	if exitErr.ExitCode() != code {
+		t.Fatalf("gitvista-cli %s exit code = %d, want %d\nstderr: %s", strings.Join(args, " "), exitErr.ExitCode(), code, stderr.String())
+	}
+
+	return stdout.String(), stderr.String()
 }
 
 // compareOutput compares two outputs and fails the test if they differ.
