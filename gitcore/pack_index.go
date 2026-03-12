@@ -1,11 +1,11 @@
 package gitcore
 
 import (
-    "fmt"
-    "encoding/binary"
-    "io"
-    "os"
-    "strings"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"os"
+	"strings"
 )
 
 // See: https://git-scm.com/docs/pack-format#_version_2_pack_idx_files_support_packs_larger_than_4_gib_and
@@ -219,4 +219,3 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 
 	return idx, nil
 }
-

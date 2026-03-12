@@ -307,7 +307,7 @@ func TestApplyDelta_CopyExceedsBase(t *testing.T) {
 
 	delta.WriteByte(0x91)
 	delta.WriteByte(0x00)
-	delta.WriteByte(0x0A)// size = 10
+	delta.WriteByte(0x0A) // size = 10
 
 	_, err := applyDelta(base, delta.Bytes())
 	if err == nil {
@@ -444,7 +444,8 @@ func TestReadPackObject_DeltaChainWithinLimit(t *testing.T) {
 	targetContent = append(targetContent, []byte(" extra")...)
 
 	var deltaPayload bytes.Buffer
-	deltaPayload.WriteByte(18)                       // source size
+	deltaPayload.WriteByte(18) // source size
+	//nolint:gosec // Test fixture keeps targetContent length within a single-byte varint.
 	deltaPayload.WriteByte(byte(len(targetContent))) // target size = 24
 	// Copy 18 bytes from offset 0: cmd=0x91, offset=0, size=18
 	deltaPayload.WriteByte(0x91)

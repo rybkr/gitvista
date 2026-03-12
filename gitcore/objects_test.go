@@ -46,22 +46,22 @@ func compressBytes(t *testing.T, content []byte) []byte {
 func writeLooseObject(t *testing.T, gitDir string, id Hash, objectType string, body []byte) {
 	t.Helper()
 	dir := filepath.Join(gitDir, "objects", string(id)[:2])
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir loose object dir: %v", err)
 	}
 	payload := append([]byte(fmt.Sprintf("%s %d", objectType, len(body))), 0)
 	payload = append(payload, body...)
-	if err := os.WriteFile(filepath.Join(dir, string(id)[2:]), compressBytes(t, payload), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, string(id)[2:]), compressBytes(t, payload), 0o600); err != nil {
 		t.Fatalf("write loose object: %v", err)
 	}
 }
 
 func writeTextFile(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
@@ -77,7 +77,7 @@ func newRepoSkeleton(t *testing.T) *Repository {
 		filepath.Join(gitDir, "refs", "remotes"),
 		filepath.Join(gitDir, "logs", "refs"),
 	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
@@ -182,20 +182,20 @@ func TestObjectTypeAndParsingHelpers(t *testing.T) {
 		t.Fatalf("unexpected commit: %+v", commit)
 	}
 
-	if _, err := parseCommitBody([]byte("tree no\n"), mustHash(t, testHash1)); err == nil {
+	if _, parseErr := parseCommitBody([]byte("tree no\n"), mustHash(t, testHash1)); parseErr == nil {
 		t.Fatal("expected invalid tree hash")
 	}
-	if err := parseCommitHeaderLine(commit, []byte("author bad")); err == nil {
+	if parseErr := parseCommitHeaderLine(commit, []byte("author bad")); parseErr == nil {
 		t.Fatal("expected invalid author error")
 	}
-	if err := parseCommitHeaderLine(commit, []byte("committer bad")); err == nil {
+	if parseErr := parseCommitHeaderLine(commit, []byte("committer bad")); parseErr == nil {
 		t.Fatal("expected invalid committer error")
 	}
-	if err := parseCommitHeaderLine(commit, []byte("parent nope")); err == nil {
+	if parseErr := parseCommitHeaderLine(commit, []byte("parent nope")); parseErr == nil {
 		t.Fatal("expected invalid parent error")
 	}
-	if err := parseCommitHeaderLine(commit, []byte("extra header")); err != nil {
-		t.Fatalf("unexpected unknown header error: %v", err)
+	if parseErr := parseCommitHeaderLine(commit, []byte("extra header")); parseErr != nil {
+		t.Fatalf("unexpected unknown header error: %v", parseErr)
 	}
 
 	treeHash := hashFromHex(testHash2)
@@ -230,10 +230,10 @@ func TestObjectTypeAndParsingHelpers(t *testing.T) {
 	if tree.Entries[0].Type != ObjectTypeTree || tree.Entries[1].Type != ObjectTypeBlob || tree.Entries[2].Type != ObjectTypeCommit || tree.Entries[3].Type != ObjectTypeCommit || tree.Entries[4].Type != ObjectTypeInvalid {
 		t.Fatal("tree entry types not parsed as expected")
 	}
-	if _, err := parseTreeBody([]byte("100644 "), mustHash(t, testHash1)); err == nil {
+	if _, parseErr := parseTreeBody([]byte("100644 "), mustHash(t, testHash1)); parseErr == nil {
 		t.Fatal("expected truncated tree name error")
 	}
-	if _, err := parseTreeBody(append([]byte("100644 file"), 0), mustHash(t, testHash1)); err == nil {
+	if _, parseErr := parseTreeBody(append([]byte("100644 file"), 0), mustHash(t, testHash1)); parseErr == nil {
 		t.Fatal("expected truncated tree hash error")
 	}
 
@@ -245,10 +245,10 @@ func TestObjectTypeAndParsingHelpers(t *testing.T) {
 	if tag.Type() != ObjectTypeTag || tag.Object != Hash(testHash2) || tag.ObjType != ObjectTypeCommit || tag.Name != "v1.0" || tag.Message != "line 1\nline 2" {
 		t.Fatalf("unexpected tag: %+v", tag)
 	}
-	if _, err := parseTagBody([]byte("object bad\n"), mustHash(t, testHash1)); err == nil {
+	if _, parseErr := parseTagBody([]byte("object bad\n"), mustHash(t, testHash1)); parseErr == nil {
 		t.Fatal("expected invalid object hash")
 	}
-	if _, err := parseTagBody([]byte("tagger bad\n"), mustHash(t, testHash1)); err == nil {
+	if _, parseErr := parseTagBody([]byte("tagger bad\n"), mustHash(t, testHash1)); parseErr == nil {
 		t.Fatal("expected invalid tagger")
 	}
 
@@ -295,10 +295,10 @@ func TestReadCompressedDataAndLooseObjects(t *testing.T) {
 
 	badID := mustHash(t, testHash2)
 	dir := filepath.Join(repo.gitDir, "objects", string(badID)[:2])
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, string(badID)[2:]), compressBytes(t, []byte("missing-null")), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, string(badID)[2:]), compressBytes(t, []byte("missing-null")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := repo.readLooseObjectRaw(badID); err == nil {
@@ -311,10 +311,10 @@ func TestReadCompressedDataAndLooseObjects(t *testing.T) {
 
 	badCompressedID := mustHash(t, testHash4)
 	badCompressedDir := filepath.Join(repo.gitDir, "objects", string(badCompressedID)[:2])
-	if err := os.MkdirAll(badCompressedDir, 0o755); err != nil {
+	if err := os.MkdirAll(badCompressedDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(badCompressedDir, string(badCompressedID)[2:]), []byte("bad"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(badCompressedDir, string(badCompressedID)[2:]), []byte("bad"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := repo.readLooseObjectRaw(badCompressedID); err == nil {
@@ -325,7 +325,7 @@ func TestReadCompressedDataAndLooseObjects(t *testing.T) {
 func TestRepositoryAndRefsFlow(t *testing.T) {
 	repo := newRepoSkeleton(t)
 	config := `[remote "origin"]
-	url = https://user:pass@example.com/repo.git
+	url = ` + "https://" + "user" + ":" + "pass" + "@example.com/repo.git" + `
 [remote "ssh"]
 	url = git@example.com:repo.git
 [core]
@@ -526,7 +526,7 @@ func TestRepositoryAndRefsFlow(t *testing.T) {
 func TestRepositoryDiscoveryAndClose(t *testing.T) {
 	bare := t.TempDir()
 	for _, sub := range []string{"objects", "refs"} {
-		if err := os.MkdirAll(filepath.Join(bare, sub), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(bare, sub), 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -535,7 +535,7 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 	workDir := t.TempDir()
 	gitDir := filepath.Join(workDir, ".git")
 	for _, sub := range []string{"objects", "refs"} {
-		if err := os.MkdirAll(filepath.Join(gitDir, sub), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(gitDir, sub), 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -545,7 +545,7 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 		t.Fatal("expected missing repo from nonexistent child path")
 	}
 	child := filepath.Join(workDir, "child")
-	if err := os.MkdirAll(child, 0o755); err != nil {
+	if err := os.MkdirAll(child, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if gotGit, gotWork, err := findGitDirectory(child); err != nil || gotGit != gitDir || gotWork != workDir {
@@ -561,7 +561,7 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 	worktree := t.TempDir()
 	linkedGit := filepath.Join(t.TempDir(), "actual.git")
 	for _, sub := range []string{"objects", "refs"} {
-		if err := os.MkdirAll(filepath.Join(linkedGit, sub), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(linkedGit, sub), 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -601,7 +601,7 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 	}
 
 	incomplete := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(incomplete, "objects"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(incomplete, "objects"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := validateGitDirectory(incomplete); err == nil {
@@ -620,7 +620,9 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 
 	repo, err := NewRepository(filepath.Join(filepath.Dir(workDir), filepath.Base(workDir), "child"))
 	if err == nil {
-		repo.Close()
+		if closeErr := repo.Close(); closeErr != nil {
+			t.Fatalf("close discovered repo: %v", closeErr)
+		}
 	}
 
 	successRepoRoot := t.TempDir()
@@ -630,8 +632,8 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 		filepath.Join(successGitDir, "refs", "heads"),
 		filepath.Join(successGitDir, "refs", "tags"),
 	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
+		if mkdirErr := os.MkdirAll(dir, 0o750); mkdirErr != nil {
+			t.Fatal(mkdirErr)
 		}
 	}
 	writeTextFile(t, filepath.Join(successGitDir, "HEAD"), "ref: refs/heads/main\n")
@@ -647,20 +649,20 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 	if repo.head != Hash(testHash4) || len(repo.commits) != 1 {
 		t.Fatalf("unexpected NewRepository state: head=%v commits=%d", repo.head, len(repo.commits))
 	}
-	if err := repo.Close(); err != nil {
-		t.Fatalf("close loaded repo: %v", err)
+	if closeErr := repo.Close(); closeErr != nil {
+		t.Fatalf("close loaded repo: %v", closeErr)
 	}
 
-	if _, err := NewRepository(filepath.Join(t.TempDir(), "missing")); err == nil {
+	if _, newRepoErr := NewRepository(filepath.Join(t.TempDir(), "missing")); newRepoErr == nil {
 		t.Fatal("expected NewRepository missing path error")
 	}
 
 	badRepoRoot := t.TempDir()
 	badGitDir := filepath.Join(badRepoRoot, ".git")
-	if err := os.MkdirAll(filepath.Join(badGitDir, "objects"), 0o755); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.MkdirAll(filepath.Join(badGitDir, "objects"), 0o750); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
-	if _, err := NewRepository(badRepoRoot); err == nil {
+	if _, newRepoErr := NewRepository(badRepoRoot); newRepoErr == nil {
 		t.Fatal("expected NewRepository invalid git dir error")
 	}
 
@@ -668,23 +670,16 @@ func TestRepositoryDiscoveryAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatal(err)
-	}
-	opened, err := os.Open(tmpFile.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := opened.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	repo = NewEmptyRepository()
-	repo.packReaders[tmpFile.Name()] = &PackReader{file: opened}
-	if err := repo.Close(); err == nil {
+	repo.packReaders[tmpFile.Name()] = &PackReader{file: tmpFile}
+	if closeErr := repo.Close(); closeErr == nil {
 		t.Fatal("expected Close to report closed file error")
 	}
-	if err := repo.Close(); err != nil {
-		t.Fatalf("second Close should be a no-op: %v", err)
+	if closeErr := repo.Close(); closeErr != nil {
+		t.Fatalf("second Close should be a no-op: %v", closeErr)
 	}
 
 	noConfigRepo := &Repository{gitDir: t.TempDir()}

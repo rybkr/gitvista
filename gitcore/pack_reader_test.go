@@ -28,7 +28,7 @@ func (f *failingReadSeeker) Seek(offset int64, whence int) (int64, error) {
 }
 
 func packHeader(objectType ObjectType, size int64) []byte {
-	firstByte := (byte(objectType) << 4) | byte(size&0x0F)
+	firstByte := (packObjectTypeNibble(objectType) << 4) | byte(size&0x0F)
 	size >>= 4
 	out := []byte{firstByte}
 	if size > 0 {
@@ -43,6 +43,14 @@ func packHeader(objectType ObjectType, size int64) []byte {
 		out = append(out, b)
 	}
 	return out
+}
+
+func packObjectTypeNibble(objectType ObjectType) byte {
+	if objectType < 0 || objectType > ObjectTypeRefDelta {
+		return 0
+	}
+	//nolint:gosec // Test helper bounds-checks the enum before narrowing to a pack header nibble.
+	return byte(objectType)
 }
 
 func packObjectBytes(t *testing.T, objectType ObjectType, body []byte) []byte {
@@ -93,10 +101,11 @@ func encodeVarInt(n int64) []byte {
 	}
 }
 
-func deltaCopyThenInsert(baseSize int64, insert []byte) []byte {
+func deltaCopyThenInsert(insert []byte) []byte {
+	const baseSize int64 = 5
 	out := append(encodeVarInt(baseSize), encodeVarInt(baseSize+int64(len(insert)))...)
-	out = append(out, 0x90, byte(baseSize))
-	out = append(out, byte(len(insert)))
+	//nolint:gosec // Test data keeps baseSize and insert length within a single-byte delta instruction.
+	out = append(out, 0x90, byte(baseSize), byte(len(insert)))
 	out = append(out, insert...)
 	return out
 }
@@ -120,11 +129,11 @@ func TestPackIndexFilesAndRepositoryPackLoading(t *testing.T) {
 	v1.Write(hash2[:])
 
 	packDir := filepath.Join(t.TempDir(), "objects", "pack")
-	if err := os.MkdirAll(packDir, 0o755); err != nil {
+	if err := os.MkdirAll(packDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	v1Path := filepath.Join(packDir, "one.idx")
-	if err := os.WriteFile(v1Path, v1.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(v1Path, v1.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewPackIndex(filepath.Join(packDir, "missing.idx")); err == nil {
@@ -142,7 +151,7 @@ func TestPackIndexFilesAndRepositoryPackLoading(t *testing.T) {
 	badV2.Write([]byte{packIndexV2Magic0, packIndexV2Magic1, packIndexV2Magic2, packIndexV2Magic3})
 	writeUint32BE(&badV2, 3)
 	badV2Path := filepath.Join(packDir, "bad-v2.idx")
-	if err := os.WriteFile(badV2Path, badV2.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(badV2Path, badV2.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewPackIndex(badV2Path); err == nil {
@@ -174,7 +183,7 @@ func TestPackIndexFilesAndRepositoryPackLoading(t *testing.T) {
 
 func TestPackReaderAndPackedObjectAccess(t *testing.T) {
 	packPath := filepath.Join(t.TempDir(), "blob.pack")
-	if err := os.WriteFile(packPath, packObjectBytes(t, ObjectTypeBlob, []byte("hello")), 0o644); err != nil {
+	if err := os.WriteFile(packPath, packObjectBytes(t, ObjectTypeBlob, []byte("hello")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -190,7 +199,7 @@ func TestPackReaderAndPackedObjectAccess(t *testing.T) {
 	if reader1 != reader2 {
 		t.Fatal("expected packReader to reuse cached reader")
 	}
-	if _, err := repo.packReader(filepath.Join(t.TempDir(), "missing.pack")); err == nil {
+	if _, packReaderErr := repo.packReader(filepath.Join(t.TempDir(), "missing.pack")); packReaderErr == nil {
 		t.Fatal("expected missing pack file error")
 	}
 
@@ -198,7 +207,7 @@ func TestPackReaderAndPackedObjectAccess(t *testing.T) {
 	if err != nil || typ != ObjectTypeBlob || string(data) != "hello" {
 		t.Fatalf("readPackedObjectData: %q %v %v", string(data), typ, err)
 	}
-	if _, _, err := repo.readPackedObjectData(packPath, -1, 0); err == nil {
+	if _, _, readErr := repo.readPackedObjectData(packPath, -1, 0); readErr == nil {
 		t.Fatal("expected invalid pack seek error")
 	}
 
@@ -246,7 +255,7 @@ func TestReadPackObjectDataAndDeltaBranches(t *testing.T) {
 	if _, _, err := readPackObjectData(bytes.NewReader(packHeader(ObjectTypeReserved, 0)), nil, 0); err == nil {
 		t.Fatal("expected unsupported pack object type")
 	}
-	if _, _, err := readPackObjectData(bytes.NewReader(packRefDeltaObject(t, mustHash(t, testHash1), deltaCopyThenInsert(5, []byte("!")))), func(id Hash, depth int) ([]byte, ObjectType, error) {
+	if _, _, err := readPackObjectData(bytes.NewReader(packRefDeltaObject(t, mustHash(t, testHash1), deltaCopyThenInsert([]byte("!")))), func(id Hash, depth int) ([]byte, ObjectType, error) {
 		if id != Hash(testHash1) || depth != 1 {
 			t.Fatalf("unexpected resolver inputs: %v depth=%d", id, depth)
 		}
@@ -276,7 +285,7 @@ func TestReadOffsetDeltaAndReadRefDeltaErrors(t *testing.T) {
 		t.Fatal("expected offset delta base read/apply error")
 	}
 
-	goodDelta := deltaCopyThenInsert(5, []byte(" Git!"))
+	goodDelta := deltaCopyThenInsert([]byte(" Git!"))
 	stream := packRefDeltaObject(t, mustHash(t, testHash1), goodDelta)
 	data, typ, err := readRefDelta(bytes.NewReader(stream[len(packHeader(ObjectTypeRefDelta, int64(len(goodDelta)))):]), int64(len(goodDelta)), func(id Hash, depth int) ([]byte, ObjectType, error) {
 		return []byte("hello"), ObjectTypeBlob, nil
@@ -293,12 +302,13 @@ func TestReadOffsetDeltaAndReadRefDeltaErrors(t *testing.T) {
 	if _, _, err := readRefDelta(bytes.NewReader(append(shortHash, []byte("bad")...)), 1, nil, 0); err == nil {
 		t.Fatal("expected ref delta compressed data error")
 	}
-	if _, _, err := readRefDelta(bytes.NewReader(append(shortHash, compressBytes(t, deltaCopyThenInsert(5, []byte("!")))...)), int64(len(deltaCopyThenInsert(5, []byte("!")))), func(id Hash, depth int) ([]byte, ObjectType, error) {
+	refDelta := deltaCopyThenInsert([]byte("!"))
+	if _, _, err := readRefDelta(bytes.NewReader(append(shortHash, compressBytes(t, refDelta)...)), int64(len(refDelta)), func(id Hash, depth int) ([]byte, ObjectType, error) {
 		return nil, 0, errors.New("resolve failed")
 	}, 0); err == nil {
 		t.Fatal("expected ref delta resolve error")
 	}
-	if _, _, err := readRefDelta(bytes.NewReader(append(shortHash, compressBytes(t, []byte{4, 6, 0x90, 0x04, 0x01, '!'} )...)), 6, func(id Hash, depth int) ([]byte, ObjectType, error) {
+	if _, _, err := readRefDelta(bytes.NewReader(append(shortHash, compressBytes(t, []byte{4, 6, 0x90, 0x04, 0x01, '!'})...)), 6, func(id Hash, depth int) ([]byte, ObjectType, error) {
 		return []byte("hello"), ObjectTypeBlob, nil
 	}, 0); err == nil {
 		t.Fatal("expected ref delta apply error")

@@ -1,4 +1,4 @@
-.PHONY: unit test ci ci-local lint integration e2e build build-cli build-site run-site clean help setup-hooks \
+.PHONY: unit test ci ci-local lint integration e2e build build-cli build-site run-site clean help \
          format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
          imports-check check-vuln docker-build deps-check deploy-staging deploy-production
 
@@ -6,8 +6,6 @@ GOCMD=go
 GOTEST=$(GOCMD) test
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
-export GOCACHE ?= $(CURDIR)/.cache/go-build
-export GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -20,11 +18,6 @@ LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=
 help:
 	@echo "Available targets:"
 	@sed -n 's/^##//p' $(MAKEFILE_LIST) | column -t -s ':' | sed -e 's/^/ /'
-
-## setup-hooks: Install pre-commit hooks and required tools
-setup-hooks:
-	@echo "Setting up pre-commit hooks..."
-	@bash scripts/setup-hooks.sh
 
 ## unit: Run unit tests
 unit:
