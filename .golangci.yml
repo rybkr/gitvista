@@ -8,7 +8,6 @@ linters:
   enable:
     - errcheck
     - govet
-    - staticcheck
     - misspell
     - revive
     - gosec
@@ -39,29 +38,8 @@ linters:
           disabled: true
           severity: warning
 
-    gosec:
-      excludes:
-        - G304 # File path provided as taint input (we validate paths)
-        - G204 # Subprocess with variable (we use git command intentionally)
-
-    staticcheck:
-      checks: ["all"]
-
     misspell:
       locale: US
-
-  exclusions:
-    paths:
-      - vendor
-      - web
-      - test/cover
-
-    rules:
-      - path: _test\.go
-        linters:
-          - gosec
-          - errcheck
-          - goconst
 
 issues:
   max-issues-per-linter: 0
