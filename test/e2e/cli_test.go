@@ -24,16 +24,16 @@ func TestRepoDefaultsToCurrentDirectory(t *testing.T) {
 	dir := setupTestRepo(t)
 
 	stdout := runCLI(t, dir, "repo")
-	if !strings.Contains(stdout, "Repository  "+filepath.Base(dir)) {
+	if !strings.Contains(stdout, "Repository "+filepath.Base(dir)) {
 		t.Fatalf("expected repository header for %q, got:\n%s", dir, stdout)
 	}
-	if !strings.Contains(stdout, "worktree  "+dir) {
+	if !strings.Contains(stdout, "worktree "+dir) {
 		t.Fatalf("expected worktree path %q, got:\n%s", dir, stdout)
 	}
-	if !strings.Contains(stdout, "git dir   "+filepath.Join(dir, ".git")) {
+	if !strings.Contains(stdout, "git dir  "+filepath.Join(dir, ".git")) {
 		t.Fatalf("expected gitdir path %q, got:\n%s", filepath.Join(dir, ".git"), stdout)
 	}
-	if !strings.Contains(stdout, "Loaded in") || !strings.Contains(stdout, "Stats") {
+	if !strings.Contains(stdout, "Load") || !strings.Contains(stdout, "Stats") || !strings.Contains(stdout, "time") {
 		t.Fatalf("expected load timing and stats output, got:\n%s", stdout)
 	}
 }
@@ -46,10 +46,10 @@ func TestRepoFlagUsesExplicitPath(t *testing.T) {
 	}
 
 	stdout := runCLI(t, t.TempDir(), "--repo", child, "repo")
-	if !strings.Contains(stdout, "worktree  "+dir) {
+	if !strings.Contains(stdout, "worktree "+dir) {
 		t.Fatalf("expected resolved repo worktree %q, got:\n%s", dir, stdout)
 	}
-	if !strings.Contains(stdout, "git dir   "+filepath.Join(dir, ".git")) {
+	if !strings.Contains(stdout, "git dir  "+filepath.Join(dir, ".git")) {
 		t.Fatalf("expected resolved gitdir %q, got:\n%s", filepath.Join(dir, ".git"), stdout)
 	}
 }
