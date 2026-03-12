@@ -1,4 +1,5 @@
 .PHONY: unit test ci ci-local lint integration e2e build build-cli build-site run-site clean help \
+         profile profile-web \
          format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
          imports-check check-vuln docker-build deps-check deploy-staging deploy-production
 
@@ -11,6 +12,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
+PROFILE ?= /tmp/gitvista-cli.cpu.prof
 
 .DEFAULT_GOAL := help
 
@@ -193,6 +195,31 @@ build-site:
 run-site:
 	@echo "Running hosted site from cmd/site..."
 	$(GOCMD) run ./cmd/site
+
+## profile: Capture a CPU profile for repository loading via cmd/cli repo (usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof])
+profile:
+	@if [ -z "$(REPO)" ]; then \
+		echo "REPO is required"; \
+		echo "Usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof]"; \
+		exit 1; \
+	fi
+	@echo "Profiling repository load for $(REPO)"
+	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" repo
+	@echo "CPU profile written to $(PROFILE)"
+	@echo "Opening profile with pprof..."
+	$(GOCMD) tool pprof -http=:9090 $(PROFILE)
+
+## profile-web: Capture a CPU profile and open it in the pprof web UI (usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof])
+profile-web:
+	@if [ -z "$(REPO)" ]; then \
+		echo "REPO is required"; \
+		echo "Usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof]"; \
+		exit 1; \
+	fi
+	@echo "Profiling repository load for $(REPO)"
+	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" repo
+	@echo "Opening pprof web UI for $(PROFILE)"
+	go tool pprof -http=:0 "$(PROFILE)"
 
 ## docker-build: Build Docker image
 docker-build:

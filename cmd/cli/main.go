@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"time"
 
 	"github.com/rybkr/gitvista/gitcore"
@@ -17,13 +18,36 @@ var (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	gf, args := parseGlobalFlags(os.Args[1:])
 	cw := cli.NewWriter(os.Stdout, gf.colorMode)
+
+	if gf.cpuProfilePath != "" {
+		profFile, err := os.Create(gf.cpuProfilePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gitvista-cli: create cpu profile: %v\n", err)
+			return 1
+		}
+		if err := pprof.StartCPUProfile(profFile); err != nil {
+			_ = profFile.Close()
+			fmt.Fprintf(os.Stderr, "gitvista-cli: start cpu profile: %v\n", err)
+			return 1
+		}
+		defer func() {
+			pprof.StopCPUProfile()
+			if err := profFile.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "gitvista-cli: close cpu profile: %v\n", err)
+			}
+		}()
+	}
 
 	for _, a := range args {
 		if a == "--version" {
 			printVersion(cw)
-			os.Exit(0)
+			return 0
 		}
 	}
 
@@ -40,7 +64,7 @@ func main() {
 			repoCtx.repo, err = gitcore.NewRepository(repoCtx.path)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
-				os.Exit(128)
+				return 128
 			}
 			repoCtx.loadDuration = time.Since(start)
 			defer func() {
@@ -51,7 +75,7 @@ func main() {
 		}
 	}
 
-	os.Exit(app.Run(args, cw))
+	return app.Run(args, cw)
 }
 
 func printVersion(cw *cli.Writer) {

@@ -9,11 +9,12 @@ import (
 )
 
 type globalFlags struct {
-	colorMode cli.ColorMode
-	repoPath  string
+	colorMode      cli.ColorMode
+	repoPath       string
+	cpuProfilePath string
 }
 
-// parseGlobalFlags extracts --color, --no-color, and --repo from anywhere in args,
+// parseGlobalFlags extracts supported global flags from anywhere in args,
 // returning the parsed flags and the remaining (filtered) arguments.
 func parseGlobalFlags(args []string) (globalFlags, []string) {
 	gf := globalFlags{
@@ -67,6 +68,25 @@ func parseGlobalFlags(args []string) (globalFlags, []string) {
 				os.Exit(1)
 			}
 			gf.repoPath = val
+			continue
+		}
+
+		if arg == "--cpuprofile" {
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --cpuprofile")
+				os.Exit(1)
+			}
+			gf.cpuProfilePath = args[i+1]
+			i++
+			continue
+		}
+
+		if val, ok := strings.CutPrefix(arg, "--cpuprofile="); ok {
+			if val == "" {
+				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --cpuprofile")
+				os.Exit(1)
+			}
+			gf.cpuProfilePath = val
 			continue
 		}
 
