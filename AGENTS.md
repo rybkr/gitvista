@@ -22,6 +22,12 @@ The rules for atomic commits are as follows:
 
 Large or unrelated changes should be broken into several atomic commits.
 
+## Code Comments
+
+Code comments should be kept to an absolute minimum.
+Prefer documentation over commenting.
+Each line of commenting is another source of tech debt, so agents should be judicious.
+
 ## Protected Files
 
 Never modify these files.
@@ -32,15 +38,3 @@ Instead, carry on as if the modification is complete and inform the human about 
 - `.github/workflows/*`
 - `go.mod`
 - `go.sum`
-
-## Versioning
-
-Agents must suggest a semantic versioning bump whenever significant code changes are committed.
-The rules for semantic versioning are as follows:
-
-1. Bug fixes always are a patch bump (x.y.Z)
-2. New backwards-compatible features are typically a minor bump (x.Y.0)
-3. Very minor additions can be patch bumps (x.y.Z)
-4. Breaking changes are major bumps (X.0.0)
-
-When applicable, always explicity suggest version bumps post-commit, and await approval.
