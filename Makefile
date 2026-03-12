@@ -13,6 +13,7 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 PROFILE ?= /tmp/gitvista-cli.cpu.prof
+MEMPROFILE ?= /tmp/gitvista-cli.mem.prof
 
 .DEFAULT_GOAL := help
 
@@ -196,18 +197,19 @@ run-site:
 	@echo "Running hosted site from cmd/site..."
 	$(GOCMD) run ./cmd/site
 
-## profile: Capture a CPU profile for repository loading via cmd/cli repo (usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof])
+## profile: Capture CPU and memory profiles for repository loading via cmd/cli repo (usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof])
 profile:
 	@if [ -z "$(REPO)" ]; then \
 		echo "REPO is required"; \
-		echo "Usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof]"; \
+		echo "Usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof]"; \
 		exit 1; \
 	fi
 	@echo "Profiling repository load for $(REPO)"
-	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" repo
+	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" --memprofile "$(MEMPROFILE)" repo
 	@echo "CPU profile written to $(PROFILE)"
-	@echo "Opening profile with pprof..."
-	$(GOCMD) tool pprof -http=:9090 $(PROFILE)
+	@echo "Inspect CPU profile with: $(GOCMD) tool pprof -http=:9090 $(PROFILE)"
+	@echo "Memory profile written to $(MEMPROFILE)"
+	@echo "Inspect memory profile with: $(GOCMD) tool pprof -http=:9091 $(MEMPROFILE)"
 
 ## profile-web: Capture a CPU profile and open it in the pprof web UI (usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof])
 profile-web:

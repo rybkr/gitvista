@@ -12,6 +12,7 @@ type globalFlags struct {
 	colorMode      cli.ColorMode
 	repoPath       string
 	cpuProfilePath string
+	memProfilePath string
 }
 
 // parseGlobalFlags extracts supported global flags from anywhere in args,
@@ -87,6 +88,25 @@ func parseGlobalFlags(args []string) (globalFlags, []string) {
 				os.Exit(1)
 			}
 			gf.cpuProfilePath = val
+			continue
+		}
+
+		if arg == "--memprofile" {
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --memprofile")
+				os.Exit(1)
+			}
+			gf.memProfilePath = args[i+1]
+			i++
+			continue
+		}
+
+		if val, ok := strings.CutPrefix(arg, "--memprofile="); ok {
+			if val == "" {
+				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --memprofile")
+				os.Exit(1)
+			}
+			gf.memProfilePath = val
 			continue
 		}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"time"
 
@@ -40,6 +41,27 @@ func run() int {
 			pprof.StopCPUProfile()
 			if err := profFile.Close(); err != nil {
 				fmt.Fprintf(os.Stderr, "gitvista-cli: close cpu profile: %v\n", err)
+			}
+		}()
+	}
+
+	if gf.memProfilePath != "" {
+		defer func() {
+			profFile, err := os.Create(gf.memProfilePath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "gitvista-cli: create memory profile: %v\n", err)
+				return
+			}
+			defer func() {
+				if err := profFile.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "gitvista-cli: close memory profile: %v\n", err)
+				}
+			}()
+
+			runtime.GC()
+			debug.FreeOSMemory()
+			if err := pprof.WriteHeapProfile(profFile); err != nil {
+				fmt.Fprintf(os.Stderr, "gitvista-cli: write memory profile: %v\n", err)
 			}
 		}()
 	}
