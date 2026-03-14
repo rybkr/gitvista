@@ -1,6 +1,9 @@
 package gitcore
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestRepositoryAccessCounts(t *testing.T) {
 	repo := newRepoSkeleton(t)
@@ -55,5 +58,101 @@ func TestRepositoryAccessHeadState(t *testing.T) {
 	}
 	if got := repo.HeadRef(); got != "" {
 		t.Fatalf("HeadRef() = %q, want empty", got)
+	}
+}
+
+func TestRepositoryAccessPathsAndBareState(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	if got := repo.Name(); got != filepath.Base(repo.workDir) {
+		t.Fatalf("Name() = %q, want %q", got, filepath.Base(repo.workDir))
+	}
+	if got := repo.GitDir(); got != repo.gitDir {
+		t.Fatalf("GitDir() = %q, want %q", got, repo.gitDir)
+	}
+	if got := repo.WorkDir(); got != repo.workDir {
+		t.Fatalf("WorkDir() = %q, want %q", got, repo.workDir)
+	}
+	if repo.IsBare() {
+		t.Fatal("IsBare() = true, want false")
+	}
+
+	bare := NewEmptyRepository()
+	bare.gitDir = "/tmp/repo.git"
+	bare.workDir = "/tmp/repo.git"
+	if !bare.IsBare() {
+		t.Fatal("IsBare() = false, want true")
+	}
+}
+
+func TestRepositoryAccessCollections(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	commit1 := &Commit{ID: mustHash(t, testHash1)}
+	commit2 := &Commit{ID: mustHash(t, testHash2)}
+	repo.commitMap[commit1.ID] = commit1
+	repo.commitMap[commit2.ID] = commit2
+
+	repo.refs["refs/heads/main"] = commit1.ID
+	repo.refs["refs/heads/feature"] = commit2.ID
+	repo.refs["refs/remotes/origin/main"] = commit1.ID
+	repo.refs["refs/tags/v1.0"] = commit1.ID
+	repo.refs["refs/tags/v1.1"] = commit2.ID
+
+	tagObject := &Tag{ID: mustHash(t, testHash3), Object: commit2.ID}
+	repo.tags = []*Tag{tagObject}
+	repo.refs["refs/tags/annotated"] = tagObject.ID
+
+	stash := &StashEntry{Hash: commit1.ID, Message: "stash@{0}"}
+	repo.stashes = []*StashEntry{stash}
+
+	commits := repo.Commits()
+	if len(commits) != 2 || commits[commit1.ID] != commit1 || commits[commit2.ID] != commit2 {
+		t.Fatalf("Commits() = %#v", commits)
+	}
+	delete(commits, commit1.ID)
+	if len(repo.commitMap) != 2 {
+		t.Fatal("Commits() should return a copy of the map")
+	}
+
+	branches := repo.Branches()
+	if len(branches) != 2 || branches["main"] != commit1.ID || branches["feature"] != commit2.ID {
+		t.Fatalf("Branches() = %#v", branches)
+	}
+	if _, ok := branches["origin/main"]; ok {
+		t.Fatalf("Branches() unexpectedly included remote branch: %#v", branches)
+	}
+
+	graphBranches := repo.GraphBranches()
+	if len(graphBranches) != 3 {
+		t.Fatalf("GraphBranches() len = %d, want 3", len(graphBranches))
+	}
+	if graphBranches["refs/heads/main"] != commit1.ID || graphBranches["refs/remotes/origin/main"] != commit1.ID {
+		t.Fatalf("GraphBranches() = %#v", graphBranches)
+	}
+
+	tags := repo.Tags()
+	if len(tags) != 3 {
+		t.Fatalf("Tags() len = %d, want 3", len(tags))
+	}
+	if tags["v1.0"] != string(commit1.ID) || tags["annotated"] != string(commit2.ID) {
+		t.Fatalf("Tags() = %#v", tags)
+	}
+
+	stashes := repo.Stashes()
+	if len(stashes) != 1 || stashes[0] != stash {
+		t.Fatalf("Stashes() = %#v", stashes)
+	}
+	stashes[0] = nil
+	if repo.stashes[0] == nil {
+		t.Fatal("Stashes() should return a copied slice")
+	}
+}
+
+func TestRepositoryAccessRemotesWithoutConfig(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	if got := repo.Remotes(); len(got) != 0 {
+		t.Fatalf("Remotes() = %#v, want empty map", got)
 	}
 }

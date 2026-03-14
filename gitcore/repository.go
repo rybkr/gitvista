@@ -2,8 +2,6 @@ package gitcore
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -108,37 +106,6 @@ func (r *Repository) Close() error {
 		r.packReaders = nil
 	})
 	return closeErr
-}
-
-// Name returns the base name of the repository's working directory.
-func (r *Repository) Name() string {
-	return filepath.Base(r.workDir)
-}
-
-// GitDir returns the path to the repository's .git directory.
-func (r *Repository) GitDir() string {
-	return r.gitDir
-}
-
-// WorkDir returns the path to the repository's working directory.
-func (r *Repository) WorkDir() string {
-	return r.workDir
-}
-
-// IsBare reports whether the repository is a bare repository.
-func (r *Repository) IsBare() bool {
-	return r.gitDir == r.workDir
-}
-
-// Remotes parses .git/config and returns remote names to URLs (credentials stripped).
-func (r *Repository) Remotes() map[string]string {
-	configPath := filepath.Join(r.gitDir, "config")
-	// #nosec G304 -- .git config path is controlled by repository location
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		return make(map[string]string)
-	}
-	return parseRemotesFromConfig(string(content))
 }
 
 func parseRemotesFromConfig(config string) map[string]string {
