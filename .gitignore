@@ -1,6 +1,6 @@
 # Build artifacts
 vista
-cli
+/cli
 *.exe
 *.out
 
