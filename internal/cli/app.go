@@ -12,6 +12,7 @@ type Command struct {
 	Name      string
 	Summary   string
 	Usage     string
+	Flags     []string
 	Examples  []string
 	Run       func(args []string) int
 	NeedsRepo bool

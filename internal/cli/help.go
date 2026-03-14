@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 )
 
 // fpf is a shorthand for fmt.Fprintf that discards the error, used for
@@ -56,11 +57,26 @@ func FormatCommandHelp(app *App, cmd *Command, cw *Writer) {
 		fpf(w, "  %s\n", cmd.Usage)
 	}
 
+	if len(cmd.Flags) > 0 {
+		fpf(w, "\n")
+		newSectionPrinter(w).Println(cw.Bold("Flags:"))
+		for _, flag := range cmd.Flags {
+			fpf(w, "  %s\n", flag)
+		}
+	}
+
 	if len(cmd.Examples) > 0 {
 		fpf(w, "\n")
 		newSectionPrinter(w).Println(cw.Bold("Examples:"))
 		for _, ex := range cmd.Examples {
-			fpf(w, "  %s\n", ex)
+			lines := strings.Split(ex, "\n")
+			for i, line := range lines {
+				if i == 0 {
+					fpf(w, "  • %s\n", cw.Muted(line))
+					continue
+				}
+				fpf(w, "    %s\n", cw.Command(line))
+			}
 		}
 	}
 }

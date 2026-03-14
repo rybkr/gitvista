@@ -65,11 +65,15 @@ func TestFormatCommandHelp(t *testing.T) {
 	app.Stderr = &buf
 
 	cmd := &Command{
-		Name:     "log",
-		Summary:  "Show commit log",
-		Usage:    "myapp log [--oneline] [-n <count>]",
-		Examples: []string{"myapp log", "myapp log --oneline -n5"},
-		Run:      func([]string) int { return 0 },
+		Name:    "log",
+		Summary: "Show commit log",
+		Usage:   "myapp log [--oneline] [-n <count>]",
+		Flags:   []string{"--oneline    Show abbreviated output", "-n <count>   Limit the number of commits"},
+		Examples: []string{
+			"Show the default log\nmyapp log",
+			"Show abbreviated output for five commits\nmyapp log --oneline -n5",
+		},
+		Run: func([]string) int { return 0 },
 	}
 
 	cw := NewWriter(os.Stdout, ColorNever)
@@ -82,7 +86,11 @@ func TestFormatCommandHelp(t *testing.T) {
 		"Show commit log",
 		"Usage:",
 		"myapp log [--oneline] [-n <count>]",
+		"Flags:",
+		"--oneline    Show abbreviated output",
 		"Examples:",
+		"Show the default log",
+		"Show abbreviated output for five commits",
 		"myapp log --oneline -n5",
 	}
 	for _, s := range checks {
@@ -94,19 +102,20 @@ func TestFormatCommandHelp(t *testing.T) {
 	if strings.Count(out, "Examples:") != 1 {
 		t.Errorf("expected exactly one Examples section, got %d", strings.Count(out, "Examples:"))
 	}
-	if strings.Count(out, "\n  myapp log\n") != 1 {
-		t.Errorf("expected exactly one indented base example line")
+	if strings.Count(out, "\n  • Show the default log\n    myapp log\n") != 1 {
+		t.Errorf("expected bulleted description followed by one indented base example line")
 	}
-	if strings.Count(out, "\n  myapp log --oneline -n5\n") != 1 {
-		t.Errorf("expected exactly one indented detailed example line")
+	if strings.Count(out, "\n  • Show abbreviated output for five commits\n    myapp log --oneline -n5\n") != 1 {
+		t.Errorf("expected bulleted description followed by one indented detailed example line")
 	}
 
 	usageIdx := strings.Index(out, "Usage:")
+	flagsIdx := strings.Index(out, "Flags:")
 	examplesIdx := strings.Index(out, "Examples:")
-	if usageIdx == -1 || examplesIdx == -1 {
-		t.Fatalf("command help missing Usage or Examples section")
+	if usageIdx == -1 || flagsIdx == -1 || examplesIdx == -1 {
+		t.Fatalf("command help missing Usage, Flags, or Examples section")
 	}
-	if usageIdx > examplesIdx {
-		t.Errorf("unexpected section ordering: Usage appears after Examples")
+	if usageIdx > flagsIdx || flagsIdx > examplesIdx {
+		t.Errorf("unexpected section ordering: Usage=%d Flags=%d Examples=%d", usageIdx, flagsIdx, examplesIdx)
 	}
 }
