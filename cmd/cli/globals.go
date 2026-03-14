@@ -15,8 +15,27 @@ type globalFlags struct {
 	memProfilePath string
 }
 
-// parseGlobalFlags extracts supported global flags from anywhere in args,
-// returning the parsed flags and the remaining (filtered) arguments.
+func parseStringFlag(args []string, index int, name string) (string, int, bool) {
+	arg := args[index]
+	if arg == name {
+		if index+1 >= len(args) {
+			fmt.Fprintf(os.Stderr, "gitvista-cli: missing value for %s\n", name)
+			os.Exit(1)
+		}
+		return args[index+1], 1, true
+	}
+
+	if val, ok := strings.CutPrefix(arg, name+"="); ok {
+		if val == "" {
+			fmt.Fprintf(os.Stderr, "gitvista-cli: missing value for %s\n", name)
+			os.Exit(1)
+		}
+		return val, 0, true
+	}
+
+	return "", 0, false
+}
+
 func parseGlobalFlags(args []string) (globalFlags, []string) {
 	gf := globalFlags{
 		colorMode: cli.ColorAuto,
@@ -39,7 +58,7 @@ func parseGlobalFlags(args []string) (globalFlags, []string) {
 				os.Exit(1)
 			}
 			gf.colorMode = mode
-			i++ // skip the value
+			i++
 			continue
 		}
 
@@ -53,60 +72,21 @@ func parseGlobalFlags(args []string) (globalFlags, []string) {
 			continue
 		}
 
-		if arg == "--repo" {
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --repo")
-				os.Exit(1)
-			}
-			gf.repoPath = args[i+1]
-			i++
-			continue
-		}
-
-		if val, ok := strings.CutPrefix(arg, "--repo="); ok {
-			if val == "" {
-				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --repo")
-				os.Exit(1)
-			}
+		if val, skip, ok := parseStringFlag(args, i, "--repo"); ok {
 			gf.repoPath = val
+			i += skip
 			continue
 		}
 
-		if arg == "--cpuprofile" {
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --cpuprofile")
-				os.Exit(1)
-			}
-			gf.cpuProfilePath = args[i+1]
-			i++
-			continue
-		}
-
-		if val, ok := strings.CutPrefix(arg, "--cpuprofile="); ok {
-			if val == "" {
-				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --cpuprofile")
-				os.Exit(1)
-			}
+		if val, skip, ok := parseStringFlag(args, i, "--cpuprofile"); ok {
 			gf.cpuProfilePath = val
+			i += skip
 			continue
 		}
 
-		if arg == "--memprofile" {
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --memprofile")
-				os.Exit(1)
-			}
-			gf.memProfilePath = args[i+1]
-			i++
-			continue
-		}
-
-		if val, ok := strings.CutPrefix(arg, "--memprofile="); ok {
-			if val == "" {
-				fmt.Fprintln(os.Stderr, "gitvista-cli: missing value for --memprofile")
-				os.Exit(1)
-			}
+		if val, skip, ok := parseStringFlag(args, i, "--memprofile"); ok {
 			gf.memProfilePath = val
+			i += skip
 			continue
 		}
 
