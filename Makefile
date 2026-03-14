@@ -211,17 +211,21 @@ profile:
 	@echo "Memory profile written to $(MEMPROFILE)"
 	@echo "Inspect memory profile with: $(GOCMD) tool pprof -http=:9091 $(MEMPROFILE)"
 
-## profile-web: Capture a CPU profile and open it in the pprof web UI (usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof])
+## profile-web: Capture CPU and memory profiles and open both in the pprof web UI (usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof])
 profile-web:
 	@if [ -z "$(REPO)" ]; then \
 		echo "REPO is required"; \
-		echo "Usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof]"; \
+		echo "Usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof]"; \
 		exit 1; \
 	fi
 	@echo "Profiling repository load for $(REPO)"
-	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" repo
-	@echo "Opening pprof web UI for $(PROFILE)"
-	go tool pprof -http=:0 "$(PROFILE)"
+	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" --memprofile "$(MEMPROFILE)" repo
+	@echo "Opening CPU profile web UI at http://127.0.0.1:9090"
+	@echo "Opening memory profile web UI at http://127.0.0.1:9091"
+	@trap 'kill 0' INT TERM EXIT; \
+		$(GOCMD) tool pprof -http=:9090 "$(PROFILE)" & \
+		$(GOCMD) tool pprof -http=:9091 "$(MEMPROFILE)" & \
+		wait
 
 ## docker-build: Build Docker image
 docker-build:
