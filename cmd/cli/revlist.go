@@ -97,8 +97,7 @@ func revList(repo *gitcore.Repository, opts revListOptions) ([]*gitcore.Commit, 
 		return nil, 0, nil
 	}
 
-	reachable := collectReachableCommits(repo.Commits(), starts)
-	ordered := orderRevListCommits(reachable, opts.orderMode)
+	ordered := orderRevListCommits(repo.Commits(), starts, opts.orderMode)
 	if !opts.noMerges {
 		return ordered, 0, nil
 	}
@@ -128,11 +127,24 @@ func revListStartPoints(repo *gitcore.Repository, opts revListOptions) ([]gitcor
 	}
 
 	if opts.all {
-		for _, hash := range repo.GraphBranches() {
-			add(hash)
+		branches := repo.GraphBranches()
+		branchNames := make([]string, 0, len(branches))
+		for name := range branches {
+			branchNames = append(branchNames, name)
 		}
-		for _, hash := range repo.Tags() {
-			add(gitcore.Hash(hash))
+		sort.Strings(branchNames)
+		for _, name := range branchNames {
+			add(branches[name])
+		}
+
+		tags := repo.Tags()
+		tagNames := make([]string, 0, len(tags))
+		for name := range tags {
+			tagNames = append(tagNames, name)
+		}
+		sort.Strings(tagNames)
+		for _, name := range tagNames {
+			add(gitcore.Hash(tags[name]))
 		}
 	}
 
@@ -209,31 +221,53 @@ func collectReachableCommits(commits map[gitcore.Hash]*gitcore.Commit, starts []
 	return reachable
 }
 
-func orderRevListCommits(commits map[gitcore.Hash]*gitcore.Commit, mode revListOrder) []*gitcore.Commit {
+func orderRevListCommits(commits map[gitcore.Hash]*gitcore.Commit, starts []gitcore.Hash, mode revListOrder) []*gitcore.Commit {
 	switch mode {
 	case revListOrderTopo:
-		return topoOrderRevListCommits(commits, false)
+		return topoOrderRevListCommits(collectReachableCommits(commits, starts), false)
 	case revListOrderDate:
-		return topoOrderRevListCommits(commits, true)
+		return topoOrderRevListCommits(collectReachableCommits(commits, starts), true)
 	default:
-		return chronologicalRevListCommits(commits)
+		return chronologicalRevListCommits(commits, starts)
 	}
 }
 
-func chronologicalRevListCommits(commits map[gitcore.Hash]*gitcore.Commit) []*gitcore.Commit {
-	ordered := make([]*gitcore.Commit, 0, len(commits))
-	for _, commit := range commits {
-		ordered = append(ordered, commit)
+func chronologicalRevListCommits(commits map[gitcore.Hash]*gitcore.Commit, starts []gitcore.Hash) []*gitcore.Commit {
+	h := &revListCommitHeap{}
+	heap.Init(h)
+	nextSeq := 0
+
+	seen := make(map[gitcore.Hash]struct{}, len(commits))
+	for _, start := range starts {
+		commit, ok := commits[start]
+		if !ok {
+			continue
+		}
+		if _, ok := seen[start]; ok {
+			continue
+		}
+		seen[start] = struct{}{}
+		heap.Push(h, revListCommitItem{commit: commit, seq: nextSeq})
+		nextSeq++
 	}
 
-	sort.Slice(ordered, func(i, j int) bool {
-		left := ordered[i]
-		right := ordered[j]
-		if !left.Committer.When.Equal(right.Committer.When) {
-			return left.Committer.When.After(right.Committer.When)
+	ordered := make([]*gitcore.Commit, 0, len(commits))
+	for h.Len() > 0 {
+		commit := heap.Pop(h).(revListCommitItem).commit
+		ordered = append(ordered, commit)
+		for _, parent := range commit.Parents {
+			parentCommit, ok := commits[parent]
+			if !ok {
+				continue
+			}
+			if _, ok := seen[parent]; ok {
+				continue
+			}
+			seen[parent] = struct{}{}
+			heap.Push(h, revListCommitItem{commit: parentCommit, seq: nextSeq})
+			nextSeq++
 		}
-		return left.ID > right.ID
-	})
+	}
 
 	return ordered
 }
@@ -254,15 +288,17 @@ func topoOrderRevListCommits(commits map[gitcore.Hash]*gitcore.Commit, useDate b
 	if useDate {
 		h := &revListCommitHeap{}
 		heap.Init(h)
+		nextSeq := 0
 		for hash, count := range childCount {
 			if count == 0 {
-				heap.Push(h, commits[hash])
+				heap.Push(h, revListCommitItem{commit: commits[hash], seq: nextSeq})
+				nextSeq++
 			}
 		}
 
 		ordered := make([]*gitcore.Commit, 0, len(commits))
 		for h.Len() > 0 {
-			commit := heap.Pop(h).(*gitcore.Commit)
+			commit := heap.Pop(h).(revListCommitItem).commit
 			ordered = append(ordered, commit)
 			for _, parent := range commit.Parents {
 				count, ok := childCount[parent]
@@ -272,7 +308,8 @@ func topoOrderRevListCommits(commits map[gitcore.Hash]*gitcore.Commit, useDate b
 				count--
 				childCount[parent] = count
 				if count == 0 {
-					heap.Push(h, commits[parent])
+					heap.Push(h, revListCommitItem{commit: commits[parent], seq: nextSeq})
+					nextSeq++
 				}
 			}
 		}
@@ -327,7 +364,12 @@ func topoOrderRevListCommits(commits map[gitcore.Hash]*gitcore.Commit, useDate b
 	return ordered
 }
 
-type revListCommitHeap []*gitcore.Commit
+type revListCommitItem struct {
+	commit *gitcore.Commit
+	seq    int
+}
+
+type revListCommitHeap []revListCommitItem
 
 func (h revListCommitHeap) Len() int {
 	return len(h)
@@ -336,10 +378,12 @@ func (h revListCommitHeap) Len() int {
 func (h revListCommitHeap) Less(i, j int) bool {
 	left := h[i]
 	right := h[j]
-	if !left.Committer.When.Equal(right.Committer.When) {
-		return left.Committer.When.After(right.Committer.When)
+	leftCommit := left.commit
+	rightCommit := right.commit
+	if !leftCommit.Committer.When.Equal(rightCommit.Committer.When) {
+		return leftCommit.Committer.When.After(rightCommit.Committer.When)
 	}
-	return left.ID > right.ID
+	return left.seq < right.seq
 }
 
 func (h revListCommitHeap) Swap(i, j int) {
@@ -347,14 +391,14 @@ func (h revListCommitHeap) Swap(i, j int) {
 }
 
 func (h *revListCommitHeap) Push(x any) {
-	*h = append(*h, x.(*gitcore.Commit))
+	*h = append(*h, x.(revListCommitItem))
 }
 
 func (h *revListCommitHeap) Pop() any {
 	old := *h
 	last := len(old) - 1
 	item := old[last]
-	old[last] = nil
+	old[last] = revListCommitItem{}
 	*h = old[:last]
 	return item
 }
