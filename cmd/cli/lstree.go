@@ -25,7 +25,7 @@ func runLsTree(repoCtx *repositoryContext, args []string) int {
 	}
 
 	for _, entry := range entries {
-		fmt.Fprintf(os.Stdout, "%s %s %s\t%s\n", entry.Mode, entry.Type.String(), entry.ID, entry.Name)
+		fmt.Fprintf(os.Stdout, "%s %s %s\t%s\n", formatTreeEntryMode(entry.Mode), entry.Type.String(), entry.ID, entry.Name)
 	}
 
 	return 0

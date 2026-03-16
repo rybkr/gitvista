@@ -84,6 +84,21 @@ func TestFormatCatFileOutput(t *testing.T) {
 	}
 }
 
+func TestFormatTreeObjectNormalizesTreeMode(t *testing.T) {
+	treeHash := mustCLIHash(t, "1111111111111111111111111111111111111111")
+	treeData := treeBody(treeEntryBytes("40000", "docs", treeHash))
+
+	formatted, err := formatTreeObject(treeData)
+	if err != nil {
+		t.Fatalf("formatTreeObject(tree) error: %v", err)
+	}
+
+	want := "040000 tree 1111111111111111111111111111111111111111\tdocs\n"
+	if string(formatted) != want {
+		t.Fatalf("formatTreeObject(tree) = %q, want %q", string(formatted), want)
+	}
+}
+
 func TestRunCatFile(t *testing.T) {
 	repo := newCLIRepo(t)
 	blobID := mustCLIHash(t, "1111111111111111111111111111111111111111")

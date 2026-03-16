@@ -118,10 +118,17 @@ func formatTreeObject(data []byte) ([]byte, error) {
 			return nil, fmt.Errorf("failed to parse tree object: invalid hash: %w", err)
 		}
 
-		fmt.Fprintf(&buf, "%s %s %s\t%s\n", mode, treeEntryType(mode), hash, name)
+		fmt.Fprintf(&buf, "%s %s %s\t%s\n", formatTreeEntryMode(mode), treeEntryType(mode), hash, name)
 	}
 
 	return buf.Bytes(), nil
+}
+
+func formatTreeEntryMode(mode string) string {
+	if mode == "40000" {
+		return "040000"
+	}
+	return mode
 }
 
 func treeEntryType(mode string) string {
