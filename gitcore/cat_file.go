@@ -1,7 +1,6 @@
 package gitcore
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,30 +8,25 @@ import (
 	"strings"
 )
 
-// CatFileMode selects which cat-file operation to perform for a revision.
-type CatFileMode int
-
-const (
-	CatFileModeType CatFileMode = iota
-	CatFileModeSize
-	CatFileModePretty
-)
-
 // CatFileOptions configures a Repository.CatFile lookup.
 type CatFileOptions struct {
+	// Revision is the object name, ref, or unique short hash to inspect.
 	Revision string
-	Mode     CatFileMode
 }
 
-// CatFileResult contains the resolved object metadata and optional pretty output.
+// CatFileResult contains the resolved object metadata and raw object data.
 type CatFileResult struct {
+	// Hash is the fully resolved object ID.
 	Hash Hash
+	// Type is the resolved object's Git type.
 	Type ObjectType
+	// Size is the raw object body size in bytes.
 	Size int
+	// Data contains the raw object body bytes.
 	Data []byte
 }
 
-// CatFile resolves a revision to an object and returns its type, size, or pretty output.
+// CatFile resolves a revision to an object and returns its metadata and raw bytes.
 func (r *Repository) CatFile(opts CatFileOptions) (*CatFileResult, error) {
 	hash, err := r.resolveObjectRevision(opts.Revision)
 	if err != nil {
@@ -44,22 +38,12 @@ func (r *Repository) CatFile(opts CatFileOptions) (*CatFileResult, error) {
 		return nil, fmt.Errorf("object not found: %s", hash)
 	}
 
-	result := &CatFileResult{
+	return &CatFileResult{
 		Hash: hash,
 		Type: objectType,
 		Size: len(data),
-	}
-
-	if opts.Mode != CatFileModePretty {
-		return result, nil
-	}
-
-	result.Data, err = formatCatFilePretty(hash, objectType, data)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+		Data: append([]byte(nil), data...),
+	}, nil
 }
 
 func (r *Repository) resolveObjectRevision(revision string) (Hash, error) {
@@ -202,27 +186,4 @@ func (r *Repository) matchLooseObjectHashes(prefix string) ([]Hash, error) {
 
 func ambiguousObjectRevisionError(revision string) error {
 	return fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
-}
-
-func formatCatFilePretty(hash Hash, objectType ObjectType, data []byte) ([]byte, error) {
-	switch objectType {
-	case ObjectTypeBlob, ObjectTypeCommit, ObjectTypeTag:
-		return append([]byte(nil), data...), nil
-	case ObjectTypeTree:
-		tree, err := parseTreeBody(data, hash)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse tree object: %w", err)
-		}
-		return formatTreePretty(tree), nil
-	default:
-		return nil, fmt.Errorf("unsupported object type: %s", objectType.String())
-	}
-}
-
-func formatTreePretty(tree *Tree) []byte {
-	var buf bytes.Buffer
-	for _, entry := range tree.Entries {
-		fmt.Fprintf(&buf, "%s %s %s\t%s\n", entry.Mode, entry.Type.String(), entry.ID, entry.Name)
-	}
-	return buf.Bytes()
 }
