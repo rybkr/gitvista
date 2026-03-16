@@ -210,6 +210,46 @@ func (r *Repository) LsTree(opts LsTreeOptions) ([]TreeEntry, error) {
 	return append([]TreeEntry(nil), tree.Entries...), nil
 }
 
+// GetTree retrieves a tree object by its hash.
+func (r *Repository) GetTree(treeHash Hash) (*Tree, error) {
+	object, err := r.readObject(treeHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read tree object: %w", err)
+	}
+
+	tree, ok := object.(*Tree)
+	if !ok {
+		return nil, fmt.Errorf("object %s is not a tree", treeHash)
+	}
+
+	return tree, nil
+}
+
+// GetBlob retrieves raw blob data by its hash.
+func (r *Repository) GetBlob(blobHash Hash) ([]byte, error) {
+	objectData, objectType, err := r.readObjectData(blobHash, 0)
+	if err != nil {
+		return nil, fmt.Errorf("blob not found: %s", blobHash)
+	}
+
+	if objectType != ObjectTypeBlob {
+		return nil, fmt.Errorf("object %s is not a blob (type %d)", blobHash, objectType)
+	}
+
+	return objectData, nil
+}
+
+// GetCommit looks up a single commit by hash using the cached commit map.
+func (r *Repository) GetCommit(hash Hash) (*Commit, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if commit, ok := r.commitMap[hash]; ok {
+		return commit, nil
+	}
+	return nil, fmt.Errorf("commit not found: %s", hash)
+}
+
 func (r *Repository) getCommit(hash Hash) (*Commit, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
