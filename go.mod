@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/pterm/pterm v0.12.83
-	github.com/yuin/goldmark v1.4.13
+	github.com/yuin/goldmark v1.7.16
 	golang.org/x/term v0.40.0
 )
 
