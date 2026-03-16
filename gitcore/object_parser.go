@@ -131,13 +131,16 @@ func parseTreeBody(body []byte, id Hash) (*Tree, error) {
 		}
 
 		var entryType ObjectType
-		if strings.HasPrefix(mode, "100") {
+		switch {
+		case strings.HasPrefix(mode, "100"):
 			entryType = ObjectTypeBlob
-		} else if mode == "040000" || mode == "40000" {
+		case mode == "040000" || mode == "40000":
 			entryType = ObjectTypeTree
-		} else if mode == "120000" || mode == "160000" {
+		case mode == "120000":
+			entryType = ObjectTypeBlob
+		case mode == "160000":
 			entryType = ObjectTypeCommit
-		} else {
+		default:
 			entryType = ObjectTypeInvalid
 		}
 

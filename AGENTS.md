@@ -27,6 +27,7 @@ Large or unrelated changes should be broken into several atomic commits.
 Code comments should be kept to an absolute minimum.
 Prefer documentation over commenting.
 Each line of commenting is another source of tech debt, so agents should be judicious.
+Godoc style comments for exported symbols should be brief and helpful.
 
 ## Protected Files
 

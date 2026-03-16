@@ -227,7 +227,7 @@ func TestObjectTypeAndParsingHelpers(t *testing.T) {
 	if tree.Type() != ObjectTypeTree || len(tree.Entries) != 5 {
 		t.Fatalf("unexpected tree: %+v", tree)
 	}
-	if tree.Entries[0].Type != ObjectTypeTree || tree.Entries[1].Type != ObjectTypeBlob || tree.Entries[2].Type != ObjectTypeCommit || tree.Entries[3].Type != ObjectTypeCommit || tree.Entries[4].Type != ObjectTypeInvalid {
+	if tree.Entries[0].Type != ObjectTypeTree || tree.Entries[1].Type != ObjectTypeBlob || tree.Entries[2].Type != ObjectTypeBlob || tree.Entries[3].Type != ObjectTypeCommit || tree.Entries[4].Type != ObjectTypeInvalid {
 		t.Fatal("tree entry types not parsed as expected")
 	}
 	if _, parseErr := parseTreeBody([]byte("100644 "), mustHash(t, testHash1)); parseErr == nil {
