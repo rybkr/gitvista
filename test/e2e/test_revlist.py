@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.parametrize("repo_name", ["express", "gitvista", "cpython"])
+@pytest.mark.parametrize("repo_name", ["express", "gitvista", "cpython", "octocat", "git"])
 def test_rev_list_all_matches_git_for_prepared_repos(
     repo_name: str,
     root_dir: Path,
@@ -13,10 +13,7 @@ def test_rev_list_all_matches_git_for_prepared_repos(
     repo_dir = root_dir / "testdata" / repo_name
     git_dir = repo_dir / ".git"
 
-    assert git_dir.exists(), (
-        f"prepared repository missing at {repo_dir}; "
-        "run scripts/prepare_test_repos.py first"
-    )
+    assert git_dir.exists(), f"prepared repository missing at {repo_dir}; run scripts/prepare_test_repos.py first"
 
     want = run_git(repo_dir, "rev-list", "--all")
     got = run_cli(root_dir, "--repo", str(repo_dir), "rev-list", "--all")

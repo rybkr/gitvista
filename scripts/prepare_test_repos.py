@@ -4,13 +4,18 @@ import argparse
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from datetime import datetime
 
 
 REPOSITORIES = (
     ("express", "git@github.com:expressjs/express.git"),
     ("gitvista", "git@github.com:rybkr/gitvista.git"),
     ("cpython", "git@github.com:python/cpython.git"),
+    ("octocat", "git@github.com:octocat/Hello-World.git"),
+    ("git", "git@github.com:git/git.git"),
 )
+
+timestamp_format: str = "%Y-%m-%d %H:%M:%S"
 
 
 def log(channel: str, message: str) -> None:
@@ -123,11 +128,7 @@ def update_repository(root_dir: Path, name: str, remote: str) -> None:
         action = "cloned"
 
     log(name, "collecting rev-list data")
-    revisions = [
-        revision
-        for revision in run_git(repo_dir, "rev-list", "--all").splitlines()
-        if revision
-    ]
+    revisions = [revision for revision in run_git(repo_dir, "rev-list", "--all").splitlines() if revision]
     log(name, f"captured {len(revisions)} revisions")
 
 
@@ -140,19 +141,32 @@ def parse_args() -> argparse.Namespace:
         default="testdata",
         help="Directory where repositories are cloned.",
     )
+    parser.add_argument("--force", action="store_true", help="Force repository updates, even if done recently.")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     root_dir = Path(args.root).resolve()
+    try:
+        with Path(root_dir / ".updated-at").open("r") as f:
+            updated_at = datetime.strptime(f.read().strip(), timestamp_format)
+    except FileNotFoundError:
+        updated_at = datetime.fromtimestamp(0)
 
-    log("repos", f"repository root: {root_dir}")
-    root_dir.mkdir(parents=True, exist_ok=True)
-    for name, remote in REPOSITORIES:
-        update_repository(root_dir, name, remote)
+    if args.force or (datetime.now() - updated_at).total_seconds() >= 86400:
+        log("repos", f"repository root: {root_dir}")
+        root_dir.mkdir(parents=True, exist_ok=True)
+        for name, remote in REPOSITORIES:
+            update_repository(root_dir, name, remote)
+        log("repos", f"prepared {len(REPOSITORIES)} repositories")
 
-    log("repos", f"prepared {len(REPOSITORIES)} repositories")
+        with Path(root_dir / ".updated-at").open("w") as f:
+            f.write(datetime.now().strftime(timestamp_format))
+            log("prepare", f"update logged at {datetime.now()}")
+    else:
+        log("prepare", f"update already completed at {updated_at} (use --force)")
+
     return 0
 
 
