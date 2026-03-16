@@ -21,7 +21,7 @@ func FormatAppHelp(app *App, cw *Writer) {
 	fpf(w, "  %s [global flags] <command> [<args>]\n\n", app.Name)
 
 	newSectionPrinter(w).Println(cw.Bold("Global flags:"))
-	fpf(w, "  %s   Color output: auto, always, never\n", cw.Flag("--color=<mode>"))
+	fpf(w, "  %s    Color output: auto, always, never\n", cw.Flag("--color=<mode>"))
 	fpf(w, "  %s        Disable color output\n", cw.Flag("--no-color"))
 	fpf(w, "  %s     Repository path to open (default: .)\n", cw.Flag("--repo <path>"))
 	fpf(w, "  %s         Show version and exit\n\n", cw.Flag("--version"))
