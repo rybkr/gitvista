@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 
-def test_cat_file_p_head_matches_git(
+def test_cat_file_p_head(
     repo_name: str,
     root_dir: Path,
     run_git,
@@ -19,7 +19,7 @@ def test_cat_file_p_head_matches_git(
     assert got == want
 
 
-def test_cat_file_t_head_matches_git(
+def test_cat_file_t_head(
     repo_name: str,
     root_dir: Path,
     run_git,
@@ -35,7 +35,7 @@ def test_cat_file_t_head_matches_git(
     assert got == want
 
 
-def test_cat_file_s_head_matches_git(
+def test_cat_file_s_head(
     repo_name: str,
     root_dir: Path,
     run_git,
