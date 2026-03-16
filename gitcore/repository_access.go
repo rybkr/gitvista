@@ -1,10 +1,17 @@
 package gitcore
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// LsTreeOptions configures a Repository.LsTree lookup.
+type LsTreeOptions struct {
+	// Revision is the commit revision to inspect.
+	Revision string
+}
 
 // Name returns the base name of the repository's working directory.
 func (r *Repository) Name() string {
@@ -173,4 +180,64 @@ func (r *Repository) HeadDetached() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.headDetached
+}
+
+// LsTree resolves a commit revision and returns the entries in its root tree.
+func (r *Repository) LsTree(opts LsTreeOptions) ([]TreeEntry, error) {
+	hash, err := r.ResolveRevision(opts.Revision)
+	if err != nil {
+		return nil, err
+	}
+
+	objectType, err := r.objectType(hash)
+	if err != nil {
+		return nil, err
+	}
+	if objectType != ObjectTypeCommit {
+		return nil, fmt.Errorf("object %s is not a commit", hash)
+	}
+
+	commit, err := r.getCommit(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	tree, err := r.getTree(commit.Tree)
+	if err != nil {
+		return nil, err
+	}
+
+	return append([]TreeEntry(nil), tree.Entries...), nil
+}
+
+func (r *Repository) getCommit(hash Hash) (*Commit, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if commit, ok := r.commitMap[hash]; ok {
+		return commit, nil
+	}
+	return nil, fmt.Errorf("commit not found: %s", hash)
+}
+
+func (r *Repository) getTree(treeHash Hash) (*Tree, error) {
+	object, err := r.readObject(treeHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read tree object: %w", err)
+	}
+
+	tree, ok := object.(*Tree)
+	if !ok {
+		return nil, fmt.Errorf("object %s is not a tree", treeHash)
+	}
+
+	return tree, nil
+}
+
+func (r *Repository) objectType(hash Hash) (ObjectType, error) {
+	_, objectType, err := r.readObjectData(hash, 0)
+	if err != nil {
+		return ObjectTypeInvalid, err
+	}
+	return objectType, nil
 }

@@ -2,6 +2,7 @@ package gitcore
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -154,5 +155,112 @@ func TestRepositoryAccessRemotesWithoutConfig(t *testing.T) {
 
 	if got := repo.Remotes(); len(got) != 0 {
 		t.Fatalf("Remotes() = %#v, want empty map", got)
+	}
+}
+
+func TestLsTreeReturnsRootTreeEntriesForCommitRevision(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	blobID := mustHash(t, testHash1)
+	treeID := mustHash(t, testHash2)
+	commitID := mustHash(t, testHash3)
+	subtreeID := mustHash(t, testHash4)
+	treeBody := treeBodyWithEntries(
+		treeEntry("100644", "README.md", blobID),
+		treeEntry("040000", "docs", subtreeID),
+	)
+	commitBody := []byte("tree " + string(treeID) + "\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\ninitial commit\n")
+
+	writeLooseObject(t, repo.gitDir, blobID, "blob", []byte("hello world\n"))
+	writeLooseObject(t, repo.gitDir, subtreeID, "tree", treeBodyWithEntries())
+	writeLooseObject(t, repo.gitDir, treeID, "tree", treeBody)
+	writeLooseObject(t, repo.gitDir, commitID, "commit", commitBody)
+	repo.commitMap[commitID] = &Commit{ID: commitID, Tree: treeID}
+
+	entries, err := repo.LsTree(LsTreeOptions{Revision: string(commitID)})
+	if err != nil {
+		t.Fatalf("LsTree() error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("LsTree() len = %d, want 2", len(entries))
+	}
+	if entries[0].Name != "README.md" || entries[0].Mode != "100644" || entries[0].Type != ObjectTypeBlob || entries[0].ID != blobID {
+		t.Fatalf("LsTree()[0] = %+v", entries[0])
+	}
+	if entries[1].Name != "docs" || entries[1].Mode != "040000" || entries[1].Type != ObjectTypeTree || entries[1].ID != subtreeID {
+		t.Fatalf("LsTree()[1] = %+v", entries[1])
+	}
+
+	entries[0].Name = "mutated"
+	again, err := repo.LsTree(LsTreeOptions{Revision: string(commitID)})
+	if err != nil {
+		t.Fatalf("LsTree() second call error: %v", err)
+	}
+	if again[0].Name != "README.md" {
+		t.Fatalf("LsTree() did not return a defensive copy: %+v", again[0])
+	}
+}
+
+func TestLsTreeResolvesHeadBranchAndTagToCommit(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	blobID := mustHash(t, testHash1)
+	treeID := mustHash(t, testHash2)
+	commitID := mustHash(t, testHash3)
+	commitBody := []byte("tree " + string(treeID) + "\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\ninitial commit\n")
+
+	writeLooseObject(t, repo.gitDir, blobID, "blob", []byte("hello world\n"))
+	writeLooseObject(t, repo.gitDir, treeID, "tree", treeBodyWithEntries(treeEntry("100644", "README.md", blobID)))
+	writeLooseObject(t, repo.gitDir, commitID, "commit", commitBody)
+	repo.commitMap[commitID] = &Commit{ID: commitID, Tree: treeID}
+	repo.head = commitID
+	repo.refs["refs/heads/main"] = commitID
+	repo.refs["refs/tags/v1.0"] = commitID
+
+	for _, revision := range []string{"HEAD", "main", "v1.0"} {
+		t.Run(revision, func(t *testing.T) {
+			entries, err := repo.LsTree(LsTreeOptions{Revision: revision})
+			if err != nil {
+				t.Fatalf("LsTree(%q) error: %v", revision, err)
+			}
+			if len(entries) != 1 || entries[0].Name != "README.md" {
+				t.Fatalf("LsTree(%q) = %+v", revision, entries)
+			}
+		})
+	}
+}
+
+func TestLsTreeRejectsMissingAndAmbiguousRevisions(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	commit1 := mustHash(t, "abcdef0000000000000000000000000000000000")
+	commit2 := mustHash(t, "abcdef1111111111111111111111111111111111")
+	repo.commitMap[commit1] = &Commit{ID: commit1}
+	repo.commitMap[commit2] = &Commit{ID: commit2}
+
+	if _, err := repo.LsTree(LsTreeOptions{Revision: "missing"}); err == nil {
+		t.Fatal("expected missing revision error")
+	} else if !strings.Contains(err.Error(), "ambiguous argument") {
+		t.Fatalf("unexpected missing revision error: %v", err)
+	}
+
+	if _, err := repo.LsTree(LsTreeOptions{Revision: "abcdef"}); err == nil {
+		t.Fatal("expected ambiguous revision error")
+	} else if !strings.Contains(err.Error(), "ambiguous argument") {
+		t.Fatalf("unexpected ambiguous revision error: %v", err)
+	}
+}
+
+func TestLsTreeRejectsNonCommitRevision(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	blobID := mustHash(t, testHash1)
+	writeLooseObject(t, repo.gitDir, blobID, "blob", []byte("hello world\n"))
+	repo.refs["refs/tags/blob-tag"] = blobID
+
+	if _, err := repo.LsTree(LsTreeOptions{Revision: "blob-tag"}); err == nil {
+		t.Fatal("expected non-commit error")
+	} else if !strings.Contains(err.Error(), "is not a commit") {
+		t.Fatalf("unexpected non-commit error: %v", err)
 	}
 }

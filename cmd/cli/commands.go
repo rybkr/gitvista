@@ -36,7 +36,7 @@ func registerCommands(app *cli.App, repoCtx *repositoryContext, cw *cli.Writer) 
 		Examples: []string{
 			"Print the type of HEAD\ngitvista-cli cat-file -t HEAD",
 			"Print the size of an object\ngitvista-cli cat-file -s a1b2c3d",
-			"Pretty-print a tree\ngitvista-cli cat-file -p HEAD",
+			"Pretty-print the information in HEAD\ngitvista-cli cat-file -p HEAD",
 		},
 		Run: func(args []string) int { return runCatFile(repoCtx, args) },
 	})
@@ -61,6 +61,21 @@ func registerCommands(app *cli.App, repoCtx *repositoryContext, cw *cli.Writer) 
 			"List all refs in topological order\ngitvista-cli rev-list --all --topo-order",
 		},
 		Run: func(args []string) int { return runRevList(repoCtx, args, cw) },
+	})
+
+	app.Register(&cli.Command{
+		Name:      "ls-tree",
+		Summary:   "List a commit tree like git ls-tree",
+		Usage:     "gitvista-cli ls-tree <commit>",
+		NeedsRepo: true,
+		Flags: []string{
+			"<commit>      A commit hash, short hash, branch, tag, remote ref, or HEAD",
+		},
+		Examples: []string{
+			"List the root tree for HEAD\ngitvista-cli ls-tree HEAD",
+			"List the root tree for branch main\ngitvista-cli ls-tree main",
+		},
+		Run: func(args []string) int { return runLsTree(repoCtx, args) },
 	})
 
 	app.Register(&cli.Command{
