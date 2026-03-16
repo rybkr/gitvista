@@ -264,11 +264,11 @@ func TestCatFileHelperCoverage(t *testing.T) {
 		t.Fatalf("matchLooseObjectHashes() = %#v, want [%s]", matches, blobID)
 	}
 
-	if err := os.MkdirAll(filepath.Join(repo.gitDir, "objects", string(blobID)[:2], "nested"), 0o750); err != nil {
-		t.Fatalf("mkdir nested object dir: %v", err)
+	if mkErr := os.MkdirAll(filepath.Join(repo.gitDir, "objects", string(blobID)[:2], "nested"), 0o750); mkErr != nil {
+		t.Fatalf("mkdir nested object dir: %v", mkErr)
 	}
-	if err := os.WriteFile(filepath.Join(repo.gitDir, "objects", string(blobID)[:2], "badname"), []byte("x"), 0o600); err != nil {
-		t.Fatalf("write bad loose object name: %v", err)
+	if writeErr := os.WriteFile(filepath.Join(repo.gitDir, "objects", string(blobID)[:2], "badname"), []byte("x"), 0o600); writeErr != nil {
+		t.Fatalf("write bad loose object name: %v", writeErr)
 	}
 
 	matches, err = repo.matchLooseObjectHashes(string(blobID)[:2])

@@ -7,14 +7,19 @@ import (
 	"strings"
 )
 
+// RevListOrder controls how `RevList` orders reachable commits.
 type RevListOrder int
 
 const (
+	// RevListOrderChronological orders commits by committer date.
 	RevListOrderChronological RevListOrder = iota
+	// RevListOrderTopo preserves parent-before-ancestor topology.
 	RevListOrderTopo
+	// RevListOrderDate preserves topology while preferring newer commits when possible.
 	RevListOrderDate
 )
 
+// RevListOptions configures revision traversal and filtering.
 type RevListOptions struct {
 	All      bool
 	Revision string
@@ -22,6 +27,7 @@ type RevListOptions struct {
 	Order    RevListOrder
 }
 
+// RevList returns commits reachable from the requested start points.
 func (r *Repository) RevList(opts RevListOptions) ([]*Commit, error) {
 	starts, err := r.revListStartPoints(opts)
 	if err != nil {
@@ -45,6 +51,7 @@ func (r *Repository) RevList(opts RevListOptions) ([]*Commit, error) {
 	return filtered, nil
 }
 
+// ResolveRevision resolves a branch, tag, HEAD, or commit prefix to a commit hash.
 func (r *Repository) ResolveRevision(revision string) (Hash, error) {
 	if revision == "HEAD" {
 		head := r.Head()
@@ -132,29 +139,6 @@ func (r *Repository) revListStartPoints(opts RevListOptions) ([]Hash, error) {
 	return starts, nil
 }
 
-func collectReachableCommits(commits map[Hash]*Commit, starts []Hash) map[Hash]*Commit {
-	reachable := make(map[Hash]*Commit)
-	stack := append([]Hash(nil), starts...)
-
-	for len(stack) > 0 {
-		hash := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-
-		if _, ok := reachable[hash]; ok {
-			continue
-		}
-		commit, ok := commits[hash]
-		if !ok {
-			continue
-		}
-
-		reachable[hash] = commit
-		stack = append(stack, commit.Parents...)
-	}
-
-	return reachable
-}
-
 func orderRevListCommits(commits map[Hash]*Commit, starts []Hash, mode RevListOrder) []*Commit {
 	reachable := chronologicalRevListCommits(commits, starts)
 
@@ -189,7 +173,8 @@ func chronologicalRevListCommits(commits map[Hash]*Commit, starts []Hash) []*Com
 
 	ordered := make([]*Commit, 0, len(commits))
 	for h.Len() > 0 {
-		commit := heap.Pop(h).(revListCommitItem).commit
+		commitItem := mustRevListCommitItem(heap.Pop(h))
+		commit := commitItem.commit
 		ordered = append(ordered, commit)
 		for _, parent := range commit.Parents {
 			parentCommit, ok := commits[parent]
@@ -240,7 +225,7 @@ func topoOrderRevListCommits(commits []*Commit, useDate bool) []*Commit {
 
 		ordered := make([]*Commit, 0, len(commits))
 		for h.Len() > 0 {
-			commit := heap.Pop(h).(revListCommitItem).commit
+			commit := mustRevListCommitItem(heap.Pop(h)).commit
 			ordered = append(ordered, commit)
 			indegree[commit.ID] = 0
 			for _, parent := range commit.Parents {
@@ -324,7 +309,7 @@ func (h revListCommitHeap) Swap(i, j int) {
 }
 
 func (h *revListCommitHeap) Push(x any) {
-	*h = append(*h, x.(revListCommitItem))
+	*h = append(*h, mustRevListCommitItem(x))
 }
 
 func (h *revListCommitHeap) Pop() any {
@@ -333,5 +318,13 @@ func (h *revListCommitHeap) Pop() any {
 	item := old[last]
 	old[last] = revListCommitItem{}
 	*h = old[:last]
+	return item
+}
+
+func mustRevListCommitItem(v any) revListCommitItem {
+	item, ok := v.(revListCommitItem)
+	if !ok {
+		panic("gitcore: expected revListCommitItem")
+	}
 	return item
 }

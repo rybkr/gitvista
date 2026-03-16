@@ -131,7 +131,7 @@ func TestRevListTopoAndDateOrderPreserveTopology(t *testing.T) {
 		for i, commit := range commits {
 			pos[commit.ID] = i
 		}
-		if !(pos[merge] < pos[left] && pos[merge] < pos[right] && pos[left] < pos[root] && pos[right] < pos[root]) {
+		if pos[merge] >= pos[left] || pos[merge] >= pos[right] || pos[left] >= pos[root] || pos[right] >= pos[root] {
 			t.Fatalf("RevList(%v) did not preserve topology: %#v", order, pos)
 		}
 	}
