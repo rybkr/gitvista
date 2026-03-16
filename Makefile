@@ -295,7 +295,7 @@ deploy-production:
 cloc:
 	@echo "Counting lines of code..."
 	@if command -v cloc >/dev/null; then \
-		cloc . --fullpath --not-match-d="web/vendor"; \
+		cloc . --fullpath --exclude-dir=.venv,testdata --not-match-d="web/vendor"; \
 	else \
 		echo "cloc not found - install with: brew install cloc or apt install cloc"; \
 	fi
