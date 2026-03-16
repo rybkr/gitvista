@@ -1,0 +1,23 @@
+[project]
+name = "gitvista-dev-tools"
+version = "0.0.0"
+requires-python = ">=3.13"
+
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.2",
+  "pytest-xdist>=3.8.0",
+  "ruff>=0.15.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test/e2e"]
+addopts = "-vs -n auto"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
