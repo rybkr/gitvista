@@ -136,3 +136,28 @@ func TestRevListTopoAndDateOrderPreserveTopology(t *testing.T) {
 		}
 	}
 }
+
+func TestRevListTopoOrderPreservesTraversalOrderForEqualDateTips(t *testing.T) {
+	root := Hash("1111111111111111111111111111111111111111")
+	left := Hash("2222222222222222222222222222222222222222")
+	right := Hash("3333333333333333333333333333333333333333")
+	now := time.Unix(1_700_000_000, 0)
+
+	commits := map[Hash]*Commit{
+		root:  {ID: root, Committer: Signature{When: now}},
+		left:  {ID: left, Parents: []Hash{root}, Committer: Signature{When: now}},
+		right: {ID: right, Parents: []Hash{root}, Committer: Signature{When: now}},
+	}
+
+	got := orderRevListCommits(commits, []Hash{left, right}, RevListOrderTopo)
+	if len(got) != 3 {
+		t.Fatalf("orderRevListCommits len = %d, want 3", len(got))
+	}
+
+	want := []Hash{left, right, root}
+	for i, commit := range got {
+		if commit.ID != want[i] {
+			t.Fatalf("orderRevListCommits[%d] = %s, want %s", i, commit.ID, want[i])
+		}
+	}
+}

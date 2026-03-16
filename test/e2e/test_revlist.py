@@ -17,5 +17,8 @@ def test_rev_list_all_matches_git_for_prepared_repos(
 
     want = run_git(repo_dir, "rev-list", "--all")
     got = run_cli(root_dir, "--repo", str(repo_dir), "rev-list", "--all")
+    assert got == want
 
+    want = run_git(repo_dir, "rev-list", "--all", "--topo-order")
+    got = run_cli(root_dir, "--repo", str(repo_dir), "rev-list", "--all", "--topo-order")
     assert got == want

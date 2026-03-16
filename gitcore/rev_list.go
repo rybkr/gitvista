@@ -156,13 +156,15 @@ func collectReachableCommits(commits map[Hash]*Commit, starts []Hash) map[Hash]*
 }
 
 func orderRevListCommits(commits map[Hash]*Commit, starts []Hash, mode RevListOrder) []*Commit {
+	reachable := chronologicalRevListCommits(commits, starts)
+
 	switch mode {
 	case RevListOrderTopo:
-		return topoOrderRevListCommits(collectReachableCommits(commits, starts), false)
+		return topoOrderRevListCommits(reachable, false)
 	case RevListOrderDate:
-		return topoOrderRevListCommits(collectReachableCommits(commits, starts), true)
+		return topoOrderRevListCommits(reachable, true)
 	default:
-		return chronologicalRevListCommits(commits, starts)
+		return reachable
 	}
 }
 
@@ -206,15 +208,21 @@ func chronologicalRevListCommits(commits map[Hash]*Commit, starts []Hash) []*Com
 	return ordered
 }
 
-func topoOrderRevListCommits(commits map[Hash]*Commit, useDate bool) []*Commit {
-	childCount := make(map[Hash]int, len(commits))
-	for hash := range commits {
-		childCount[hash] = 0
+func topoOrderRevListCommits(commits []*Commit, useDate bool) []*Commit {
+	if len(commits) == 0 {
+		return nil
+	}
+
+	commitByID := make(map[Hash]*Commit, len(commits))
+	indegree := make(map[Hash]int, len(commits))
+	for _, commit := range commits {
+		commitByID[commit.ID] = commit
+		indegree[commit.ID] = 1
 	}
 	for _, commit := range commits {
 		for _, parent := range commit.Parents {
-			if _, ok := commits[parent]; ok {
-				childCount[parent]++
+			if _, ok := commitByID[parent]; ok {
+				indegree[parent]++
 			}
 		}
 	}
@@ -223,9 +231,9 @@ func topoOrderRevListCommits(commits map[Hash]*Commit, useDate bool) []*Commit {
 		h := &revListCommitHeap{}
 		heap.Init(h)
 		nextSeq := 0
-		for hash, count := range childCount {
-			if count == 0 {
-				heap.Push(h, revListCommitItem{commit: commits[hash], seq: nextSeq})
+		for _, commit := range commits {
+			if indegree[commit.ID] == 1 {
+				heap.Push(h, revListCommitItem{commit: commit, seq: nextSeq})
 				nextSeq++
 			}
 		}
@@ -234,15 +242,16 @@ func topoOrderRevListCommits(commits map[Hash]*Commit, useDate bool) []*Commit {
 		for h.Len() > 0 {
 			commit := heap.Pop(h).(revListCommitItem).commit
 			ordered = append(ordered, commit)
+			indegree[commit.ID] = 0
 			for _, parent := range commit.Parents {
-				count, ok := childCount[parent]
+				count, ok := indegree[parent]
 				if !ok {
 					continue
 				}
 				count--
-				childCount[parent] = count
-				if count == 0 {
-					heap.Push(h, revListCommitItem{commit: commits[parent], seq: nextSeq})
+				indegree[parent] = count
+				if count == 1 {
+					heap.Push(h, revListCommitItem{commit: commitByID[parent], seq: nextSeq})
 					nextSeq++
 				}
 			}
@@ -251,19 +260,12 @@ func topoOrderRevListCommits(commits map[Hash]*Commit, useDate bool) []*Commit {
 	}
 
 	var stack []*Commit
-	for hash, count := range childCount {
-		if count == 0 {
-			stack = append(stack, commits[hash])
+	for _, commit := range commits {
+		if indegree[commit.ID] == 1 {
+			stack = append(stack, commit)
 		}
 	}
-	sort.Slice(stack, func(i, j int) bool {
-		left := stack[i]
-		right := stack[j]
-		if !left.Committer.When.Equal(right.Committer.When) {
-			return left.Committer.When.Before(right.Committer.When)
-		}
-		return left.ID < right.ID
-	})
+	reverseRevListCommits(stack)
 
 	ordered := make([]*Commit, 0, len(commits))
 	for len(stack) > 0 {
@@ -271,31 +273,28 @@ func topoOrderRevListCommits(commits map[Hash]*Commit, useDate bool) []*Commit {
 		commit := stack[last]
 		stack = stack[:last]
 		ordered = append(ordered, commit)
+		indegree[commit.ID] = 0
 
-		ready := make([]*Commit, 0, len(commit.Parents))
 		for _, parent := range commit.Parents {
-			count, ok := childCount[parent]
+			count, ok := indegree[parent]
 			if !ok {
 				continue
 			}
 			count--
-			childCount[parent] = count
-			if count == 0 {
-				ready = append(ready, commits[parent])
+			indegree[parent] = count
+			if count == 1 {
+				stack = append(stack, commitByID[parent])
 			}
 		}
-		sort.Slice(ready, func(i, j int) bool {
-			left := ready[i]
-			right := ready[j]
-			if !left.Committer.When.Equal(right.Committer.When) {
-				return left.Committer.When.Before(right.Committer.When)
-			}
-			return left.ID < right.ID
-		})
-		stack = append(stack, ready...)
 	}
 
 	return ordered
+}
+
+func reverseRevListCommits(commits []*Commit) {
+	for left, right := 0, len(commits)-1; left < right; left, right = left+1, right-1 {
+		commits[left], commits[right] = commits[right], commits[left]
+	}
 }
 
 type revListCommitItem struct {
