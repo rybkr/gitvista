@@ -161,3 +161,55 @@ func TestRevListTopoOrderPreservesTraversalOrderForEqualDateTips(t *testing.T) {
 		}
 	}
 }
+
+func TestRevListTopoOrderKeepsSingleParentChainTogether(t *testing.T) {
+	root := Hash("1111111111111111111111111111111111111111")
+	left := Hash("2222222222222222222222222222222222222222")
+	leftParent := Hash("3333333333333333333333333333333333333333")
+	right := Hash("4444444444444444444444444444444444444444")
+	now := time.Unix(1_700_000_000, 0)
+
+	commits := map[Hash]*Commit{
+		root:       {ID: root, Committer: Signature{When: now.Add(-3 * time.Hour)}},
+		left:       {ID: left, Parents: []Hash{leftParent}, Committer: Signature{When: now}},
+		leftParent: {ID: leftParent, Parents: []Hash{root}, Committer: Signature{When: now.Add(-2 * time.Hour)}},
+		right:      {ID: right, Parents: []Hash{root}, Committer: Signature{When: now.Add(-1 * time.Hour)}},
+	}
+
+	got := orderRevListCommits(commits, []Hash{left, right}, RevListOrderTopo)
+	want := []Hash{left, leftParent, right, root}
+	if len(got) != len(want) {
+		t.Fatalf("orderRevListCommits len = %d, want %d", len(got), len(want))
+	}
+	for i, commit := range got {
+		if commit.ID != want[i] {
+			t.Fatalf("orderRevListCommits[%d] = %s, want %s", i, commit.ID, want[i])
+		}
+	}
+}
+
+func TestRevListDateOrderUsesCommitDateWhenParentsBecomeReady(t *testing.T) {
+	root := Hash("1111111111111111111111111111111111111111")
+	left := Hash("2222222222222222222222222222222222222222")
+	leftParent := Hash("3333333333333333333333333333333333333333")
+	right := Hash("4444444444444444444444444444444444444444")
+	now := time.Unix(1_700_000_000, 0)
+
+	commits := map[Hash]*Commit{
+		root:       {ID: root, Committer: Signature{When: now.Add(-4 * time.Hour)}},
+		left:       {ID: left, Parents: []Hash{leftParent}, Committer: Signature{When: now}},
+		leftParent: {ID: leftParent, Parents: []Hash{root}, Committer: Signature{When: now.Add(-3 * time.Hour)}},
+		right:      {ID: right, Parents: []Hash{root}, Committer: Signature{When: now.Add(-1 * time.Hour)}},
+	}
+
+	got := orderRevListCommits(commits, []Hash{left, right}, RevListOrderDate)
+	want := []Hash{left, right, leftParent, root}
+	if len(got) != len(want) {
+		t.Fatalf("orderRevListCommits len = %d, want %d", len(got), len(want))
+	}
+	for i, commit := range got {
+		if commit.ID != want[i] {
+			t.Fatalf("orderRevListCommits[%d] = %s, want %s", i, commit.ID, want[i])
+		}
+	}
+}
