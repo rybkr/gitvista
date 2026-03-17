@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 // RepoState represents the lifecycle state of a managed repository.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 // newTestSession creates a RepoSession with a zero-value Repository for testing

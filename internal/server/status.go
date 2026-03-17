@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 // File status label constants reference the canonical values in gitcore.

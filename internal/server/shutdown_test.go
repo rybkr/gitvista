@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 func silentLogger() *slog.Logger {

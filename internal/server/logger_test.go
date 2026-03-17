@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 // TestNewServer_LoggerInitialised verifies that NewServer populates the logger

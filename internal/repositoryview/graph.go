@@ -3,7 +3,7 @@ package repositoryview
 import (
 	"slices"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 type CommitSkeleton struct {

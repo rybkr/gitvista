@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
@@ -9,8 +9,8 @@ import (
 type UpdateMessage struct {
 	Delta   *repositoryview.RepositoryDelta `json:"delta"`
 	Summary *repositoryview.GraphSummary    `json:"summary,omitempty"`
-	Status  *WorkingTreeStatus       `json:"status,omitempty"`
-	Head    *HeadInfo                `json:"head,omitempty"`
+	Status  *WorkingTreeStatus              `json:"status,omitempty"`
+	Head    *HeadInfo                       `json:"head,omitempty"`
 }
 
 // HeadInfo contains information about the current HEAD state.

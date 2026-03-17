@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 // extractHashParam validates the request method, extracts a hex hash from the URL

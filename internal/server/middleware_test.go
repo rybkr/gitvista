@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 func TestSessionFromCtx_Present(t *testing.T) {

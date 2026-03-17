@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 type diffStatEntry struct {

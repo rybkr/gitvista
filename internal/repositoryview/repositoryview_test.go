@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 func makeCommit(hash gitcore.Hash, parents []gitcore.Hash, when time.Time, message string) *gitcore.Commit {

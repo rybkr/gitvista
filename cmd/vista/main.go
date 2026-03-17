@@ -19,9 +19,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rybkr/gitvista/gitcore"
 	app "github.com/rybkr/gitvista/internal/app/local"
 	"github.com/rybkr/gitvista/internal/cli"
-	"github.com/rybkr/gitvista/internal/gitcore"
 	"github.com/rybkr/gitvista/internal/selfupdate"
 )
 

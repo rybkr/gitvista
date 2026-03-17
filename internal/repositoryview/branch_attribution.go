@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 const (

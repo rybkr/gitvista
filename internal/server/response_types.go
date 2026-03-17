@@ -1,6 +1,6 @@
 package server
 
-import "github.com/rybkr/gitvista/internal/gitcore"
+import "github.com/rybkr/gitvista/gitcore"
 
 type configResponse struct {
 	Mode string `json:"mode"`

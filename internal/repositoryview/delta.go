@@ -1,6 +1,6 @@
 package repositoryview
 
-import "github.com/rybkr/gitvista/internal/gitcore"
+import "github.com/rybkr/gitvista/gitcore"
 
 type RepositoryDelta struct {
 	AddedCommits   []*gitcore.Commit `json:"addedCommits"`
@@ -10,8 +10,8 @@ type RepositoryDelta struct {
 	AmendedBranches map[string]gitcore.Hash `json:"amendedBranches"`
 	DeletedBranches map[string]gitcore.Hash `json:"deletedBranches"`
 
-	HeadHash string               `json:"headHash"`
-	Tags     map[string]string    `json:"tags"`
+	HeadHash string                `json:"headHash"`
+	Tags     map[string]string     `json:"tags"`
 	Stashes  []*gitcore.StashEntry `json:"stashes"`
 
 	Bootstrap         bool `json:"bootstrap,omitempty"`

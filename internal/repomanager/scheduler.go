@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 )
 
 // fetchLoop periodically fetches updates for all ready repos.

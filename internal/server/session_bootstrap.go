@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/gitcore"
 	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
