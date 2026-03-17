@@ -182,6 +182,38 @@ func (r *Repository) HeadDetached() bool {
 	return r.headDetached
 }
 
+// Description returns the .git/description contents, or empty string if the file
+// is missing or contains Git's default placeholder text.
+func (r *Repository) Description() string {
+	descPath := filepath.Join(r.gitDir, "description")
+	// #nosec G304 -- description path is controlled by repository location
+	content, err := os.ReadFile(descPath)
+	if err != nil {
+		return ""
+	}
+
+	desc := strings.TrimSpace(string(content))
+	if desc == "Unnamed repository; edit this file 'description' to name the repository." {
+		return ""
+	}
+
+	return desc
+}
+
+// TagNames returns all tag names in the repository.
+func (r *Repository) TagNames() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]string, 0)
+	for ref := range r.refs {
+		if name, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
 // LsTree resolves a commit revision and returns the entries in its root tree.
 func (r *Repository) LsTree(opts LsTreeOptions) ([]TreeEntry, error) {
 	hash, err := r.ResolveRevision(opts.Revision)
@@ -280,4 +312,38 @@ func (r *Repository) objectType(hash Hash) (ObjectType, error) {
 		return ObjectTypeInvalid, err
 	}
 	return objectType, nil
+}
+
+func (r *Repository) resolveTreeAtPath(rootTreeHash Hash, dirPath string) (*Tree, error) {
+	if dirPath == "" || dirPath == "/" {
+		return r.GetTree(rootTreeHash)
+	}
+
+	components := strings.Split(strings.Trim(dirPath, "/"), "/")
+	currentTreeHash := rootTreeHash
+
+	for _, component := range components {
+		tree, err := r.GetTree(currentTreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tree %s: %w", currentTreeHash, err)
+		}
+
+		found := false
+		for _, entry := range tree.Entries {
+			if entry.Name == component {
+				if entry.Mode != "040000" && entry.Type != ObjectTypeTree {
+					return nil, fmt.Errorf("path component %q is not a directory", component)
+				}
+				currentTreeHash = entry.ID
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return nil, fmt.Errorf("path component %q not found", component)
+		}
+	}
+
+	return r.GetTree(currentTreeHash)
 }

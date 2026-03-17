@@ -83,12 +83,14 @@ type ObjectResolver func(id Hash, depth int) (data []byte, objectType ObjectType
 // Commit represents a Git commit object.
 // See: https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 type Commit struct {
-	ID        Hash      `json:"hash"`
-	Tree      Hash      `json:"tree"`
-	Parents   []Hash    `json:"parents"`
-	Author    Signature `json:"author"`
-	Committer Signature `json:"committer"`
-	Message   string    `json:"message"`
+	ID                Hash      `json:"hash"`
+	Tree              Hash      `json:"tree"`
+	Parents           []Hash    `json:"parents"`
+	Author            Signature `json:"author"`
+	Committer         Signature `json:"committer"`
+	Message           string    `json:"message"`
+	BranchLabel       string    `json:"branchLabel,omitempty"`
+	BranchLabelSource string    `json:"branchLabelSource,omitempty"`
 }
 
 // Type returns the ObjectType for a Commit.
