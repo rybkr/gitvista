@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestParseRemotesFromConfigStripsHTTPAuthOnly(t *testing.T) {
@@ -133,4 +134,59 @@ func TestNewRepositoryLoadsConfigAndMetadata(t *testing.T) {
 	if repo.head != commitID || repo.headRef != "refs/heads/main" || repo.headDetached {
 		t.Fatalf("unexpected HEAD state: head=%s ref=%q detached=%v", repo.head, repo.headRef, repo.headDetached)
 	}
+}
+
+func TestRepositoryCommitLog(t *testing.T) {
+	now := time.Now()
+
+	commit1 := &Commit{
+		ID:        Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Parents:   []Hash{},
+		Committer: Signature{When: now.Add(-2 * time.Hour)},
+		Message:   "first",
+	}
+	commit2 := &Commit{
+		ID:        Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		Parents:   []Hash{commit1.ID},
+		Committer: Signature{When: now.Add(-time.Hour)},
+		Message:   "second",
+	}
+	commit3 := &Commit{
+		ID:        Hash("cccccccccccccccccccccccccccccccccccccccc"),
+		Parents:   []Hash{commit2.ID},
+		Committer: Signature{When: now},
+		Message:   "third",
+	}
+
+	repo := &Repository{
+		head:      commit3.ID,
+		commits:   []*Commit{commit1, commit2, commit3},
+		commitMap: map[Hash]*Commit{commit1.ID: commit1, commit2.ID: commit2, commit3.ID: commit3},
+	}
+
+	t.Run("all commits", func(t *testing.T) {
+		log := repo.CommitLog(0)
+		if len(log) != 3 {
+			t.Fatalf("CommitLog(0) returned %d commits, want 3", len(log))
+		}
+		if log[0].ID != commit3.ID || log[1].ID != commit2.ID || log[2].ID != commit1.ID {
+			t.Fatalf("unexpected commit order: %s %s %s", log[0].ID, log[1].ID, log[2].ID)
+		}
+	})
+
+	t.Run("limited count", func(t *testing.T) {
+		log := repo.CommitLog(2)
+		if len(log) != 2 {
+			t.Fatalf("CommitLog(2) returned %d commits, want 2", len(log))
+		}
+		if log[0].ID != commit3.ID {
+			t.Fatalf("first commit = %s, want %s", log[0].ID, commit3.ID)
+		}
+	})
+
+	t.Run("empty head", func(t *testing.T) {
+		if log := NewEmptyRepository().CommitLog(0); log != nil {
+			t.Fatalf("CommitLog() on empty repo = %v, want nil", log)
+		}
+	})
 }

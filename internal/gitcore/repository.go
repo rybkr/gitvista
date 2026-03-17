@@ -21,7 +21,6 @@ type Repository struct {
 	stashes       []*StashEntry
 	packIndices   []*PackIndex
 	packLocations map[Hash]packLocation
-	mailmap       *Mailmap
 
 	head         Hash
 	headRef      string
@@ -94,9 +93,6 @@ func NewRepository(path string) (*Repository, error) {
 	}
 	if err := repo.loadObjects(); err != nil {
 		return nil, fmt.Errorf("failed to load objects: %w", err)
-	}
-	if err := repo.loadMailmap(); err != nil {
-		return nil, fmt.Errorf("failed to load mailmap: %w", err)
 	}
 
 	return repo, nil
