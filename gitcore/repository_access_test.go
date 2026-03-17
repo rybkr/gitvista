@@ -1,9 +1,11 @@
 package gitcore
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRepositoryAccessCounts(t *testing.T) {
@@ -155,6 +157,120 @@ func TestRepositoryAccessRemotesWithoutConfig(t *testing.T) {
 
 	if got := repo.Remotes(); len(got) != 0 {
 		t.Fatalf("Remotes() = %#v, want empty map", got)
+	}
+}
+
+func TestRepositoryAccessDescriptionAndTagNames(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	writeTextFile(t, filepath.Join(repo.gitDir, "description"), "example repository\n")
+	repo.refs["refs/tags/v1.0"] = mustHash(t, testHash1)
+	repo.refs["refs/tags/v1.1"] = mustHash(t, testHash2)
+
+	if got := repo.Description(); got != "example repository" {
+		t.Fatalf("Description() = %q, want %q", got, "example repository")
+	}
+
+	tagNames := repo.TagNames()
+	if len(tagNames) != 2 {
+		t.Fatalf("TagNames() len = %d, want 2", len(tagNames))
+	}
+	if !strings.Contains(strings.Join(tagNames, ","), "v1.0") || !strings.Contains(strings.Join(tagNames, ","), "v1.1") {
+		t.Fatalf("TagNames() = %#v", tagNames)
+	}
+
+	writeTextFile(t, filepath.Join(repo.gitDir, "description"), "Unnamed repository; edit this file 'description' to name the repository.\n")
+	if got := repo.Description(); got != "" {
+		t.Fatalf("Description() placeholder = %q, want empty", got)
+	}
+
+	if err := os.Remove(filepath.Join(repo.gitDir, "description")); err != nil {
+		t.Fatalf("remove description: %v", err)
+	}
+	if got := repo.Description(); got != "" {
+		t.Fatalf("Description() missing file = %q, want empty", got)
+	}
+}
+
+func TestGetFileBlameForNestedDirectory(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	blob1 := mustHash(t, testHash1)
+	blob2 := mustHash(t, testHash2)
+	blob3 := mustHash(t, testHash3)
+	srcTree1 := mustHash(t, testHash4)
+	srcTree2 := mustHash(t, testHash5)
+	rootTree1 := mustHash(t, testHash6)
+	rootTree2 := mustHash(t, testHash7)
+	rootTree3 := mustHash(t, "8888888888888888888888888888888888888888")
+	commit1 := mustHash(t, "9999999999999999999999999999999999999999")
+	commit2 := mustHash(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	commit3 := mustHash(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	writeLooseObject(t, repo.gitDir, blob1, "blob", []byte("one\n"))
+	writeLooseObject(t, repo.gitDir, blob2, "blob", []byte("two\n"))
+	writeLooseObject(t, repo.gitDir, blob3, "blob", []byte("three\n"))
+	writeLooseObject(t, repo.gitDir, srcTree1, "tree", treeBodyWithEntries(
+		treeEntry("100644", "file.txt", blob1),
+	))
+	writeLooseObject(t, repo.gitDir, srcTree2, "tree", treeBodyWithEntries(
+		treeEntry("100644", "file.txt", blob2),
+		treeEntry("100644", "extra.txt", blob3),
+	))
+	writeLooseObject(t, repo.gitDir, rootTree1, "tree", treeBodyWithEntries(
+		treeEntry("040000", "src", srcTree1),
+	))
+	writeLooseObject(t, repo.gitDir, rootTree2, "tree", treeBodyWithEntries(
+		treeEntry("040000", "src", srcTree2),
+	))
+	writeLooseObject(t, repo.gitDir, rootTree3, "tree", treeBodyWithEntries(
+		treeEntry("040000", "src", srcTree2),
+	))
+
+	writeLooseObject(t, repo.gitDir, commit1, "commit", []byte("tree "+string(rootTree1)+"\nauthor Alice <alice@example.com> 1700000000 +0000\ncommitter Alice <alice@example.com> 1700000000 +0000\n\ninitial\n"))
+	writeLooseObject(t, repo.gitDir, commit2, "commit", []byte("tree "+string(rootTree2)+"\nparent "+string(commit1)+"\nauthor Bob <bob@example.com> 1700003600 +0000\ncommitter Bob <bob@example.com> 1700003600 +0000\n\nupdate src\nmore detail\n"))
+	writeLooseObject(t, repo.gitDir, commit3, "commit", []byte("tree "+string(rootTree3)+"\nparent "+string(commit2)+"\nauthor Carol <carol@example.com> 1700007200 +0000\ncommitter Carol <carol@example.com> 1700007200 +0000\n\nno src changes\n"))
+
+	repo.commitMap[commit1] = &Commit{
+		ID:        commit1,
+		Tree:      rootTree1,
+		Author:    Signature{Name: "Alice", Email: "alice@example.com", When: time.Unix(1700000000, 0)},
+		Committer: Signature{When: time.Unix(1700000000, 0)},
+		Message:   "initial\n",
+	}
+	repo.commitMap[commit2] = &Commit{
+		ID:        commit2,
+		Tree:      rootTree2,
+		Parents:   []Hash{commit1},
+		Author:    Signature{Name: "Bob", Email: "bob@example.com", When: time.Unix(1700003600, 0)},
+		Committer: Signature{When: time.Unix(1700003600, 0)},
+		Message:   "update src\nmore detail\n",
+	}
+	repo.commitMap[commit3] = &Commit{
+		ID:        commit3,
+		Tree:      rootTree3,
+		Parents:   []Hash{commit2},
+		Author:    Signature{Name: "Carol", Email: "carol@example.com", When: time.Unix(1700007200, 0)},
+		Committer: Signature{When: time.Unix(1700007200, 0)},
+		Message:   "no src changes\n",
+	}
+
+	blame, err := repo.GetFileBlame(commit3, "src")
+	if err != nil {
+		t.Fatalf("GetFileBlame() error: %v", err)
+	}
+
+	if len(blame) != 2 {
+		t.Fatalf("GetFileBlame() len = %d, want 2", len(blame))
+	}
+	if blame["file.txt"].CommitHash != commit2 || blame["file.txt"].AuthorName != "Bob" {
+		t.Fatalf("file.txt blame = %+v", blame["file.txt"])
+	}
+	if blame["file.txt"].CommitMessage != "update src" {
+		t.Fatalf("file.txt commit message = %q", blame["file.txt"].CommitMessage)
+	}
+	if blame["extra.txt"].CommitHash != commit2 {
+		t.Fatalf("extra.txt blame = %+v", blame["extra.txt"])
 	}
 }
 
