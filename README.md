@@ -61,7 +61,7 @@ All options can be set via CLI flags or environment variables.
 ```
 cmd/vista/              Local GitVista binary
 cmd/site/               Hosted gitvista.io binary
-internal/gitcore/       Pure Go git object parsing (no git CLI)
+gitcore/                Pure Go git engine and object parsing (no git CLI)
 internal/server/        Shared HTTP + WebSocket server components
 internal/app/           App composition for local and hosted products
 web/gitvista/           Shared GitVista repository experience

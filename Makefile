@@ -34,7 +34,7 @@ test: unit integration e2e test-js
 cover:
 	@mkdir -p test/cover
 	$(GOTEST) -v -race -timeout=60s -covermode=atomic \
-		-coverprofile=test/cover/coverage.out -coverpkg=./internal/... ./...
+		-coverprofile=test/cover/coverage.out -coverpkg=./... ./...
 
 ## cover-html: Generate and open HTML coverage report
 cover-html: cover
@@ -105,7 +105,7 @@ vet:
 security: check-vuln
 	@echo "Running gosec security scanner..."
 	@if command -v gosec >/dev/null; then \
-		gosec -quiet -exclude=G304,G204 ./internal/...; \
+		gosec -quiet -exclude=G304,G204 ./...; \
 	else \
 		echo "gosec not found - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
 		exit 1; \
@@ -123,7 +123,7 @@ security-local:
 	fi
 	@echo "Running gosec security scanner..."
 	@if command -v gosec >/dev/null; then \
-		gosec -quiet -exclude=G304,G204 ./internal/...; \
+		gosec -quiet -exclude=G304,G204 ./...; \
 	else \
 		echo "gosec not found - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
 		exit 1; \
