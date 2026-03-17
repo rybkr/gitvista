@@ -239,8 +239,6 @@ func (r *Repository) GetTag(hash Hash) (*Tag, error) {
 // GetCommits returns full Commit objects for the given hashes.
 // Unknown hashes are silently skipped.
 func (r *Repository) GetCommits(hashes []Hash) []*Commit {
-	attribution := r.commitBranchAttribution()
-
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -248,7 +246,9 @@ func (r *Repository) GetCommits(hashes []Hash) []*Commit {
 	result := make([]*Commit, 0, len(hashes))
 	for _, h := range hashes {
 		if c, ok := cm[h]; ok {
-			result = append(result, cloneCommitWithBranchAttribution(c, attribution[h]))
+			copy := *c
+			copy.Parents = append([]Hash(nil), c.Parents...)
+			result = append(result, &copy)
 		}
 	}
 	return result

@@ -2,53 +2,6 @@ package gitcore
 
 import "container/heap"
 
-// BuildGraphSummary constructs a lightweight GraphSummary containing only the
-// topology (parent hashes) and temporal data (committer timestamps) for every
-// commit, plus branches, tags, HEAD, and stashes. This is much smaller than the
-// full commit set and enables the client to compute graph layout without
-// materializing heavyweight commit data.
-func (r *Repository) BuildGraphSummary() *GraphSummary {
-	attribution := r.commitBranchAttribution()
-
-	// Build skeletons and read head under the lock, then release before
-	// calling Branches/Tags/Stashes which acquire their own RLock.
-	r.mu.RLock()
-
-	skeletons := make([]CommitSkeleton, 0, len(r.commits))
-	var oldest, newest int64
-	for _, c := range r.commits {
-		ts := c.Committer.When.Unix()
-		attr := attribution[c.ID]
-		skeletons = append(skeletons, CommitSkeleton{
-			Hash:              c.ID,
-			Parents:           c.Parents,
-			Timestamp:         ts,
-			BranchLabel:       attr.Label,
-			BranchLabelSource: attr.Source,
-		})
-		if oldest == 0 || ts < oldest {
-			oldest = ts
-		}
-		if ts > newest {
-			newest = ts
-		}
-	}
-	totalCommits := len(r.commits)
-	headHash := string(r.head)
-	r.mu.RUnlock()
-
-	return &GraphSummary{
-		TotalCommits:    totalCommits,
-		Skeleton:        skeletons,
-		Branches:        r.GraphBranches(),
-		Tags:            r.Tags(),
-		HeadHash:        headHash,
-		Stashes:         r.Stashes(),
-		OldestTimestamp: oldest,
-		NewestTimestamp: newest,
-	}
-}
-
 // commitHeap is a max-heap of commits sorted by committer date (newest first).
 type commitHeap []*Commit
 

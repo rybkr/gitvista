@@ -30,8 +30,32 @@ func BuildGraphSummary(repo *gitcore.Repository) *GraphSummary {
 		return &GraphSummary{}
 	}
 
-	attribution := commitBranchAttribution(repo)
-	commitsMap := repo.Commits()
+	return buildGraphSummary(
+		repo.Commits(),
+		commitBranchAttribution(repo),
+		repo.GraphBranches(),
+		repo.Tags(),
+		repo.Head(),
+		repo.Stashes(),
+	)
+}
+
+func AttributedCommits(repo *gitcore.Repository, hashes []gitcore.Hash) []*gitcore.Commit {
+	if repo == nil {
+		return nil
+	}
+
+	return attributedCommits(repo.Commits(), hashes, commitBranchAttribution(repo))
+}
+
+func buildGraphSummary(
+	commitsMap map[gitcore.Hash]*gitcore.Commit,
+	attribution map[gitcore.Hash]branchAttribution,
+	branches map[string]gitcore.Hash,
+	tags map[string]string,
+	head gitcore.Hash,
+	stashes []*gitcore.StashEntry,
+) *GraphSummary {
 	commits := make([]*gitcore.Commit, 0, len(commitsMap))
 	for _, commit := range commitsMap {
 		commits = append(commits, commit)
@@ -88,22 +112,20 @@ func BuildGraphSummary(repo *gitcore.Repository) *GraphSummary {
 	return &GraphSummary{
 		TotalCommits:    len(commits),
 		Skeleton:        skeletons,
-		Branches:        repo.GraphBranches(),
-		Tags:            repo.Tags(),
-		HeadHash:        string(repo.Head()),
-		Stashes:         repo.Stashes(),
+		Branches:        branches,
+		Tags:            tags,
+		HeadHash:        string(head),
+		Stashes:         stashes,
 		OldestTimestamp: oldest,
 		NewestTimestamp: newest,
 	}
 }
 
-func AttributedCommits(repo *gitcore.Repository, hashes []gitcore.Hash) []*gitcore.Commit {
-	if repo == nil {
-		return nil
-	}
-
-	attribution := commitBranchAttribution(repo)
-	commits := repo.Commits()
+func attributedCommits(
+	commits map[gitcore.Hash]*gitcore.Commit,
+	hashes []gitcore.Hash,
+	attribution map[gitcore.Hash]branchAttribution,
+) []*gitcore.Commit {
 	result := make([]*gitcore.Commit, 0, len(hashes))
 	for _, hash := range hashes {
 		if commit, ok := commits[hash]; ok {

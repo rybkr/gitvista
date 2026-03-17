@@ -44,12 +44,31 @@ func DiffRepositories(newRepo, oldRepo *gitcore.Repository) *RepositoryDelta {
 		oldRepo = gitcore.NewEmptyRepository()
 	}
 
-	delta := NewRepositoryDelta()
-	newAttribution := commitBranchAttribution(newRepo)
-	oldAttribution := commitBranchAttribution(oldRepo)
+	return diffRepositories(
+		newRepo.Commits(),
+		oldRepo.Commits(),
+		commitBranchAttribution(newRepo),
+		commitBranchAttribution(oldRepo),
+		newRepo.GraphBranches(),
+		oldRepo.GraphBranches(),
+		newRepo.Head(),
+		newRepo.Tags(),
+		newRepo.Stashes(),
+	)
+}
 
-	newCommits := newRepo.Commits()
-	oldCommits := oldRepo.Commits()
+func diffRepositories(
+	newCommits map[gitcore.Hash]*gitcore.Commit,
+	oldCommits map[gitcore.Hash]*gitcore.Commit,
+	newAttribution map[gitcore.Hash]branchAttribution,
+	oldAttribution map[gitcore.Hash]branchAttribution,
+	newBranches map[string]gitcore.Hash,
+	oldBranches map[string]gitcore.Hash,
+	head gitcore.Hash,
+	tags map[string]string,
+	stashes []*gitcore.StashEntry,
+) *RepositoryDelta {
+	delta := NewRepositoryDelta()
 	for hash, commit := range newCommits {
 		if _, found := oldCommits[hash]; !found {
 			delta.AddedCommits = append(delta.AddedCommits, cloneCommitWithBranchAttribution(commit, newAttribution[hash]))
@@ -61,8 +80,6 @@ func DiffRepositories(newRepo, oldRepo *gitcore.Repository) *RepositoryDelta {
 		}
 	}
 
-	newBranches := newRepo.GraphBranches()
-	oldBranches := oldRepo.GraphBranches()
 	for branch, hash := range newBranches {
 		if oldHash, found := oldBranches[branch]; !found {
 			delta.AddedBranches[branch] = hash
@@ -76,9 +93,9 @@ func DiffRepositories(newRepo, oldRepo *gitcore.Repository) *RepositoryDelta {
 		}
 	}
 
-	delta.HeadHash = string(newRepo.Head())
-	delta.Tags = newRepo.Tags()
-	delta.Stashes = newRepo.Stashes()
+	delta.HeadHash = string(head)
+	delta.Tags = tags
+	delta.Stashes = stashes
 	if delta.Stashes == nil {
 		delta.Stashes = make([]*gitcore.StashEntry, 0)
 	}
