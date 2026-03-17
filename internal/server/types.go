@@ -2,12 +2,13 @@ package server
 
 import (
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
 // UpdateMessage is sent to clients via WebSocket.
 type UpdateMessage struct {
-	Delta   *gitcore.RepositoryDelta `json:"delta"`
-	Summary *gitcore.GraphSummary    `json:"summary,omitempty"`
+	Delta   *repositoryview.RepositoryDelta `json:"delta"`
+	Summary *repositoryview.GraphSummary    `json:"summary,omitempty"`
 	Status  *WorkingTreeStatus       `json:"status,omitempty"`
 	Head    *HeadInfo                `json:"head,omitempty"`
 }

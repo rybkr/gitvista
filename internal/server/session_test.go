@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
 func TestNewRepoSession(t *testing.T) {
@@ -126,7 +127,7 @@ func TestRepoSession_DefaultLogger(t *testing.T) {
 
 func TestMarshalPacketPayload(t *testing.T) {
 	msg := UpdateMessage{
-		Delta: &gitcore.RepositoryDelta{
+		Delta: &repositoryview.RepositoryDelta{
 			AddedCommits: []*gitcore.Commit{
 				{ID: gitcore.Hash("1111111111111111111111111111111111111111")},
 				{ID: gitcore.Hash("2222222222222222222222222222222222222222")},

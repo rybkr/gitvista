@@ -1,6 +1,9 @@
 package gitvista
 
-import "github.com/rybkr/gitvista/internal/gitcore"
+import (
+	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/repositoryview"
+)
 
 // Repository is the public module-root wrapper around the internal Git engine.
 // It exposes a stable entrypoint without leaking gitcore into import paths.
@@ -13,8 +16,8 @@ type (
 	Commit            = gitcore.Commit
 	Tag               = gitcore.Tag
 	StashEntry        = gitcore.StashEntry
-	GraphSummary      = gitcore.GraphSummary
-	CommitSkeleton    = gitcore.CommitSkeleton
+	GraphSummary      = repositoryview.GraphSummary
+	CommitSkeleton    = repositoryview.CommitSkeleton
 	WorkingTreeStatus = gitcore.WorkingTreeStatus
 	FileStatus        = gitcore.FileStatus
 	UpstreamTracking  = gitcore.UpstreamTracking
@@ -84,7 +87,7 @@ func (r *Repository) CurrentBranchUpstream() *UpstreamTracking {
 
 // GraphSummary returns a lightweight summary of commit topology and refs.
 func (r *Repository) GraphSummary() *GraphSummary {
-	return r.core.BuildGraphSummary()
+	return repositoryview.BuildGraphSummary(r.core)
 }
 
 // WorkingTreeStatus computes staged, unstaged, and untracked file state.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
 func (s *Server) handleMergePreview(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +225,7 @@ func (s *Server) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Repository not available", http.StatusServiceUnavailable)
 		return
 	}
-	summary := repo.BuildGraphSummary()
+	summary := repositoryview.BuildGraphSummary(repo)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(summary); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -266,7 +267,7 @@ func (s *Server) handleGraphCommits(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response := graphCommitsResponse{Commits: repo.GetCommits(hashes)}
+	response := graphCommitsResponse{Commits: repositoryview.AttributedCommits(repo, hashes)}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)

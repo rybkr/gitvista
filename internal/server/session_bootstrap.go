@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
 func (rs *RepoSession) broadcastInitialBootstrap(
-	delta *gitcore.RepositoryDelta,
+	delta *repositoryview.RepositoryDelta,
 	status *WorkingTreeStatus,
 	headInfo *HeadInfo,
 ) {
@@ -37,7 +38,7 @@ func (rs *RepoSession) broadcastInitialBootstrap(
 			}
 		}
 
-		batchDelta := gitcore.NewRepositoryDelta()
+		batchDelta := repositoryview.NewRepositoryDelta()
 		batchDelta.AddedCommits = batch
 		batchDelta.AddedBranches = filterBranchesBySentHashes(delta.AddedBranches, sent)
 		batchDelta.HeadHash = delta.HeadHash
@@ -58,7 +59,7 @@ func (rs *RepoSession) broadcastInitialBootstrap(
 	}
 }
 
-func planInitialCommitBatches(delta *gitcore.RepositoryDelta) [][]*gitcore.Commit {
+func planInitialCommitBatches(delta *repositoryview.RepositoryDelta) [][]*gitcore.Commit {
 	if delta == nil || len(delta.AddedCommits) == 0 {
 		return nil
 	}
@@ -203,7 +204,7 @@ func estimateBootstrapCommitSize(c *gitcore.Commit) int {
 	return size
 }
 
-func collectRefTipHashes(delta *gitcore.RepositoryDelta) []gitcore.Hash {
+func collectRefTipHashes(delta *repositoryview.RepositoryDelta) []gitcore.Hash {
 	if delta == nil {
 		return nil
 	}

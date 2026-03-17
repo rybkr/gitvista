@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/rybkr/gitvista/internal/gitcore"
+	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
 const broadcastChannelSize = 256
@@ -165,11 +166,11 @@ func (rs *RepoSession) updateRepository() {
 		return
 	}
 
-	var delta *gitcore.RepositoryDelta
+	var delta *repositoryview.RepositoryDelta
 	if oldRepo != nil {
-		delta = newRepo.Diff(oldRepo)
+		delta = repositoryview.DiffRepositories(newRepo, oldRepo)
 	} else {
-		delta = newRepo.Diff(gitcore.NewEmptyRepository())
+		delta = repositoryview.DiffRepositories(newRepo, gitcore.NewEmptyRepository())
 	}
 
 	rs.cacheMu.Lock()
