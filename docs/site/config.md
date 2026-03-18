@@ -22,11 +22,11 @@ Use these when you run the hosted GitVista site instead of the local desktop-sty
 | `GITVISTA_DATA_DIR` | `/data/repos` | Storage path for managed hosted repositories |
 | `GITVISTA_DATABASE_URL` | unset | PostgreSQL connection string for persistent hosted account and repository metadata |
 | `GITVISTA_PORT` | `8080` | HTTP port for the hosted server |
-| `GITVISTA_HOST` | `` | Bind host for the hosted server |
+| `GITVISTA_HOST` | `0.0.0.0` | Bind host for the hosted server |
 | `GITVISTA_CORS_ORIGINS` | unset | Comma-separated list of allowed browser origins |
 | `GITVISTA_CLONE_ALLOWED_HOSTS` | unset | Comma-separated allowlist for clone hostnames |
 | `GITVISTA_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
-| `GITVISTA_LOG_FORMAT` | `text` | Log output format: `text` or `json` |
+| `GITVISTA_LOG_FORMAT` | `json` | Log output format: `text` or `json` |
 
 ## Precedence
 
@@ -40,4 +40,5 @@ Use these when you run the hosted GitVista site instead of the local desktop-sty
 GITVISTA_PORT=3000 git vista open
 GITVISTA_LOG_FORMAT=json git vista doctor
 GITVISTA_DATA_DIR=/srv/gitvista/repos go run ./cmd/site
+make run-site SITE_ARGS='-data-dir /srv/gitvista/repos'
 ```

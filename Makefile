@@ -22,6 +22,7 @@ MEMPROFILE ?= /tmp/gitvista-cli.mem.prof
 PPROF_WEB ?= 0
 SECURITY_BEST_EFFORT ?= 0
 DEPLOY_ENV ?= staging
+SITE_ARGS ?=
 
 .DEFAULT_GOAL := help
 
@@ -211,9 +212,10 @@ build-site:
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-site ./cmd/site
 
 ## run-site: Run the hosted site entrypoint directly from cmd/site
+##   options: SITE_ARGS='-data-dir /tmp/gitvista-site'
 run-site:
 	@echo "Running hosted site from cmd/site..."
-	$(GOCMD) run ./cmd/site
+	$(GOCMD) run ./cmd/site $(SITE_ARGS)
 
 ##@ Profiling
 ## profile: Capture repo profiles

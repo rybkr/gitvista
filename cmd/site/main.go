@@ -24,6 +24,14 @@ var (
 	buildDate = "unknown"
 )
 
+const (
+	defaultHostedDataDir   = "/data/repos"
+	defaultHostedPort      = "8080"
+	defaultHostedHost      = "0.0.0.0"
+	defaultHostedLogLevel  = "info"
+	defaultHostedLogFormat = "json"
+)
+
 type appFlags struct {
 	dataDir string
 	port    string
@@ -33,7 +41,7 @@ type appFlags struct {
 func main() {
 	initLogger()
 
-	flags, err := parseFlags(os.Args[1:])
+	flags, err := parseFlags(os.Args[1:], getEnv)
 	if err != nil {
 		os.Exit(2)
 	}
@@ -94,19 +102,19 @@ func main() {
 	}
 }
 
-func parseFlags(args []string) (appFlags, error) {
+func parseFlags(args []string, getenv func(string, string) string) (appFlags, error) {
 	flags := appFlags{}
 	fs := flag.NewFlagSet("gitvista-site", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.StringVar(&flags.dataDir, "data-dir", getEnv("GITVISTA_DATA_DIR", "/data/repos"), "Data directory for managed repos")
-	fs.StringVar(&flags.port, "port", getEnv("GITVISTA_PORT", "8080"), "Port to listen on")
-	fs.StringVar(&flags.host, "host", getEnv("GITVISTA_HOST", ""), "Host to bind to")
+	fs.StringVar(&flags.dataDir, "data-dir", getenv("GITVISTA_DATA_DIR", defaultHostedDataDir), "Data directory for managed repos")
+	fs.StringVar(&flags.port, "port", getenv("GITVISTA_PORT", defaultHostedPort), "Port to listen on")
+	fs.StringVar(&flags.host, "host", getenv("GITVISTA_HOST", defaultHostedHost), "Host to bind to")
 	return flags, fs.Parse(args)
 }
 
 func initLogger() {
 	level := slog.LevelInfo
-	switch getEnv("GITVISTA_LOG_LEVEL", "info") {
+	switch getEnv("GITVISTA_LOG_LEVEL", defaultHostedLogLevel) {
 	case "debug":
 		level = slog.LevelDebug
 	case "warn":
@@ -117,7 +125,7 @@ func initLogger() {
 
 	opts := &slog.HandlerOptions{Level: level}
 	var handler slog.Handler
-	if getEnv("GITVISTA_LOG_FORMAT", "text") == "json" {
+	if getEnv("GITVISTA_LOG_FORMAT", defaultHostedLogFormat) == "json" {
 		handler = slog.NewJSONHandler(os.Stderr, opts)
 	} else {
 		handler = slog.NewTextHandler(os.Stderr, opts)

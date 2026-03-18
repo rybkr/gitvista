@@ -85,6 +85,7 @@ make build
 
 ```bash
 go run ./cmd/site
+make run-site SITE_ARGS='-data-dir /srv/gitvista/repos'
 ```
 
 ## Deploy Hosted Site
