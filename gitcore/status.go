@@ -25,6 +25,17 @@ type WorkingTreeStatus struct {
 	Files []FileStatus
 }
 
+func markWorktreeModified(results map[string]*FileStatus, path string, indexHash Hash) *FileStatus {
+	fileStatus, exists := results[path]
+	if !exists {
+		results[path] = &FileStatus{Path: path}
+		fileStatus = results[path]
+	}
+	fileStatus.WorkStatus = StatusModified
+	fileStatus.IndexHash = indexHash
+	return fileStatus
+}
+
 // ComputeWorkingTreeStatus computes the status of the working tree.
 func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	headTree := make(map[string]Hash)
@@ -88,14 +99,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		diskPath := filepath.Join(workDir, filepath.FromSlash(path))
 		isSymlink := entry.Mode&0170000 == 0120000
 
-		var info os.FileInfo
-		var statErr error
-		if isSymlink {
-			info, statErr = os.Lstat(diskPath)
-		} else {
-			info, statErr = os.Stat(diskPath)
-		}
-
+		info, statErr := os.Lstat(diskPath)
 		if statErr != nil {
 			if os.IsNotExist(statErr) {
 				fs, exists := results[path]
@@ -112,21 +116,25 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		}
 
 		if isSymlink {
+			if info.Mode()&os.ModeSymlink == 0 {
+				markWorktreeModified(results, path, entry.Hash)
+				continue
+			}
+
 			linkTarget, linkErr := os.Readlink(diskPath)
 			if linkErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: readlink %s: %w", diskPath, linkErr)
 			}
 			diskHash := hashBlobContent([]byte(linkTarget))
 			if diskHash != entry.Hash {
-				fs, exists := results[path]
-				if !exists {
-					results[path] = &FileStatus{Path: path}
-					fs = results[path]
-				}
-				fs.WorkStatus = StatusModified
+				fs := markWorktreeModified(results, path, entry.Hash)
 				fs.WorkHash = diskHash
-				fs.IndexHash = entry.Hash
 			}
+			continue
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			markWorktreeModified(results, path, entry.Hash)
 			continue
 		}
 
@@ -136,14 +144,8 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			if sizeReadErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, sizeReadErr)
 			}
-			fs, exists := results[path]
-			if !exists {
-				results[path] = &FileStatus{Path: path}
-				fs = results[path]
-			}
-			fs.WorkStatus = StatusModified
+			fs := markWorktreeModified(results, path, entry.Hash)
 			fs.WorkHash = hashBlobContent(sizeContent)
-			fs.IndexHash = entry.Hash
 			continue
 		}
 
@@ -154,14 +156,8 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 		diskHash := hashBlobContent(diskContent)
 		if diskHash != entry.Hash {
-			fs, exists := results[path]
-			if !exists {
-				results[path] = &FileStatus{Path: path}
-				fs = results[path]
-			}
-			fs.WorkStatus = StatusModified
+			fs := markWorktreeModified(results, path, entry.Hash)
 			fs.WorkHash = diskHash
-			fs.IndexHash = entry.Hash
 		}
 	}
 

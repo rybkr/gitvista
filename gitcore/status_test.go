@@ -40,15 +40,20 @@ type indexEntrySpec struct {
 	path     string
 	blobHash Hash
 	fileSize uint32
+	mode     uint32
 }
 
 func writeIndexWithEntries(t *testing.T, gitDir string, entries []indexEntrySpec) {
 	t.Helper()
 	data := buildIndexHeader(uint32(len(entries)))
 	for _, entry := range entries {
+		mode := entry.mode
+		if mode == 0 {
+			mode = 0o100644
+		}
 		hash := hashFromHex(string(entry.blobHash))
 		start := len(data)
-		data = append(data, buildIndexEntryWithStats(entry.path, hash, 0o100644, 0, 1, 0, 1, 0)...)
+		data = append(data, buildIndexEntryWithStats(entry.path, hash, mode, 0, 1, 0, 1, 0)...)
 		binary.BigEndian.PutUint32(data[start+36:start+40], entry.fileSize)
 	}
 	writeIndexFile(t, gitDir, data)
@@ -154,5 +159,72 @@ func TestComputeWorkingTreeStatus_GitignoreExcludedUntracked(t *testing.T) {
 	}
 	if !got["visible.txt"].IsUntracked {
 		t.Fatal("visible.txt should be untracked")
+	}
+}
+
+func TestComputeWorkingTreeStatus_TrackedRegularFileReplacedBySymlink(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("tracked\n"))
+	root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "tracked.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	wireHeadCommit(repo, root)
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "tracked.txt", blobHash: blob, fileSize: uint32(len("tracked\n"))},
+	})
+
+	if err := os.Symlink(filepath.Join("..", "missing-target.txt"), filepath.Join(repo.workDir, "tracked.txt")); err != nil {
+		t.Fatalf("Symlink(tracked.txt): %v", err)
+	}
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+	if got["tracked.txt"].WorkStatus != StatusModified {
+		t.Fatalf("tracked.txt WorkStatus = %q, want modified", got["tracked.txt"].WorkStatus)
+	}
+}
+
+func TestComputeWorkingTreeStatus_TrackedSymlinkReplacedByRegularFile(t *testing.T) {
+	repo := setupTestRepo(t)
+	linkHash := Hash(computeExpectedBlobHash([]byte("target.txt")))
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "link.txt", blobHash: linkHash, fileSize: uint32(len("target.txt")), mode: 0o120000},
+	})
+	writeDiskFile(t, repo, "link.txt", []byte("plain file\n"))
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+	if got["link.txt"].WorkStatus != StatusModified {
+		t.Fatalf("link.txt WorkStatus = %q, want modified", got["link.txt"].WorkStatus)
+	}
+}
+
+func TestComputeWorkingTreeStatus_TrackedFileReplacedByDirectory(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("tracked\n"))
+	root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "tracked.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	wireHeadCommit(repo, root)
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "tracked.txt", blobHash: blob, fileSize: uint32(len("tracked\n"))},
+	})
+
+	if err := os.Mkdir(filepath.Join(repo.workDir, "tracked.txt"), 0o755); err != nil {
+		t.Fatalf("Mkdir(tracked.txt): %v", err)
+	}
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+	if got["tracked.txt"].WorkStatus != StatusModified {
+		t.Fatalf("tracked.txt WorkStatus = %q, want modified", got["tracked.txt"].WorkStatus)
 	}
 }
