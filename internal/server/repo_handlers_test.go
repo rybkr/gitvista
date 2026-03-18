@@ -27,7 +27,7 @@ func newTestHostedServer(t *testing.T) *Server {
 	t.Cleanup(rm.Close)
 
 	webFS := os.DirFS(t.TempDir())
-	s := NewHostedServer(rm, "127.0.0.1:0", webFS, nil)
+	s := NewHostedServer(rm, "127.0.0.1:0", webFS)
 	s.logger = silentLogger()
 	return s
 }

@@ -13,5 +13,14 @@ func NewServer(rm *repomanager.RepoManager, addr string, allowedOrigins map[stri
 	if err != nil {
 		return nil, err
 	}
-	return server.NewHostedServerWithStore(rm, addr, webFS, allowedOrigins, hostedStore), nil
+	docsFS, err := gitvista.GetSiteDocsFS()
+	if err != nil {
+		return nil, err
+	}
+
+	srv := server.NewHostedServerWithStore(rm, addr, webFS, hostedStore)
+	srv.SetAllowedOrigins(allowedOrigins)
+	srv.SetDocsFS(docsFS)
+	srv.SetInstallScript(gitvista.GetInstallScript)
+	return srv, nil
 }

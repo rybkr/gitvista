@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/gitcore"
 	"github.com/rybkr/gitvista/internal/repomanager"
 )
@@ -100,41 +99,49 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 }
 
 // NewHostedServer constructs a Server in hosted mode backed by a RepoManager.
-func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowedOrigins map[string]bool) *Server {
-	return NewHostedServerWithStore(rm, addr, webFS, allowedOrigins, nil)
+func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS) *Server {
+	return NewHostedServerWithStore(rm, addr, webFS, nil)
 }
 
 // NewHostedServerWithStore constructs a Server in hosted mode backed by a RepoManager
 // and an optionally injected HostedStore.
-func NewHostedServerWithStore(rm *repomanager.RepoManager, addr string, webFS fs.FS, allowedOrigins map[string]bool, hostedStore HostedStore) *Server {
+func NewHostedServerWithStore(rm *repomanager.RepoManager, addr string, webFS fs.FS, hostedStore HostedStore) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
-	docsFS, _ := gitvista.GetSiteDocsFS()
 	if hostedStore == nil {
 		hostedStore = newMemoryHostedStore(rm)
 	}
 
 	return &Server{
-		addr:           addr,
-		webFS:          webFS,
-		docsFS:         docsFS,
-		indexPath:      "site/index.html",
-		spaFallback:    true,
-		rateLimiter:    rl,
-		logger:         slog.Default(),
-		mode:           ModeHosted,
-		sessions:       make(map[string]*RepoSession),
-		hostedStore:    hostedStore,
-		repoManager:    rm,
-		allowedOrigins: allowedOrigins,
-		installScript:  gitvista.GetInstallScript,
-		cacheSize:      cacheSize,
-		fetchInterval:  10 * time.Second,
-		ctx:            ctx,
-		cancel:         cancel,
+		addr:          addr,
+		webFS:         webFS,
+		indexPath:     "site/index.html",
+		spaFallback:   true,
+		rateLimiter:   rl,
+		logger:        slog.Default(),
+		mode:          ModeHosted,
+		sessions:      make(map[string]*RepoSession),
+		hostedStore:   hostedStore,
+		repoManager:   rm,
+		cacheSize:     cacheSize,
+		fetchInterval: 10 * time.Second,
+		ctx:           ctx,
+		cancel:        cancel,
 	}
+}
+
+func (s *Server) SetAllowedOrigins(allowedOrigins map[string]bool) {
+	s.allowedOrigins = allowedOrigins
+}
+
+func (s *Server) SetDocsFS(docsFS fs.FS) {
+	s.docsFS = docsFS
+}
+
+func (s *Server) SetInstallScript(installScript func() ([]byte, error)) {
+	s.installScript = installScript
 }
 
 // readCacheSize reads the cache size from the GITVISTA_CACHE_SIZE env var.

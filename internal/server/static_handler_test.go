@@ -20,7 +20,10 @@ func newStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 
 func newHostedStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 	t.Helper()
-	s := NewHostedServer(nil, "127.0.0.1:0", webFS, nil)
+	s := NewHostedServer(nil, "127.0.0.1:0", webFS)
+	s.SetInstallScript(func() ([]byte, error) {
+		return []byte("#!/bin/sh\nexport GITVISTA_INSTALL_DIR=/tmp/gitvista\n"), nil
+	})
 	s.logger = silentLogger()
 	return s
 }
