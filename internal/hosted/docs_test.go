@@ -1,4 +1,4 @@
-package server
+package hosted
 
 import (
 	"net/http"
@@ -74,13 +74,13 @@ func TestRenderDocsMarkdown(t *testing.T) {
 }
 
 func TestHandleDocs(t *testing.T) {
-	s := newStaticTestServer(t, testWebFS())
-	s.docsFS = testDocsFS()
+	_, h := newTestHostedRuntime(t)
+	h.DocsFS = testDocsFS()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/docs", nil)
 	w := httptest.NewRecorder()
 
-	s.handleDocs(w, req)
+	h.HandleDocs(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)

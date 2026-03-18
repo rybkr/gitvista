@@ -15,38 +15,38 @@ type contextKey int
 
 const (
 	sessionKey contextKey = iota
-	hostedRepoKey
+	repoNameOverrideKey
 )
 
 // apiWriteDeadline is the per-response write deadline for API handlers.
 const apiWriteDeadline = 30 * time.Second
 
 // withSessionCtx returns a new context carrying the given RepoSession.
-func withSessionCtx(ctx context.Context, rs *RepoSession) context.Context {
+func WithSessionContext(ctx context.Context, rs *RepoSession) context.Context {
 	return context.WithValue(ctx, sessionKey, rs)
 }
 
-func withHostedRepoCtx(ctx context.Context, repo HostedRepo) context.Context {
-	return context.WithValue(ctx, hostedRepoKey, repo)
+func WithRepoNameOverrideContext(ctx context.Context, repoName string) context.Context {
+	return context.WithValue(ctx, repoNameOverrideKey, repoName)
 }
 
 // sessionFromCtx extracts the RepoSession from the request context.
 // Returns nil if no session is present.
-func sessionFromCtx(ctx context.Context) *RepoSession {
+func SessionFromContext(ctx context.Context) *RepoSession {
 	rs, _ := ctx.Value(sessionKey).(*RepoSession)
 	return rs
 }
 
-func hostedRepoFromCtx(ctx context.Context) (HostedRepo, bool) {
-	repo, ok := ctx.Value(hostedRepoKey).(HostedRepo)
-	return repo, ok
+func repoNameOverrideFromCtx(ctx context.Context) (string, bool) {
+	repoName, ok := ctx.Value(repoNameOverrideKey).(string)
+	return repoName, ok && repoName != ""
 }
 
 // withLocalSession wraps a handler to inject the given (local-mode) session
 // into every request's context.
 func withLocalSession(session *RepoSession, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := withSessionCtx(r.Context(), session)
+		ctx := WithSessionContext(r.Context(), session)
 		next(w, r.WithContext(ctx))
 	}
 }

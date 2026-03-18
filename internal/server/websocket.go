@@ -62,7 +62,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return

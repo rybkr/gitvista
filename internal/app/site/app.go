@@ -18,9 +18,16 @@ func NewServer(rm *repomanager.RepoManager, addr string, allowedOrigins map[stri
 		return nil, err
 	}
 
-	srv := server.NewHostedServerWithStore(rm, addr, webFS, hostedStore)
-	srv.SetAllowedOrigins(allowedOrigins)
-	srv.SetDocsFS(docsFS)
-	srv.SetInstallScript(gitvista.GetInstallScript)
+	srv := server.NewHostedServer(addr, webFS)
+	hostedHandler := hosted.NewHandler(srv, rm, hostedStore)
+	hostedHandler.Logger = srv.Logger()
+	hostedHandler.AllowedOrigins = allowedOrigins
+	hostedHandler.DocsFS = docsFS
+	hostedHandler.InstallScript = gitvista.GetInstallScript
+	hostedHandler.CacheSize = srv.CacheSize()
+
+	srv.AddRoutes(hostedHandler.RegisterRoutes)
+	srv.AddMiddleware(hostedHandler.Middleware)
+	srv.AddShutdownHook(hostedHandler.Close)
 	return srv, nil
 }

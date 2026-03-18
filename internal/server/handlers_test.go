@@ -31,14 +31,14 @@ func newTestSession(repo *gitcore.Repository) *RepoSession {
 //nolint:unparam
 func requestWithSession(method, target string, session *RepoSession) *http.Request {
 	req := httptest.NewRequest(method, target, nil)
-	ctx := withSessionCtx(req.Context(), session)
+	ctx := WithSessionContext(req.Context(), session)
 	return req.WithContext(ctx)
 }
 
-func requestWithHostedRepo(method, target string, session *RepoSession, hostedRepo HostedRepo) *http.Request {
+func requestWithHostedRepo(method, target string, session *RepoSession, repoName string) *http.Request {
 	req := httptest.NewRequest(method, target, nil)
-	ctx := withSessionCtx(req.Context(), session)
-	ctx = withHostedRepoCtx(ctx, hostedRepo)
+	ctx := WithSessionContext(req.Context(), session)
+	ctx = WithRepoNameOverrideContext(ctx, repoName)
 	return req.WithContext(ctx)
 }
 
@@ -181,10 +181,7 @@ func TestHandleRepository_UsesHostedDisplayName(t *testing.T) {
 	session := newTestSession(repo)
 	s := newTestServer(t)
 
-	req := requestWithHostedRepo("GET", "/api/repository", session, HostedRepo{
-		ID:          "abc123",
-		DisplayName: "golang/example",
-	})
+	req := requestWithHostedRepo("GET", "/api/repository", session, "golang/example")
 	w := httptest.NewRecorder()
 
 	s.handleRepository(w, req)
@@ -513,15 +510,15 @@ func TestExtractHashParam_NoSession(t *testing.T) {
 func TestSessionFromCtx(t *testing.T) {
 	t.Run("present", func(t *testing.T) {
 		session := newTestSession(nil)
-		ctx := withSessionCtx(context.Background(), session)
-		got := sessionFromCtx(ctx)
+		ctx := WithSessionContext(context.Background(), session)
+		got := SessionFromContext(ctx)
 		if got != session {
 			t.Error("sessionFromCtx did not return the expected session")
 		}
 	})
 
 	t.Run("absent", func(t *testing.T) {
-		got := sessionFromCtx(context.Background())
+		got := SessionFromContext(context.Background())
 		if got != nil {
 			t.Error("sessionFromCtx returned non-nil for empty context")
 		}

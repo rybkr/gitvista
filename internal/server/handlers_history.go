@@ -23,7 +23,7 @@ func (s *Server) handleMergePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -87,7 +87,7 @@ func (s *Server) handleMergePreviewFileDiff(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -214,7 +214,7 @@ func (s *Server) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -237,7 +237,7 @@ func (s *Server) handleGraphCommits(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -280,7 +280,7 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return

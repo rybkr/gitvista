@@ -32,7 +32,7 @@ func (s *Server) extractHashParam(w http.ResponseWriter, r *http.Request, prefix
 		return "", nil, nil, false
 	}
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return "", nil, nil, false
@@ -55,7 +55,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -87,8 +87,8 @@ func buildRepositoryResponse(repo *gitcore.Repository, ctx context.Context) repo
 	branches := repo.Branches()
 	tagNames := repo.TagNames()
 	repoName := repo.Name()
-	if hostedRepo, ok := hostedRepoFromCtx(ctx); ok && hostedRepo.DisplayName != "" {
-		repoName = hostedRepo.DisplayName
+	if repoNameOverride, ok := repoNameOverrideFromCtx(ctx); ok {
+		repoName = repoNameOverride
 	}
 
 	return repositoryResponse{
@@ -228,7 +228,7 @@ func (s *Server) handleCommitDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return

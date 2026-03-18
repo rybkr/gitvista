@@ -4,7 +4,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/rybkr/gitvista/gitcore"
-	"github.com/rybkr/gitvista/internal/repomanager"
 )
 
 // Mode distinguishes between local and hosted operation.
@@ -25,7 +23,7 @@ type Mode int
 const (
 	// ModeLocal serves a single local Git repository.
 	ModeLocal Mode = iota
-	// ModeHosted serves multiple cloned repositories via the repo manager.
+	// ModeHosted serves the hosted browser product.
 	ModeHosted
 
 	readHeaderTimeout = 5 * time.Second
@@ -36,23 +34,18 @@ const (
 type Server struct {
 	addr        string
 	webFS       fs.FS
-	docsFS      fs.FS
 	indexPath   string
 	spaFallback bool
 	rateLimiter *rateLimiter
 	httpServer  *http.Server
 	logger      *slog.Logger
 
-	mode           Mode
-	localSession   *RepoSession            // non-nil in local mode
-	sessionsMu     sync.RWMutex            // guards sessions map
-	sessions       map[string]*RepoSession // non-nil in hosted mode
-	hostedStore    HostedStore
-	repoManager    *repomanager.RepoManager // non-nil in hosted mode
-	allowedOrigins map[string]bool          // CORS allowlist (hosted mode)
-	installScript  func() ([]byte, error)
-	cacheSize      int
-	fetchInterval  time.Duration
+	mode          Mode
+	localSession  *RepoSession
+	cacheSize     int
+	extraRoutes   []func(*http.ServeMux)
+	middlewares   []func(http.Handler) http.Handler
+	shutdownHooks []func() error
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -98,50 +91,50 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 	return s
 }
 
-// NewHostedServer constructs a Server in hosted mode backed by a RepoManager.
-func NewHostedServer(rm *repomanager.RepoManager, addr string, webFS fs.FS) *Server {
-	return NewHostedServerWithStore(rm, addr, webFS, nil)
+// NewHostedServer constructs a hosted-mode Server.
+func NewHostedServer(addr string, webFS fs.FS) *Server {
+	return NewHostedServerWithIndex(addr, webFS, "site/index.html")
 }
 
-// NewHostedServerWithStore constructs a Server in hosted mode backed by a RepoManager
-// and an optionally injected HostedStore.
-func NewHostedServerWithStore(rm *repomanager.RepoManager, addr string, webFS fs.FS, hostedStore HostedStore) *Server {
+// NewHostedServerWithIndex constructs a hosted-mode Server with an explicit SPA entrypoint.
+func NewHostedServerWithIndex(addr string, webFS fs.FS, indexPath string) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
-	if hostedStore == nil {
-		hostedStore = newMemoryHostedStore(rm)
-	}
 
 	return &Server{
-		addr:          addr,
-		webFS:         webFS,
-		indexPath:     "site/index.html",
-		spaFallback:   true,
-		rateLimiter:   rl,
-		logger:        slog.Default(),
-		mode:          ModeHosted,
-		sessions:      make(map[string]*RepoSession),
-		hostedStore:   hostedStore,
-		repoManager:   rm,
-		cacheSize:     cacheSize,
-		fetchInterval: 10 * time.Second,
-		ctx:           ctx,
-		cancel:        cancel,
+		addr:        addr,
+		webFS:       webFS,
+		indexPath:   indexPath,
+		spaFallback: true,
+		rateLimiter: rl,
+		logger:      slog.Default(),
+		mode:        ModeHosted,
+		cacheSize:   cacheSize,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
-func (s *Server) SetAllowedOrigins(allowedOrigins map[string]bool) {
-	s.allowedOrigins = allowedOrigins
+func (s *Server) AddRoutes(register func(*http.ServeMux)) {
+	s.extraRoutes = append(s.extraRoutes, register)
 }
 
-func (s *Server) SetDocsFS(docsFS fs.FS) {
-	s.docsFS = docsFS
+func (s *Server) AddMiddleware(middleware func(http.Handler) http.Handler) {
+	s.middlewares = append(s.middlewares, middleware)
 }
 
-func (s *Server) SetInstallScript(installScript func() ([]byte, error)) {
-	s.installScript = installScript
+func (s *Server) AddShutdownHook(hook func() error) {
+	s.shutdownHooks = append(s.shutdownHooks, hook)
+}
+
+func (s *Server) Logger() *slog.Logger {
+	return s.logger
+}
+
+func (s *Server) CacheSize() int {
+	return s.cacheSize
 }
 
 // readCacheSize reads the cache size from the GITVISTA_CACHE_SIZE env var.
@@ -155,93 +148,13 @@ func readCacheSize() int {
 	return cacheSize
 }
 
-// getOrCreateSession returns an existing session or lazily creates one when a
-// Hosted repo is ready. Uses double-checked locking.
-func hostedSessionKey(accountSlug, repoID string) string {
-	return accountSlug + "/" + repoID
-}
-
-func (s *Server) getOrCreateSession(hostedRepo HostedRepo) (*RepoSession, error) {
-	if s.mode == ModeLocal {
-		if s.localSession != nil {
-			return s.localSession, nil
-		}
-		return nil, fmt.Errorf("no local session available")
-	}
-
-	id := hostedSessionKey(hostedRepo.AccountSlug, hostedRepo.ID)
-
-	// Fast path: read lock
-	s.sessionsMu.RLock()
-	session, exists := s.sessions[id]
-	s.sessionsMu.RUnlock()
-	if exists {
-		return session, nil
-	}
-
-	// Check that the repo exists and is ready in the RepoManager
-	repo, err := s.repoManager.GetRepo(hostedRepo.ManagedRepoID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Slow path: write lock, double-check
-	s.sessionsMu.Lock()
-	defer s.sessionsMu.Unlock()
-
-	if session, exists = s.sessions[id]; exists {
-		return session, nil
-	}
-
-	rm := s.repoManager
-	session = NewRepoSession(SessionConfig{
-		ID:          id,
-		InitialRepo: repo,
-		ReloadFn: func() (*gitcore.Repository, error) {
-			return rm.GetRepo(hostedRepo.ManagedRepoID)
-		},
-		CacheSize: s.cacheSize,
-		Logger:    s.logger,
-	})
-	session.Start()
-	if s.fetchInterval > 0 {
-		session.StartFetchTicker(s.fetchInterval)
-	}
-	s.sessions[id] = session
-
-	s.logger.Info("Created session for repo", "id", id)
-	return session, nil
-}
-
-// removeSession tears down and removes a session by ID.
-func (s *Server) removeSession(id string) {
-	if s.mode == ModeLocal {
-		return
-	}
-
-	s.sessionsMu.Lock()
-	session, exists := s.sessions[id]
-	if exists {
-		delete(s.sessions, id)
-	}
-	s.sessionsMu.Unlock()
-
-	if exists {
-		session.Close()
-		s.logger.Info("Removed session for repo", "id", id)
-	}
-}
-
 // Start begins serving and blocks until the server exits or encounters a fatal error.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
-	if s.docsFS != nil {
-		mux.HandleFunc("/api/docs", s.handleDocs)
-	}
 
-	if s.mode == ModeLocal {
+	if s.localSession != nil {
 		ls := s.localSession
 		ls.Start()
 
@@ -258,26 +171,21 @@ func (s *Server) Start() error {
 		mux.HandleFunc("/api/merge-preview", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreview))))
 		mux.HandleFunc("/api/graph/commits", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleGraphCommits))))
 		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
-	} else {
-		// Repo management endpoints (hosted mode only)
-		mux.HandleFunc("/api/accounts", writeDeadline(s.rateLimiter.middleware(s.handleAccounts)))
-		mux.HandleFunc("/api/accounts/", writeDeadline(s.rateLimiter.middleware(s.handleAccountRoutes)))
-		mux.HandleFunc("/api/repos", writeDeadline(s.rateLimiter.middleware(s.handleRepos)))
-		mux.HandleFunc("/api/repos/", writeDeadline(s.rateLimiter.middleware(s.handleRepoRoutes)))
+	}
+	for _, register := range s.extraRoutes {
+		register(mux)
 	}
 	mux.Handle("/", s.staticHandler())
 
-	// Build the handler chain: logging wraps the mux, and CORS wraps
-	// logging in hosted mode.
 	handler := requestLogger(s.logger, mux)
-	if s.mode == ModeHosted {
-		handler = corsMiddleware(s.allowedOrigins, handler)
+	for i := len(s.middlewares) - 1; i >= 0; i-- {
+		handler = s.middlewares[i](handler)
 	}
 	handler = securityHeadersMiddleware(handler)
 
 	s.httpServer = s.newHTTPServer(handler)
 
-	if s.mode == ModeLocal {
+	if s.localSession != nil {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
@@ -306,10 +214,6 @@ func (s *Server) staticHandler() http.Handler {
 		cleanPath := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
 		if cleanPath == "/" || cleanPath == "/index.html" {
 			s.serveIndexHTML(w, r)
-			return
-		}
-		if cleanPath == "/install.sh" && s.installScript != nil {
-			s.serveInstallScript(w, r)
 			return
 		}
 		if cleanPath == "/api" || strings.HasPrefix(cleanPath, "/api/") {
@@ -344,20 +248,6 @@ func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeContent(w, r, path.Base(s.indexPath), time.Time{}, bytes.NewReader(body))
-}
-
-func (s *Server) serveInstallScript(w http.ResponseWriter, r *http.Request) {
-	if s.installScript == nil {
-		http.NotFound(w, r)
-		return
-	}
-	body, err := s.installScript()
-	if err != nil {
-		http.Error(w, "install.sh not found", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	http.ServeContent(w, r, "install.sh", time.Time{}, bytes.NewReader(body))
 }
 
 func (s *Server) assetExists(name string) bool {
@@ -400,148 +290,33 @@ func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
 	}
 }
 
-// handleRepos dispatches /api/repos to the correct handler based on HTTP method.
-func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
-	accountSlug := DefaultHostedAccountSlug
-	switch r.Method {
-	case http.MethodPost:
-		s.handleAddRepo(w, r, accountSlug)
-	case http.MethodGet:
-		s.handleListRepos(w, r, accountSlug)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleAccountRoutes dispatches /api/accounts/{account}/repos... requests to
-// account-scoped hosted handlers while leaving legacy /api/repos paths intact.
-func (s *Server) handleAccountRoutes(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
-	if path == "" || path == r.URL.Path {
-		http.Error(w, "Missing account slug", http.StatusBadRequest)
-		return
-	}
-
-	accountSlug := path
-	remainder := ""
-	if idx := strings.IndexByte(path, '/'); idx >= 0 {
-		accountSlug = path[:idx]
-		remainder = path[idx:]
-	}
-	if accountSlug == "" {
-		http.Error(w, "Missing account slug", http.StatusBadRequest)
-		return
-	}
-
+func (s *Server) HandleRepoRequest(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case remainder == "/repos":
-		switch r.Method {
-		case http.MethodPost:
-			s.handleAddRepo(w, r, accountSlug)
-		case http.MethodGet:
-			s.handleListRepos(w, r, accountSlug)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-		return
-	case strings.HasPrefix(remainder, "/repos/"):
-		rewritten := *r.URL
-		rewritten.Path = strings.TrimPrefix(remainder, "/repos")
-		nextReq := r.Clone(r.Context())
-		nextReq.URL = &rewritten
-		s.handleAccountRepoRoutes(w, nextReq, accountSlug)
-		return
-	default:
-		http.Error(w, "Not found", http.StatusNotFound)
-	}
-}
-
-// handleRepoRoutes dispatches /api/repos/{id}/... to the correct handler.
-// It rewrites r.URL.Path from /api/repos/{id}/tree/{hash} to /api/tree/{hash}
-// so that existing handlers (which strip /api/tree/ etc.) work unchanged.
-func (s *Server) handleRepoRoutes(w http.ResponseWriter, r *http.Request) {
-	s.handleAccountRepoRoutes(w, r, DefaultHostedAccountSlug)
-}
-
-func (s *Server) handleAccountRepoRoutes(w http.ResponseWriter, r *http.Request, accountSlug string) {
-	// Strip /api/repos/ prefix to get "{id}" or "{id}/..."
-	path := strings.TrimPrefix(r.URL.Path, "/api/repos/")
-	if path == r.URL.Path {
-		path = strings.TrimPrefix(r.URL.Path, "/")
-	}
-	if path == "" {
-		http.Error(w, "Missing repo ID", http.StatusBadRequest)
-		return
-	}
-
-	// Extract id and remainder
-	id := path
-	remainder := ""
-	if idx := strings.IndexByte(path, '/'); idx >= 0 {
-		id = path[:idx]
-		remainder = path[idx:]
-	}
-
-	// Non-session routes: status, progress, and delete operate on the repo ID directly.
-	hostedRepo, err := s.authorizeHostedRepo(accountSlug, id, r)
-	if err != nil {
-		http.Error(w, "Repository not available", http.StatusNotFound)
-		return
-	}
-
-	switch {
-	case remainder == "/status" && r.Method == http.MethodGet:
-		s.handleRepoStatus(w, r, hostedRepo)
-		return
-	case remainder == "/progress" && r.Method == http.MethodGet:
-		s.handleRepoProgress(w, r, hostedRepo)
-		return
-	case remainder == "" && r.Method == http.MethodDelete:
-		s.handleRemoveRepo(w, r, hostedRepo)
-		return
-	}
-
-	// Session-scoped routes: resolve the session using the already-extracted
-	// ID, then rewrite the URL path so handlers see the same prefix they
-	// expect in local mode (e.g. /api/tree/{hash}).
-	session, err := s.getOrCreateSession(hostedRepo)
-	if err != nil {
-		s.logger.Error("Failed to get or create session", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
-		http.Error(w, "Repository not available", http.StatusNotFound)
-		return
-	}
-
-	r.URL.Path = "/api" + remainder
-	ctx := withSessionCtx(r.Context(), session)
-	ctx = withHostedRepoCtx(ctx, hostedRepo)
-	r = r.WithContext(ctx)
-
-	switch {
-	case remainder == "/repository" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/repository" && r.Method == http.MethodGet:
 		s.handleRepository(w, r)
-	case strings.HasPrefix(remainder, "/tree/blame/"):
+	case strings.HasPrefix(r.URL.Path, "/api/tree/blame/"):
 		s.handleTreeBlame(w, r)
-	case strings.HasPrefix(remainder, "/tree/"):
+	case strings.HasPrefix(r.URL.Path, "/api/tree/"):
 		s.handleTree(w, r)
-	case strings.HasPrefix(remainder, "/blob/"):
+	case strings.HasPrefix(r.URL.Path, "/api/blob/"):
 		s.handleBlob(w, r)
-	case strings.HasPrefix(remainder, "/commit/diff/"):
+	case strings.HasPrefix(r.URL.Path, "/api/commit/diff/"):
 		s.handleCommitDiff(w, r)
-	case remainder == "/commits/diffstats" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/commits/diffstats" && r.Method == http.MethodGet:
 		s.handleBulkDiffStats(w, r)
-	case remainder == "/analytics" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/analytics" && r.Method == http.MethodGet:
 		s.handleAnalytics(w, r)
-	case remainder == "/index/diff" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/index/diff" && r.Method == http.MethodGet:
 		s.handleIndexDiff(w, r)
-	case remainder == "/graph/commits" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/graph/commits" && r.Method == http.MethodGet:
 		s.handleGraphCommits(w, r)
-	case remainder == "/working-tree/diff" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/working-tree/diff" && r.Method == http.MethodGet:
 		s.handleWorkingTreeDiff(w, r)
-	case remainder == "/merge-preview/file" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/merge-preview/file" && r.Method == http.MethodGet:
 		s.handleMergePreviewFileDiff(w, r)
-	case remainder == "/merge-preview" && r.Method == http.MethodGet:
+	case r.URL.Path == "/api/merge-preview" && r.Method == http.MethodGet:
 		s.handleMergePreview(w, r)
-	case remainder == "/ws":
+	case r.URL.Path == "/api/ws":
 		s.handleWebSocket(w, r)
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -571,28 +346,13 @@ func (s *Server) Shutdown() {
 	s.wg.Wait()
 	s.logger.Info("Watcher goroutines stopped")
 
-	// Close all sessions (sends close frames, force-closes connections)
-	if s.mode == ModeLocal {
-		if s.localSession != nil {
-			s.localSession.Close()
-		}
-	} else {
-		s.sessionsMu.Lock()
-		sessionCount := len(s.sessions)
-		s.sessionsMu.Unlock()
-		s.logger.Info("Closing sessions", "count", sessionCount)
-
-		s.sessionsMu.Lock()
-		for id, session := range s.sessions {
-			session.Close()
-			delete(s.sessions, id)
-		}
-		s.sessionsMu.Unlock()
+	if s.localSession != nil {
+		s.localSession.Close()
 	}
 
-	if s.hostedStore != nil {
-		if err := s.hostedStore.Close(); err != nil {
-			s.logger.Error("Failed to close hosted store", "err", err)
+	for _, hook := range s.shutdownHooks {
+		if err := hook(); err != nil {
+			s.logger.Error("Shutdown hook failed", "err", err)
 		}
 	}
 

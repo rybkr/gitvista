@@ -16,8 +16,8 @@ func TestSessionFromCtx_Present(t *testing.T) {
 	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 
-	ctx := withSessionCtx(context.Background(), session)
-	got := sessionFromCtx(ctx)
+	ctx := WithSessionContext(context.Background(), session)
+	got := SessionFromContext(ctx)
 
 	if got != session {
 		t.Error("sessionFromCtx did not return the injected session")
@@ -25,7 +25,7 @@ func TestSessionFromCtx_Present(t *testing.T) {
 }
 
 func TestSessionFromCtx_Absent(t *testing.T) {
-	got := sessionFromCtx(context.Background())
+	got := SessionFromContext(context.Background())
 	if got != nil {
 		t.Error("sessionFromCtx returned non-nil for empty context")
 	}
@@ -37,7 +37,7 @@ func TestWithLocalSession(t *testing.T) {
 
 	var captured *RepoSession
 	handler := withLocalSession(session, func(w http.ResponseWriter, r *http.Request) {
-		captured = sessionFromCtx(r.Context())
+		captured = SessionFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 

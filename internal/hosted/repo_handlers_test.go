@@ -1,58 +1,36 @@
-package server
+package hosted
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/rybkr/gitvista/internal/repomanager"
 )
 
-func newTestHostedServer(t *testing.T) *Server {
+func mustHostedRepo(t *testing.T, h *Handler, repoID string) HostedRepo {
 	t.Helper()
-	dataDir := t.TempDir()
-	rm, err := repomanager.New(repomanager.Config{
-		DataDir: dataDir,
-		Logger:  silentLogger(),
-	})
-	if err != nil {
-		t.Fatalf("failed to create repo manager: %v", err)
-	}
-	if err := rm.Start(); err != nil {
-		t.Fatalf("failed to start repo manager: %v", err)
-	}
-	t.Cleanup(rm.Close)
-
-	webFS := os.DirFS(t.TempDir())
-	s := NewHostedServer(rm, "127.0.0.1:0", webFS)
-	s.logger = silentLogger()
-	return s
-}
-
-func mustHostedRepo(t *testing.T, s *Server, repoID string) HostedRepo {
-	t.Helper()
-	repo, err := s.hostedStore.GetRepo(DefaultHostedAccountSlug, repoID)
+	repo, err := h.Store.GetRepo(DefaultHostedAccountSlug, repoID)
 	if err != nil {
 		t.Fatalf("failed to resolve hosted repo %q: %v", repoID, err)
 	}
 	return repo
 }
 
-func addHostedRepoForTest(t *testing.T, s *Server) repoResponse {
+func addHostedRepoForTest(t *testing.T, h *Handler) RepoResponse {
 	t.Helper()
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	s.handleAddRepo(w, req, DefaultHostedAccountSlug)
+	h.HandleAddRepo(w, req, DefaultHostedAccountSlug)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("add repo status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
 	}
 
-	var resp repoResponse
+	var resp RepoResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode add response: %v", err)
 	}
@@ -60,20 +38,20 @@ func addHostedRepoForTest(t *testing.T, s *Server) repoResponse {
 }
 
 func TestHandleAddRepo_Success(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	s.handleAddRepo(w, req, DefaultHostedAccountSlug)
+	h.HandleAddRepo(w, req, DefaultHostedAccountSlug)
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("status code = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
 	}
 
-	var resp repoResponse
+	var resp RepoResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -92,14 +70,14 @@ func TestHandleAddRepo_Success(t *testing.T) {
 }
 
 func TestHandleAddRepo_MissingURL(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	body := strings.NewReader(`{}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	s.handleAddRepo(w, req, DefaultHostedAccountSlug)
+	h.HandleAddRepo(w, req, DefaultHostedAccountSlug)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -107,14 +85,14 @@ func TestHandleAddRepo_MissingURL(t *testing.T) {
 }
 
 func TestHandleAddRepo_InvalidURL(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	body := strings.NewReader(`{"url":"file:///tmp/repo"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	s.handleAddRepo(w, req, DefaultHostedAccountSlug)
+	h.HandleAddRepo(w, req, DefaultHostedAccountSlug)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status code = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
@@ -122,20 +100,20 @@ func TestHandleAddRepo_InvalidURL(t *testing.T) {
 }
 
 func TestHandleAddRepo_StripsCredentialBearingURL(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	body := strings.NewReader(`{"url":"https://user:secret@github.com/golang/example"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	s.handleAddRepo(w, req, DefaultHostedAccountSlug)
+	h.HandleAddRepo(w, req, DefaultHostedAccountSlug)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status code = %d, want %d", w.Code, http.StatusCreated)
 	}
 
-	var resp repoResponse
+	var resp RepoResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -145,14 +123,14 @@ func TestHandleAddRepo_StripsCredentialBearingURL(t *testing.T) {
 }
 
 func TestHandleListRepos(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	// Add a repo first
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	addReq := httptest.NewRequest("POST", "/api/repos", body)
 	addReq.Header.Set("Content-Type", "application/json")
 	addW := httptest.NewRecorder()
-	s.handleAddRepo(addW, addReq, DefaultHostedAccountSlug)
+	h.HandleAddRepo(addW, addReq, DefaultHostedAccountSlug)
 
 	if addW.Code != http.StatusCreated {
 		t.Fatalf("setup: add repo failed with status %d", addW.Code)
@@ -162,13 +140,13 @@ func TestHandleListRepos(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/repos", nil)
 	w := httptest.NewRecorder()
 
-	s.handleListRepos(w, req, DefaultHostedAccountSlug)
+	h.HandleListRepos(w, req, DefaultHostedAccountSlug)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	var repos []repoResponse
+	var repos []RepoResponse
 	if err := json.NewDecoder(w.Body).Decode(&repos); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -178,12 +156,12 @@ func TestHandleListRepos(t *testing.T) {
 }
 
 func TestHandleRepoStatus_NotFound(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	req := httptest.NewRequest("GET", "/api/repos/nonexistent/status", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRepoStatus(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "nonexistent", ManagedRepoID: "nonexistent"})
+	h.HandleRepoStatus(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "nonexistent", ManagedRepoID: "nonexistent"})
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
@@ -191,16 +169,16 @@ func TestHandleRepoStatus_NotFound(t *testing.T) {
 }
 
 func TestHandleRepoStatus_Found(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	// Add a repo
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	addReq := httptest.NewRequest("POST", "/api/repos", body)
 	addReq.Header.Set("Content-Type", "application/json")
 	addW := httptest.NewRecorder()
-	s.handleAddRepo(addW, addReq, DefaultHostedAccountSlug)
+	h.HandleAddRepo(addW, addReq, DefaultHostedAccountSlug)
 
-	var addResp repoResponse
+	var addResp RepoResponse
 	if err := json.NewDecoder(addW.Body).Decode(&addResp); err != nil {
 		t.Fatalf("failed to decode add response: %v", err)
 	}
@@ -209,13 +187,13 @@ func TestHandleRepoStatus_Found(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/repos/"+addResp.ID+"/status", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRepoStatus(w, req, mustHostedRepo(t, s, addResp.ID))
+	h.HandleRepoStatus(w, req, mustHostedRepo(t, h, addResp.ID))
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	var resp repoResponse
+	var resp RepoResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -228,12 +206,12 @@ func TestHandleRepoStatus_Found(t *testing.T) {
 }
 
 func TestHandleRemoveRepo_NotFound(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	req := httptest.NewRequest("DELETE", "/api/repos/nonexistent", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRemoveRepo(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "nonexistent", ManagedRepoID: "nonexistent"})
+	h.HandleRemoveRepo(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "nonexistent", ManagedRepoID: "nonexistent"})
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
@@ -241,16 +219,16 @@ func TestHandleRemoveRepo_NotFound(t *testing.T) {
 }
 
 func TestHandleRemoveRepo_Success(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	// Add a repo
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	addReq := httptest.NewRequest("POST", "/api/repos", body)
 	addReq.Header.Set("Content-Type", "application/json")
 	addW := httptest.NewRecorder()
-	s.handleAddRepo(addW, addReq, DefaultHostedAccountSlug)
+	h.HandleAddRepo(addW, addReq, DefaultHostedAccountSlug)
 
-	var addResp repoResponse
+	var addResp RepoResponse
 	if err := json.NewDecoder(addW.Body).Decode(&addResp); err != nil {
 		t.Fatalf("failed to decode add response: %v", err)
 	}
@@ -259,7 +237,7 @@ func TestHandleRemoveRepo_Success(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/api/repos/"+addResp.ID, nil)
 	w := httptest.NewRecorder()
 
-	s.handleRemoveRepo(w, req, mustHostedRepo(t, s, addResp.ID))
+	h.HandleRemoveRepo(w, req, mustHostedRepo(t, h, addResp.ID))
 
 	if w.Code != http.StatusNoContent {
 		t.Errorf("status code = %d, want %d; body: %s", w.Code, http.StatusNoContent, w.Body.String())
@@ -268,9 +246,9 @@ func TestHandleRemoveRepo_Success(t *testing.T) {
 	// Verify it's gone
 	listReq := httptest.NewRequest("GET", "/api/repos", nil)
 	listW := httptest.NewRecorder()
-	s.handleListRepos(listW, listReq, DefaultHostedAccountSlug)
+	h.HandleListRepos(listW, listReq, DefaultHostedAccountSlug)
 
-	var repos []repoResponse
+	var repos []RepoResponse
 	if err := json.NewDecoder(listW.Body).Decode(&repos); err != nil {
 		t.Fatalf("failed to decode list response: %v", err)
 	}
@@ -280,32 +258,32 @@ func TestHandleRemoveRepo_Success(t *testing.T) {
 }
 
 func TestHandleRepoProgress_AlreadyReady(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	// Add a repo
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	addReq := httptest.NewRequest("POST", "/api/repos", body)
 	addReq.Header.Set("Content-Type", "application/json")
 	addW := httptest.NewRecorder()
-	s.handleAddRepo(addW, addReq, DefaultHostedAccountSlug)
+	h.HandleAddRepo(addW, addReq, DefaultHostedAccountSlug)
 
-	var addResp repoResponse
+	var addResp RepoResponse
 	if err := json.NewDecoder(addW.Body).Decode(&addResp); err != nil {
 		t.Fatalf("failed to decode add response: %v", err)
 	}
 
 	// Force the repo to ready state for testing
-	hostedRepo, err := s.hostedStore.GetRepo(DefaultHostedAccountSlug, addResp.ID)
+	hostedRepo, err := h.Store.GetRepo(DefaultHostedAccountSlug, addResp.ID)
 	if err != nil {
 		t.Fatalf("failed to resolve hosted repo: %v", err)
 	}
-	s.repoManager.ForceStateForTest(hostedRepo.ManagedRepoID, repomanager.StateReady)
+	h.RepoManager.ForceStateForTest(hostedRepo.ManagedRepoID, repomanager.StateReady)
 
 	// Request SSE progress — should get a single "done" event and close
 	req := httptest.NewRequest("GET", "/api/repos/"+addResp.ID+"/progress", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRepoProgress(w, req, mustHostedRepo(t, s, addResp.ID))
+	h.HandleRepoProgress(w, req, mustHostedRepo(t, h, addResp.ID))
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status code = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -327,12 +305,12 @@ func TestHandleRepoProgress_AlreadyReady(t *testing.T) {
 }
 
 func TestHandleRepoProgress_NotFound(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	req := httptest.NewRequest("GET", "/api/repos/nonexistent/progress", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRepoProgress(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "nonexistent", ManagedRepoID: "nonexistent"})
+	h.HandleRepoProgress(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "nonexistent", ManagedRepoID: "nonexistent"})
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
@@ -340,12 +318,12 @@ func TestHandleRepoProgress_NotFound(t *testing.T) {
 }
 
 func TestHandleRepoProgress_LocalMode(t *testing.T) {
-	s := newTestServer(t)
+	h := &Handler{}
 
 	req := httptest.NewRequest("GET", "/api/repos/test/progress", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRepoProgress(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "test", ManagedRepoID: "test"})
+	h.HandleRepoProgress(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "test", ManagedRepoID: "test"})
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
@@ -354,7 +332,7 @@ func TestHandleRepoProgress_LocalMode(t *testing.T) {
 
 func TestRepoHandlers_LocalMode(t *testing.T) {
 	// In local mode, all repo management endpoints return 404
-	s := newTestServer(t)
+	h := &Handler{}
 
 	tests := []struct {
 		name    string
@@ -363,8 +341,8 @@ func TestRepoHandlers_LocalMode(t *testing.T) {
 		body    string
 		handler func(http.ResponseWriter, *http.Request)
 	}{
-		{"add repo", "POST", "/api/repos", `{"url":"https://example.com"}`, func(w http.ResponseWriter, r *http.Request) { s.handleAddRepo(w, r, DefaultHostedAccountSlug) }},
-		{"list repos", "GET", "/api/repos", "", func(w http.ResponseWriter, r *http.Request) { s.handleListRepos(w, r, DefaultHostedAccountSlug) }},
+		{"add repo", "POST", "/api/repos", `{"url":"https://example.com"}`, func(w http.ResponseWriter, r *http.Request) { h.HandleAddRepo(w, r, DefaultHostedAccountSlug) }},
+		{"list repos", "GET", "/api/repos", "", func(w http.ResponseWriter, r *http.Request) { h.HandleListRepos(w, r, DefaultHostedAccountSlug) }},
 	}
 
 	for _, tt := range tests {
@@ -389,7 +367,7 @@ func TestRepoHandlers_LocalMode(t *testing.T) {
 	t.Run("repo status", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/repos/test/status", nil)
 		w := httptest.NewRecorder()
-		s.handleRepoStatus(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "test", ManagedRepoID: "test"})
+		h.HandleRepoStatus(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "test", ManagedRepoID: "test"})
 		if w.Code != http.StatusNotFound {
 			t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
 		}
@@ -398,7 +376,7 @@ func TestRepoHandlers_LocalMode(t *testing.T) {
 	t.Run("remove repo", func(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/api/repos/test", nil)
 		w := httptest.NewRecorder()
-		s.handleRemoveRepo(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "test", ManagedRepoID: "test"})
+		h.HandleRemoveRepo(w, req, HostedRepo{AccountSlug: DefaultHostedAccountSlug, ID: "test", ManagedRepoID: "test"})
 		if w.Code != http.StatusNotFound {
 			t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
 		}
@@ -406,14 +384,14 @@ func TestRepoHandlers_LocalMode(t *testing.T) {
 }
 
 func TestHandleRepoRoutes_InvalidID_GenericError(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	// Hit a session-scoped route with a nonexistent repo ID to trigger
 	// the getOrCreateSession error path.
 	req := httptest.NewRequest("GET", "/api/repos/nonexistent/repository", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRepoRoutes(w, req)
+	h.HandleRepoRoutes(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusNotFound)
@@ -425,13 +403,13 @@ func TestHandleRepoRoutes_InvalidID_GenericError(t *testing.T) {
 }
 
 func TestHandleRepoRoutes_RequiresAccessToken(t *testing.T) {
-	s := newTestHostedServer(t)
-	addResp := addHostedRepoForTest(t, s)
+	_, h := newTestHostedRuntime(t)
+	addResp := addHostedRepoForTest(t, h)
 
 	req := httptest.NewRequest("GET", "/api/repos/"+addResp.ID+"/repository", nil)
 	w := httptest.NewRecorder()
 
-	s.handleRepoRoutes(w, req)
+	h.HandleRepoRoutes(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status code = %d, want %d", w.Code, http.StatusNotFound)
@@ -443,14 +421,14 @@ func TestHandleRepoRoutes_RequiresAccessToken(t *testing.T) {
 }
 
 func TestHandleRepoRoutes_WithAccessToken(t *testing.T) {
-	s := newTestHostedServer(t)
-	addResp := addHostedRepoForTest(t, s)
+	_, h := newTestHostedRuntime(t)
+	addResp := addHostedRepoForTest(t, h)
 
 	req := httptest.NewRequest("GET", "/api/repos/"+addResp.ID+"/status", nil)
-	req.Header.Set(hostedRepoTokenHeader, addResp.AccessToken)
+	req.Header.Set(HostedRepoTokenHeader, addResp.AccessToken)
 	w := httptest.NewRecorder()
 
-	s.handleRepoRoutes(w, req)
+	h.HandleRepoRoutes(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -458,14 +436,14 @@ func TestHandleRepoRoutes_WithAccessToken(t *testing.T) {
 }
 
 func TestHandleAddRepo_InvalidURL_GenericError(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	body := strings.NewReader(`{"url":"file:///etc/passwd"}`)
 	req := httptest.NewRequest("POST", "/api/repos", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	s.handleAddRepo(w, req, DefaultHostedAccountSlug)
+	h.HandleAddRepo(w, req, DefaultHostedAccountSlug)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
@@ -477,19 +455,19 @@ func TestHandleAddRepo_InvalidURL_GenericError(t *testing.T) {
 }
 
 func TestHandleAccountRoutes_AccountScopedRepoLifecycle(t *testing.T) {
-	s := newTestHostedServer(t)
+	_, h := newTestHostedRuntime(t)
 
 	body := strings.NewReader(`{"url":"https://github.com/golang/example"}`)
 	addReq := httptest.NewRequest("POST", "/api/accounts/personal/repos", body)
 	addReq.Header.Set("Content-Type", "application/json")
 	addW := httptest.NewRecorder()
-	s.handleAccountRoutes(addW, addReq)
+	h.HandleAccountRoutes(addW, addReq)
 
 	if addW.Code != http.StatusCreated {
 		t.Fatalf("add status = %d, want %d; body: %s", addW.Code, http.StatusCreated, addW.Body.String())
 	}
 
-	var addResp repoResponse
+	var addResp RepoResponse
 	if err := json.NewDecoder(addW.Body).Decode(&addResp); err != nil {
 		t.Fatalf("failed to decode add response: %v", err)
 	}
@@ -499,7 +477,7 @@ func TestHandleAccountRoutes_AccountScopedRepoLifecycle(t *testing.T) {
 
 	listReq := httptest.NewRequest("GET", "/api/accounts/personal/repos", nil)
 	listW := httptest.NewRecorder()
-	s.handleAccountRoutes(listW, listReq)
+	h.HandleAccountRoutes(listW, listReq)
 	if listW.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want %d", listW.Code, http.StatusOK)
 	}
@@ -507,7 +485,7 @@ func TestHandleAccountRoutes_AccountScopedRepoLifecycle(t *testing.T) {
 	statusReq := httptest.NewRequest("GET", "/api/accounts/personal/repos/"+addResp.ID+"/status", nil)
 	statusReq.Header.Set("X-GitVista-Repo-Token", addResp.AccessToken)
 	statusW := httptest.NewRecorder()
-	s.handleAccountRoutes(statusW, statusReq)
+	h.HandleAccountRoutes(statusW, statusReq)
 	if statusW.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d; body: %s", statusW.Code, http.StatusOK, statusW.Body.String())
 	}

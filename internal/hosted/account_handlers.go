@@ -3,7 +3,6 @@ package hosted
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"time"
 )
@@ -88,11 +87,4 @@ func (h *Handler) HandleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(toAccountResponse(account)); err != nil {
 		h.logger().Error("Failed to encode create-account response", "err", err)
 	}
-}
-
-func (h *Handler) logger() *slog.Logger {
-	if h.Logger != nil {
-		return h.Logger
-	}
-	return slog.Default()
 }

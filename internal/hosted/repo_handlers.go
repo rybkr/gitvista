@@ -224,13 +224,3 @@ func (h *Handler) HandleRepoProgress(w http.ResponseWriter, r *http.Request, hos
 		}
 	}
 }
-
-func (h *Handler) removeSession(id string) {
-	if h.RemoveSession != nil {
-		h.RemoveSession(id)
-	}
-}
-
-func hostedSessionKey(accountSlug, repoID string) string {
-	return accountSlug + "/" + repoID
-}

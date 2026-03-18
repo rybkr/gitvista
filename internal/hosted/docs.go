@@ -1,7 +1,6 @@
-package server
+package hosted
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -37,19 +36,55 @@ type docsHelpMeta struct {
 	PrimaryCTA docsCTAResponse `json:"primaryCta"`
 }
 
-func (s *Server) handleDocs(w http.ResponseWriter, r *http.Request) {
+type docsCTAResponse struct {
+	Label string `json:"label"`
+	Href  string `json:"href"`
+}
+
+type docsSummaryItem struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+type docsSectionResponse struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Title       string `json:"title"`
+	Content     string `json:"content"`
+	ContentHTML string `json:"contentHtml,omitempty"`
+}
+
+type docsHelpResponse struct {
+	Label      string          `json:"label"`
+	Title      string          `json:"title"`
+	Body       string          `json:"body"`
+	PrimaryCTA docsCTAResponse `json:"primaryCta"`
+}
+
+type docsPageResponse struct {
+	Eyebrow      string                `json:"eyebrow"`
+	Title        string                `json:"title"`
+	Lede         string                `json:"lede"`
+	PrimaryCTA   docsCTAResponse       `json:"primaryCta"`
+	SecondaryCTA docsCTAResponse       `json:"secondaryCta"`
+	Summary      []docsSummaryItem     `json:"summary"`
+	Sections     []docsSectionResponse `json:"sections"`
+	Help         docsHelpResponse      `json:"help"`
+}
+
+func (h *Handler) HandleDocs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.docsFS == nil {
+	if h.DocsFS == nil {
 		http.Error(w, "Docs are unavailable", http.StatusInternalServerError)
 		return
 	}
 
-	page, err := loadDocsPage(s.docsFS)
+	page, err := loadDocsPage(h.DocsFS)
 	if err != nil {
-		s.logger.Error("Failed to load docs", "err", err)
+		h.logger().Error("Failed to load docs", "err", err)
 		http.Error(w, "Failed to load docs", http.StatusInternalServerError)
 		return
 	}
@@ -118,9 +153,21 @@ var docsMarkdown = goldmark.New(
 )
 
 func renderDocsMarkdown(src []byte) (string, error) {
-	var buf bytes.Buffer
-	if err := docsMarkdown.Convert(src, &buf); err != nil {
+	var buf []byte
+	var err error
+	writer := &bufferWriter{buf: &buf}
+	err = docsMarkdown.Convert(src, writer)
+	if err != nil {
 		return "", err
 	}
-	return buf.String(), nil
+	return string(buf), nil
+}
+
+type bufferWriter struct {
+	buf *[]byte
+}
+
+func (w *bufferWriter) Write(p []byte) (int, error) {
+	*w.buf = append(*w.buf, p...)
+	return len(p), nil
 }

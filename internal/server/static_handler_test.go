@@ -20,10 +20,7 @@ func newStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 
 func newHostedStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 	t.Helper()
-	s := NewHostedServer(nil, "127.0.0.1:0", webFS)
-	s.SetInstallScript(func() ([]byte, error) {
-		return []byte("#!/bin/sh\nexport GITVISTA_INSTALL_DIR=/tmp/gitvista\n"), nil
-	})
+	s := NewHostedServer("127.0.0.1:0", webFS)
 	s.logger = silentLogger()
 	return s
 }
@@ -113,7 +110,7 @@ func TestStaticHandler_ServesAssetsAndMissingAssets(t *testing.T) {
 	})
 }
 
-func TestHostedStaticHandler_ServesInstallScript(t *testing.T) {
+func TestHostedStaticHandler_DoesNotServeInstallScript(t *testing.T) {
 	s := newHostedStaticTestServer(t, testWebFS())
 	handler := s.staticHandler()
 
@@ -122,14 +119,8 @@ func TestHostedStaticHandler_ServesInstallScript(t *testing.T) {
 
 	handler.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if body := w.Body.String(); !strings.Contains(body, "GITVISTA_INSTALL_DIR") {
-		t.Fatalf("expected install script body, got %q", body)
-	}
-	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/plain") {
-		t.Fatalf("content-type = %q, want text/plain", got)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 

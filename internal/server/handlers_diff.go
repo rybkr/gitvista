@@ -93,7 +93,7 @@ func (s *Server) handleBulkDiffStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -325,7 +325,7 @@ func (s *Server) handleIndexDiff(w http.ResponseWriter, r *http.Request) {
 	}
 	filePath = sanitized
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return
@@ -399,7 +399,7 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 	}
 	filePath = sanitized
 
-	session := sessionFromCtx(r.Context())
+	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)
 		return

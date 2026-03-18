@@ -1,8 +1,6 @@
 package hosted
 
 import (
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -46,8 +44,4 @@ func TestNewHostedStore_PostgresDriverMissing(t *testing.T) {
 	if !strings.Contains(err.Error(), "postgres") {
 		t.Fatalf("error = %q, want mention of postgres", err)
 	}
-}
-
-func silentLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
