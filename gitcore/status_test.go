@@ -1,9 +1,10 @@
 package gitcore
 
 import (
-	"encoding/binary"
 	"crypto/sha1" // #nosec G505 -- test helper
+	"encoding/binary"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -226,5 +227,22 @@ func TestComputeWorkingTreeStatus_TrackedFileReplacedByDirectory(t *testing.T) {
 	got := statusByPath(t, status)
 	if got["tracked.txt"].WorkStatus != StatusModified {
 		t.Fatalf("tracked.txt WorkStatus = %q, want modified", got["tracked.txt"].WorkStatus)
+	}
+}
+
+func TestComputeWorkingTreeStatus_PropagatesWalkErrors(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	originalWalk := walkWorktree
+	t.Cleanup(func() {
+		walkWorktree = originalWalk
+	})
+
+	walkWorktree = func(root string, fn fs.WalkDirFunc) error {
+		return fn(filepath.Join(root, "blocked"), nil, fs.ErrPermission)
+	}
+
+	if _, err := ComputeWorkingTreeStatus(repo); err == nil {
+		t.Fatal("ComputeWorkingTreeStatus() error = nil, want walk error")
 	}
 }

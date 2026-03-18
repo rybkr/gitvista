@@ -25,6 +25,8 @@ type WorkingTreeStatus struct {
 	Files []FileStatus
 }
 
+var walkWorktree = filepath.WalkDir
+
 func markWorktreeModified(results map[string]*FileStatus, path string, indexHash Hash) *FileStatus {
 	fileStatus, exists := results[path]
 	if !exists {
@@ -162,9 +164,9 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	}
 
 	ignore := loadIgnoreMatcher(workDir, repo.GitDir())
-	walkErr := filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
+	walkErr := walkWorktree(workDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() && d.Name() == ".git" {
 			return filepath.SkipDir
