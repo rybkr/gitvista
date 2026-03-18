@@ -8,26 +8,37 @@ import (
 )
 
 type mailmapEntry struct {
-	properName  string
-	properEmail string
-	commitName  string
-	commitEmail string
+	properName     string
+	properEmail    string
+	commitName     string
+	commitEmail    string
+	commitNameKey  string
+	commitEmailKey string
 }
 
 // Mailmap holds parsed .mailmap entries and resolves author identities.
 type Mailmap struct {
-	entries []mailmapEntry
+	entries        []mailmapEntry
+	entriesByEmail map[string][]int
 }
 
 func parseMailmap(content string) *Mailmap {
-	m := &Mailmap{}
+	m := &Mailmap{
+		entriesByEmail: make(map[string][]int),
+	}
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		if entry, ok := parseMailmapLine(line); ok {
+			entry.commitEmailKey = strings.ToLower(entry.commitEmail)
+			if entry.commitName != "" {
+				entry.commitNameKey = strings.ToLower(entry.commitName)
+			}
+			entryIdx := len(m.entries)
 			m.entries = append(m.entries, entry)
+			m.entriesByEmail[entry.commitEmailKey] = append(m.entriesByEmail[entry.commitEmailKey], entryIdx)
 		}
 	}
 	return m
@@ -102,14 +113,15 @@ func (m *Mailmap) resolve(sig *Signature) {
 		return
 	}
 
-	sigEmailLower := strings.ToLower(sig.Email)
-	sigNameLower := strings.ToLower(sig.Name)
+	candidates := m.entriesByEmail[strings.ToLower(sig.Email)]
+	if len(candidates) == 0 {
+		return
+	}
 
-	for _, e := range m.entries {
-		if strings.ToLower(e.commitEmail) != sigEmailLower {
-			continue
-		}
-		if e.commitName != "" && strings.ToLower(e.commitName) != sigNameLower {
+	sigNameLower := strings.ToLower(sig.Name)
+	for _, idx := range candidates {
+		e := m.entries[idx]
+		if e.commitNameKey != "" && e.commitNameKey != sigNameLower {
 			continue
 		}
 		if e.properName != "" {
