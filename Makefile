@@ -1,156 +1,79 @@
-.PHONY: unit test ci ci-local lint integration e2e build build-cli build-site run-site clean help \
-         profile profile-web \
-         format format-check vet security security-local validate-js test-js cover cover-html dev-check check-imports \
-         imports-check check-vuln docker-build deps-check deploy-staging deploy-production
+.PHONY: help \
+	test unit e2e test-js validate-js \
+	fmt fmt-check vet lint security \
+	build build-site run-site profile \
+	ci-local ci \
+	deploy clean cloc docker-build deps-check
 
-GOCMD=go
-GOTEST=$(GOCMD) test
-GOBUILD=$(GOCMD) build
-GOCLEAN=$(GOCMD) clean
+GOCMD = go
+GOTEST = $(GOCMD) test
+GOBUILD = $(GOCMD) build
+GOCLEAN = $(GOCMD) clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 PROFILE ?= /tmp/gitvista-cli.cpu.prof
 MEMPROFILE ?= /tmp/gitvista-cli.mem.prof
+PPROF_WEB ?= 0
+SECURITY_BEST_EFFORT ?= 0
+DEPLOY_ENV ?= staging
 
 .DEFAULT_GOAL := help
 
+##@ Help
 ## help: Display this informational message
 help:
-	@echo "Available targets:"
-	@sed -n 's/^##//p' $(MAKEFILE_LIST) | column -t -s ':' | sed -e 's/^/ /'
+	@printf "  GitVista Make Targets  \n"
+	@printf "=========================\n"
+	@awk ' \
+		function flush() { \
+			if (target == "") return; \
+			line = sprintf("  %-16s %s", target, desc); \
+			if (options != "") line = line " [" options "]"; \
+			printf "%s\n", line; \
+			target = ""; \
+			desc = ""; \
+			options = ""; \
+		} \
+		/^##@/ {next} \
+		/^##   options:/ {pending_options = substr($$0, 15); next} \
+		/^## / { \
+			line = substr($$0, 4); \
+			split(line, parts, ": "); \
+			pending_desc = substr(line, length(parts[1]) + 3); \
+			next; \
+		} \
+		/^[a-zA-Z0-9_.-]+:[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ {next} \
+		/^\.(PHONY|DEFAULT_GOAL)/ {next} \
+		/^[a-zA-Z0-9_.-]+:/ { \
+			flush(); \
+			split($$1, parts, ":"); \
+			target = parts[1]; \
+			desc = pending_desc; \
+			options = pending_options; \
+			pending_desc = ""; \
+			pending_options = ""; \
+			next; \
+		} \
+		END {flush()} \
+	' $(MAKEFILE_LIST)
+
+##@ Test
+## test: Run all tests (unit, e2e, JavaScript)
+test: unit e2e test-js
+	@echo "All tests passed!"
 
 ## unit: Run unit tests
 unit:
 	$(GOTEST) -v -race -cover -timeout=60s ./...
 
-## test: Run all tests (unit, integration, e2e, JavaScript)
-test: unit integration e2e test-js
-	@echo "All tests passed!"
-
-## cover: Run tests with coverage
-cover:
-	@mkdir -p test/cover
-	$(GOTEST) -v -race -timeout=60s -covermode=atomic \
-		-coverprofile=test/cover/coverage.out -coverpkg=./... ./...
-
-## cover-html: Generate and open HTML coverage report
-cover-html: cover
-	@go tool cover -html=test/cover/coverage.out -o test/cover/coverage.html
-	@echo "Coverage report: test/cover/coverage.html"
-	@if command -v open >/dev/null; then \
-		open test/cover/coverage.html; \
-	elif command -v xdg-open >/dev/null; then \
-		xdg-open test/cover/coverage.html; \
-	fi
-
-## integration: Run integration tests
-integration:
-	$(GOTEST) -v -race -tags=integration -timeout=60s ./test/integration/...
-
-## e2e: Run end-to-end tests (builds cli, compares output against git)
+## e2e: Run end-to-end tests
 e2e:
 	$(GOTEST) -v -race -tags=e2e -timeout=60s ./test/e2e/...
 
-## format: Auto-format the source code with gofmt
-format:
-	@echo "Formatting code with gofmt..."
-	@find . -name '*.go' \
-		-not -path './vendor/*' \
-		-not -path './web/*' \
-		-not -path './.cache/*' \
-		-print0 | xargs -0 gofmt -w
-
-## check-imports: Organize and format imports with goimports
-check-imports:
-	@echo "Checking and fixing imports..."
-	@if command -v goimports >/dev/null; then \
-		find . -name '*.go' \
-			-not -path './vendor/*' \
-			-not -path './web/*' \
-			-not -path './.cache/*' \
-			-print0 | xargs -0 goimports -w; \
-	else \
-		echo "goimports not found - install with: go install golang.org/x/tools/cmd/goimports@latest"; \
-		exit 1; \
-	fi
-
-## imports-check: Verify imports are organized (fails if goimports would change files)
-imports-check:
-	@echo "Checking import formatting with goimports..."
-	@if command -v goimports >/dev/null; then \
-		UNFORMATTED=$$(find . -name '*.go' \
-			-not -path './vendor/*' \
-			-not -path './web/*' \
-			-not -path './.cache/*' \
-			-print0 | xargs -0 goimports -l || true); \
-		if [ -n "$$UNFORMATTED" ]; then \
-			echo "Files with import/style issues:"; echo "$$UNFORMATTED"; \
-			echo "Run 'make check-imports' to fix"; exit 1; \
-		fi; \
-	else \
-		echo "goimports not found - install with: go install golang.org/x/tools/cmd/goimports@latest"; \
-		exit 1; \
-	fi
-	@echo "All imports properly formatted"
-
-## vet: Run go vet static analysis
-vet:
-	@echo "Running go vet..."
-	@$(GOCMD) vet ./...
-
-## security: Run security checks (govulncheck, gosec)
-security: check-vuln
-	@echo "Running gosec security scanner..."
-	@if command -v gosec >/dev/null; then \
-		gosec -quiet -exclude=G304,G204 ./...; \
-	else \
-		echo "gosec not found - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
-		exit 1; \
-	fi
-
-## security-local: Run local-friendly security checks (best-effort govulncheck + gosec)
-security-local:
-	@echo "Checking for known vulnerabilities (best effort, offline-safe)..."
-	@if command -v govulncheck >/dev/null; then \
-		if ! govulncheck ./...; then \
-			echo "Warning: govulncheck failed (likely offline), continuing for ci-local"; \
-		fi; \
-	else \
-		echo "Warning: govulncheck not found - skipping for ci-local"; \
-	fi
-	@echo "Running gosec security scanner..."
-	@if command -v gosec >/dev/null; then \
-		gosec -quiet -exclude=G304,G204 ./...; \
-	else \
-		echo "gosec not found - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
-		exit 1; \
-	fi
-
-## check-vuln: Check for known vulnerabilities with govulncheck
-check-vuln:
-	@echo "Checking for known vulnerabilities..."
-	@if command -v govulncheck >/dev/null; then \
-		govulncheck ./...; \
-	else \
-		echo "govulncheck not found - install with: go install github.com/golang/vuln/cmd/govulncheck@latest"; \
-		exit 1; \
-	fi
-
-## lint: Run golangci-lint
-lint:
-	@echo "Running golangci-lint..."
-	@if command -v golangci-lint >/dev/null; then \
-		mkdir -p "$(GOCACHE)" "$(GOLANGCI_LINT_CACHE)"; \
-		golangci-lint run --config=.golangci.yml .; \
-	else \
-		echo "golangci-lint not found - install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
-		exit 1; \
-	fi
-
-## test-js: Run JavaScript unit tests (Node.js test runner)
+## test-js: Run JavaScript unit tests
 test-js:
 	@echo "Running JavaScript tests..."
 	@TEST_FILES=$$(find web -type f -name '*.test.js' | sort); \
@@ -177,17 +100,109 @@ validate-js:
 	fi
 	@echo "JavaScript validation passed"
 
-## build: Build the local binaries (vista and cli)
-build: build-cli
+##@ Code Quality
+## fmt: Format Go source and organize imports
+fmt:
+	@echo "Formatting Go files with gofmt..."
+	@find . -name '*.go' \
+		-not -path './vendor/*' \
+		-not -path './web/*' \
+		-not -path './.cache/*' \
+		-print0 | xargs -0 gofmt -w
+	@echo "Formatting imports with goimports..."
+	@if command -v goimports >/dev/null; then \
+		find . -name '*.go' \
+			-not -path './vendor/*' \
+			-not -path './web/*' \
+			-not -path './.cache/*' \
+			-print0 | xargs -0 goimports -w; \
+	else \
+		echo "goimports not found - install with: go install golang.org/x/tools/cmd/goimports@latest"; \
+		exit 1; \
+	fi
+
+## fmt-check: Verify Go formatting and imports
+fmt-check:
+	@echo "Checking gofmt compliance..."
+	@UNFORMATTED=$$(find . -name '*.go' \
+		-not -path './vendor/*' \
+		-not -path './web/*' \
+		-not -path './.cache/*' \
+		-print0 | xargs -0 gofmt -l || true); \
+	if [ -n "$$UNFORMATTED" ]; then \
+		echo "Files not formatted:"; echo "$$UNFORMATTED"; \
+		echo "Run 'make fmt' to fix"; exit 1; \
+	fi
+	@echo "Checking import formatting with goimports..."
+	@if command -v goimports >/dev/null; then \
+		UNFORMATTED=$$(find . -name '*.go' \
+			-not -path './vendor/*' \
+			-not -path './web/*' \
+			-not -path './.cache/*' \
+			-print0 | xargs -0 goimports -l || true); \
+		if [ -n "$$UNFORMATTED" ]; then \
+			echo "Files with import/style issues:"; echo "$$UNFORMATTED"; \
+			echo "Run 'make fmt' to fix"; exit 1; \
+		fi; \
+	else \
+		echo "goimports not found - install with: go install golang.org/x/tools/cmd/goimports@latest"; \
+		exit 1; \
+	fi
+	@echo "All Go files properly formatted"
+
+## vet: Run go vet static analysis
+vet:
+	@echo "Running go vet..."
+	@$(GOCMD) vet ./...
+
+## lint: Run golangci-lint
+lint:
+	@echo "Running golangci-lint..."
+	@if command -v golangci-lint >/dev/null; then \
+		mkdir -p "$(GOCACHE)" "$(GOLANGCI_LINT_CACHE)"; \
+		golangci-lint run --config=.golangci.yml .; \
+	else \
+		echo "golangci-lint not found - install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		exit 1; \
+	fi
+
+## security: Run security checks
+##   options: SECURITY_BEST_EFFORT=0|1
+security:
+	@echo "Checking for known vulnerabilities..."
+	@if command -v govulncheck >/dev/null; then \
+		if ! govulncheck ./...; then \
+			if [ "$(SECURITY_BEST_EFFORT)" = "1" ]; then \
+				echo "Warning: govulncheck failed, continuing because SECURITY_BEST_EFFORT=1"; \
+			else \
+				exit 1; \
+			fi; \
+		fi; \
+	elif [ "$(SECURITY_BEST_EFFORT)" = "1" ]; then \
+		echo "Warning: govulncheck not found - skipping because SECURITY_BEST_EFFORT=1"; \
+	else \
+		echo "govulncheck not found - install with: go install github.com/golang/vuln/cmd/govulncheck@latest"; \
+		exit 1; \
+	fi
+	@echo "Running gosec security scanner..."
+	@if command -v gosec >/dev/null; then \
+		gosec -quiet -exclude=G304,G204 ./...; \
+	else \
+		echo "gosec not found - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
+		exit 1; \
+	fi
+
+##@ Build
+## build: Build local binaries
+##   options: VERSION=..., COMMIT=..., BUILD_DATE=...
+build:
+	@echo "Building CLI binary..."
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o cli ./cmd/cli
 	@echo "Building main binary..."
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o vista ./cmd/vista
 
-## build-cli: Build the cli binary
-build-cli:
-	@echo "Building CLI binary..."
-	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o cli ./cmd/cli
-
 ## build-site: Build the hosted site binary
+##   options: VERSION=..., COMMIT=..., BUILD_DATE=...
 build-site:
 	@echo "Building hosted site binary..."
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-site ./cmd/site
@@ -197,42 +212,82 @@ run-site:
 	@echo "Running hosted site from cmd/site..."
 	$(GOCMD) run ./cmd/site
 
-## profile: Capture CPU and memory profiles for repository loading via cmd/cli repo (usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof])
+##@ Profiling
+## profile: Capture repo profiles
+##   options: REPO=... (required), PROFILE=..., MEMPROFILE=..., PPROF_WEB=0|1
 profile:
 	@if [ -z "$(REPO)" ]; then \
 		echo "REPO is required"; \
-		echo "Usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof]"; \
+		echo "Usage: make profile REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof] [PPROF_WEB=1]"; \
 		exit 1; \
 	fi
 	@echo "Profiling repository load for $(REPO)"
 	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" --memprofile "$(MEMPROFILE)" repo
 	@echo "CPU profile written to $(PROFILE)"
-	@echo "Inspect CPU profile with: $(GOCMD) tool pprof -http=:9090 $(PROFILE)"
 	@echo "Memory profile written to $(MEMPROFILE)"
-	@echo "Inspect memory profile with: $(GOCMD) tool pprof -http=:9091 $(MEMPROFILE)"
-
-## profile-web: Capture CPU and memory profiles and open both in the pprof web UI (usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof])
-profile-web:
-	@if [ -z "$(REPO)" ]; then \
-		echo "REPO is required"; \
-		echo "Usage: make profile-web REPO=/path/to/repo [PROFILE=/tmp/gitvista-cli.cpu.prof] [MEMPROFILE=/tmp/gitvista-cli.mem.prof]"; \
-		exit 1; \
+	@if [ "$(PPROF_WEB)" = "1" ]; then \
+		echo "Opening CPU profile web UI at http://127.0.0.1:9090"; \
+		echo "Opening memory profile web UI at http://127.0.0.1:9091"; \
+		trap 'kill 0' INT TERM EXIT; \
+			$(GOCMD) tool pprof -http=:9090 "$(PROFILE)" & \
+			$(GOCMD) tool pprof -http=:9091 "$(MEMPROFILE)" & \
+			wait; \
+	else \
+		echo "Inspect CPU profile with: $(GOCMD) tool pprof -http=:9090 $(PROFILE)"; \
+		echo "Inspect memory profile with: $(GOCMD) tool pprof -http=:9091 $(MEMPROFILE)"; \
 	fi
-	@echo "Profiling repository load for $(REPO)"
-	$(GOCMD) run ./cmd/cli --repo "$(REPO)" --cpuprofile "$(PROFILE)" --memprofile "$(MEMPROFILE)" repo
-	@echo "Opening CPU profile web UI at http://127.0.0.1:9090"
-	@echo "Opening memory profile web UI at http://127.0.0.1:9091"
-	@trap 'kill 0' INT TERM EXIT; \
-		$(GOCMD) tool pprof -http=:9090 "$(PROFILE)" & \
-		$(GOCMD) tool pprof -http=:9091 "$(MEMPROFILE)" & \
-		wait
 
-## docker-build: Build Docker image
+##@ CI
+## ci-local: Run local CI checks
+ci-local: SECURITY_BEST_EFFORT = 1
+ci-local: fmt-check vet lint security test validate-js build
+	@echo "All local CI checks passed!"
+
+## ci: Run full CI checks
+ci: fmt-check vet lint security test validate-js build docker-build deps-check
+	@echo "All CI checks passed!"
+
+##@ Maintenance
+## clean: Clean build artifacts
+clean:
+	@echo "Cleaning..."
+	$(GOCLEAN)
+	@rm -f vista cli gitvista-site
+	@rm -rf test/cover/
+	@echo "Clean complete"
+
+## cloc: Count lines of code
+cloc:
+	@echo "Counting lines of code..."
+	@if command -v cloc >/dev/null; then \
+		cloc . --fullpath --exclude-dir=.venv,testdata --not-match-d="web/vendor"; \
+	else \
+		echo "cloc not found - install with: brew install cloc or apt install cloc"; \
+	fi
+
+##@ Deployment
+## deploy: Deploy to Fly.io
+##   options: DEPLOY_ENV=staging|production (default staging)
+deploy:
+	@case "$(DEPLOY_ENV)" in \
+		staging) \
+			echo "Deploying to staging..."; \
+			flyctl deploy --config fly.staging.toml --app gitvista-staging ;; \
+		production) \
+			echo "Deploying to production..."; \
+			flyctl deploy --app gitvista ;; \
+		*) \
+			echo "DEPLOY_ENV must be 'staging' or 'production'"; \
+			exit 1 ;; \
+	esac
+
+##@ Internal
+## docker-build: Build the Docker image used by full CI
 docker-build:
 	@echo "Building Docker image..."
 	@docker build -t gitvista:latest .
 
-## deps-check: Check and tidy Go dependencies
+## deps-check: Verify module downloads and tidy state
 deps-check:
 	@echo "Checking dependencies..."
 	@go mod download
@@ -242,60 +297,4 @@ deps-check:
 	else \
 		echo "Dependencies need tidying - run 'go mod tidy'"; \
 		exit 1; \
-	fi
-
-## dev-check: Run fast local checks (format, imports, vet) - suitable for CI pre-checks
-dev-check: format-check imports-check vet
-	@echo "Running development checks..."
-
-## format-check: Verify all Go files are properly formatted (fails if not)
-format-check:
-	@echo "Checking gofmt compliance..."
-	@UNFORMATTED=$$(find . -name '*.go' \
-		-not -path './vendor/*' \
-		-not -path './web/*' \
-		-not -path './.cache/*' \
-		-print0 | xargs -0 gofmt -l || true); \
-	if [ -n "$$UNFORMATTED" ]; then \
-		echo "Files not formatted:"; echo "$$UNFORMATTED"; \
-		echo "Run 'make format' to fix"; exit 1; \
-	fi
-	@echo "All files properly formatted"
-
-## ci-local: Run CI checks that work offline (no Docker or network needed)
-ci-local: format-check imports-check vet lint security-local test validate-js build
-	@echo "All local CI checks passed!"
-
-## ci-remote: Run all CI checks including Docker build and dependency verification
-ci-remote: format-check imports-check vet lint security test validate-js build docker-build deps-check
-	@echo "All CI checks passed!"
-
-## ci: Alias for full CI suite
-ci: ci-remote
-
-## clean: Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	$(GOCLEAN)
-	@rm -f vista cli gitvista-site
-	@rm -rf test/cover/
-	@echo "Clean complete"
-
-## deploy-staging: Deploy to Fly.io staging environment
-deploy-staging:
-	@echo "Deploying to staging..."
-	flyctl deploy --config fly.staging.toml --app gitvista-staging
-
-## deploy-production: Deploy to Fly.io production environment
-deploy-production:
-	@echo "Deploying to production..."
-	flyctl deploy --app gitvista
-
-## cloc: Count lines of code
-cloc:
-	@echo "Counting lines of code..."
-	@if command -v cloc >/dev/null; then \
-		cloc . --fullpath --exclude-dir=.venv,testdata --not-match-d="web/vendor"; \
-	else \
-		echo "cloc not found - install with: brew install cloc or apt install cloc"; \
 	fi
