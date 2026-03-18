@@ -139,7 +139,6 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 	idx := &PackIndex{
 		packPath: packPath,
 		version:  2,
-		offsets:  make(map[Hash]int64),
 	}
 
 	var version uint32
@@ -156,12 +155,11 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 		}
 	}
 	idx.numObjects = idx.fanout[255]
+	idx.offsets = make(map[Hash]int64, idx.numObjects)
 
-	objectNames := make([][20]byte, idx.numObjects)
-	for i := uint32(0); i < idx.numObjects; i++ {
-		if _, err := io.ReadFull(rs, objectNames[i][:]); err != nil {
-			return nil, fmt.Errorf("failed to read object name %d: %w", i, err)
-		}
+	objectNames := make([]byte, int(idx.numObjects)*20)
+	if _, err := io.ReadFull(rs, objectNames); err != nil {
+		return nil, fmt.Errorf("failed to read object names: %w", err)
 	}
 
 	if _, err := rs.Seek(int64(idx.numObjects*4), io.SeekCurrent); err != nil {
@@ -169,33 +167,38 @@ func loadPackIndexV2(rs io.ReadSeeker, packPath string) (*PackIndex, error) {
 	}
 
 	offsets := make([]uint32, idx.numObjects)
+	offsetBytes := make([]byte, int(idx.numObjects)*4)
+	if _, err := io.ReadFull(rs, offsetBytes); err != nil {
+		return nil, fmt.Errorf("failed to read offsets: %w", err)
+	}
+
+	largeOffsetCount := 0
 	for i := uint32(0); i < idx.numObjects; i++ {
-		if err := binary.Read(rs, binary.BigEndian, &offsets[i]); err != nil {
-			return nil, fmt.Errorf("failed to read offset %d: %w", i, err)
+		offset := binary.BigEndian.Uint32(offsetBytes[i*4 : (i+1)*4])
+		offsets[i] = offset
+		if offset&packIndexLargeOffsetFlag != 0 {
+			largeOffsetCount++
 		}
 	}
 
 	var largeOffsets []uint64
-	for _, offset := range offsets {
-		if offset&packIndexLargeOffsetFlag != 0 {
-			if len(largeOffsets) == 0 {
-				for {
-					var largeOffset uint64
-					err := binary.Read(rs, binary.BigEndian, &largeOffset)
-					if err == io.EOF {
-						break
-					}
-					if err != nil {
-						return nil, fmt.Errorf("failed to read large offset: %w", err)
-					}
-					largeOffsets = append(largeOffsets, largeOffset)
-				}
-			}
+	if largeOffsetCount > 0 {
+		largeOffsets = make([]uint64, largeOffsetCount)
+		largeOffsetBytes := make([]byte, largeOffsetCount*8)
+		if _, err := io.ReadFull(rs, largeOffsetBytes); err != nil {
+			return nil, fmt.Errorf("failed to read large offsets: %w", err)
+		}
+		for i := range largeOffsetCount {
+			start := i * 8
+			largeOffsets[i] = binary.BigEndian.Uint64(largeOffsetBytes[start : start+8])
 		}
 	}
 
 	for i := uint32(0); i < idx.numObjects; i++ {
-		hash, err := NewHashFromBytes(objectNames[i])
+		var name [20]byte
+		copy(name[:], objectNames[i*20:(i+1)*20])
+
+		hash, err := NewHashFromBytes(name)
 		if err != nil {
 			return nil, err
 		}
