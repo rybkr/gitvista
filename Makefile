@@ -10,6 +10,9 @@ GOTEST = $(GOCMD) test
 GOBUILD = $(GOCMD) build
 GOCLEAN = $(GOCMD) clean
 
+PYTHON = uv run python
+PYTEST = uv run pytest
+
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -71,7 +74,7 @@ unit:
 
 ## e2e: Run end-to-end tests
 e2e:
-	$(GOTEST) -v -race -tags=e2e -timeout=60s ./test/e2e/...
+	$(PYTEST) --quick
 
 ## test-js: Run JavaScript unit tests
 test-js:
