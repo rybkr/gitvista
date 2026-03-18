@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -9,7 +10,10 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/rybkr/gitvista/gitcore"
+	"github.com/rybkr/gitvista/internal/repositoryview"
 )
+
+var errRepoUnavailable = errors.New("repository not available")
 
 func (rs *RepoSession) handleBroadcast() {
 	defer rs.wg.Done()
@@ -26,10 +30,14 @@ func (rs *RepoSession) handleBroadcast() {
 }
 
 func packetCommitCount(message UpdateMessage) int {
-	if message.Delta == nil {
+	switch {
+	case message.Delta != nil:
+		return len(message.Delta.AddedCommits)
+	case message.Bootstrap != nil:
+		return len(message.Bootstrap.Commits)
+	default:
 		return 0
 	}
-	return len(message.Delta.AddedCommits)
 }
 
 func marshalPacketPayload(message UpdateMessage) ([]byte, int, error) {
@@ -42,17 +50,18 @@ func marshalPacketPayload(message UpdateMessage) ([]byte, int, error) {
 }
 
 func packetType(message UpdateMessage) string {
+	if message.Type != "" {
+		return message.Type
+	}
 	switch {
-	case message.Delta != nil && message.Delta.BootstrapComplete:
-		return "bootstrap-final"
-	case message.Delta != nil && message.Delta.Bootstrap:
-		return "bootstrap"
 	case message.Delta != nil:
-		return "delta"
-	case message.Summary != nil:
-		return "summary"
+		return messageTypeGraphDelta
+	case message.Status != nil:
+		return messageTypeStatus
+	case message.Head != nil:
+		return messageTypeHead
 	default:
-		return "state"
+		return "unknown"
 	}
 }
 
@@ -132,34 +141,56 @@ func (rs *RepoSession) broadcastUpdate(message UpdateMessage) {
 	}
 }
 
-func (rs *RepoSession) sendInitialState(conn *websocket.Conn) {
-	repo := rs.Repo()
-	if repo == nil {
-		rs.logger.Error("Failed to send initial state: repository not available", "addr", conn.RemoteAddr())
-		return
-	}
-
-	status := getWorkingTreeStatus(repo)
-	headInfo := buildHeadInfo(repo)
-	msg := UpdateMessage{
-		Status: status,
-		Head:   headInfo,
-	}
-	payload, commitCount, err := marshalPacketPayload(msg)
+func (rs *RepoSession) sendMessage(conn *websocket.Conn, message UpdateMessage) error {
+	payload, commitCount, err := marshalPacketPayload(message)
 	if err != nil {
-		rs.logger.Error("Failed to serialize initial state", "addr", conn.RemoteAddr(), "err", err)
-		return
+		return err
 	}
 	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-		rs.logger.Error("Failed to set write deadline", "addr", conn.RemoteAddr(), "err", err)
-		return
+		return err
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-		rs.logger.Error("Failed to send initial state", "addr", conn.RemoteAddr(), "err", err)
-		return
+		return err
+	}
+	logPacketSent(rs.logger, packetType(message), 1, commitCount, len(payload))
+	return nil
+}
+
+func (rs *RepoSession) sendInitialRepoSummary(conn *websocket.Conn, repoSummary repositoryResponse) error {
+	if err := rs.sendMessage(conn, UpdateMessage{
+		Type: messageTypeRepoSummary,
+		Repo: &repoSummary,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (rs *RepoSession) sendInitialBootstrap(conn *websocket.Conn) error {
+	repo := rs.Repo()
+	if repo == nil {
+		return errRepoUnavailable
 	}
 
-	logPacketSent(rs.logger, "initial-state", 1, commitCount, len(payload))
+	delta := repositoryview.DiffRepositories(repo, gitcore.NewEmptyRepository())
+	for _, msg := range buildBootstrapMessages(delta) {
+		if err := rs.sendMessage(conn, msg); err != nil {
+			return err
+		}
+	}
+	status := getWorkingTreeStatus(repo)
+	if status != nil {
+		if err := rs.sendMessage(conn, UpdateMessage{Type: messageTypeStatus, Status: status}); err != nil {
+			return err
+		}
+	}
+	headInfo := buildHeadInfo(repo)
+	if headInfo != nil {
+		if err := rs.sendMessage(conn, UpdateMessage{Type: messageTypeHead, Head: headInfo}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (rs *RepoSession) registerClient(conn *websocket.Conn) *sync.Mutex {

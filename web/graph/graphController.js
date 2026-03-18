@@ -2204,17 +2204,7 @@ export function createGraphController(rootElement, options = {}) {
             return;
         }
 
-        const previousCommits = new Map(commits);
-        commits.clear();
-        branches.clear();
-        state.tags = new Map();
-        state.stashes = [];
-        nodes.splice(0, nodes.length);
-        links.splice(0, links.length);
-        nodeMaterializer.clear();
-        sortedCommitCache = null;
-        searchResultCache = null;
-
+        const previousCommits = resetGraphData();
         for (const item of summary.skeleton) {
             const hash = item?.hash ?? item?.h;
             if (!hash) continue;
@@ -2260,6 +2250,23 @@ export function createGraphController(rootElement, options = {}) {
         updateGraph();
     }
 
+    function resetGraphData() {
+        const previousCommits = new Map(commits);
+        commits.clear();
+        branches.clear();
+        state.tags = new Map();
+        state.stashes = [];
+        state.headHash = "";
+        nodes.splice(0, nodes.length);
+        links.splice(0, links.length);
+        nodeMaterializer.clear();
+        selectedHash = null;
+        sortedCommitCache = null;
+        searchResultCache = null;
+        searchResultIndex = -1;
+        return previousCommits;
+    }
+
     // Activate the layout strategy with initial empty state
     layoutStrategy.activate(
         nodes,
@@ -2272,6 +2279,11 @@ export function createGraphController(rootElement, options = {}) {
     return {
         applyDelta,
         applySummary,
+        resetData: () => {
+            resetGraphData();
+            updateForceButtonAvailability();
+            updateGraph();
+        },
         destroy,
         /**
          * Centers the viewport on the commit with the given hash.

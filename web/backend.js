@@ -1,48 +1,41 @@
-import { apiUrl, wsUrl } from "./apiBase.js";
-import { apiFetch } from "./apiFetch.js";
+import { wsUrl } from "./apiBase.js";
 import { telemetryStore } from "./telemetry.js";
 
-// Reconnection backoff constants
 const RECONNECT_DELAY_INITIAL_MS = 1000;
 const RECONNECT_DELAY_MAX_MS = 30000;
 
-export async function startBackend({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
-    await loadRepositoryMetadata(logger, onRepoMetadata);
-    await loadGraphSummary(logger, onSummary);
-    return openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger });
+export function startBackend({
+    onDelta,
+    onBootstrapChunk,
+    onBootstrapComplete,
+    onStatus,
+    onHead,
+    onRepoMetadata,
+    onConnectionStateChange,
+    logger,
+}) {
+    return openWebSocket({
+        onBootstrapChunk,
+        onBootstrapComplete,
+        onDelta,
+        onStatus,
+        onHead,
+        onRepoMetadata,
+        onConnectionStateChange,
+        logger,
+    });
 }
 
-async function loadRepositoryMetadata(logger, onRepoMetadata) {
-    logger?.info("Requesting repository metadata");
-    try {
-        const response = await apiFetch(apiUrl("/repository"));
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        const metadata = await response.json();
-        logger?.info("Repository metadata loaded");
-        onRepoMetadata?.(metadata);
-    } catch (error) {
-        logger?.error("Failed to load repository metadata", error);
-    }
-}
-
-async function loadGraphSummary(logger, onSummary) {
-    logger?.info("Requesting graph summary");
-    try {
-        const response = await apiFetch(apiUrl("/graph/summary"));
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        const summary = await response.json();
-        logger?.info("Graph summary loaded");
-        onSummary?.(summary);
-    } catch (error) {
-        logger?.error("Failed to load graph summary", error);
-    }
-}
-
-function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, onConnectionStateChange, logger }) {
+function openWebSocket({
+    onDelta,
+    onBootstrapChunk,
+    onBootstrapComplete,
+    onStatus,
+    onHead,
+    onRepoMetadata,
+    onConnectionStateChange,
+    logger,
+}) {
     const url = wsUrl();
     logger?.info("Opening WebSocket connection", url);
 
@@ -55,6 +48,35 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
     function notifyState(state, attempt) {
         telemetryStore.recordConnectionState(state, attempt || 0);
         onConnectionStateChange?.(state, attempt);
+    }
+
+    function handleMessage(payload) {
+        switch (payload?.type) {
+            case "repoSummary":
+                telemetryStore.recordRepoSummary(payload.repo);
+                onRepoMetadata?.(payload.repo);
+                break;
+            case "graphBootstrapChunk":
+                telemetryStore.recordBootstrapChunk(payload.bootstrap);
+                onBootstrapChunk?.(payload.bootstrap);
+                break;
+            case "bootstrapComplete":
+                telemetryStore.recordBootstrapComplete(payload.bootstrapComplete);
+                onBootstrapComplete?.(payload.bootstrapComplete);
+                break;
+            case "graphDelta":
+                telemetryStore.recordDelta(payload.delta);
+                onDelta?.(payload.delta);
+                break;
+            case "status":
+                onStatus?.(payload.status);
+                break;
+            case "head":
+                onHead?.(payload.head);
+                break;
+            default:
+                logger?.warn("Unknown WebSocket payload type", payload?.type);
+        }
     }
 
     function connect() {
@@ -71,44 +93,21 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
 
         socket.addEventListener("open", () => {
             logger?.info("WebSocket connection established");
-            const isReconnect = reconnectAttempt > 0;
             reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
             reconnectAttempt = 0;
             notifyState("connected");
-            // Re-fetch metadata on reconnect so UI state reflects any changes
-            // (new branches, changed HEAD, etc.) that occurred while disconnected.
-            if (isReconnect) {
-                loadRepositoryMetadata(logger, onRepoMetadata);
-                loadGraphSummary(logger, onSummary);
-            }
         });
 
         socket.addEventListener("message", (event) => {
             const size = typeof event.data === "string" ? event.data.length : undefined;
-            if (size !== undefined) {
-                telemetryStore.recordWsMessage(size);
-            } else {
-                telemetryStore.recordWsMessage(0);
-            }
+            telemetryStore.recordWsMessage(size);
 
             if (typeof event.data !== "string") {
                 return;
             }
 
             try {
-                const payload = JSON.parse(event.data);
-                if (payload?.summary) {
-                    onSummary?.(payload.summary);
-                }
-                if (payload?.delta) {
-                    onDelta?.(payload.delta);
-                }
-                if (payload?.status) {
-                    onStatus?.(payload.status);
-                }
-                if (payload?.head) {
-                    onHead?.(payload.head);
-                }
+                handleMessage(JSON.parse(event.data));
             } catch (error) {
                 logger?.warn("Failed to parse WebSocket payload", error);
             }
@@ -122,19 +121,15 @@ function openWebSocket({ onDelta, onSummary, onStatus, onHead, onRepoMetadata, o
 
             if (destroyed) return;
 
-            // Reconnect with exponential backoff regardless of close code.
             reconnectAttempt++;
             notifyState("reconnecting", reconnectAttempt);
             logger?.info(`Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt})`);
-
             reconnectTimer = setTimeout(() => connect(), reconnectDelay);
-
             reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
         });
 
         socket.addEventListener("error", (error) => {
             logger?.error("WebSocket encountered an error", error);
-            // The close event fires after error, so reconnection is handled there.
         });
     }
 

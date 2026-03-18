@@ -189,6 +189,9 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	if got := w.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'self'") {
 		t.Fatalf("Content-Security-Policy = %q", got)
 	}
+	if got := w.Header().Get("Content-Security-Policy"); !strings.Contains(got, "style-src 'self' 'unsafe-inline'") {
+		t.Fatalf("Content-Security-Policy missing inline style allowance: %q", got)
+	}
 	if got := w.Header().Get("Referrer-Policy"); got != "no-referrer" {
 		t.Fatalf("Referrer-Policy = %q, want %q", got, "no-referrer")
 	}

@@ -10,10 +10,10 @@ const state = {
     wsBytesTotal: 0,
     wsLastBytes: 0,
     wsMaxBytes: 0,
+    repoSummaries: 0,
     deltas: 0,
-    summaries: 0,
-    summaryCommits: 0,
-    bootstrapDeltas: 0,
+    repoSummaryCommits: 0,
+    bootstrapChunks: 0,
     bootstrapComplete: false,
     bootstrapCommits: 0,
     addedCommits: 0,
@@ -43,21 +43,25 @@ export const telemetryStore = {
         if (size > state.wsMaxBytes) state.wsMaxBytes = size;
         emit();
     },
-    recordDelta(delta) {
-        state.deltas++;
-        const added = delta?.addedCommits?.length ?? 0;
-        state.addedCommits += added;
-        if (delta?.bootstrap) {
-            state.bootstrapDeltas++;
-            state.bootstrapCommits += added;
-            if (delta.bootstrapComplete) state.bootstrapComplete = true;
-        }
+    recordRepoSummary(summary) {
+        state.repoSummaries++;
+        const total = Number.isFinite(summary?.commitCount) ? summary.commitCount : 0;
+        state.repoSummaryCommits = Math.max(0, Math.floor(total));
         emit();
     },
-    recordSummary(summary) {
-        state.summaries++;
-        const total = Number.isFinite(summary?.totalCommits) ? summary.totalCommits : 0;
-        state.summaryCommits = Math.max(0, Math.floor(total));
+    recordBootstrapChunk(chunk) {
+        state.bootstrapChunks++;
+        state.bootstrapCommits += chunk?.commits?.length ?? 0;
+        if (chunk?.final) state.bootstrapComplete = true;
+        emit();
+    },
+    recordBootstrapComplete() {
+        state.bootstrapComplete = true;
+        emit();
+    },
+    recordDelta(delta) {
+        state.deltas++;
+        state.addedCommits += delta?.addedCommits?.length ?? 0;
         emit();
     },
     recordDiffStatsRequest(limit = 0, ok = true) {
@@ -208,10 +212,10 @@ export function createTelemetryHud({ getGraphTelemetry }) {
             metricRow("WS Messages", String(snap.wsMessages)),
             metricRow("WS Total", formatBytes(snap.wsBytesTotal)),
             metricRow("WS Last / Max", `${formatBytes(snap.wsLastBytes)} / ${formatBytes(snap.wsMaxBytes)}`),
-            metricRow("Summary / Delta", `${snap.summaries} / ${snap.deltas}`),
-            metricRow("Summary Commits", String(snap.summaryCommits)),
+            metricRow("Repo Summary / Delta", `${snap.repoSummaries} / ${snap.deltas}`),
+            metricRow("Repo Commits", String(snap.repoSummaryCommits)),
             metricRow("Added Commits", String(snap.addedCommits)),
-            metricRow("Bootstrap", `${snap.bootstrapDeltas} batches · ${snap.bootstrapCommits} commits`),
+            metricRow("Bootstrap", `${snap.bootstrapChunks} chunks · ${snap.bootstrapCommits} commits`),
             metricRow("Layout", `${graph.layoutMode ?? "?"} · ${renderPerSec.toFixed(1)} r/s`),
             metricRow("Nodes / Links", `${graph.nodesCount ?? 0} / ${graph.linksCount ?? 0}`),
             metricRow("Known / Indexed", `${graph.commitsCount ?? 0} / ${graph.commitIndexSize ?? 0}`),

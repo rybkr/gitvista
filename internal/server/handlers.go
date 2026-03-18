@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -66,6 +67,15 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response := buildRepositoryResponse(repo, r.Context())
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func buildRepositoryResponse(repo *gitcore.Repository, ctx context.Context) repositoryResponse {
 	currentBranch := ""
 	headRef := repo.HeadRef()
 	if headRef != "" {
@@ -77,11 +87,11 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 	branches := repo.Branches()
 	tagNames := repo.TagNames()
 	repoName := repo.Name()
-	if hostedRepo, ok := hostedRepoFromCtx(r.Context()); ok && hostedRepo.DisplayName != "" {
+	if hostedRepo, ok := hostedRepoFromCtx(ctx); ok && hostedRepo.DisplayName != "" {
 		repoName = hostedRepo.DisplayName
 	}
 
-	response := repositoryResponse{
+	return repositoryResponse{
 		Name:          repoName,
 		CurrentBranch: currentBranch,
 		HeadDetached:  repo.HeadDetached(),
@@ -93,11 +103,6 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 		Tags:          tagNames,
 		Description:   repo.Description(),
 		Remotes:       repo.Remotes(),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 

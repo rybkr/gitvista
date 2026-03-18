@@ -93,9 +93,25 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Info("WebSocket client connected", "addr", conn.RemoteAddr())
 
-	// Send initial state before registering for broadcasts to prevent a race
-	// where a broadcast arrives before the client knows its baseline state.
-	session.sendInitialState(conn)
+	repo := session.Repo()
+	if repo == nil {
+		_ = conn.Close()
+		s.logger.Error("WebSocket client bootstrap failed: repository not available", "addr", conn.RemoteAddr())
+		return
+	}
+
+	// Send bootstrap payloads before registering for live broadcasts so the
+	// client receives a coherent initial snapshot from cached repo state.
+	if err := session.sendInitialRepoSummary(conn, buildRepositoryResponse(repo, r.Context())); err != nil {
+		s.logger.Error("Failed to send initial repo summary", "addr", conn.RemoteAddr(), "err", err)
+		_ = conn.Close()
+		return
+	}
+	if err := session.sendInitialBootstrap(conn); err != nil {
+		s.logger.Error("Failed to send initial bootstrap", "addr", conn.RemoteAddr(), "err", err)
+		_ = conn.Close()
+		return
+	}
 
 	writeMu := session.registerClient(conn)
 

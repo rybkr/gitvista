@@ -15,48 +15,78 @@ func (rs *RepoSession) broadcastInitialBootstrap(
 	status *WorkingTreeStatus,
 	headInfo *HeadInfo,
 ) {
-	batches := planInitialCommitBatches(delta)
-	if len(batches) == 0 {
-		rs.broadcastUpdate(UpdateMessage{Delta: delta, Status: status, Head: headInfo})
+	messages := buildBootstrapMessages(delta)
+	if len(messages) == 0 {
+		rs.broadcastUpdate(UpdateMessage{Type: messageTypeGraphDelta, Delta: delta, Status: status, Head: headInfo})
 		return
 	}
 
-	rs.logger.Info("Streaming initial bootstrap deltas",
-		"batches", len(batches),
+	rs.logger.Info("Streaming initial bootstrap messages",
+		"packets", len(messages),
 		"commits", len(delta.AddedCommits),
 	)
 
+	for i, msg := range messages {
+		rs.broadcastUpdate(msg)
+		if i < len(messages)-1 {
+			time.Sleep(bootstrapBatchPause)
+		}
+	}
+	if status != nil {
+		rs.broadcastUpdate(UpdateMessage{Type: messageTypeStatus, Status: status})
+	}
+	if headInfo != nil {
+		rs.broadcastUpdate(UpdateMessage{Type: messageTypeHead, Head: headInfo})
+	}
+}
+
+func buildBootstrapMessages(delta *repositoryview.RepositoryDelta) []UpdateMessage {
+	if delta == nil {
+		return nil
+	}
+	batches := planInitialCommitBatches(delta)
+	if len(batches) == 0 {
+		return []UpdateMessage{{
+			Type: messageTypeBootstrapComplete,
+			BootstrapComplete: &GraphBootstrapCompletePayload{
+				HeadHash: delta.HeadHash,
+				Tags:     delta.Tags,
+				Stashes:  delta.Stashes,
+			},
+		}}
+	}
+
+	messages := make([]UpdateMessage, 0, len(batches)+1)
 	for i, batch := range batches {
 		if len(batch) == 0 {
 			continue
 		}
-
 		sent := make(map[gitcore.Hash]struct{}, len(batch))
 		for _, c := range batch {
 			if c != nil {
 				sent[c.ID] = struct{}{}
 			}
 		}
-
-		batchDelta := repositoryview.NewRepositoryDelta()
-		batchDelta.AddedCommits = batch
-		batchDelta.AddedBranches = filterBranchesBySentHashes(delta.AddedBranches, sent)
-		batchDelta.HeadHash = delta.HeadHash
-		batchDelta.Bootstrap = true
-		batchDelta.BootstrapComplete = i == len(batches)-1
-
-		msg := UpdateMessage{Delta: batchDelta}
-		if batchDelta.BootstrapComplete {
-			batchDelta.Tags = delta.Tags
-			batchDelta.Stashes = delta.Stashes
-			msg.Status = status
-			msg.Head = headInfo
-		}
-		rs.broadcastUpdate(msg)
-		if !batchDelta.BootstrapComplete {
-			time.Sleep(bootstrapBatchPause)
-		}
+		messages = append(messages, UpdateMessage{
+			Type: messageTypeGraphBootstrapChunk,
+			Bootstrap: &GraphBootstrapChunk{
+				ChunkIndex: i,
+				Final:      i == len(batches)-1,
+				Commits:    batch,
+				Branches:   filterBranchesBySentHashes(delta.AddedBranches, sent),
+				HeadHash:   delta.HeadHash,
+			},
+		})
 	}
+	messages = append(messages, UpdateMessage{
+		Type: messageTypeBootstrapComplete,
+		BootstrapComplete: &GraphBootstrapCompletePayload{
+			HeadHash: delta.HeadHash,
+			Tags:     delta.Tags,
+			Stashes:  delta.Stashes,
+		},
+	})
+	return messages
 }
 
 func planInitialCommitBatches(delta *repositoryview.RepositoryDelta) [][]*gitcore.Commit {

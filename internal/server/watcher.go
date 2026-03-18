@@ -107,7 +107,7 @@ func (s *Server) statusPollLoop() {
 			}
 			lastJSON = cur
 
-			s.localSession.broadcastUpdate(UpdateMessage{Status: status})
+			s.localSession.broadcastUpdate(UpdateMessage{Type: messageTypeStatus, Status: status})
 		}
 	}
 }

@@ -194,7 +194,15 @@ func (rs *RepoSession) updateRepository() {
 		if oldRepo == nil && delta != nil && len(delta.AddedCommits) > 0 {
 			rs.broadcastInitialBootstrap(delta, status, headInfo)
 		} else {
-			rs.broadcastUpdate(UpdateMessage{Delta: delta, Status: status, Head: headInfo})
+			if delta != nil && !delta.IsEmpty() {
+				rs.broadcastUpdate(UpdateMessage{Type: messageTypeGraphDelta, Delta: delta})
+			}
+			if status != nil {
+				rs.broadcastUpdate(UpdateMessage{Type: messageTypeStatus, Status: status})
+			}
+			if headInfo != nil {
+				rs.broadcastUpdate(UpdateMessage{Type: messageTypeHead, Head: headInfo})
+			}
 		}
 	} else {
 		rs.logger.Debug("No changes detected after repository reload")

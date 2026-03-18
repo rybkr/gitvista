@@ -678,16 +678,48 @@ export function bootstrapGraph(root, options = {}) {
         openHeadInExplorerIfEmpty();
     }
 
-    startBackend({
+    const toBootstrapDelta = (chunk) => {
+        if (!chunk) return null;
+        return {
+            addedCommits: Array.isArray(chunk.commits) ? chunk.commits : [],
+            addedBranches: chunk.branches || {},
+            headHash: chunk.headHash || "",
+            bootstrap: true,
+            bootstrapComplete: false,
+        };
+    };
+
+    const toBootstrapCompleteDelta = (payload) => {
+        if (!payload) return null;
+        return {
+            headHash: payload.headHash || "",
+            tags: payload.tags || {},
+            stashes: Array.isArray(payload.stashes) ? payload.stashes : [],
+            bootstrap: true,
+            bootstrapComplete: true,
+        };
+    };
+
+    backendSession = startBackend({
         logger,
         onConnectionStateChange: (state, attempt) => {
             setConnectionState(state);
             setErrorConnectionState(state, attempt);
         },
-        onSummary: (summary) => {
+        onBootstrapChunk: (chunk) => {
             const analyticsView = analyticsLoader.get();
-            telemetryStore.recordSummary(summary);
-            graph.applySummary(summary);
+            const delta = toBootstrapDelta(chunk);
+            if (!delta) return;
+            graph.applyDelta(delta);
+            analyticsView?.update?.();
+            preloadAnalyticsOnce();
+            syncBranchDependentViews();
+        },
+        onBootstrapComplete: (payload) => {
+            const analyticsView = analyticsLoader.get();
+            const delta = toBootstrapCompleteDelta(payload);
+            if (!delta) return;
+            graph.applyDelta(delta);
             analyticsView?.update?.();
             preloadAnalyticsOnce();
             syncBranchDependentViews();
@@ -696,7 +728,6 @@ export function bootstrapGraph(root, options = {}) {
         onDelta: (delta) => {
             const analyticsView = analyticsLoader.get();
             const mergePreviewView = mergePreviewLoader.get();
-            telemetryStore.recordDelta(delta);
             graph.applyDelta(delta);
             analyticsView?.update?.();
             preloadAnalyticsOnce();
@@ -743,6 +774,7 @@ export function bootstrapGraph(root, options = {}) {
             refreshBreadcrumb();
         },
         onRepoMetadata: (metadata) => {
+            graph.resetData?.();
             setRepositoryAvailable(true);
             indexView.update(metadata);
             stagingView.updateHead({
@@ -756,17 +788,12 @@ export function bootstrapGraph(root, options = {}) {
             }
             updateTitle();
         },
-    }).then((session) => {
-        if (disposed) {
-            session?.destroy?.();
-            return;
-        }
-        backendSession = session ?? null;
-    }).catch((error) => {
-        if (!disposed) {
-            logger.error("Backend bootstrap failed", error);
-        }
     });
+
+    if (disposed) {
+        backendSession?.destroy?.();
+        backendSession = null;
+    }
 
     return () => {
         disposed = true;
