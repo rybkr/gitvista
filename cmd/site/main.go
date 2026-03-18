@@ -14,8 +14,8 @@ import (
 	"syscall"
 
 	app "github.com/rybkr/gitvista/internal/app/site"
+	"github.com/rybkr/gitvista/internal/hosted"
 	"github.com/rybkr/gitvista/internal/repomanager"
-	"github.com/rybkr/gitvista/internal/server"
 )
 
 var (
@@ -64,7 +64,7 @@ func main() {
 	}
 	defer rm.Close()
 
-	hostedStore, err := server.NewHostedStore(rm, os.Getenv("GITVISTA_DATABASE_URL"))
+	hostedStore, err := hosted.NewHostedStore(rm, os.Getenv("GITVISTA_DATABASE_URL"))
 	if err != nil {
 		slog.Error("Failed to create hosted store", "err", err)
 		os.Exit(1)

@@ -1,4 +1,4 @@
-package server
+package hosted
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-const hostedGooseMigrationsDir = "migrations/hosted"
+const hostedGooseMigrationsDir = "migrations"
 
-//go:embed migrations/hosted/*.sql
+//go:embed migrations/*.sql
 var hostedGooseMigrationsFS embed.FS
 
 func applyHostedStoreMigrations(ctx context.Context, db *sql.DB) error {

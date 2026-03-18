@@ -1,4 +1,4 @@
-package server
+package hosted
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 
 func NewHostedStore(rm *repomanager.RepoManager, databaseURL string) (HostedStore, error) {
 	if strings.TrimSpace(databaseURL) == "" {
-		return newMemoryHostedStore(rm), nil
+		return NewMemoryHostedStore(rm), nil
 	}
 
 	store, err := NewPostgresHostedStore(databaseURL, rm)

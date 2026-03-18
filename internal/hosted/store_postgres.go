@@ -1,4 +1,4 @@
-package server
+package hosted
 
 import (
 	"context"
@@ -94,7 +94,7 @@ func (s *postgresHostedStore) CreateAccount(name, slug string) (HostedAccount, e
 	if err == nil {
 		return existing, nil
 	}
-	if !errors.Is(err, errHostedAccountNotFound) {
+	if !errors.Is(err, ErrHostedAccountNotFound) {
 		return HostedAccount{}, err
 	}
 
@@ -195,7 +195,7 @@ func (s *postgresHostedStore) AddRepo(accountSlug, rawURL string) (HostedRepo, e
 	if err == nil {
 		return existing, nil
 	}
-	if !errors.Is(err, errHostedRepoNotFound) {
+	if !errors.Is(err, ErrHostedRepoNotFound) {
 		return HostedRepo{}, err
 	}
 
@@ -275,7 +275,7 @@ func (s *postgresHostedStore) GetRepo(accountSlug, repoID string) (HostedRepo, e
 	repo, err := scanHostedRepo(row.Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return HostedRepo{}, errHostedRepoNotFound
+			return HostedRepo{}, ErrHostedRepoNotFound
 		}
 		return HostedRepo{}, err
 	}
@@ -284,7 +284,7 @@ func (s *postgresHostedStore) GetRepo(accountSlug, repoID string) (HostedRepo, e
 
 func (s *postgresHostedStore) AuthorizeRepo(accountSlug, repoID, accessToken string) (HostedRepo, error) {
 	if strings.TrimSpace(accessToken) == "" {
-		return HostedRepo{}, errHostedRepoNotFound
+		return HostedRepo{}, ErrHostedRepoNotFound
 	}
 
 	account, err := s.requireAccount(accountSlug)
@@ -303,7 +303,7 @@ func (s *postgresHostedStore) AuthorizeRepo(accountSlug, repoID, accessToken str
 	repo, err := scanHostedRepo(row.Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return HostedRepo{}, errHostedRepoNotFound
+			return HostedRepo{}, ErrHostedRepoNotFound
 		}
 		return HostedRepo{}, err
 	}
@@ -327,7 +327,7 @@ func (s *postgresHostedStore) RemoveRepo(accountSlug, repoID string) error {
 		return fmt.Errorf("delete hosted repository: %w", err)
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
-		return errHostedRepoNotFound
+		return ErrHostedRepoNotFound
 	}
 
 	var remaining int
@@ -402,7 +402,7 @@ func (s *postgresHostedStore) lookupAccount(ctx context.Context, accountSlug str
 	`, slug)
 	if err := row.Scan(&account.ID, &account.Slug, &account.Name, &account.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return HostedAccount{}, fmt.Errorf("%w: %s", errHostedAccountNotFound, slug)
+			return HostedAccount{}, fmt.Errorf("%w: %s", ErrHostedAccountNotFound, slug)
 		}
 		return HostedAccount{}, fmt.Errorf("lookup account: %w", err)
 	}
@@ -426,7 +426,7 @@ func scanHostedRepo(scan hostedRepoScanner) (HostedRepo, error) {
 		&repo.ManagedRepoID,
 		&repo.URL,
 		&repo.DisplayName,
-		&repo.accessToken,
+		&repo.AccessToken,
 		&repo.CreatedAt,
 	); err != nil {
 		return HostedRepo{}, err

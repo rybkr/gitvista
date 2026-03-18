@@ -68,7 +68,7 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request, accountSl
 		ID:          hostedRepo.ID,
 		URL:         hostedRepo.URL,
 		DisplayName: hostedRepo.DisplayName,
-		AccessToken: hostedRepo.accessToken,
+		AccessToken: hostedRepo.AccessToken,
 		State:       state.String(),
 		Error:       errMsg,
 		Phase:       progress.Phase,

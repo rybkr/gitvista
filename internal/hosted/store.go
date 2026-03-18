@@ -1,4 +1,4 @@
-package server
+package hosted
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 
 const DefaultHostedAccountSlug = "personal"
 
-var errHostedRepoNotFound = errors.New("hosted repo not found")
-var errHostedAccountNotFound = errors.New("hosted account not found")
+var ErrHostedRepoNotFound = errors.New("hosted repo not found")
+var ErrHostedAccountNotFound = errors.New("hosted account not found")
 
 type HostedAccount struct {
 	ID        string
@@ -36,7 +36,7 @@ type HostedRepo struct {
 	URL           string
 	DisplayName   string
 	CreatedAt     time.Time
-	accessToken   string
+	AccessToken   string
 }
 
 type HostedStore interface {
@@ -60,7 +60,7 @@ type memoryHostedStore struct {
 	repos          map[string]map[string]HostedRepo
 }
 
-func newMemoryHostedStore(rm *repomanager.RepoManager) HostedStore {
+func NewMemoryHostedStore(rm *repomanager.RepoManager) HostedStore {
 	now := time.Now()
 	defaultAccount := HostedAccount{
 		ID:        "acct_" + DefaultHostedAccountSlug,
@@ -176,7 +176,7 @@ func (s *memoryHostedStore) AddRepo(accountSlug, rawURL string) (HostedRepo, err
 		URL:           info.URL,
 		DisplayName:   hostedRepoDisplayName(info.URL),
 		CreatedAt:     time.Now(),
-		accessToken:   accessToken,
+		AccessToken:   accessToken,
 	}
 	s.repos[account.Slug][repoID] = repo
 	return repo, nil
@@ -214,7 +214,7 @@ func (s *memoryHostedStore) GetRepo(accountSlug, repoID string) (HostedRepo, err
 	accountRepos := s.repos[account.Slug]
 	repo, ok := accountRepos[repoID]
 	if !ok {
-		return HostedRepo{}, errHostedRepoNotFound
+		return HostedRepo{}, ErrHostedRepoNotFound
 	}
 	return repo, nil
 }
@@ -224,8 +224,8 @@ func (s *memoryHostedStore) AuthorizeRepo(accountSlug, repoID, accessToken strin
 	if err != nil {
 		return HostedRepo{}, err
 	}
-	if accessToken == "" || repo.accessToken != accessToken {
-		return HostedRepo{}, errHostedRepoNotFound
+	if accessToken == "" || repo.AccessToken != accessToken {
+		return HostedRepo{}, ErrHostedRepoNotFound
 	}
 	return repo, nil
 }
@@ -277,7 +277,7 @@ func (s *memoryHostedStore) requireAccount(accountSlug string) (HostedAccount, e
 	account, ok := s.accounts[slug]
 	s.mu.RUnlock()
 	if !ok {
-		return HostedAccount{}, fmt.Errorf("%w: %s", errHostedAccountNotFound, slug)
+		return HostedAccount{}, fmt.Errorf("%w: %s", ErrHostedAccountNotFound, slug)
 	}
 	return account, nil
 }

@@ -1,4 +1,4 @@
-package server
+package hosted
 
 import (
 	"io/fs"
