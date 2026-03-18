@@ -606,5 +606,12 @@ func (rm *RepoManager) ForceStateForTest(id string, state RepoState) {
 	managed.mu.Lock()
 	managed.State = state
 	managed.Error = ""
+	managed.Progress = CloneProgress{}
+	switch state {
+	case StateReady:
+		managed.Progress = CloneProgress{Done: true, State: StateReady.String()}
+	case StateError:
+		managed.Progress = CloneProgress{Done: true, State: StateError.String()}
+	}
 	managed.mu.Unlock()
 }

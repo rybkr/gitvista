@@ -179,10 +179,15 @@ func (rs *RepoSession) sendInitialBootstrap(conn *websocket.Conn) error {
 		}
 	}
 	status := getWorkingTreeStatus(repo)
-	if status != nil {
-		if err := rs.sendMessage(conn, UpdateMessage{Type: messageTypeStatus, Status: status}); err != nil {
-			return err
+	if status == nil {
+		status = &WorkingTreeStatus{
+			Staged:    []FileStatus{},
+			Modified:  []FileStatus{},
+			Untracked: []FileStatus{},
 		}
+	}
+	if err := rs.sendMessage(conn, UpdateMessage{Type: messageTypeStatus, Status: status}); err != nil {
+		return err
 	}
 	headInfo := buildHeadInfo(repo)
 	if headInfo != nil {

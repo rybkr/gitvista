@@ -65,9 +65,6 @@ func newTestHostedRuntime(t *testing.T) (*server.Server, *Handler) {
 	if err != nil {
 		t.Fatalf("failed to create repo manager: %v", err)
 	}
-	if err := rm.Start(); err != nil {
-		t.Fatalf("failed to start repo manager: %v", err)
-	}
 	t.Cleanup(rm.Close)
 
 	webFS := os.DirFS(t.TempDir())
