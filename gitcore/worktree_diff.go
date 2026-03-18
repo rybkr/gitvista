@@ -9,14 +9,34 @@ import (
 )
 
 var errBlobNotFound = errors.New("blob not found in tree")
+var errInvalidWorktreePath = errors.New("invalid worktree path")
 
-func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, error) {
-	filePath = strings.Trim(filePath, "/")
+func normalizeWorktreeRelativePath(filePath string) (string, error) {
 	if filePath == "" {
-		return "", fmt.Errorf("resolveBlobAtPath: empty file path")
+		return "", fmt.Errorf("%w: empty file path", errInvalidWorktreePath)
+	}
+	if filepath.IsAbs(filePath) {
+		return "", fmt.Errorf("%w: absolute paths are not allowed", errInvalidWorktreePath)
 	}
 
-	components := strings.Split(filePath, "/")
+	normalized := filepath.ToSlash(filepath.Clean(filePath))
+	if normalized == "." || normalized == "" {
+		return "", fmt.Errorf("%w: empty file path", errInvalidWorktreePath)
+	}
+	if normalized == ".." || strings.HasPrefix(normalized, "../") {
+		return "", fmt.Errorf("%w: path escapes worktree", errInvalidWorktreePath)
+	}
+
+	return normalized, nil
+}
+
+func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, error) {
+	normalizedPath, err := normalizeWorktreeRelativePath(filePath)
+	if err != nil {
+		return "", fmt.Errorf("resolveBlobAtPath: %w", err)
+	}
+
+	components := strings.Split(normalizedPath, "/")
 	currentTreeHash := treeHash
 
 	for _, component := range components[:len(components)-1] {
@@ -66,6 +86,12 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		Hunks: make([]DiffHunk, 0),
 	}
 
+	normalizedPath, err := normalizeWorktreeRelativePath(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: %w", err)
+	}
+	result.Path = normalizedPath
+
 	headHash := repo.Head()
 	var headContent []byte
 
@@ -73,7 +99,7 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		commits := repo.Commits()
 		headCommit, exists := commits[headHash]
 		if exists {
-			blobHash, err := resolveBlobAtPath(repo, headCommit.Tree, filePath)
+			blobHash, err := resolveBlobAtPath(repo, headCommit.Tree, normalizedPath)
 			if err != nil && !errors.Is(err, errBlobNotFound) {
 				return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: resolving HEAD blob: %w", err)
 			}
@@ -89,7 +115,14 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		}
 	}
 
-	diskPath := filepath.Join(repo.WorkDir(), filePath)
+	workDirAbs, err := filepath.Abs(repo.WorkDir())
+	if err != nil {
+		return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: resolving worktree path: %w", err)
+	}
+	diskPath := filepath.Join(workDirAbs, filepath.FromSlash(normalizedPath))
+	if err := ensurePathWithinBase(workDirAbs, diskPath); err != nil {
+		return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: %w: %s", errInvalidWorktreePath, normalizedPath)
+	}
 	diskContent, err := os.ReadFile(diskPath)
 	if err != nil {
 		if !os.IsNotExist(err) {

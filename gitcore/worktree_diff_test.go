@@ -53,6 +53,11 @@ func TestResolveBlobAtPath(t *testing.T) {
 	if !errors.Is(err, errBlobNotFound) {
 		t.Fatalf("resolveBlobAtPath(missing) error = %v, want errBlobNotFound", err)
 	}
+
+	_, err = resolveBlobAtPath(repo, root, "../nested/file.txt")
+	if !errors.Is(err, errInvalidWorktreePath) {
+		t.Fatalf("resolveBlobAtPath(traversal) error = %v, want errInvalidWorktreePath", err)
+	}
 }
 
 func TestComputeWorkingTreeFileDiff_ModifiedNewDeletedAndTruncated(t *testing.T) {
@@ -131,5 +136,53 @@ func TestComputeWorkingTreeFileDiff_BinaryAndEmptyHead(t *testing.T) {
 	}
 	if !diff.IsBinary {
 		t.Fatal("expected binary diff")
+	}
+}
+
+func TestComputeWorkingTreeFileDiff_NormalizesRelativePath(t *testing.T) {
+	repo := setupTestRepo(t)
+	oldBlob := createBlob(t, repo, []byte("line 1\n"))
+	child := createTree(t, repo, []TreeEntry{{ID: oldBlob, Name: "file.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	root := createTree(t, repo, []TreeEntry{{ID: child, Name: "nested", Mode: "040000", Type: ObjectTypeTree}})
+	wireHeadCommit(repo, root)
+
+	writeDiskFile(t, repo, "nested/file.txt", []byte("line 1\nline 2\n"))
+
+	diff, err := ComputeWorkingTreeFileDiff(repo, "./nested//file.txt", DefaultContextLines)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeFileDiff(normalized) error = %v", err)
+	}
+	if diff.Path != "nested/file.txt" {
+		t.Fatalf("ComputeWorkingTreeFileDiff(normalized) path = %q, want %q", diff.Path, "nested/file.txt")
+	}
+	if len(diff.Hunks) == 0 {
+		t.Fatal("expected diff hunks for normalized path")
+	}
+}
+
+func TestComputeWorkingTreeFileDiff_RejectsEscapingPaths(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	outsidePath := filepath.Join(filepath.Dir(repo.workDir), "outside.txt")
+	if err := os.WriteFile(outsidePath, []byte("secret\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(outside): %v", err)
+	}
+
+	tests := []string{
+		"../outside.txt",
+		"nested/../../outside.txt",
+		outsidePath,
+	}
+
+	for _, filePath := range tests {
+		t.Run(filePath, func(t *testing.T) {
+			diff, err := ComputeWorkingTreeFileDiff(repo, filePath, DefaultContextLines)
+			if !errors.Is(err, errInvalidWorktreePath) {
+				t.Fatalf("ComputeWorkingTreeFileDiff(%q) error = %v, want errInvalidWorktreePath", filePath, err)
+			}
+			if diff != nil {
+				t.Fatalf("ComputeWorkingTreeFileDiff(%q) diff = %#v, want nil", filePath, diff)
+			}
+		})
 	}
 }
