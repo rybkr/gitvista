@@ -7,11 +7,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const (
 	// Objects larger than this size are rejected to prevent zip-bomb style attacks.
-	maxDecompressedSize = 256 * 1024 * 1024
+	maxDecompressedSize   = 256 * 1024 * 1024
+	decompressScratchSize = 32 * 1024
+)
+
+var (
+	zlibReaderPool        = sync.Pool{}
+	decompressScratchPool = sync.Pool{
+		New: func() any {
+			return make([]byte, decompressScratchSize)
+		},
+	}
 )
 
 func (r *Repository) readObject(id Hash) (Object, error) {
@@ -77,14 +88,17 @@ func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte,
 }
 
 func readCompressedData(r io.Reader) ([]byte, error) {
-	zr, err := zlib.NewReader(r)
+	zr, err := getZlibReader(r)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create zlib reader: %w", err)
+		return nil, err
 	}
-	defer func() { _ = zr.Close() }()
+	defer putZlibReader(zr)
 
 	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, io.LimitReader(zr, maxDecompressedSize+1)); err != nil {
+	scratch := decompressScratchPool.Get().([]byte)
+	defer decompressScratchPool.Put(scratch)
+
+	if _, err := io.CopyBuffer(&buf, io.LimitReader(zr, maxDecompressedSize+1), scratch); err != nil {
 		return nil, fmt.Errorf("failed to decompress data: %w", err)
 	}
 	if buf.Len() > maxDecompressedSize {
@@ -92,4 +106,35 @@ func readCompressedData(r io.Reader) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func getZlibReader(r io.Reader) (io.ReadCloser, error) {
+	if pooled := zlibReaderPool.Get(); pooled != nil {
+		zr := pooled.(io.ReadCloser)
+		resetter, ok := zr.(zlib.Resetter)
+		if !ok {
+			_ = zr.Close()
+			return nil, fmt.Errorf("pooled zlib reader does not support reset")
+		}
+		if err := resetter.Reset(r, nil); err != nil {
+			_ = zr.Close()
+			return nil, fmt.Errorf("failed to reset zlib reader: %w", err)
+		}
+		return zr, nil
+	}
+
+	zr, err := zlib.NewReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zlib reader: %w", err)
+	}
+	return zr, nil
+}
+
+func putZlibReader(zr io.ReadCloser) {
+	if zr == nil {
+		return
+	}
+
+	_ = zr.Close()
+	zlibReaderPool.Put(zr)
 }
