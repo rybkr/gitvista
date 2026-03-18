@@ -75,7 +75,7 @@ unit:
 
 ## e2e: Run end-to-end tests
 e2e:
-	$(PYTEST) --quick
+	$(PYTEST)
 
 ## test-js: Run JavaScript unit tests
 test-js:
