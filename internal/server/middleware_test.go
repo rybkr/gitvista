@@ -1,13 +1,16 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rybkr/gitvista/gitcore"
 )
@@ -51,6 +54,31 @@ func TestWithLocalSession(t *testing.T) {
 	}
 	if w.Code != http.StatusOK {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestRepoNameOverrideFromCtx_Present(t *testing.T) {
+	ctx := WithRepoNameOverrideContext(context.Background(), "golang/example")
+
+	got, ok := repoNameOverrideFromCtx(ctx)
+	if !ok {
+		t.Fatal("expected repo name override to be present")
+	}
+	if got != "golang/example" {
+		t.Fatalf("repoNameOverrideFromCtx() = %q, want %q", got, "golang/example")
+	}
+}
+
+func TestRepoNameOverrideFromCtx_AbsentOrEmpty(t *testing.T) {
+	tests := []context.Context{
+		context.Background(),
+		WithRepoNameOverrideContext(context.Background(), ""),
+	}
+
+	for i, ctx := range tests {
+		if got, ok := repoNameOverrideFromCtx(ctx); ok || got != "" {
+			t.Fatalf("case %d: repoNameOverrideFromCtx() = (%q, %v), want (\"\", false)", i, got, ok)
+		}
 	}
 }
 
@@ -200,5 +228,91 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	}
 	if got := w.Header().Get("Permissions-Policy"); got == "" {
 		t.Fatal("Permissions-Policy header not set")
+	}
+}
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadline time.Time
+}
+
+func (d *deadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	d.deadline = deadline
+	return nil
+}
+
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+	flushed  bool
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return nil, bufio.NewReadWriter(bufio.NewReader(strings.NewReader("")), bufio.NewWriter(&bytes.Buffer{})), nil
+}
+
+func (h *hijackableRecorder) Flush() {
+	h.flushed = true
+}
+
+func TestWriteDeadline_SetsPerResponseDeadline(t *testing.T) {
+	recorder := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	var called bool
+
+	handler := writeDeadline(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	handler(recorder, httptest.NewRequest(http.MethodGet, "/api/test", nil))
+
+	if !called {
+		t.Fatal("wrapped handler was not called")
+	}
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status code = %d, want %d", recorder.Code, http.StatusAccepted)
+	}
+	if recorder.deadline.IsZero() {
+		t.Fatal("write deadline was not set")
+	}
+	if remaining := time.Until(recorder.deadline); remaining <= 0 || remaining > apiWriteDeadline+time.Second {
+		t.Fatalf("deadline remaining = %s, want within (0, %s]", remaining, apiWriteDeadline+time.Second)
+	}
+}
+
+func TestStatusRecorder_HijackDelegates(t *testing.T) {
+	recorder := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	sr := &statusRecorder{ResponseWriter: recorder}
+
+	_, _, err := sr.Hijack()
+	if err != nil {
+		t.Fatalf("Hijack() error = %v", err)
+	}
+	if !recorder.hijacked {
+		t.Fatal("expected underlying writer Hijack to be called")
+	}
+}
+
+func TestStatusRecorder_HijackReturnsErrorWhenUnsupported(t *testing.T) {
+	sr := &statusRecorder{ResponseWriter: httptest.NewRecorder()}
+
+	_, _, err := sr.Hijack()
+	if err == nil {
+		t.Fatal("expected Hijack() to fail when unsupported")
+	}
+	if !strings.Contains(err.Error(), "does not implement http.Hijacker") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestStatusRecorder_FlushDelegates(t *testing.T) {
+	recorder := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	sr := &statusRecorder{ResponseWriter: recorder}
+
+	sr.Flush()
+
+	if !recorder.flushed {
+		t.Fatal("expected underlying writer Flush to be called")
 	}
 }

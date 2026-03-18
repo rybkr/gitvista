@@ -1,254 +1,114 @@
 package server
 
 import (
-	"reflect"
-	"strings"
 	"testing"
+
+	"github.com/rybkr/gitvista/gitcore"
 )
 
-// parsePorcelainStatus parses "git status --porcelain" output.
-// Format: XY PATH where X = index status, Y = worktree status.
-// Test-only helper for verifying status parsing logic.
-func parsePorcelainStatus(output string) *WorkingTreeStatus {
-	status := &WorkingTreeStatus{
-		Staged:    []FileStatus{},
-		Modified:  []FileStatus{},
-		Untracked: []FileStatus{},
-	}
-
-	for line := range strings.SplitSeq(output, "\n") {
-		if len(line) < 3 {
-			continue
-		}
-
-		x := line[0]
-		y := line[1]
-		path := line[3:]
-
-		if x == 'R' || y == 'R' {
-			if idx := strings.Index(path, " -> "); idx >= 0 {
-				path = path[idx+4:]
-			}
-		}
-
-		if x == '?' && y == '?' {
-			status.Untracked = append(status.Untracked, FileStatus{
-				Path:       path,
-				StatusCode: "?",
-			})
-			continue
-		}
-
-		if x == 'M' || x == 'A' || x == 'D' || x == 'R' || x == 'C' {
-			status.Staged = append(status.Staged, FileStatus{
-				Path:       path,
-				StatusCode: string(x),
-			})
-		}
-
-		if y == 'M' || y == 'D' {
-			status.Modified = append(status.Modified, FileStatus{
-				Path:       path,
-				StatusCode: string(y),
-			})
-		}
-	}
-
-	return status
-}
-
-func TestParsePorcelainStatus(t *testing.T) {
-	tests := []struct {
-		name   string
-		output string
-		want   *WorkingTreeStatus
-	}{
-		{
-			name:   "empty status",
-			output: "",
-			want: &WorkingTreeStatus{
-				Staged:    []FileStatus{},
-				Modified:  []FileStatus{},
-				Untracked: []FileStatus{},
+func TestTranslateWorkingTreeStatus_MapsAndSortsStatuses(t *testing.T) {
+	wts := &gitcore.WorkingTreeStatus{
+		Files: []gitcore.FileStatus{
+			{
+				Path:        "zeta.txt",
+				IndexStatus: gitcore.StatusModified,
+				IndexHash:   gitcore.Hash("index-zeta"),
+				WorkStatus:  gitcore.StatusDeleted,
+				WorkHash:    gitcore.Hash("work-zeta"),
 			},
-		},
-		{
-			name:   "untracked files",
-			output: "?? file1.txt\n?? src/file2.go\n",
-			want: &WorkingTreeStatus{
-				Staged:   []FileStatus{},
-				Modified: []FileStatus{},
-				Untracked: []FileStatus{
-					{Path: "file1.txt", StatusCode: "?"},
-					{Path: "src/file2.go", StatusCode: "?"},
-				},
+			{
+				Path:        "alpha.txt",
+				IndexStatus: gitcore.StatusAdded,
+				IndexHash:   gitcore.Hash("index-alpha"),
 			},
-		},
-		{
-			name:   "staged files",
-			output: "A  new-file.txt\nM  modified.go\nD  deleted.txt\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{
-					{Path: "new-file.txt", StatusCode: "A"},
-					{Path: "modified.go", StatusCode: "M"},
-					{Path: "deleted.txt", StatusCode: "D"},
-				},
-				Modified:  []FileStatus{},
-				Untracked: []FileStatus{},
+			{
+				Path:        "copied.txt",
+				IndexStatus: gitcore.StatusCopied,
+				IndexHash:   gitcore.Hash("index-copied"),
 			},
-		},
-		{
-			name:   "worktree modifications",
-			output: " M file1.txt\n D file2.go\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{},
-				Modified: []FileStatus{
-					{Path: "file1.txt", StatusCode: "M"},
-					{Path: "file2.go", StatusCode: "D"},
-				},
-				Untracked: []FileStatus{},
+			{
+				Path:        "renamed.txt",
+				IndexStatus: gitcore.StatusRenamed,
+				IndexHash:   gitcore.Hash("index-renamed"),
 			},
-		},
-		{
-			name:   "staged and modified",
-			output: "MM both-changed.txt\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{
-					{Path: "both-changed.txt", StatusCode: "M"},
-				},
-				Modified: []FileStatus{
-					{Path: "both-changed.txt", StatusCode: "M"},
-				},
-				Untracked: []FileStatus{},
+			{
+				Path:       "beta.txt",
+				WorkStatus: gitcore.StatusModified,
+				WorkHash:   gitcore.Hash("work-beta"),
 			},
-		},
-		{
-			name:   "rename in index",
-			output: "R  old-name.txt -> new-name.txt\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{
-					{Path: "new-name.txt", StatusCode: "R"},
-				},
-				Modified:  []FileStatus{},
-				Untracked: []FileStatus{},
+			{
+				Path:        "untracked.txt",
+				IsUntracked: true,
 			},
-		},
-		{
-			name:   "copy in index",
-			output: "C  original.txt -> copy.txt\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{
-					{Path: "original.txt -> copy.txt", StatusCode: "C"},
-				},
-				Modified:  []FileStatus{},
-				Untracked: []FileStatus{},
-			},
-		},
-		{
-			name:   "mixed status",
-			output: "M  staged.go\n M modified.go\n?? untracked.txt\nA  new.go\n D deleted.go\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{
-					{Path: "staged.go", StatusCode: "M"},
-					{Path: "new.go", StatusCode: "A"},
-				},
-				Modified: []FileStatus{
-					{Path: "modified.go", StatusCode: "M"},
-					{Path: "deleted.go", StatusCode: "D"},
-				},
-				Untracked: []FileStatus{
-					{Path: "untracked.txt", StatusCode: "?"},
-				},
-			},
-		},
-		{
-			name:   "lines too short are ignored",
-			output: "M  valid.txt\nXY\n?? another.txt\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{
-					{Path: "valid.txt", StatusCode: "M"},
-				},
-				Modified: []FileStatus{},
-				Untracked: []FileStatus{
-					{Path: "another.txt", StatusCode: "?"},
-				},
-			},
-		},
-		{
-			name:   "rename with spaces in path",
-			output: "R  old file.txt -> new file.txt\n",
-			want: &WorkingTreeStatus{
-				Staged: []FileStatus{
-					{Path: "new file.txt", StatusCode: "R"},
-				},
-				Modified:  []FileStatus{},
-				Untracked: []FileStatus{},
-			},
-		},
-		{
-			name:   "trailing newline handling",
-			output: "?? file.txt\n\n",
-			want: &WorkingTreeStatus{
-				Staged:   []FileStatus{},
-				Modified: []FileStatus{},
-				Untracked: []FileStatus{
-					{Path: "file.txt", StatusCode: "?"},
-				},
+			{
+				Path:        "ignored-by-server.txt",
+				IndexStatus: "unknown",
+				WorkStatus:  "unknown",
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parsePorcelainStatus(tt.output)
+	got := translateWorkingTreeStatus(wts)
 
-			if !reflect.DeepEqual(got.Staged, tt.want.Staged) {
-				t.Errorf("Staged mismatch\ngot:  %+v\nwant: %+v", got.Staged, tt.want.Staged)
-			}
-			if !reflect.DeepEqual(got.Modified, tt.want.Modified) {
-				t.Errorf("Modified mismatch\ngot:  %+v\nwant: %+v", got.Modified, tt.want.Modified)
-			}
-			if !reflect.DeepEqual(got.Untracked, tt.want.Untracked) {
-				t.Errorf("Untracked mismatch\ngot:  %+v\nwant: %+v", got.Untracked, tt.want.Untracked)
-			}
-		})
+	if len(got.Staged) != 4 {
+		t.Fatalf("len(Staged) = %d, want 4", len(got.Staged))
+	}
+	if got.Staged[0] != (FileStatus{Path: "alpha.txt", StatusCode: "A", BlobHash: "index-alpha"}) {
+		t.Fatalf("first staged status = %+v", got.Staged[0])
+	}
+	if got.Staged[1] != (FileStatus{Path: "copied.txt", StatusCode: "C", BlobHash: "index-copied"}) {
+		t.Fatalf("second staged status = %+v", got.Staged[1])
+	}
+	if got.Staged[2] != (FileStatus{Path: "renamed.txt", StatusCode: "R", BlobHash: "index-renamed"}) {
+		t.Fatalf("third staged status = %+v", got.Staged[2])
+	}
+	if got.Staged[3] != (FileStatus{Path: "zeta.txt", StatusCode: "M", BlobHash: "index-zeta"}) {
+		t.Fatalf("fourth staged status = %+v", got.Staged[3])
+	}
+
+	if len(got.Modified) != 2 {
+		t.Fatalf("len(Modified) = %d, want 2", len(got.Modified))
+	}
+	if got.Modified[0] != (FileStatus{Path: "beta.txt", StatusCode: "M", BlobHash: "work-beta"}) {
+		t.Fatalf("first modified status = %+v", got.Modified[0])
+	}
+	if got.Modified[1] != (FileStatus{Path: "zeta.txt", StatusCode: "D", BlobHash: "work-zeta"}) {
+		t.Fatalf("second modified status = %+v", got.Modified[1])
+	}
+
+	if len(got.Untracked) != 1 {
+		t.Fatalf("len(Untracked) = %d, want 1", len(got.Untracked))
+	}
+	if got.Untracked[0] != (FileStatus{Path: "untracked.txt", StatusCode: "?"}) {
+		t.Fatalf("untracked status = %+v", got.Untracked[0])
 	}
 }
 
-func TestParsePorcelainStatus_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name   string
-		output string
-		desc   string
-	}{
-		{
-			name:   "unicode paths",
-			output: "?? 日本語.txt\n?? файл.go\n",
-			desc:   "should handle non-ASCII filenames",
-		},
-		{
-			name:   "paths with special chars",
-			output: "M  file-with-dash.txt\nA  file_with_underscore.go\n?? file.test.js\n",
-			desc:   "should handle filenames with special characters",
-		},
-		{
-			name:   "deeply nested paths",
-			output: "M  a/b/c/d/e/f/g/h/i/j/file.txt\n",
-			desc:   "should handle deeply nested paths",
-		},
+func TestStatusCodeHelpers(t *testing.T) {
+	indexCases := map[string]string{
+		gitcore.StatusAdded:    "A",
+		gitcore.StatusModified: "M",
+		gitcore.StatusDeleted:  "D",
+		gitcore.StatusRenamed:  "R",
+		gitcore.StatusCopied:   "C",
+		"":                     "",
+		"unknown":              "",
+	}
+	for input, want := range indexCases {
+		if got := indexStatusCode(input); got != want {
+			t.Fatalf("indexStatusCode(%q) = %q, want %q", input, got, want)
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			status := parsePorcelainStatus(tt.output)
-
-			// Just verify it doesn't panic and returns a valid structure
-			if status == nil {
-				t.Fatal("parsePorcelainStatus returned nil")
-			}
-			if status.Staged == nil || status.Modified == nil || status.Untracked == nil {
-				t.Error("parsePorcelainStatus returned nil slices")
-			}
-		})
+	workCases := map[string]string{
+		gitcore.StatusModified: "M",
+		gitcore.StatusDeleted:  "D",
+		"":                     "",
+		"unknown":              "",
+	}
+	for input, want := range workCases {
+		if got := workStatusCode(input); got != want {
+			t.Fatalf("workStatusCode(%q) = %q, want %q", input, got, want)
+		}
 	}
 }

@@ -237,3 +237,95 @@ func TestShutdown_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestShutdown_CallsShutdownHooks(t *testing.T) {
+	s := newTestServer(t)
+
+	var mu sync.Mutex
+	var calls []string
+	s.AddShutdownHook(func() error {
+		mu.Lock()
+		calls = append(calls, "first")
+		mu.Unlock()
+		return nil
+	})
+	s.AddShutdownHook(func() error {
+		mu.Lock()
+		calls = append(calls, "second")
+		mu.Unlock()
+		return errors.New("hook failure")
+	})
+
+	s.Shutdown()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 2 {
+		t.Fatalf("shutdown hook calls = %d, want 2", len(calls))
+	}
+	if calls[0] != "first" || calls[1] != "second" {
+		t.Fatalf("shutdown hook order = %v, want [first second]", calls)
+	}
+}
+
+func TestHostedServer_Start_UsesAddedRoutesAndMiddleware(t *testing.T) {
+	addr := freePort(t)
+	webFS := os.DirFS(t.TempDir())
+	s := NewHostedServer(addr, webFS)
+	s.logger = silentLogger()
+	s.AddRoutes(func(mux *http.ServeMux) {
+		mux.HandleFunc("/custom", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
+	})
+	s.AddMiddleware(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Test-Middleware", "applied")
+			next.ServeHTTP(w, r)
+		})
+	})
+
+	startErr := make(chan error, 1)
+	go func() {
+		startErr <- s.Start()
+	}()
+
+	url := fmt.Sprintf("http://%s/custom", addr)
+	deadline := time.Now().Add(5 * time.Second)
+	var (
+		resp    *http.Response
+		lastErr error
+	)
+	for time.Now().Before(deadline) {
+		resp, lastErr = httpGetNoKeepalive(url)
+		if lastErr == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if lastErr != nil {
+		s.Shutdown()
+		t.Fatalf("server never responded on %s: %v", url, lastErr)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		s.Shutdown()
+		t.Fatalf("status code = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+	if got := resp.Header.Get("X-Test-Middleware"); got != "applied" {
+		s.Shutdown()
+		t.Fatalf("X-Test-Middleware = %q, want %q", got, "applied")
+	}
+
+	s.Shutdown()
+
+	select {
+	case err := <-startErr:
+		if err != nil {
+			t.Fatalf("Start() returned unexpected error after Shutdown(): %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start() did not return within 5 s of Shutdown() being called")
+	}
+}

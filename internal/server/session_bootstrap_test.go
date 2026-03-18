@@ -68,3 +68,75 @@ func TestBuildBootstrapMessages_AppendsCompletionPayload(t *testing.T) {
 		t.Fatal("completion payload missing tags")
 	}
 }
+
+func TestBroadcastInitialBootstrap_CombinesDeltaStatusAndHeadWhenNoChunks(t *testing.T) {
+	rs := NewRepoSession(SessionConfig{
+		ID:          "test",
+		InitialRepo: gitcore.NewEmptyRepository(),
+		ReloadFn:    func() (*gitcore.Repository, error) { return gitcore.NewEmptyRepository(), nil },
+		Logger:      silentLogger(),
+	})
+
+	status := &WorkingTreeStatus{Untracked: []FileStatus{{Path: "scratch.txt", StatusCode: "?"}}}
+	head := &HeadInfo{Hash: "abc123", BranchName: "main"}
+
+	rs.broadcastInitialBootstrap(nil, status, head)
+
+	select {
+	case msg := <-rs.broadcast:
+		if msg.Type != messageTypeGraphDelta {
+			t.Fatalf("message type = %q, want %q", msg.Type, messageTypeGraphDelta)
+		}
+		if msg.Delta != nil {
+			t.Fatal("delta payload was not forwarded")
+		}
+		if msg.Status != status {
+			t.Fatal("status payload was not forwarded")
+		}
+		if msg.Head != head {
+			t.Fatal("head payload was not forwarded")
+		}
+	default:
+		t.Fatal("expected bootstrap message to be queued")
+	}
+}
+
+func TestBroadcastInitialBootstrap_QueuesChunkStatusAndHeadMessages(t *testing.T) {
+	when := time.Now()
+	hash := gitcore.Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	rs := NewRepoSession(SessionConfig{
+		ID:          "test",
+		InitialRepo: gitcore.NewEmptyRepository(),
+		ReloadFn:    func() (*gitcore.Repository, error) { return gitcore.NewEmptyRepository(), nil },
+		Logger:      silentLogger(),
+	})
+	delta := &repositoryview.RepositoryDelta{
+		AddedCommits: []*gitcore.Commit{{
+			ID:        hash,
+			Author:    gitcore.Signature{When: when},
+			Committer: gitcore.Signature{When: when},
+		}},
+		HeadHash: string(hash),
+	}
+	status := &WorkingTreeStatus{Modified: []FileStatus{{Path: "tracked.txt", StatusCode: "M"}}}
+	head := &HeadInfo{Hash: string(hash), BranchName: "main"}
+
+	rs.broadcastInitialBootstrap(delta, status, head)
+
+	msg1 := <-rs.broadcast
+	if msg1.Type != messageTypeGraphBootstrapChunk {
+		t.Fatalf("first type = %q, want %q", msg1.Type, messageTypeGraphBootstrapChunk)
+	}
+	msg2 := <-rs.broadcast
+	if msg2.Type != messageTypeBootstrapComplete {
+		t.Fatalf("second type = %q, want %q", msg2.Type, messageTypeBootstrapComplete)
+	}
+	msg3 := <-rs.broadcast
+	if msg3.Type != messageTypeStatus || msg3.Status != status {
+		t.Fatalf("third message = %+v, want status payload", msg3)
+	}
+	msg4 := <-rs.broadcast
+	if msg4.Type != messageTypeHead || msg4.Head != head {
+		t.Fatalf("fourth message = %+v, want head payload", msg4)
+	}
+}

@@ -199,6 +199,130 @@ func TestHandleRepository_UsesHostedDisplayName(t *testing.T) {
 	}
 }
 
+func TestHandleRepoRequest_RepositoryRoute(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	req := requestWithSession(http.MethodGet, "/api/repository", session)
+	w := httptest.NewRecorder()
+
+	s.HandleRepoRequest(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestHandleRepoRequest_UnknownRoute(t *testing.T) {
+	s := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
+	w := httptest.NewRecorder()
+
+	s.HandleRepoRequest(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleRepoRequest_DispatchesToSharedHandlers(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		wantStatus int
+	}{
+		{
+			name:       "tree blame rejects unsupported method",
+			method:     http.MethodPost,
+			target:     "/api/tree/blame/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?path=file.txt",
+			wantStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:       "blob rejects unsupported method",
+			method:     http.MethodPost,
+			target:     "/api/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			wantStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:       "commit diff validates hash",
+			method:     http.MethodGet,
+			target:     "/api/commit/diff/not-a-hash",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "bulk diff stats rejects missing session",
+			method:     http.MethodGet,
+			target:     "/api/commits/diffstats",
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "analytics rejects missing session",
+			method:     http.MethodGet,
+			target:     "/api/analytics",
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "index diff rejects missing session",
+			method:     http.MethodGet,
+			target:     "/api/index/diff?path=file.txt",
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "graph commits works for empty repository",
+			method:     http.MethodGet,
+			target:     "/api/graph/commits?hashes=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "working tree diff rejects missing session",
+			method:     http.MethodGet,
+			target:     "/api/working-tree/diff?path=file.txt",
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "merge preview file validates required path",
+			method:     http.MethodGet,
+			target:     "/api/merge-preview/file",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "merge preview validates required branches",
+			method:     http.MethodGet,
+			target:     "/api/merge-preview",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req *http.Request
+			switch tt.target {
+			case "/api/commits/diffstats", "/api/analytics", "/api/index/diff", "/api/working-tree/diff":
+				req = httptest.NewRequest(tt.method, tt.target, nil)
+			default:
+				req = requestWithSession(tt.method, tt.target, session)
+			}
+			if strings.HasPrefix(tt.target, "/api/commits/diffstats") || strings.HasPrefix(tt.target, "/api/analytics") || strings.HasPrefix(tt.target, "/api/index/diff") || strings.HasPrefix(tt.target, "/api/working-tree/diff") {
+				req = httptest.NewRequest(tt.method, tt.target, nil)
+			}
+
+			w := httptest.NewRecorder()
+			s.HandleRepoRequest(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("status code = %d, want %d; body=%q", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestHandleTree_InvalidMethod(t *testing.T) {
 	s := newTestServer(t)
 
