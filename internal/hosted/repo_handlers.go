@@ -1,4 +1,4 @@
-package server
+package hosted
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ type addRepoRequest struct {
 	URL string `json:"url"`
 }
 
-type repoResponse struct {
+type RepoResponse struct {
 	AccountID   string    `json:"accountId,omitempty"`
 	ID          string    `json:"id"`
 	URL         string    `json:"url"`
@@ -36,8 +36,8 @@ type cloneProgressEvent struct {
 
 // handleAddRepo accepts a JSON body with a URL and enqueues a clone via the
 // RepoManager. Returns 201 with the repo ID and initial state.
-func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request, accountSlug string) {
-	if s.repoManager == nil || s.hostedStore == nil {
+func (h *Handler) HandleAddRepo(w http.ResponseWriter, r *http.Request, accountSlug string) {
+	if h.RepoManager == nil || h.Store == nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
@@ -54,16 +54,16 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request, accountSl
 		return
 	}
 
-	hostedRepo, err := s.hostedStore.AddRepo(accountSlug, req.URL)
+	hostedRepo, err := h.Store.AddRepo(accountSlug, req.URL)
 	if err != nil {
-		s.logger.Warn("Failed to add repo", "account", accountSlug, "err", err)
+		h.logger().Warn("Failed to add repo", "account", accountSlug, "err", err)
 		http.Error(w, "Invalid repository URL", http.StatusBadRequest)
 		return
 	}
 
-	state, errMsg, progress, _ := s.repoManager.Status(hostedRepo.ManagedRepoID)
+	state, errMsg, progress, _ := h.RepoManager.Status(hostedRepo.ManagedRepoID)
 
-	resp := repoResponse{
+	resp := RepoResponse{
 		AccountID:   hostedRepo.AccountSlug,
 		ID:          hostedRepo.ID,
 		URL:         hostedRepo.URL,
@@ -78,40 +78,40 @@ func (s *Server) handleAddRepo(w http.ResponseWriter, r *http.Request, accountSl
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		s.logger.Error("Failed to encode add-repo response", "err", err)
+		h.logger().Error("Failed to encode add-repo response", "err", err)
 	}
 }
 
 // handleListRepos intentionally avoids server-side hosted repo enumeration.
 // Hosted repo capabilities are browser-held, so recent repos are restored from
 // client storage rather than disclosed globally by the server.
-func (s *Server) handleListRepos(w http.ResponseWriter, _ *http.Request, accountSlug string) {
-	if s.repoManager == nil || s.hostedStore == nil {
+func (h *Handler) HandleListRepos(w http.ResponseWriter, _ *http.Request, accountSlug string) {
+	if h.RepoManager == nil || h.Store == nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode([]repoResponse{}); err != nil {
-		s.logger.Error("Failed to encode list-repos response", "err", err)
+	if err := json.NewEncoder(w).Encode([]RepoResponse{}); err != nil {
+		h.logger().Error("Failed to encode list-repos response", "err", err)
 	}
 }
 
 // handleRepoStatus returns the state and error for a single repo.
-func (s *Server) handleRepoStatus(w http.ResponseWriter, _ *http.Request, hostedRepo HostedRepo) {
-	if s.repoManager == nil || s.hostedStore == nil {
+func (h *Handler) HandleRepoStatus(w http.ResponseWriter, _ *http.Request, hostedRepo HostedRepo) {
+	if h.RepoManager == nil || h.Store == nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	state, errMsg, progress, err := s.repoManager.Status(hostedRepo.ManagedRepoID)
+	state, errMsg, progress, err := h.RepoManager.Status(hostedRepo.ManagedRepoID)
 	if err != nil {
-		s.logger.Error("Failed to get repo status", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
+		h.logger().Error("Failed to get repo status", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
 		http.Error(w, "Repository not found", http.StatusNotFound)
 		return
 	}
 
-	resp := repoResponse{
+	resp := RepoResponse{
 		AccountID:   hostedRepo.AccountSlug,
 		ID:          hostedRepo.ID,
 		URL:         hostedRepo.URL,
@@ -124,23 +124,22 @@ func (s *Server) handleRepoStatus(w http.ResponseWriter, _ *http.Request, hosted
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		s.logger.Error("Failed to encode repo-status response", "err", err)
+		h.logger().Error("Failed to encode repo-status response", "err", err)
 	}
 }
 
 // handleRemoveRepo tears down the session and removes the repo from the
 // RepoManager. Returns 204 on success.
-func (s *Server) handleRemoveRepo(w http.ResponseWriter, _ *http.Request, hostedRepo HostedRepo) {
-	if s.repoManager == nil || s.hostedStore == nil {
+func (h *Handler) HandleRemoveRepo(w http.ResponseWriter, _ *http.Request, hostedRepo HostedRepo) {
+	if h.RepoManager == nil || h.Store == nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	// Tear down the session first (if one exists)
-	s.removeSession(hostedSessionKey(hostedRepo.AccountSlug, hostedRepo.ID))
+	h.removeSession(hostedSessionKey(hostedRepo.AccountSlug, hostedRepo.ID))
 
-	if err := s.hostedStore.RemoveRepo(hostedRepo.AccountSlug, hostedRepo.ID); err != nil {
-		s.logger.Error("Failed to remove repo", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
+	if err := h.Store.RemoveRepo(hostedRepo.AccountSlug, hostedRepo.ID); err != nil {
+		h.logger().Error("Failed to remove repo", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
 		http.Error(w, "Repository not found", http.StatusNotFound)
 		return
 	}
@@ -150,15 +149,15 @@ func (s *Server) handleRemoveRepo(w http.ResponseWriter, _ *http.Request, hosted
 
 // handleRepoProgress streams clone progress as Server-Sent Events.
 // If the repo is already in a terminal state, it sends a single event and returns.
-func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, hostedRepo HostedRepo) {
-	if s.repoManager == nil || s.hostedStore == nil {
+func (h *Handler) HandleRepoProgress(w http.ResponseWriter, r *http.Request, hostedRepo HostedRepo) {
+	if h.RepoManager == nil || h.Store == nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
 	// Guard: verify repo exists before setting up SSE.
-	if _, _, _, err := s.repoManager.Status(hostedRepo.ManagedRepoID); err != nil {
-		s.logger.Error("Failed to get repo status for progress", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
+	if _, _, _, err := h.RepoManager.Status(hostedRepo.ManagedRepoID); err != nil {
+		h.logger().Error("Failed to get repo status for progress", "account", hostedRepo.AccountSlug, "id", hostedRepo.ID, "err", err)
 		http.Error(w, "Repository not found", http.StatusNotFound)
 		return
 	}
@@ -171,11 +170,11 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, host
 
 	// Subscribe BEFORE re-checking state so we never miss the final Done
 	// event if the clone finishes between the state check and subscribe.
-	ch, unsubscribe := s.repoManager.SubscribeProgress(hostedRepo.ManagedRepoID)
+	ch, unsubscribe := h.RepoManager.SubscribeProgress(hostedRepo.ManagedRepoID)
 	defer unsubscribe()
 
 	// Re-check state after subscribing — if already terminal, send one event.
-	state, errMsg, _, _ := s.repoManager.Status(hostedRepo.ManagedRepoID)
+	state, errMsg, _, _ := h.RepoManager.Status(hostedRepo.ManagedRepoID)
 
 	// Clear any write deadline set by the writeDeadline middleware —
 	// SSE connections are long-lived like WebSockets.
@@ -224,4 +223,14 @@ func (s *Server) handleRepoProgress(w http.ResponseWriter, r *http.Request, host
 			return
 		}
 	}
+}
+
+func (h *Handler) removeSession(id string) {
+	if h.RemoveSession != nil {
+		h.RemoveSession(id)
+	}
+}
+
+func hostedSessionKey(accountSlug, repoID string) string {
+	return accountSlug + "/" + repoID
 }

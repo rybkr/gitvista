@@ -1,8 +1,9 @@
-package server
+package hosted
 
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -12,7 +13,7 @@ type createAccountRequest struct {
 	Slug string `json:"slug"`
 }
 
-type accountResponse struct {
+type AccountResponse struct {
 	ID        string    `json:"id"`
 	Slug      string    `json:"slug"`
 	Name      string    `json:"name"`
@@ -20,8 +21,8 @@ type accountResponse struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-func toAccountResponse(account HostedAccount) accountResponse {
-	return accountResponse{
+func toAccountResponse(account HostedAccount) AccountResponse {
+	return AccountResponse{
 		ID:        account.ID,
 		Slug:      account.Slug,
 		Name:      account.Name,
@@ -30,41 +31,41 @@ func toAccountResponse(account HostedAccount) accountResponse {
 	}
 }
 
-func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
-	if s.hostedStore == nil {
+func (h *Handler) HandleAccounts(w http.ResponseWriter, r *http.Request) {
+	if h.Store == nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
-		s.handleListAccounts(w, r)
+		h.HandleListAccounts(w, r)
 	case http.MethodPost:
-		s.handleCreateAccount(w, r)
+		h.HandleCreateAccount(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *Server) handleListAccounts(w http.ResponseWriter, _ *http.Request) {
-	accounts, err := s.hostedStore.ListAccounts()
+func (h *Handler) HandleListAccounts(w http.ResponseWriter, _ *http.Request) {
+	accounts, err := h.Store.ListAccounts()
 	if err != nil {
 		http.Error(w, "Failed to list accounts", http.StatusInternalServerError)
 		return
 	}
 
-	resp := make([]accountResponse, 0, len(accounts))
+	resp := make([]AccountResponse, 0, len(accounts))
 	for _, account := range accounts {
 		resp = append(resp, toAccountResponse(account))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		s.logger.Error("Failed to encode list-accounts response", "err", err)
+		h.logger().Error("Failed to encode list-accounts response", "err", err)
 	}
 }
 
-func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) HandleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req createAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -72,10 +73,10 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := s.hostedStore.CreateAccount(req.Name, req.Slug)
+	account, err := h.Store.CreateAccount(req.Name, req.Slug)
 	if err != nil {
 		statusCode := http.StatusBadRequest
-		if !errors.Is(err, errHostedAccountNotFound) {
+		if !errors.Is(err, ErrHostedAccountNotFound) {
 			statusCode = http.StatusBadRequest
 		}
 		http.Error(w, err.Error(), statusCode)
@@ -85,6 +86,13 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(toAccountResponse(account)); err != nil {
-		s.logger.Error("Failed to encode create-account response", "err", err)
+		h.logger().Error("Failed to encode create-account response", "err", err)
 	}
+}
+
+func (h *Handler) logger() *slog.Logger {
+	if h.Logger != nil {
+		return h.Logger
+	}
+	return slog.Default()
 }
