@@ -199,6 +199,9 @@ func TestPackReaderAndPackedObjectAccess(t *testing.T) {
 	if reader1 != reader2 {
 		t.Fatal("expected packReader to reuse cached reader")
 	}
+	if len(reader1.data) == 0 {
+		t.Fatal("expected packReader to map pack file data")
+	}
 	if _, packReaderErr := repo.packReader(filepath.Join(t.TempDir(), "missing.pack")); packReaderErr == nil {
 		t.Fatal("expected missing pack file error")
 	}

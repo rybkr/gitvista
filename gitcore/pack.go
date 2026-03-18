@@ -15,6 +15,7 @@ import (
 type PackReader struct {
 	file *os.File
 	size int64
+	data []byte
 }
 
 // PackLocation identifies where a packed object is stored within a pack file.
@@ -81,11 +82,19 @@ func (r *Repository) readPackedObjectData(path string, offset int64, depth int) 
 		return nil, ObjectTypeInvalid, err
 	}
 
+	if reader.data != nil {
+		sr := bytes.NewReader(reader.data)
+		if _, err := sr.Seek(offset, io.SeekStart); err != nil {
+			return nil, ObjectTypeInvalid, err
+		}
+
+		return readPackObjectData(sr, r.readObjectData, depth)
+	}
+
 	sr := io.NewSectionReader(reader.file, 0, reader.size)
 	if _, err := sr.Seek(offset, io.SeekStart); err != nil {
 		return nil, ObjectTypeInvalid, err
 	}
-
 	return readPackObjectData(sr, r.readObjectData, depth)
 }
 
@@ -110,6 +119,9 @@ func (r *Repository) packReader(path string) (*PackReader, error) {
 	}
 
 	reader := &PackReader{file: file, size: info.Size()}
+	if mapped, err := mapPackFile(file, info.Size()); err == nil {
+		reader.data = mapped
+	}
 	r.packReaders[path] = reader
 	return reader, nil
 }

@@ -103,6 +103,9 @@ func (r *Repository) Close() error {
 		defer r.packReadersMu.Unlock()
 
 		for path, reader := range r.packReaders {
+			if err := unmapPackData(reader.data); err != nil && closeErr == nil {
+				closeErr = fmt.Errorf("unmap pack file %s: %w", path, err)
+			}
 			if err := reader.file.Close(); err != nil && closeErr == nil {
 				closeErr = fmt.Errorf("close pack file %s: %w", path, err)
 			}
