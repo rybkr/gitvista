@@ -274,6 +274,103 @@ func TestGetFileBlameForNestedDirectory(t *testing.T) {
 	}
 }
 
+func TestGetFileBlameForMergeUsesPreservingParent(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	blobBase := mustHash(t, testHash1)
+	blobOurs := mustHash(t, testHash2)
+	blobOther := mustHash(t, testHash3)
+	srcTreeBase := mustHash(t, testHash4)
+	srcTreeOurs := mustHash(t, testHash5)
+	srcTreeOther := mustHash(t, testHash6)
+	rootTreeBase := mustHash(t, testHash7)
+	rootTreeOurs := mustHash(t, "8888888888888888888888888888888888888888")
+	rootTreeOther := mustHash(t, "9999999999999999999999999999999999999999")
+	rootTreeMerge := mustHash(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	commitBase := mustHash(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	commitOurs := mustHash(t, "cccccccccccccccccccccccccccccccccccccccc")
+	commitOther := mustHash(t, "dddddddddddddddddddddddddddddddddddddddd")
+	commitMerge := mustHash(t, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+
+	writeLooseObject(t, repo.gitDir, blobBase, "blob", []byte("base\n"))
+	writeLooseObject(t, repo.gitDir, blobOurs, "blob", []byte("ours\n"))
+	writeLooseObject(t, repo.gitDir, blobOther, "blob", []byte("other\n"))
+	writeLooseObject(t, repo.gitDir, srcTreeBase, "tree", treeBodyWithEntries(
+		treeEntry("100644", "file.txt", blobBase),
+	))
+	writeLooseObject(t, repo.gitDir, srcTreeOurs, "tree", treeBodyWithEntries(
+		treeEntry("100644", "file.txt", blobOurs),
+	))
+	writeLooseObject(t, repo.gitDir, srcTreeOther, "tree", treeBodyWithEntries(
+		treeEntry("100644", "file.txt", blobOther),
+	))
+	writeLooseObject(t, repo.gitDir, rootTreeBase, "tree", treeBodyWithEntries(
+		treeEntry("040000", "src", srcTreeBase),
+	))
+	writeLooseObject(t, repo.gitDir, rootTreeOurs, "tree", treeBodyWithEntries(
+		treeEntry("040000", "src", srcTreeOurs),
+	))
+	writeLooseObject(t, repo.gitDir, rootTreeOther, "tree", treeBodyWithEntries(
+		treeEntry("040000", "src", srcTreeOther),
+	))
+	writeLooseObject(t, repo.gitDir, rootTreeMerge, "tree", treeBodyWithEntries(
+		treeEntry("040000", "src", srcTreeOurs),
+	))
+
+	writeLooseObject(t, repo.gitDir, commitBase, "commit", []byte("tree "+string(rootTreeBase)+"\nauthor Alice <alice@example.com> 1700000000 +0000\ncommitter Alice <alice@example.com> 1700000000 +0000\n\nbase\n"))
+	writeLooseObject(t, repo.gitDir, commitOurs, "commit", []byte("tree "+string(rootTreeOurs)+"\nparent "+string(commitBase)+"\nauthor Bob <bob@example.com> 1700003600 +0000\ncommitter Bob <bob@example.com> 1700003600 +0000\n\nours change\n"))
+	writeLooseObject(t, repo.gitDir, commitOther, "commit", []byte("tree "+string(rootTreeOther)+"\nparent "+string(commitBase)+"\nauthor Carol <carol@example.com> 1700007200 +0000\ncommitter Carol <carol@example.com> 1700007200 +0000\n\nother change\n"))
+	writeLooseObject(t, repo.gitDir, commitMerge, "commit", []byte("tree "+string(rootTreeMerge)+"\nparent "+string(commitOurs)+"\nparent "+string(commitOther)+"\nauthor Dana <dana@example.com> 1700010800 +0000\ncommitter Dana <dana@example.com> 1700010800 +0000\n\nmerge branch\n"))
+
+	repo.commitMap[commitBase] = &Commit{
+		ID:        commitBase,
+		Tree:      rootTreeBase,
+		Author:    Signature{Name: "Alice", Email: "alice@example.com", When: time.Unix(1700000000, 0)},
+		Committer: Signature{When: time.Unix(1700000000, 0)},
+		Message:   "base\n",
+	}
+	repo.commitMap[commitOurs] = &Commit{
+		ID:        commitOurs,
+		Tree:      rootTreeOurs,
+		Parents:   []Hash{commitBase},
+		Author:    Signature{Name: "Bob", Email: "bob@example.com", When: time.Unix(1700003600, 0)},
+		Committer: Signature{When: time.Unix(1700003600, 0)},
+		Message:   "ours change\n",
+	}
+	repo.commitMap[commitOther] = &Commit{
+		ID:        commitOther,
+		Tree:      rootTreeOther,
+		Parents:   []Hash{commitBase},
+		Author:    Signature{Name: "Carol", Email: "carol@example.com", When: time.Unix(1700007200, 0)},
+		Committer: Signature{When: time.Unix(1700007200, 0)},
+		Message:   "other change\n",
+	}
+	repo.commitMap[commitMerge] = &Commit{
+		ID:        commitMerge,
+		Tree:      rootTreeMerge,
+		Parents:   []Hash{commitOurs, commitOther},
+		Author:    Signature{Name: "Dana", Email: "dana@example.com", When: time.Unix(1700010800, 0)},
+		Committer: Signature{When: time.Unix(1700010800, 0)},
+		Message:   "merge branch\n",
+	}
+
+	blame, err := repo.GetFileBlame(commitMerge, "src")
+	if err != nil {
+		t.Fatalf("GetFileBlame() error: %v", err)
+	}
+
+	entry := blame["file.txt"]
+	if entry == nil {
+		t.Fatal("missing blame entry for file.txt")
+	}
+	if entry.CommitHash != commitOurs || entry.AuthorName != "Bob" {
+		t.Fatalf("file.txt blame = %+v, want commit %s by Bob", entry, commitOurs)
+	}
+	if entry.CommitMessage != "ours change" {
+		t.Fatalf("file.txt commit message = %q, want %q", entry.CommitMessage, "ours change")
+	}
+}
+
 func TestLsTreeReturnsRootTreeEntriesForCommitRevision(t *testing.T) {
 	repo := newRepoSkeleton(t)
 

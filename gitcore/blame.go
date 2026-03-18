@@ -52,6 +52,7 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 			continue
 		}
 
+		preserved := make(map[string]bool, len(currentEntries))
 		for _, parentHash := range item.commit.Parents {
 			if visited[parentHash] {
 				continue
@@ -65,7 +66,7 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 
 			parentTree, err := r.resolveTreeAtPath(parentCommit.Tree, dirPath)
 			if err != nil {
-				blameUnresolved(blame, currentEntries, item.commit)
+				queue = append(queue, queueItem{commit: parentCommit, depth: item.depth + 1})
 				continue
 			}
 
@@ -78,17 +79,22 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 				if _, alreadyBlamed := blame[name]; alreadyBlamed {
 					continue
 				}
-				parentHash, existedInParent := parentEntries[name]
-				if !existedInParent || parentHash != currentHash {
-					blame[name] = newBlameEntry(item.commit)
+				parentEntryHash, existedInParent := parentEntries[name]
+				if existedInParent && parentEntryHash == currentHash {
+					preserved[name] = true
 				}
 			}
 
 			queue = append(queue, queueItem{commit: parentCommit, depth: item.depth + 1})
 		}
 
-		if len(item.commit.Parents) == 0 {
-			blameUnresolved(blame, currentEntries, item.commit)
+		for name := range currentEntries {
+			if _, alreadyBlamed := blame[name]; alreadyBlamed {
+				continue
+			}
+			if !preserved[name] {
+				blame[name] = newBlameEntry(item.commit)
+			}
 		}
 	}
 
