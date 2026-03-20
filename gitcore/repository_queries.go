@@ -347,3 +347,46 @@ func (r *Repository) resolveTreeAtPath(rootTreeHash Hash, dirPath string) (*Tree
 
 	return r.GetTree(currentTreeHash)
 }
+
+func parseRemotesFromConfig(config string) map[string]string {
+	remotes := make(map[string]string)
+	var currentRemote string
+
+	for _, line := range strings.Split(config, "\n") {
+		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "[remote \"") && strings.HasSuffix(line, "\"]") {
+			start := strings.Index(line, "\"") + 1
+			end := strings.LastIndex(line, "\"")
+			if start > 0 && end > start {
+				currentRemote = line[start:end]
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "[") && !strings.HasPrefix(line, "[remote") {
+			currentRemote = ""
+			continue
+		}
+
+		if currentRemote != "" && strings.HasPrefix(line, "url = ") {
+			url := strings.TrimPrefix(line, "url = ")
+			remotes[currentRemote] = stripCredentials(url)
+			currentRemote = ""
+		}
+	}
+
+	return remotes
+}
+
+func stripCredentials(url string) string {
+	for _, scheme := range []string{"https://", "http://"} {
+		if strings.HasPrefix(url, scheme) && strings.Contains(url, "@") {
+			parts := strings.SplitN(url, "@", 2)
+			if len(parts) == 2 {
+				return scheme + parts[1]
+			}
+		}
+	}
+	return url
+}
