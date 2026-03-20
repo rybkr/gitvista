@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
 from datetime import datetime
 
+USE_SSH_TEST_REPOS = os.environ.get("USE_SSH_TEST_REPOS") == "1"
 
 REPOSITORIES = (
-    ("express", "git@github.com:expressjs/express.git"),
-    ("gitvista", "git@github.com:rybkr/gitvista.git"),
-    ("cpython", "git@github.com:python/cpython.git"),
-    ("octocat", "git@github.com:octocat/Hello-World.git"),
-    ("git", "git@github.com:git/git.git"),
+    ("express", "git@github.com:expressjs/express.git" if USE_SSH_TEST_REPOS else "https://github.com/expressjs/express.git"),
+    ("gitvista", "git@github.com:rybkr/gitvista.git" if USE_SSH_TEST_REPOS else "https://github.com/rybkr/gitvista.git"),
+    ("cpython", "git@github.com:python/cpython.git" if USE_SSH_TEST_REPOS else "https://github.com/python/cpython.git"),
+    ("octocat", "git@github.com:octocat/Hello-World.git" if USE_SSH_TEST_REPOS else "https://github.com/octocat/Hello-World.git"),
+    ("git", "git@github.com:git/git.git" if USE_SSH_TEST_REPOS else "https://github.com/git/git.git"),
 )
 
 timestamp_format: str = "%Y-%m-%d %H:%M:%S"
