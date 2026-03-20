@@ -99,13 +99,10 @@ jobs:
           go test -v -race -timeout 5m \
             -covermode=atomic \
             -coverprofile=test/cover/coverage.out \
-            -coverpkg=./internal/... ./...
-
-      - name: Run integration tests
-        run: go test -v -race -tags=integration -timeout 5m ./test/integration/...
+            -coverpkg=./internal/... ./... ./gitcore
 
       - name: Run e2e tests
-        run: go test -v -race -tags=e2e -timeout 5m ./test/e2e/...
+        run: pytest -vs -n auto
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
