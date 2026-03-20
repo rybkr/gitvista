@@ -98,7 +98,14 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 	workDir := repo.WorkDir()
 	for path, entry := range index.ByPath {
-		diskPath := filepath.Join(workDir, filepath.FromSlash(path))
+		normalizedPath, err := normalizeWorktreeRelativePath(path)
+		if err != nil {
+			return nil, fmt.Errorf("ComputeWorkingTreeStatus: invalid index path %q: %w", path, err)
+		}
+		diskPath, err := resolveWorktreePath(workDir, normalizedPath)
+		if err != nil {
+			return nil, fmt.Errorf("ComputeWorkingTreeStatus: invalid worktree path %q: %w", normalizedPath, err)
+		}
 		isSymlink := entry.Mode&0170000 == 0120000
 
 		info, statErr := os.Lstat(diskPath)
@@ -142,7 +149,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 		diskSize := info.Size()
 		if uint32(diskSize) != entry.FileSize { // #nosec G115
-			sizeContent, sizeReadErr := os.ReadFile(diskPath)
+			sizeContent, sizeReadErr := readWorktreeFile(workDir, normalizedPath)
 			if sizeReadErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, sizeReadErr)
 			}
@@ -151,7 +158,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			continue
 		}
 
-		diskContent, readErr := os.ReadFile(diskPath)
+		diskContent, readErr := readWorktreeFile(workDir, normalizedPath)
 		if readErr != nil {
 			return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, readErr)
 		}

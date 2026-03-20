@@ -18,12 +18,75 @@ type RepoResponse struct {
 	ID          string    `json:"id"`
 	URL         string    `json:"url"`
 	DisplayName string    `json:"displayName,omitempty"`
-	AccessToken string    `json:"accessToken,omitempty"`
+	RepoAccess  string    `json:"-"`
 	State       string    `json:"state"`
 	Error       string    `json:"error,omitempty"`
 	Phase       string    `json:"phase,omitempty"`
 	Percent     int       `json:"percent,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
+}
+
+func (r RepoResponse) MarshalJSON() ([]byte, error) {
+	payload := map[string]any{
+		"id":        r.ID,
+		"url":       r.URL,
+		"state":     r.State,
+		"createdAt": r.CreatedAt,
+	}
+	if r.AccountID != "" {
+		payload["accountId"] = r.AccountID
+	}
+	if r.DisplayName != "" {
+		payload["displayName"] = r.DisplayName
+	}
+	if r.RepoAccess != "" {
+		payload["accessToken"] = r.RepoAccess
+	}
+	if r.Error != "" {
+		payload["error"] = r.Error
+	}
+	if r.Phase != "" {
+		payload["phase"] = r.Phase
+	}
+	if r.Percent != 0 {
+		payload["percent"] = r.Percent
+	}
+	return json.Marshal(payload)
+}
+
+func (r *RepoResponse) UnmarshalJSON(data []byte) error {
+	var decoded struct {
+		AccountID   string    `json:"accountId,omitempty"`
+		ID          string    `json:"id"`
+		URL         string    `json:"url"`
+		DisplayName string    `json:"displayName,omitempty"`
+		State       string    `json:"state"`
+		Error       string    `json:"error,omitempty"`
+		Phase       string    `json:"phase,omitempty"`
+		Percent     int       `json:"percent,omitempty"`
+		CreatedAt   time.Time `json:"createdAt"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var tokenFields map[string]string
+	if err := json.Unmarshal(data, &tokenFields); err != nil {
+		return err
+	}
+
+	*r = RepoResponse{
+		AccountID:   decoded.AccountID,
+		ID:          decoded.ID,
+		URL:         decoded.URL,
+		DisplayName: decoded.DisplayName,
+		RepoAccess:  tokenFields["accessToken"],
+		State:       decoded.State,
+		Error:       decoded.Error,
+		Phase:       decoded.Phase,
+		Percent:     decoded.Percent,
+		CreatedAt:   decoded.CreatedAt,
+	}
+	return nil
 }
 
 type cloneProgressEvent struct {
@@ -68,7 +131,7 @@ func (h *Handler) HandleAddRepo(w http.ResponseWriter, r *http.Request, accountS
 		ID:          hostedRepo.ID,
 		URL:         hostedRepo.URL,
 		DisplayName: hostedRepo.DisplayName,
-		AccessToken: hostedRepo.AccessToken,
+		RepoAccess:  hostedRepo.AccessToken,
 		State:       state.String(),
 		Error:       errMsg,
 		Phase:       progress.Phase,

@@ -27,6 +27,7 @@ func run() int {
 	cw := cli.NewWriter(os.Stdout, gf.colorMode)
 
 	if gf.cpuProfilePath != "" {
+		// #nosec G304,G302,G306,G703 -- profile output path is an explicit file chosen by the local CLI operator.
 		profFile, err := os.Create(gf.cpuProfilePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "gitvista-cli: create cpu profile: %v\n", err)
@@ -47,6 +48,7 @@ func run() int {
 
 	if gf.memProfilePath != "" {
 		defer func() {
+			// #nosec G304,G302,G306,G703 -- profile output path is an explicit file chosen by the local CLI operator.
 			profFile, err := os.Create(gf.memProfilePath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "gitvista-cli: create memory profile: %v\n", err)

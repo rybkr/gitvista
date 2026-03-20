@@ -61,8 +61,8 @@ func TestHandleAddRepo_Success(t *testing.T) {
 	if resp.State == "" {
 		t.Error("response State is empty")
 	}
-	if resp.AccessToken == "" {
-		t.Error("response AccessToken is empty")
+	if resp.RepoAccess == "" {
+		t.Error("response RepoAccess is empty")
 	}
 	if resp.DisplayName != "golang/example" {
 		t.Errorf("response DisplayName = %q, want %q", resp.DisplayName, "golang/example")
@@ -425,7 +425,7 @@ func TestHandleRepoRoutes_WithAccessToken(t *testing.T) {
 	addResp := addHostedRepoForTest(t, h)
 
 	req := httptest.NewRequest("GET", "/api/repos/"+addResp.ID+"/status", nil)
-	req.Header.Set(HostedRepoTokenHeader, addResp.AccessToken)
+	req.Header.Set(HostedRepoTokenHeader, addResp.RepoAccess)
 	w := httptest.NewRecorder()
 
 	h.HandleRepoRoutes(w, req)
@@ -483,7 +483,7 @@ func TestHandleAccountRoutes_AccountScopedRepoLifecycle(t *testing.T) {
 	}
 
 	statusReq := httptest.NewRequest("GET", "/api/accounts/personal/repos/"+addResp.ID+"/status", nil)
-	statusReq.Header.Set("X-GitVista-Repo-Token", addResp.AccessToken)
+	statusReq.Header.Set("X-GitVista-Repo-Token", addResp.RepoAccess)
 	statusW := httptest.NewRecorder()
 	h.HandleAccountRoutes(statusW, statusReq)
 	if statusW.Code != http.StatusOK {

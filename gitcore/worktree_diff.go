@@ -30,6 +30,33 @@ func normalizeWorktreeRelativePath(filePath string) (string, error) {
 	return normalized, nil
 }
 
+func resolveWorktreePath(workDir, relativePath string) (string, error) {
+	normalizedPath, err := normalizeWorktreeRelativePath(relativePath)
+	if err != nil {
+		return "", err
+	}
+
+	workDirAbs, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve worktree path: %w", err)
+	}
+	diskPath := filepath.Join(workDirAbs, filepath.FromSlash(normalizedPath))
+	if err := ensurePathWithinBase(workDirAbs, diskPath); err != nil {
+		return "", fmt.Errorf("%w: %s", errInvalidWorktreePath, normalizedPath)
+	}
+	return diskPath, nil
+}
+
+func readWorktreeFile(workDir, relativePath string) ([]byte, error) {
+	diskPath, err := resolveWorktreePath(workDir, relativePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// #nosec G304 -- path is normalized and constrained to the repository worktree above.
+	return os.ReadFile(diskPath)
+}
+
 func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, error) {
 	normalizedPath, err := normalizeWorktreeRelativePath(filePath)
 	if err != nil {
@@ -115,15 +142,7 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		}
 	}
 
-	workDirAbs, err := filepath.Abs(repo.WorkDir())
-	if err != nil {
-		return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: resolving worktree path: %w", err)
-	}
-	diskPath := filepath.Join(workDirAbs, filepath.FromSlash(normalizedPath))
-	if err := ensurePathWithinBase(workDirAbs, diskPath); err != nil {
-		return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: %w: %s", errInvalidWorktreePath, normalizedPath)
-	}
-	diskContent, err := os.ReadFile(diskPath)
+	diskContent, err := readWorktreeFile(repo.WorkDir(), normalizedPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: reading on-disk file: %w", err)

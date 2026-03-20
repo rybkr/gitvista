@@ -337,7 +337,7 @@ func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
 
 	slog.Info("Starting GitVista", "version", version, "mode", modeLocal, "command", parsed.command)
 	slog.Info("Repository loaded", "path", parsed.repoPath)
-	slog.Info("Listening", "addr", baseURL)
+	slog.Info("Listening for GitVista requests")
 
 	if parsed.outputFormat == outputFormatJS {
 		printStartupJSON(parsed.command, baseURL, openURL, parsed.repoPath, repoLoadDur)
@@ -360,7 +360,7 @@ func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
 		go func(url string) {
 			time.Sleep(150 * time.Millisecond)
 			if err := openBrowser(url); err != nil {
-				slog.Warn("Failed to open browser", "url", url, "err", err)
+				slog.Warn("Failed to open browser", "err", err)
 			}
 		}(openURL)
 	} else if parsed.printURL {
@@ -783,10 +783,17 @@ func browserLauncher() ([]string, error) {
 }
 
 func openBrowser(url string) error {
-	launcher, err := browserLauncher()
-	if err != nil {
-		return err
+	switch runtime.GOOS {
+	case "darwin":
+		// #nosec G204,G702 -- launches a fixed local browser opener with an application-generated URL.
+		return exec.Command("open", url).Start()
+	case "linux":
+		// #nosec G204,G702 -- launches a fixed local browser opener with an application-generated URL.
+		return exec.Command("xdg-open", url).Start()
+	case "windows":
+		// #nosec G204,G702 -- launches a fixed local browser opener with an application-generated URL.
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	default:
+		return fmt.Errorf("browser launch is unsupported on %s", runtime.GOOS)
 	}
-	args := append(launcher[1:], url)
-	return exec.Command(launcher[0], args...).Start()
 }

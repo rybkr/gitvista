@@ -2,7 +2,7 @@
 	test unit e2e test-js validate-js \
 	fmt fmt-check vet lint security \
 	build build-site run-site profile \
-	ci-local ci \
+	ci-local ci-remote \
 	deploy clean cloc docker-build deps-check
 
 GOCMD = go
@@ -98,7 +98,7 @@ validate-js:
 		fi; \
 	done
 	@echo "Checking for CommonJS in ES modules..."
-	@if grep -rn "module.exports\|require(" web/ --include='*.js' | grep -v "// @allow-commonjs"; then \
+	@if find web -path 'web/vendor' -prune -o -name '*.js' -type f -print | xargs grep -n "module.exports\|require(" | grep -v "// @allow-commonjs"; then \
 		echo "Found CommonJS syntax in ES modules"; \
 		exit 1; \
 	fi
@@ -248,8 +248,8 @@ ci-local: SECURITY_BEST_EFFORT = 1
 ci-local: fmt-check vet lint security test validate-js build
 	@echo "All local CI checks passed!"
 
-## ci: Run full CI checks
-ci: fmt-check vet lint security test validate-js build docker-build deps-check
+## ci-remote: Run full CI checks
+ci-remote: fmt-check vet lint security test validate-js build docker-build deps-check
 	@echo "All CI checks passed!"
 
 ##@ Maintenance

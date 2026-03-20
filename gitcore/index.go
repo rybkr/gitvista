@@ -46,6 +46,7 @@ type Index struct {
 // ReadIndex parses the .git/index file inside gitDir.
 func ReadIndex(gitDir string) (*Index, error) {
 	indexPath := filepath.Join(gitDir, "index")
+	// #nosec G304 -- indexPath is fixed under the repository gitDir.
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		if os.IsNotExist(err) {

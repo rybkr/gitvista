@@ -6,8 +6,10 @@ import (
 )
 
 const (
+	// #nosec G101 -- these are protocol field names, not embedded credentials.
 	HostedRepoTokenHeader = "X-GitVista-Repo-Token"
-	HostedRepoTokenQuery  = "access_token"
+	// #nosec G101 -- this is a query parameter name, not an embedded credential.
+	HostedRepoTokenQuery = "access_token"
 )
 
 func hostedRepoToken(r *http.Request) string {

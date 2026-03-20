@@ -40,6 +40,7 @@ func (m *ignoreMatcher) loadExcludeFile(path string) {
 }
 
 func (m *ignoreMatcher) loadExcludeFileWithBase(path, baseDir string) {
+	// #nosec G304 -- callers build paths from the repository worktree or gitDir.
 	f, err := os.Open(path)
 	if err != nil {
 		return
