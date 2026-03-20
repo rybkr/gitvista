@@ -3,7 +3,8 @@
 	fmt fmt-check vet lint security \
 	build build-site run-site profile \
 	ci-local ci-remote \
-	deploy clean cloc docker-build deps-check
+	deploy clean cloc docker-build deps-check \
+	setup-test-repos
 
 GOCMD = go
 GOTEST = $(GOCMD) test
@@ -74,8 +75,8 @@ unit:
 	$(GOTEST) -v -race -cover -timeout=60s ./...
 
 ## e2e: Run end-to-end tests
-e2e:
-	$(PYTEST)
+e2e: setup-test-repos
+	$(PYTEST) -vs -n auto
 
 ## test-js: Run JavaScript unit tests
 test-js:
@@ -303,3 +304,7 @@ deps-check:
 		echo "Dependencies need tidying - run 'go mod tidy'"; \
 		exit 1; \
 	fi
+
+## setup-test-repos: Download test git repositories
+setup-test-repos:
+	./scripts/prepare_test_repos.py
