@@ -250,6 +250,7 @@ func TestSendToAllClients_DeliversBroadcastPayload(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		_ = readUpdateMessage(t, conn)
 	}
+	waitForRegisteredClients(t, session, 1)
 
 	status := &WorkingTreeStatus{
 		Modified: []FileStatus{{Path: "tracked.txt", StatusCode: "M"}},
@@ -296,6 +297,26 @@ func websocketURL(t *testing.T, raw string) string {
 		u.Scheme = "ws"
 	}
 	return u.String()
+}
+
+func waitForRegisteredClients(t *testing.T, session *RepoSession, want int) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		session.clientsMu.RLock()
+		got := len(session.clients)
+		session.clientsMu.RUnlock()
+		if got == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	session.clientsMu.RLock()
+	got := len(session.clients)
+	session.clientsMu.RUnlock()
+	t.Fatalf("registered clients = %d, want %d", got, want)
 }
 
 func readUpdateMessage(t *testing.T, conn *websocket.Conn) UpdateMessage {
