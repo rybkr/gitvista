@@ -10,6 +10,8 @@ GOCMD = go
 GOTEST = $(GOCMD) test
 GOBUILD = $(GOCMD) build
 GOCLEAN = $(GOCMD) clean
+GOCACHE ?= $(CURDIR)/.cache/go-build
+GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 
 PYTHON = uv run python
 PYTEST = uv run pytest
@@ -165,7 +167,7 @@ lint:
 	@echo "Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null; then \
 		mkdir -p "$(GOCACHE)" "$(GOLANGCI_LINT_CACHE)"; \
-		golangci-lint run --config=.golangci.yml .; \
+		GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE)" golangci-lint run --config=.golangci.yml .; \
 	else \
 		echo "golangci-lint not found - install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 		exit 1; \
