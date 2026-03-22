@@ -58,6 +58,12 @@
       "label": "Limits",
       "title": "Know when to use hosted mode, local mode, or a quick diagnostic.",
       "file": "limits.md"
+    },
+    {
+      "id": "api",
+      "label": "API",
+      "title": "Browse the generated Go package reference without leaving the site shell.",
+      "file": "api/index.html"
     }
   ],
   "help": {

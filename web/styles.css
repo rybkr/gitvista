@@ -9450,6 +9450,79 @@ ol.repo-docs__list > .repo-docs__list-item + .repo-docs__list-item {
     border-bottom: 0;
 }
 
+.repo-docs__section--api {
+    position: relative;
+    overflow: hidden;
+}
+
+.repo-docs__section--api::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--gv-docs-accent) 72%, transparent), transparent 70%);
+    pointer-events: none;
+}
+
+.repo-docs__section-body--api {
+    max-width: none;
+}
+
+.repo-docs__section-body--api > .repo-docs__heading--h2:first-child {
+    margin-top: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.repo-docs__section-body--api > .repo-docs__heading--h2:first-child::before {
+    content: "API";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--gv-docs-accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--gv-docs-accent) 20%, var(--border-color));
+    color: var(--text-secondary);
+    font-family: var(--gv-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.repo-docs__section-body--api > .repo-docs__code:first-of-type {
+    margin-top: 18px;
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--gv-docs-accent) 6%, transparent), transparent 42%),
+        color-mix(in srgb, var(--surface-recessed) 96%, transparent);
+    border-color: color-mix(in srgb, var(--gv-docs-accent) 16%, var(--border-color));
+}
+
+.repo-docs__section-body--api > .repo-docs__list:first-of-type {
+    columns: 2;
+    column-gap: 24px;
+    margin-top: 18px;
+}
+
+.repo-docs__section-body--api > .repo-docs__list:first-of-type > .repo-docs__list-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.repo-docs__section-body--api .repo-docs__heading--h3 {
+    scroll-margin-top: calc(var(--gv-nav-clearance) + 20px);
+}
+
+.repo-docs__section-body--api .repo-docs__inline-link[href^="#"] {
+    text-decoration-style: dotted;
+}
+
+.repo-docs__section-body--api .repo-docs__table-wrap {
+    margin-top: 18px;
+}
+
 .repo-docs__summary {
     display: grid;
     gap: 12px;
@@ -9681,6 +9754,10 @@ ol.repo-docs__list > .repo-docs__list-item + .repo-docs__list-item {
 }
 
 @media (max-width: 1080px) {
+    .repo-docs__section-body--api > .repo-docs__list:first-of-type {
+        columns: 1;
+    }
+
     .repo-landing__hero {
         grid-template-columns: minmax(0, 1fr) clamp(200px, 24vw, 300px);
         gap: 28px;

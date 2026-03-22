@@ -23,6 +23,16 @@ describe("parseHostedPath", () => {
         });
     });
 
+    it("parses nested docs paths", () => {
+        assert.deepEqual(parseHostedPath("/docs/api/github.com/rybkr/gitvista/gitcore"), {
+            page: "docs",
+            accountSlug: "personal",
+            repoId: null,
+            commitHash: null,
+            docsSection: "api/github.com/rybkr/gitvista/gitcore",
+        });
+    });
+
     it("parses hosted repo commit paths", () => {
         const hash = "0123456789abcdef0123456789abcdef01234567";
         assert.deepEqual(parseHostedPath(`/a/acme/r/abc123/${hash}`), {

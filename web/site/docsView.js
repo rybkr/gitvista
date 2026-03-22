@@ -1,5 +1,5 @@
 import { createHostedFooter, createHostedTopbar } from "./hostedChrome.js";
-import { bindHostedPathNavigation } from "./hostedNavigation.js";
+import { bindHashScroll, bindHostedPathNavigation } from "./hostedNavigation.js";
 
 const COPY_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
     <rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
@@ -40,7 +40,11 @@ export function createDocsView({ navigateToPath, activeSection = null } = {}) {
 
     async function loadDocs() {
         try {
-            const resp = await fetch("/api/docs", { signal: controller.signal });
+            const docsURL = new URL("/api/docs", window.location.origin);
+            if (activeSection) {
+                docsURL.searchParams.set("path", activeSection);
+            }
+            const resp = await fetch(docsURL, { signal: controller.signal });
             if (!resp.ok) throw new Error(`docs request failed: ${resp.status}`);
             const docs = await resp.json();
             if (controller.signal.aborted) return;
@@ -66,7 +70,7 @@ function renderDocs(content, docs, navigateToPath, activeSection) {
     content.replaceChildren();
 
     const selectedSection = activeSection
-        ? (docs.sections || []).find((section) => section.id === activeSection) || null
+        ? docs.activeSection || (docs.sections || []).find((section) => (section.path || section.id) === activeSection) || null
         : null;
 
     if (activeSection && !selectedSection) {
@@ -120,11 +124,12 @@ function renderDocsOverview(docs, navigateToPath) {
 
 function renderDocsPage(section, sections, navigateToPath) {
     const headings = extractSectionHeadings(section);
-    const sectionIndex = sections.findIndex((entry) => entry.id === section.id);
+    const activeSidebarSectionID = section.parentId || section.id;
+    const sectionIndex = section.parentId ? -1 : sections.findIndex((entry) => entry.id === section.id);
     const previousSection = sectionIndex > 0 ? sections[sectionIndex - 1] : null;
     const nextSection = sectionIndex >= 0 && sectionIndex < sections.length - 1 ? sections[sectionIndex + 1] : null;
     const layout = createElement("div", "repo-docs__page");
-    layout.appendChild(renderDocsSidebar(sections, section.id, navigateToPath, { headings }));
+    layout.appendChild(renderDocsSidebar(sections, activeSidebarSectionID, navigateToPath, { headings }));
 
     const main = createElement("div", "repo-docs__main");
     const header = createElement("section", "repo-docs__header repo-docs__header--page");
@@ -187,12 +192,18 @@ function renderDocsSidebar(sections, activeSectionID, navigateToPath, { headings
 
 function renderDocsSection(section, { headingTag = "h2", navigateToPath = null } = {}) {
     const article = createElement("section", "repo-docs__section");
-    article.id = section.id;
+    article.id = section.path || section.id;
+    if (isAPIDocsSection(section.path || section.id)) {
+        article.classList.add("repo-docs__section--api");
+    }
 
     const body = createElement("div", "repo-docs__section-body");
+    if (isAPIDocsSection(section.path || section.id)) {
+        body.classList.add("repo-docs__section-body--api");
+    }
     if (section.contentHtml) {
         body.innerHTML = section.contentHtml;
-        enhanceRenderedMarkdown(body, navigateToPath);
+        enhanceRenderedMarkdown(body, navigateToPath, section.path || section.id);
     } else {
         renderMarkdown(body, section.content || "");
     }
@@ -201,9 +212,9 @@ function renderDocsSection(section, { headingTag = "h2", navigateToPath = null }
 }
 
 function renderDocsSectionCard(section, navigateToPath) {
-    const { summary } = parseSectionContent(section.content || "");
+    const summary = summarizeSection(section);
     const article = createElement("a", "repo-docs__toc-item");
-    bindHostedPathNavigation(article, getDocsSectionPath(section.id), navigateToPath);
+    bindHostedPathNavigation(article, getDocsSectionPath(section.path || section.id), navigateToPath);
 
     article.appendChild(createElement("span", "repo-docs__toc-item-kicker", section.label));
     article.appendChild(createElement("span", "repo-docs__toc-item-title", section.title || section.label));
@@ -212,6 +223,17 @@ function renderDocsSectionCard(section, navigateToPath) {
     }
 
     return article;
+}
+
+function summarizeSection(section) {
+    const markdownSummary = parseSectionContent(section.content || "").summary;
+    if (markdownSummary) return markdownSummary;
+    if (typeof section.contentHtml !== "string" || section.contentHtml.trim() === "") return "";
+
+    const template = document.createElement("template");
+    template.innerHTML = section.contentHtml;
+    const paragraph = template.content.querySelector("p");
+    return paragraph?.textContent?.trim() || "";
 }
 
 function renderDocsNotFound(navigateToPath) {
@@ -228,14 +250,23 @@ function renderDocsNotFound(navigateToPath) {
     return state;
 }
 
-function resolveDocsHref(href) {
+function resolveDocsHref(href, currentDocsPath = "") {
     if (typeof href !== "string" || href === "") return href;
-    if (href.startsWith("#")) return getDocsSectionPath(href.slice(1));
-    return href;
+    if (href.startsWith("#")) return href;
+    if (/^[a-z]+:/i.test(href) || href.startsWith("//")) return href;
+    if (href.startsWith("/")) return href;
+
+    const basePath = currentDocsPath ? `${getDocsSectionPath(currentDocsPath)}/` : "/docs/";
+    const resolved = new URL(href, `${window.location.origin}${basePath}`);
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }
 
 function getDocsSectionPath(sectionID) {
     return `/docs/${sectionID}`;
+}
+
+function isAPIDocsSection(sectionPath) {
+    return typeof sectionPath === "string" && (sectionPath === "api" || sectionPath.startsWith("api/"));
 }
 
 function parseSectionContent(markdown) {
@@ -321,7 +352,7 @@ function createCopyButton(text) {
     return btn;
 }
 
-function enhanceRenderedMarkdown(container, navigateToPath = null) {
+function enhanceRenderedMarkdown(container, navigateToPath = null, currentDocsPath = "") {
     let headingIndex = 0;
     for (const heading of container.querySelectorAll("h1, h2, h3")) {
         headingIndex += 1;
@@ -365,8 +396,13 @@ function enhanceRenderedMarkdown(container, navigateToPath = null) {
             externalLink.classList.remove("repo-docs__inline-link");
             externalLink.classList.add("repo-install__docs-link");
         }
-        if (navigateToPath && href.startsWith("/")) {
-            bindHostedPathNavigation(externalLink, href, navigateToPath);
+        if (href.startsWith("#")) {
+            bindHashScroll(externalLink, href, { root: container });
+            continue;
+        }
+        const docsHref = resolveDocsHref(href, currentDocsPath);
+        if (navigateToPath && docsHref.startsWith("/")) {
+            bindHostedPathNavigation(externalLink, docsHref, navigateToPath);
             continue;
         }
         if (/^https?:\/\//.test(href)) {
@@ -380,6 +416,10 @@ function enhanceRenderedMarkdown(container, navigateToPath = null) {
         const code = pre.querySelector("code");
         if (!code) continue;
         pre.classList.add("repo-docs__code");
+        pre.removeAttribute("style");
+        for (const styledNode of pre.querySelectorAll("[style]")) {
+            styledNode.removeAttribute("style");
+        }
         const language = code.className.match(/language-([a-z0-9_-]+)/i)?.[1] || "";
         if (language) {
             pre.dataset.language = language;
@@ -465,6 +505,11 @@ function renderDocsBreadcrumbs(section, navigateToPath) {
 
     nav.appendChild(createElement("span", "repo-docs__breadcrumb-sep", "/"));
     nav.appendChild(createElement("span", "repo-docs__breadcrumb-current", section.label || section.title || "Section"));
+
+    if (section.parentId && section.title && section.title !== section.label) {
+        nav.appendChild(createElement("span", "repo-docs__breadcrumb-sep", "/"));
+        nav.appendChild(createElement("span", "repo-docs__breadcrumb-current", section.title));
+    }
 
     return nav;
 }

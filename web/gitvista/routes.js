@@ -3,7 +3,7 @@ const ACCOUNT_REPO_PATH_RE = /^\/a\/([^/]+)\/r\/([^/]+)(?:\/([0-9a-f]{40}))?\/?$
 const ACCOUNT_REPO_LOADING_PATH_RE = /^\/a\/([^/]+)\/r\/([^/]+)\/loading\/?$/i;
 const REPO_PATH_RE = /^\/repo\/([^/]+)(?:\/([0-9a-f]{40}))?\/?$/i;
 const REPO_LOADING_PATH_RE = /^\/repo\/([^/]+)\/loading\/?$/i;
-const DOCS_PATH_RE = /^\/docs\/([^/]+)\/?$/i;
+const DOCS_PATH_RE = /^\/docs\/(.+)\/?$/i;
 export const DEFAULT_HOSTED_ACCOUNT_SLUG = "personal";
 
 export function parseHostedPath(pathname) {

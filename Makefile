@@ -4,7 +4,7 @@
 	build build-site run-site profile \
 	ci-local ci-remote \
 	deploy clean cloc docker-build deps-check \
-	setup-test-repos
+	setup-test-repos docs-api
 
 GOCMD = go
 GOTEST = $(GOCMD) test
@@ -208,17 +208,9 @@ build:
 	@echo "Building main binary..."
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o vista ./cmd/vista
 
-## build-site: Build the hosted site binary
-##   options: VERSION=..., COMMIT=..., BUILD_DATE=...
-build-site:
-	@echo "Building hosted site binary..."
-	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-site ./cmd/site
-
-## run-site: Run the hosted site entrypoint directly from cmd/site
-##   options: SITE_ARGS='-data-dir /tmp/gitvista-site'
-run-site:
-	@echo "Running hosted site from cmd/site..."
-	$(GOCMD) run ./cmd/site $(SITE_ARGS)
+## docs-api: Generate embedded API docs with doc2go
+docs-api:
+	./scripts/generate_doc2go_embed.sh
 
 ##@ Profiling
 ## profile: Capture repo profiles
