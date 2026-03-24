@@ -271,7 +271,11 @@ func TestShutdown_CallsShutdownHooks(t *testing.T) {
 func TestHostedServer_Start_UsesAddedRoutesAndMiddleware(t *testing.T) {
 	addr := freePort(t)
 	webFS := os.DirFS(t.TempDir())
-	s := NewHostedServer(addr, webFS)
+	s := NewFrontendServer(addr, webFS, FrontendConfig{
+		IndexPath:   "site/index.html",
+		SPAFallback: true,
+		ConfigMode:  "hosted",
+	})
 	s.logger = silentLogger()
 	s.AddRoutes(func(mux *http.ServeMux) {
 		mux.HandleFunc("/custom", func(w http.ResponseWriter, _ *http.Request) {

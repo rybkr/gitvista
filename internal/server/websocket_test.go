@@ -27,7 +27,7 @@ func newWebSocketTestServer(t *testing.T, handler http.Handler) *httptest.Server
 	return httptest.NewServer(handler)
 }
 
-func TestLocalUpgrader_CheckOrigin(t *testing.T) {
+func TestSameHostUpgrader_CheckOrigin(t *testing.T) {
 	tests := []struct {
 		name   string
 		host   string
@@ -79,51 +79,9 @@ func TestLocalUpgrader_CheckOrigin(t *testing.T) {
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)
 			}
-			got := localUpgrader.CheckOrigin(req)
+			got := sameHostUpgrader.CheckOrigin(req)
 			if got != tt.want {
-				t.Errorf("localUpgrader.CheckOrigin() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestHostedUpgrader_CheckOrigin(t *testing.T) {
-	tests := []struct {
-		name   string
-		host   string
-		origin string
-		want   bool
-	}{
-		{
-			name:   "allows same host origin",
-			host:   "app.example.com",
-			origin: "https://app.example.com",
-			want:   true,
-		},
-		{
-			name:   "rejects different host origin",
-			host:   "app.example.com",
-			origin: "https://evil.example",
-			want:   false,
-		},
-		{
-			name:   "rejects missing origin",
-			host:   "app.example.com",
-			origin: "",
-			want:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "http://"+tt.host+"/api/ws", nil)
-			req.Host = tt.host
-			if tt.origin != "" {
-				req.Header.Set("Origin", tt.origin)
-			}
-			got := hostedUpgrader.CheckOrigin(req)
-			if got != tt.want {
-				t.Errorf("hostedUpgrader.CheckOrigin() = %v, want %v", got, tt.want)
+				t.Errorf("sameHostUpgrader.CheckOrigin() = %v, want %v", got, tt.want)
 			}
 		})
 	}

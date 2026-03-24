@@ -17,18 +17,17 @@ import (
 	"github.com/rybkr/gitvista/gitcore"
 )
 
-// Mode distinguishes between local and hosted operation.
-type Mode int
-
 const (
-	// ModeLocal serves a single local Git repository.
-	ModeLocal Mode = iota
-	// ModeHosted serves the hosted browser product.
-	ModeHosted
-
 	readHeaderTimeout = 5 * time.Second
 	maxHeaderBytes    = 1 << 20 // 1 MiB
 )
+
+// FrontendConfig controls which frontend shell the server exposes.
+type FrontendConfig struct {
+	IndexPath   string
+	SPAFallback bool
+	ConfigMode  string
+}
 
 // Server contains all behavior for the GitVista application server.
 type Server struct {
@@ -40,7 +39,7 @@ type Server struct {
 	httpServer  *http.Server
 	logger      *slog.Logger
 
-	mode          Mode
+	configMode    string
 	localSession  *RepoSession
 	cacheSize     int
 	extraRoutes   []func(*http.ServeMux)
@@ -55,28 +54,21 @@ type Server struct {
 // NewServer constructs a local-mode Server ready to be started.
 // Backward-compatible alias for NewLocalServer.
 func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
-	return NewLocalServer(repo, addr, webFS)
+	return NewSingleRepoServer(repo, addr, webFS)
 }
 
 // NewLocalServer constructs a Server in local mode with a single repository.
 func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
-	ctx, cancel := context.WithCancel(context.Background())
-	rl := newRateLimiter(100, 200, time.Second)
+	return NewSingleRepoServer(repo, addr, webFS)
+}
 
-	cacheSize := readCacheSize()
-
-	s := &Server{
-		addr:        addr,
-		webFS:       webFS,
-		indexPath:   "local/index.html",
-		spaFallback: false,
-		rateLimiter: rl,
-		logger:      slog.Default(),
-		mode:        ModeLocal,
-		cacheSize:   cacheSize,
-		ctx:         ctx,
-		cancel:      cancel,
-	}
+// NewSingleRepoServer constructs a Server that serves a single repository.
+func NewSingleRepoServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
+	s := NewFrontendServer(addr, webFS, FrontendConfig{
+		IndexPath:   "local/index.html",
+		SPAFallback: false,
+		ConfigMode:  "local",
+	})
 
 	s.localSession = NewRepoSession(SessionConfig{
 		ID:          "local",
@@ -84,33 +76,35 @@ func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server 
 		ReloadFn: func() (*gitcore.Repository, error) {
 			return gitcore.NewRepository(repo.GitDir())
 		},
-		CacheSize: cacheSize,
+		CacheSize: s.cacheSize,
 		Logger:    s.logger,
 	})
 
 	return s
 }
 
-// NewHostedServer constructs a hosted-mode Server.
-func NewHostedServer(addr string, webFS fs.FS) *Server {
-	return NewHostedServerWithIndex(addr, webFS, "site/index.html")
-}
-
-// NewHostedServerWithIndex constructs a hosted-mode Server with an explicit SPA entrypoint.
-func NewHostedServerWithIndex(addr string, webFS fs.FS, indexPath string) *Server {
+// NewFrontendServer constructs a server shell for a specific frontend.
+func NewFrontendServer(addr string, webFS fs.FS, frontend FrontendConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
 
+	if frontend.IndexPath == "" {
+		frontend.IndexPath = "local/index.html"
+	}
+	if frontend.ConfigMode == "" {
+		frontend.ConfigMode = "local"
+	}
+
 	return &Server{
 		addr:        addr,
 		webFS:       webFS,
-		indexPath:   indexPath,
-		spaFallback: true,
+		indexPath:   frontend.IndexPath,
+		spaFallback: frontend.SPAFallback,
 		rateLimiter: rl,
 		logger:      slog.Default(),
-		mode:        ModeHosted,
+		configMode:  frontend.ConfigMode,
 		cacheSize:   cacheSize,
 		ctx:         ctx,
 		cancel:      cancel,
@@ -267,10 +261,10 @@ func looksLikeStaticAsset(reqPath string) bool {
 }
 
 func (s *Server) modeString() string {
-	if s.mode == ModeLocal {
-		return "local"
+	if s.configMode != "" {
+		return s.configMode
 	}
-	return "hosted"
+	return "local"
 }
 
 // newHTTPServer builds the net/http server with explicit production-safe

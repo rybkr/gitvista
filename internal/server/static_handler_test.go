@@ -20,7 +20,11 @@ func newStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 
 func newHostedStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 	t.Helper()
-	s := NewHostedServer("127.0.0.1:0", webFS)
+	s := NewFrontendServer("127.0.0.1:0", webFS, FrontendConfig{
+		IndexPath:   "site/index.html",
+		SPAFallback: true,
+		ConfigMode:  "hosted",
+	})
 	s.logger = silentLogger()
 	return s
 }

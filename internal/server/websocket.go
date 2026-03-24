@@ -16,27 +16,8 @@ const (
 	maxMessageSize = 512
 )
 
-// localUpgrader validates local-mode origins. It allows same-host requests and
-// exact same-host requests to prevent cross-site WebSocket hijacking from
-// other local applications running on loopback.
-var localUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return false
-		}
-		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-		return u.Host == r.Host
-	},
-	EnableCompression: true,
-}
-
-// hostedUpgrader validates that the Origin header matches the request Host to
-// prevent cross-site WebSocket hijacking in hosted mode.
-var hostedUpgrader = websocket.Upgrader{
+// sameHostUpgrader validates that the Origin header matches the request Host.
+var sameHostUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
@@ -68,12 +49,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	up := localUpgrader
-	if s.mode == ModeHosted {
-		up = hostedUpgrader
-	}
-
-	conn, err := up.Upgrade(w, r, nil)
+	conn, err := sameHostUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error("WebSocket upgrade failed", "err", err)
 		return

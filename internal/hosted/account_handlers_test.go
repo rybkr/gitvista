@@ -68,7 +68,11 @@ func newTestHostedRuntime(t *testing.T) (*server.Server, *Handler) {
 	t.Cleanup(rm.Close)
 
 	webFS := os.DirFS(t.TempDir())
-	srv := server.NewHostedServer("127.0.0.1:0", webFS)
+	srv := server.NewFrontendServer("127.0.0.1:0", webFS, server.FrontendConfig{
+		IndexPath:   "site/index.html",
+		SPAFallback: true,
+		ConfigMode:  "hosted",
+	})
 	h := NewHandler(srv, rm, NewMemoryHostedStore(rm))
 	h.Logger = silentLogger()
 	h.CacheSize = srv.CacheSize()
