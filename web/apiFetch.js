@@ -12,7 +12,6 @@
 
 import { setRepositoryAvailable } from "./errorState.js";
 import { logger } from "./logger.js";
-import { getRepoToken } from "./apiBase.js";
 
 const REPO_UNAVAILABLE_MSG = "Repository not available";
 const ESCALATION_THRESHOLD = 3;
@@ -29,15 +28,9 @@ let recentFailures = [];
  * @returns {Promise<Response>}
  */
 export async function apiFetch(url, options) {
-    const headers = new Headers(options?.headers || {});
-    const repoToken = getRepoToken();
-    if (repoToken && !headers.has("X-GitVista-Repo-Token")) {
-        headers.set("X-GitVista-Repo-Token", repoToken);
-    }
-
     let response;
     try {
-        response = await fetch(url, { ...options, headers });
+        response = await fetch(url, options);
     } catch (err) {
         trackFailure();
         throw err;

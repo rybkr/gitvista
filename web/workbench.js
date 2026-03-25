@@ -34,7 +34,7 @@ const ICONS = {
 
 const panelRegistry = new Map();
 
-class HostedPanel {
+class WorkbenchPanel {
     constructor(id, component) {
         this.id = id;
         this.component = component;
@@ -54,7 +54,7 @@ class HostedPanel {
     }
 
     layout() {
-        // no-op; hosted view handles its own layout.
+        // no-op
     }
 
     focus() {
@@ -136,9 +136,9 @@ export function createWorkbench(views) {
         disableFloatingGroups: true,
         noPanelsOverlay: "emptyGroup",
         singleTabMode: "default",
-        createComponent: (options) => new HostedPanel(options?.id, options?.component ?? PANEL_COMPONENT),
+        createComponent: (options) => new WorkbenchPanel(options?.id, options?.component ?? PANEL_COMPONENT),
         components: {
-            [PANEL_COMPONENT]: HostedPanel,
+            [PANEL_COMPONENT]: WorkbenchPanel,
         },
     });
 

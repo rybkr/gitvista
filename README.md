@@ -79,10 +79,6 @@ make build
 ./vista
 ```
 
-## Hosted Product
-
-The hosted `gitvista.io` service now lives in a separate private repository. This public repo builds and ships only the local product.
-
 ## Development
 
 ```bash

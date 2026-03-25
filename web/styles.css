@@ -4155,27 +4155,6 @@ canvas {
     }
 }
 
-/* Back to repos button (hosted mode sidebar) */
-.back-to-repos {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    font-size: 12px;
-    font-family: inherit;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: color 150ms ease, border-color 150ms ease;
-}
-
-.back-to-repos:hover {
-    color: var(--text-color);
-    border-color: var(--text-secondary);
-}
-
 /* ── Git Lifecycle View ── */
 
 .staging-view {
@@ -6914,4 +6893,3 @@ body {
         box-shadow: 0 0 0 5px color-mix(in srgb, var(--warning-color) 0%, transparent);
     }
 }
-

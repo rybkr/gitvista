@@ -32,13 +32,9 @@ export function clearRoot(root) {
     root.innerHTML = "";
 }
 
-/** Bootstraps the graph view (works for both local and hosted modes). */
+/** Bootstraps the local graph view. */
 export function bootstrapGraph(root, options = {}) {
     const {
-        repoId = null,
-        repoPathBuilder = null,
-        navigateToPath = null,
-        replacePath = null,
         parsePermalinkHash = null,
         parseLaunchTarget = null,
         productName = "GitVista",
@@ -65,10 +61,7 @@ export function bootstrapGraph(root, options = {}) {
     const banner = createConnectionBanner();
     document.body.appendChild(banner.el);
 
-    const overlay = createRepoUnavailableOverlay({
-        repoId,
-        onNavigateHome: repoId && navigateToPath ? () => navigateToPath("/") : null,
-    });
+    const overlay = createRepoUnavailableOverlay();
     document.body.appendChild(overlay.el);
 
     function setConnectionState(state) {
@@ -190,19 +183,6 @@ export function bootstrapGraph(root, options = {}) {
     repoTabContent.style.flexDirection = "column";
     repoTabContent.style.flex = "1";
     repoTabContent.style.overflow = "hidden";
-
-    // In hosted mode, add a "Back to repos" button at the top of the sidebar
-    if (repoId) {
-        const backBtn = document.createElement("button");
-        backBtn.className = "back-to-repos";
-        backBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg> Back to repos`;
-        backBtn.addEventListener("click", () => {
-            navigateToPath?.("/");
-        });
-        repoTabContent.appendChild(backBtn);
-    }
 
     repoTabContent.appendChild(indexView.el);
 
@@ -417,15 +397,10 @@ export function bootstrapGraph(root, options = {}) {
             }
         },
         onCommitSelect: (hash) => {
-            if (repoId) {
-                replacePath?.(repoPathBuilder ? repoPathBuilder(repoId, hash) : (hash ? `/repo/${repoId}/${hash}` : `/repo/${repoId}`));
+            if (hash) {
+                history.replaceState(null, "", "#" + hash);
             } else {
-                // Local mode
-                if (hash) {
-                    history.replaceState(null, "", "#" + hash);
-                } else {
-                    history.replaceState(null, "", location.pathname);
-                }
+                history.replaceState(null, "", location.pathname);
             }
             // Update breadcrumb on commit selection.
             refreshBreadcrumb();
