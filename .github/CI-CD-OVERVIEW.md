@@ -53,14 +53,14 @@ This document provides a high-level overview of the GitVista CI/CD infrastructur
 │  │              │  │   ~10s       │  │              │         │
 │  └──────────────┘  └──────────────┘  └──────────────┘         │
 │                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
-│  │   Docker     │  │    Deps      │  │  CI Status   │         │
-│  │   Build      │  │   Check      │  │              │         │
-│  │              │  │              │  │  (aggregator)│         │
-│  │  (image)     │  │ (go mod tidy)│  │              │         │
-│  │              │  │              │  │   <1s        │         │
-│  │   ~3min      │  │   ~30s       │  │              │         │
-│  └──────────────┘  └──────────────┘  └──────────────┘         │
+│  ┌──────────────┐  ┌──────────────┐                           │
+│  │    Deps      │  │  CI Status   │                           │
+│  │   Check      │  │              │                           │
+│  │              │  │  (aggregator)│                           │
+│  │ (go mod tidy)│  │              │                           │
+│  │              │  │   <1s        │                           │
+│  │   ~30s       │  │              │                           │
+│  └──────────────┘  └──────────────┘                           │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
@@ -71,7 +71,7 @@ This document provides a high-level overview of the GitVista CI/CD infrastructur
 │  ALL CHECKS MUST PASS:                                         │
 │  ✅ Format     ✅ Vet       ✅ Lint       ✅ Security           │
 │  ✅ Tests      ✅ Integration  ✅ E2E    ✅ JS Validation       │
-│  ✅ Build      ✅ Docker    ✅ Dependencies  ✅ Status          │
+│  ✅ Build      ✅ Dependencies  ✅ Status                      │
 │                                                                 │
 │  Result: ✅ PASS → Can Merge                                   │
 │  Result: ❌ FAIL → Cannot Merge (fix and re-push)             │
@@ -148,7 +148,7 @@ This document provides a high-level overview of the GitVista CI/CD infrastructur
 - Go 1.26 (can extend to multiple versions)
 - Node.js 20 (for JavaScript validation)
 
-**Jobs:** 12 parallel jobs (see architecture diagram)
+**Jobs:** 11 parallel jobs (see architecture diagram)
 
 **Duration:** ~3-5 minutes total
 
@@ -212,9 +212,8 @@ GitHub Actions triggered
   ├─ Job 7: E2E (go test -tags=e2e)
   ├─ Job 8: JavaScript (node --check)
   ├─ Job 9: Build (go build)
-  ├─ Job 10: Docker (docker build)
-  ├─ Job 11: Dependencies (go mod tidy -check)
-  └─ Job 12: CI Status (aggregator)
+  ├─ Job 10: Dependencies (go mod tidy -check)
+  └─ Job 11: CI Status (aggregator)
   ↓
 All jobs complete
   ├─ All pass? → PR ready for review (green checkmark)
@@ -283,12 +282,6 @@ Merge PR → Code enters main branch
 - **How:** `go build -v ./cmd/vista` and `./cmd/gitcli`
 - **Recovery:** Fix compilation errors (missing imports, syntax)
 
-### Docker Build
-- **Why:** Validates containerized version builds correctly
-- **What:** Builds production Docker image
-- **How:** `docker build .` with multi-stage Dockerfile
-- **Recovery:** Fix Dockerfile, missing files, or container environment
-
 ### Dependencies (go mod tidy -check)
 - **Why:** Ensures go.mod and go.sum stay synchronized
 - **What:** Validates module files are clean
@@ -322,14 +315,13 @@ make lint          # ~30s
 
 **Breakdown:**
 - Format, Vet: < 1 minute (minimal work)
-- Lint, Security, Build, Docker, Deps: 1-3 minutes each
+- Lint, Security, Build, Deps: 1-3 minutes each
 - Tests (unit, integration, E2E): up to 3 minutes each
 - JavaScript validation: < 10 seconds
 - CI Status aggregator: < 1 second
 
 **Optimization opportunities:**
 - Only run E2E on main branch (not all PRs)
-- Cache Docker layers more aggressively
 - Parallel matrix testing across Go versions
 
 ## Security Considerations
@@ -463,10 +455,6 @@ Which job failed? (Check GitHub Actions tab)
   ├─ Build
   │  ↓
   │  Fix: Check for missing imports, syntax errors
-  │
-  ├─ Docker Build
-  │  ↓
-  │  Fix: Test locally (docker build .), review Dockerfile
   │
   └─ Dependencies
      ↓
