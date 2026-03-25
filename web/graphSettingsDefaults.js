@@ -14,7 +14,7 @@ export const DEFAULT_PHYSICS = Object.freeze({
 });
 
 /** Default scope values (no filtering). */
-export const DEFAULT_SCOPE = Object.freeze({
+const DEFAULT_SCOPE = Object.freeze({
     depthLimit: Infinity,
     timeWindow: "all",
     branchRules: {},

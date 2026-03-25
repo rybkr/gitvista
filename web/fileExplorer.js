@@ -899,25 +899,28 @@ export function createFileExplorer() {
             return;
         }
 
+        const gen = ++state.generation;
         let resolvedCommit = commit;
         const hasTree = typeof commit.tree === "string" && commit.tree.length > 0;
         if (!hasTree) {
             try {
                 const fetched = await fetchCommit(commit.hash);
+                if (state.generation !== gen) return;
                 if (fetched) {
                     resolvedCommit = fetched;
                 }
             } catch (err) {
+                if (state.generation !== gen) return;
                 console.error("Failed to hydrate commit for file explorer:", err);
             }
         }
 
+        if (state.generation !== gen) return;
         if (typeof resolvedCommit.tree !== "string" || resolvedCommit.tree.length === 0) {
             console.error("Failed to open commit in file explorer: missing tree hash", resolvedCommit.hash);
             return;
         }
 
-        state.generation++;
         state.commitHash = resolvedCommit.hash;
         state.commitMessage = resolvedCommit.message;
         state.rootTreeHash = resolvedCommit.tree;
@@ -943,7 +946,6 @@ export function createFileExplorer() {
         render();
 
         try {
-            const gen = state.generation;
             const rootTree = await fetchTree(resolvedCommit.tree);
             if (state.generation !== gen) return;
             state.treeCache.set(resolvedCommit.tree, rootTree);
@@ -959,7 +961,6 @@ export function createFileExplorer() {
 
         const blameKey = `${state.commitHash}:`;
         try {
-            const gen = state.generation;
             const blameData = await fetchBlame(state.commitHash, "");
             if (state.generation !== gen) return;
             state.blameCache.set(blameKey, blameData);

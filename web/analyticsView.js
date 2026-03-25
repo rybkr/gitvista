@@ -7,6 +7,7 @@
  */
 
 import { getAuthorColor } from "./utils/colors.js";
+import { createInfoButton } from "./infoButton.js";
 
 const PERIODS = [
     { label: "3m", months: 3 },
@@ -73,28 +74,6 @@ function formatWeekRange(ts) {
 /** Reads a CSS variable from the document. */
 function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
-function createInfoButton(text, id) {
-    const wrap = document.createElement("span");
-    wrap.className = "analytics-help";
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "analytics-help-button";
-    button.setAttribute("aria-label", `Explain ${id}`);
-    button.setAttribute("aria-describedby", `analytics-help-${id}`);
-    button.textContent = "i";
-
-    const tooltip = document.createElement("span");
-    tooltip.className = "analytics-help-tooltip";
-    tooltip.id = `analytics-help-${id}`;
-    tooltip.setAttribute("role", "tooltip");
-    tooltip.textContent = text;
-
-    wrap.appendChild(button);
-    wrap.appendChild(tooltip);
-    return wrap;
 }
 
 /**
@@ -344,7 +323,7 @@ function computeChangeSizeDistribution(commits, diffStats, periodMonths) {
  * @param {number} periodMonths - 0 means all
  * @returns {{ weeks: {ts: number, rate: number}[], avgRate: number }}
  */
-function computeReworkRate(commits, diffStats, periodMonths) {
+export function computeReworkRate(commits, diffStats, periodMonths) {
     let cutoff = 0;
     if (periodMonths > 0) {
         const d = new Date();
@@ -383,23 +362,42 @@ function computeReworkRate(commits, diffStats, periodMonths) {
     }
 
     const weeks = [];
+    const lastTouchedAt = new Map();
+
+    let index = 0;
+    while (index < entries.length) {
+        const groupTs = entries[index].ts;
+        const groupEntries = [];
+        while (index < entries.length && entries[index].ts === groupTs) {
+            groupEntries.push(entries[index]);
+            index++;
+        }
+
+        for (const entry of groupEntries) {
+            entry.reworkedFiles = 0;
+            entry.totalFiles = entry.files.length;
+            for (const file of entry.files) {
+                const previousTs = lastTouchedAt.get(file);
+                if (previousTs !== undefined && groupTs - previousTs <= windowMs) {
+                    entry.reworkedFiles++;
+                }
+            }
+        }
+
+        for (const entry of groupEntries) {
+            for (const file of entry.files) {
+                lastTouchedAt.set(file, groupTs);
+            }
+        }
+    }
+
     for (const [ws, weekEntries] of weekBuckets) {
         let totalFiles = 0;
         let reworkedFiles = 0;
 
         for (const entry of weekEntries) {
-            for (const file of entry.files) {
-                totalFiles++;
-                // Check if this file was modified in a prior commit within the window
-                for (const other of entries) {
-                    if (other.ts >= entry.ts) break;
-                    if (entry.ts - other.ts > windowMs) continue;
-                    if (other.files.includes(file)) {
-                        reworkedFiles++;
-                        break;
-                    }
-                }
-            }
+            totalFiles += entry.totalFiles || 0;
+            reworkedFiles += entry.reworkedFiles || 0;
         }
 
         const rate = totalFiles > 0 ? (reworkedFiles / totalFiles) * 100 : 0;
@@ -563,11 +561,6 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
             await Promise.allSettled(tasks);
         })();
         return preloadPromise;
-    }
-
-    function resetToDefaultPeriod() {
-        selectedPeriod = DEFAULT_PERIOD;
-        customStatus.textContent = "";
     }
 
     // ── Root element ──
@@ -796,7 +789,11 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         h3.textContent = title;
         heading.appendChild(h3);
         if (helpText) {
-            heading.appendChild(createInfoButton(helpText, title.toLowerCase().replace(/[^a-z0-9]+/g, "-")));
+            heading.appendChild(createInfoButton({
+                text: helpText,
+                id: title.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+                classPrefix: "analytics",
+            }));
         }
 
         const body = document.createElement("div");
@@ -1834,5 +1831,5 @@ export function createAnalyticsView({ getCommits, getTags, fetchDiffStats, fetch
         hasRenderedContent = true;
     }
 
-    return { el, update, preload, resetToDefaultPeriod };
+    return { el, update, preload };
 }

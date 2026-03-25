@@ -8,13 +8,10 @@
 
 import { apiUrl } from "./apiBase.js";
 import { apiFetch } from "./apiFetch.js";
+import { BACK_BUTTON_ICON_SVG } from "./backButtonIcon.js";
 import { createInlineError } from "./inlineError.js";
 import { getFileIcon } from "./fileIcons.js";
 import { loadHighlightJs } from "./hljs.js";
-
-const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
 
 export function createFileContentViewer() {
     const el = document.createElement("div");
@@ -22,6 +19,7 @@ export function createFileContentViewer() {
     el.style.display = "none"; // Hidden by default
 
     let onBackCallback = null;
+    let renderRequestId = 0;
 
     async function fetchBlob(blobHash) {
         const response = await apiFetch(apiUrl(`/blob/${blobHash}`));
@@ -38,18 +36,20 @@ export function createFileContentViewer() {
     }
 
     async function open(blobHash, fileName) {
+        const requestId = ++renderRequestId;
         el.style.display = "flex";
         el.innerHTML = '<div class="file-content-loading">Loading...</div>';
 
         try {
             const blobData = await fetchBlob(blobHash);
+            if (requestId !== renderRequestId) return;
 
             el.innerHTML = "";
 
             // Back button
             const backBtn = document.createElement("button");
             backBtn.className = "file-content-back";
-            backBtn.innerHTML = BACK_SVG + " Back";
+            backBtn.innerHTML = BACK_BUTTON_ICON_SVG + " Back";
             backBtn.addEventListener("click", () => {
                 if (onBackCallback) {
                     onBackCallback();
@@ -117,7 +117,7 @@ export function createFileContentViewer() {
 
                 // Lazy-load hljs and apply highlighting
                 loadHighlightJs().then((hljs) => {
-                    if (hljs && body.contains(codeEl)) {
+                    if (requestId === renderRequestId && hljs && body.contains(codeEl)) {
                         hljs.highlightElement(codeEl);
                     }
                 });
@@ -134,6 +134,7 @@ export function createFileContentViewer() {
             el.appendChild(body);
 
         } catch (error) {
+            if (requestId !== renderRequestId) return;
             el.innerHTML = "";
             el.appendChild(createInlineError({
                 message: `Error loading file: ${error.message}`,
@@ -143,6 +144,7 @@ export function createFileContentViewer() {
     }
 
     function close() {
+        renderRequestId++;
         el.style.display = "none";
         el.innerHTML = "";
     }

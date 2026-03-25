@@ -7,6 +7,7 @@
 
 import { apiUrl } from "./apiBase.js";
 import { createDiffContentViewer } from "./diffContentViewer.js";
+import { createInfoButton } from "./infoButton.js";
 
 // Circle with filled dot (recording / active editing)
 const ICON_WORKING = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -122,28 +123,6 @@ function createFileCard(file, animClass, fileAction, diffAction) {
     return card;
 }
 
-function createInfoButton(text, id) {
-    const wrap = document.createElement("span");
-    wrap.className = "staging-help";
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "staging-help-button";
-    button.setAttribute("aria-label", `Explain ${id}`);
-    button.setAttribute("aria-describedby", `staging-help-${id}`);
-    button.textContent = "i";
-
-    const tooltip = document.createElement("span");
-    tooltip.className = "staging-help-tooltip";
-    tooltip.id = `staging-help-${id}`;
-    tooltip.setAttribute("role", "tooltip");
-    tooltip.textContent = text;
-
-    wrap.appendChild(button);
-    wrap.appendChild(tooltip);
-    return wrap;
-}
-
 function createZone(id, icon, label, colorModifier, helpText) {
     const zone = document.createElement("div");
     zone.className = `staging-zone staging-zone--${id}`;
@@ -167,7 +146,7 @@ function createZone(id, icon, label, colorModifier, helpText) {
 
     titleRow.appendChild(labelSpan);
     if (helpText) {
-        titleRow.appendChild(createInfoButton(helpText, id));
+        titleRow.appendChild(createInfoButton({ text: helpText, id, classPrefix: "staging" }));
     }
 
     const meta = document.createElement("span");
@@ -481,5 +460,11 @@ export function createStagingView(options = {}) {
         update: updateStatus,
         updateStatus,
         updateHead,
+        destroy() {
+            clearInterval(pruneTimer);
+            diffViewer.close();
+            activeDiffContext = null;
+            el.remove();
+        },
     };
 }

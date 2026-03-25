@@ -72,7 +72,3 @@ export function buildHostedRepoLoadingPath(accountSlug, repoId) {
 export function buildHostedRepoApiBase(accountSlug, repoId) {
     return `/api/accounts/${accountSlug || DEFAULT_HOSTED_ACCOUNT_SLUG}/repos/${repoId}`;
 }
-
-export function buildHostedReposApiPath(accountSlug) {
-    return `/api/accounts/${accountSlug || DEFAULT_HOSTED_ACCOUNT_SLUG}/repos`;
-}

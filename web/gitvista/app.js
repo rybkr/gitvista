@@ -367,7 +367,6 @@ export function bootstrapGraph(root, options = {}) {
                 ensureAnalyticsLoaded()
                     .then((view) => {
                         if (!view) return;
-                        view.resetToDefaultPeriod();
                         preloadAnalyticsOnce();
                         requestAnimationFrame(() => view.update());
                     })
@@ -796,9 +795,23 @@ export function bootstrapGraph(root, options = {}) {
     }
 
     return () => {
+        if (disposed) {
+            return;
+        }
         disposed = true;
         backendSession?.destroy?.();
+        backendSession = null;
         keyboardShortcuts.destroy();
+        keyboardHelp.destroy?.();
+        search.destroy?.();
+        graphFilters.destroy?.();
+        graphSettings.destroy?.();
+        telemetryHud.destroy?.();
+        graph.setMinimapCallback?.(null);
+        minimap.destroy?.();
+        graph.destroy?.();
+        stagingView.destroy?.();
+        workbench?.destroy?.();
         banner.destroy?.();
         overlay.destroy?.();
         statusIndicator.remove();

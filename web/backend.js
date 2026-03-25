@@ -79,6 +79,16 @@ function openWebSocket({
         }
     }
 
+    function scheduleReconnect() {
+        if (destroyed) return;
+
+        reconnectAttempt++;
+        notifyState("reconnecting", reconnectAttempt);
+        logger?.info(`Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt})`);
+        reconnectTimer = setTimeout(() => connect(), reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
+    }
+
     function connect() {
         if (destroyed) return;
         reconnectTimer = null;
@@ -87,7 +97,7 @@ function openWebSocket({
             socket = new WebSocket(url);
         } catch (error) {
             logger?.error("WebSocket setup failed", error);
-            notifyState("disconnected");
+            scheduleReconnect();
             return;
         }
 
@@ -119,13 +129,7 @@ function openWebSocket({
                 reason: event.reason || "No reason provided",
             });
 
-            if (destroyed) return;
-
-            reconnectAttempt++;
-            notifyState("reconnecting", reconnectAttempt);
-            logger?.info(`Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt})`);
-            reconnectTimer = setTimeout(() => connect(), reconnectDelay);
-            reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
+            scheduleReconnect();
         });
 
         socket.addEventListener("error", (error) => {

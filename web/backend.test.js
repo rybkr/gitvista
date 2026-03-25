@@ -76,4 +76,43 @@ describe("startBackend", () => {
             globalThis.WebSocket = originalWebSocket;
         }
     });
+
+    it("retries when WebSocket construction fails before a socket is created", async () => {
+        globalThis.location = { protocol: "http:", host: "example.com" };
+
+        const states = [];
+        let constructorCalls = 0;
+        let timeoutDelay = null;
+        const originalWebSocket = globalThis.WebSocket;
+        const originalSetTimeout = globalThis.setTimeout;
+
+        class ThrowingWebSocket {
+            constructor() {
+                constructorCalls++;
+                throw new Error("boom");
+            }
+        }
+
+        globalThis.WebSocket = ThrowingWebSocket;
+        globalThis.setTimeout = (fn, delay) => {
+            timeoutDelay = delay;
+            return { fn, delay };
+        };
+
+        try {
+            const { startBackend } = await import("./backend.js");
+            const session = startBackend({
+                onConnectionStateChange: (state, attempt) => states.push([state, attempt ?? 0]),
+            });
+
+            assert.equal(constructorCalls, 1);
+            assert.deepEqual(states, [["reconnecting", 1]]);
+            assert.equal(timeoutDelay, 1000);
+
+            session.destroy();
+        } finally {
+            globalThis.WebSocket = originalWebSocket;
+            globalThis.setTimeout = originalSetTimeout;
+        }
+    });
 });

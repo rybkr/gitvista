@@ -19,15 +19,12 @@
 
 import { loadHighlightJs, getLanguageFromPath } from "./hljs.js";
 import { apiFetch } from "./apiFetch.js";
+import { BACK_BUTTON_ICON_SVG } from "./backButtonIcon.js";
 import { createInlineError } from "./inlineError.js";
 
 // Kick off CDN loading immediately so the script is ready before the first
 // show() call.  This is a module-level side effect that is intentional.
 const hljsReady = loadHighlightJs();
-
-const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
 
 // How many extra context lines each "Expand context" click adds
 const CONTEXT_EXPAND_STEP = 5;
@@ -42,10 +39,20 @@ export function createDiffContentViewer() {
 
     let onBackCallback = null;
     let headerActionRenderer = null;
+    let renderRequestId = 0;
 
     // State tracking for the currently displayed diff, used by expand-context
     let currentFetchUrl = null;       // URL used to fetch the current diff
     let currentContextLines = DEFAULT_CONTEXT_LINES;
+
+    function claimRenderRequest() {
+        renderRequestId += 1;
+        return renderRequestId;
+    }
+
+    function isActiveRenderRequest(requestId) {
+        return requestId === renderRequestId;
+    }
 
     /**
      * Create a status badge element for a given file status.
@@ -195,6 +202,7 @@ export function createDiffContentViewer() {
 
         btn.addEventListener("click", () => {
             if (!currentFetchUrl) return;
+            const requestId = claimRenderRequest();
 
             // Increment context for this session
             currentContextLines += CONTEXT_EXPAND_STEP;
@@ -203,22 +211,25 @@ export function createDiffContentViewer() {
             const url = new URL(currentFetchUrl, window.location.origin);
             url.searchParams.set("context", String(currentContextLines));
 
-            showLoading();
+            renderLoading(requestId);
             apiFetch(url.toString())
                 .then((res) => {
+                    if (!isActiveRenderRequest(requestId)) return null;
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     return res.json();
                 })
                 .then((newDiff) => {
+                    if (!isActiveRenderRequest(requestId) || !newDiff) return;
                     // Preserve status from the original diff since working-tree
                     // diffs returned by the API may not carry it in the re-fetch
                     if (!newDiff.status) {
                         newDiff.status = fileDiff.status;
                     }
-                    show(newDiff);
+                    return show(newDiff, requestId);
                 })
                 .catch((err) => {
-                    showError(`Failed to expand context: ${err.message}`);
+                    if (!isActiveRenderRequest(requestId)) return;
+                    renderError(requestId, `Failed to expand context: ${err.message}`);
                 });
         });
 
@@ -252,19 +263,21 @@ export function createDiffContentViewer() {
      * @param {Array} fileDiff.hunks - Array of diff hunks
      * @param {boolean} fileDiff.truncated - Whether diff was truncated
      */
-    async function show(fileDiff) {
+    async function show(fileDiff, requestId = claimRenderRequest()) {
         // Resolve hljs — already in-flight from module init, so this almost
         // never waits more than a few milliseconds on a warm page.
         const hljs     = await hljsReady;
+        if (!isActiveRenderRequest(requestId)) return;
         const language = getLanguageFromPath(fileDiff.path);
 
+        if (!isActiveRenderRequest(requestId)) return;
         el.style.display = "flex";
         el.innerHTML = "";
 
         // Back button
         const backBtn = document.createElement("button");
         backBtn.className = "diff-content-back";
-        backBtn.innerHTML = BACK_SVG + " Back";
+        backBtn.innerHTML = BACK_BUTTON_ICON_SVG + " Back";
         backBtn.addEventListener("click", () => {
             if (onBackCallback) {
                 onBackCallback();
@@ -358,7 +371,8 @@ export function createDiffContentViewer() {
     /**
      * Show a loading indicator while a file diff is being fetched.
      */
-    function showLoading() {
+    function renderLoading(requestId) {
+        if (!isActiveRenderRequest(requestId)) return;
         el.style.display = "flex";
         el.innerHTML = "";
 
@@ -377,11 +391,16 @@ export function createDiffContentViewer() {
         el.appendChild(loading);
     }
 
+    function showLoading() {
+        renderLoading(claimRenderRequest());
+    }
+
     /**
      * Show an error message when a file diff fails to load.
      * @param {string} message - The error message to display
      */
-    function showError(message) {
+    function renderError(requestId, message) {
+        if (!isActiveRenderRequest(requestId)) return;
         el.style.display = "flex";
         el.innerHTML = "";
 
@@ -391,15 +410,24 @@ export function createDiffContentViewer() {
         el.appendChild(errorEl);
     }
 
+    function showError(message) {
+        renderError(claimRenderRequest(), message);
+    }
+
     /**
      * Show an error with a retry button.
      * @param {string} message - The error message to display
      * @param {() => void} onRetry - Callback to invoke on retry
      */
-    function showRetryError(message, onRetry) {
+    function renderRetryError(requestId, message, onRetry) {
+        if (!isActiveRenderRequest(requestId)) return;
         el.style.display = "flex";
         el.innerHTML = "";
         el.appendChild(createInlineError({ message, onRetry }));
+    }
+
+    function showRetryError(message, onRetry) {
+        renderRetryError(claimRenderRequest(), message, onRetry);
     }
 
     /**
@@ -409,22 +437,27 @@ export function createDiffContentViewer() {
      * @param {string} url - Full URL for the diff API endpoint (without ?context=)
      */
     async function showFromUrl(url) {
+        const requestId = claimRenderRequest();
         // Reset context depth for each new file view
         currentFetchUrl = url;
         currentContextLines = DEFAULT_CONTEXT_LINES;
 
-        showLoading();
+        renderLoading(requestId);
         try {
             const res = await apiFetch(url);
+            if (!isActiveRenderRequest(requestId)) return;
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const fileDiff = await res.json();
-            show(fileDiff);
+            if (!isActiveRenderRequest(requestId)) return;
+            await show(fileDiff, requestId);
         } catch (err) {
-            showRetryError(`Failed to load diff: ${err.message}`, () => showFromUrl(url));
+            if (!isActiveRenderRequest(requestId)) return;
+            renderRetryError(requestId, `Failed to load diff: ${err.message}`, () => showFromUrl(url));
         }
     }
 
     function close() {
+        claimRenderRequest();
         el.style.display = "none";
         el.innerHTML = "";
         currentFetchUrl = null;

@@ -11,12 +11,9 @@
  */
 
 import { loadHighlightJs, getLanguageFromPath } from "./hljs.js";
+import { BACK_BUTTON_ICON_SVG } from "./backButtonIcon.js";
 
 const hljsReady = loadHighlightJs();
-
-const BACK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
 
 export function createMergePreviewDiffViewer() {
     const el = document.createElement("div");
@@ -24,6 +21,7 @@ export function createMergePreviewDiffViewer() {
     el.style.display = "none";
 
     let onBackCallback = null;
+    let renderRequestId = 0;
 
     function highlightLine(text, hljs, language) {
         if (!hljs || !language || !text) return null;
@@ -170,16 +168,19 @@ export function createMergePreviewDiffViewer() {
     }
 
     async function show(data) {
+        const requestId = ++renderRequestId;
         const hljs = await hljsReady;
+        if (requestId !== renderRequestId) return;
         const language = getLanguageFromPath(data.path);
 
+        if (requestId !== renderRequestId) return;
         el.style.display = "flex";
         el.innerHTML = "";
 
         // Back button
         const backBtn = document.createElement("button");
         backBtn.className = "diff-content-back";
-        backBtn.innerHTML = BACK_SVG + " Back";
+        backBtn.innerHTML = BACK_BUTTON_ICON_SVG + " Back";
         backBtn.addEventListener("click", () => {
             if (onBackCallback) onBackCallback();
         });
@@ -253,6 +254,7 @@ export function createMergePreviewDiffViewer() {
     }
 
     function showLoading() {
+        renderRequestId++;
         el.style.display = "flex";
         el.innerHTML = "";
 
@@ -272,6 +274,7 @@ export function createMergePreviewDiffViewer() {
     }
 
     function showError(message) {
+        renderRequestId++;
         el.style.display = "flex";
         el.innerHTML = "";
 
@@ -282,6 +285,7 @@ export function createMergePreviewDiffViewer() {
     }
 
     function close() {
+        renderRequestId++;
         el.style.display = "none";
         el.innerHTML = "";
     }

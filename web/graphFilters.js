@@ -11,6 +11,7 @@
  * focusBranch is the full branch name (e.g. "refs/heads/main") or "" for none.
  */
 
+import { friendlyBranchName } from "./graph/utils/refs.js";
 import { logger } from "./logger.js";
 
 const STORAGE_KEY = "gitvista-filter-state";
@@ -67,6 +68,7 @@ export function createGraphFilters(options) {
     const { onChange } = options;
     let filterState = { ...(options.initialState ?? loadFilterState()) };
     let isOpen = false;
+    let openRafId = null;
 
     // ── Trigger button ────────────────────────────────────────────────────────
 
@@ -238,7 +240,8 @@ export function createGraphFilters(options) {
         trigger.classList.add("is-active");
         trigger.setAttribute("aria-expanded", "true");
         // Listen for outside clicks on next tick (so the current click doesn't close it)
-        requestAnimationFrame(() => {
+        openRafId = requestAnimationFrame(() => {
+            openRafId = null;
             document.addEventListener("pointerdown", onOutsideClick, true);
             document.addEventListener("keydown", onEscapeKey, true);
         });
@@ -249,6 +252,10 @@ export function createGraphFilters(options) {
         popover.classList.remove("is-open");
         trigger.classList.remove("is-active");
         trigger.setAttribute("aria-expanded", "false");
+        if (openRafId !== null) {
+            cancelAnimationFrame(openRafId);
+            openRafId = null;
+        }
         document.removeEventListener("pointerdown", onOutsideClick, true);
         document.removeEventListener("keydown", onEscapeKey, true);
     }
@@ -340,13 +347,4 @@ export function createGraphFilters(options) {
         getState: () => ({ ...filterState }),
         destroy,
     };
-}
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-function friendlyBranchName(name) {
-    if (name.startsWith("refs/heads/")) return name.slice("refs/heads/".length);
-    if (name.startsWith("refs/remotes/")) return name.slice("refs/remotes/".length);
-    if (name.startsWith("refs/")) return name.slice("refs/".length);
-    return name;
 }

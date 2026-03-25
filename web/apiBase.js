@@ -1,15 +1,6 @@
 let base = "/api"; // local mode default
 let repoToken = "";
 
-export function setApiBase(newBase, nextRepoToken = "") {
-    base = newBase;
-    repoToken = nextRepoToken;
-}
-
-export function getApiBase() {
-    return base;
-}
-
 export function getRepoToken() {
     return repoToken;
 }

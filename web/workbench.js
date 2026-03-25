@@ -268,10 +268,21 @@ export function createWorkbench(views) {
     };
     media?.addEventListener?.("change", onSystemThemeChange);
 
+    function destroy() {
+        observer.disconnect();
+        media?.removeEventListener?.("change", onSystemThemeChange);
+        api?.dispose?.();
+        panelsByName.clear();
+        iconButtons.clear();
+        panelRegistry.clear();
+        el.remove();
+    }
+
     return {
         el,
         isViewVisible: (name) => panelsByName.has(name),
         focusView: (name) => openView(name),
         getActiveViews: () => ({ primary: api.activePanel?.id ?? null, secondary: null }),
+        destroy,
     };
 }
