@@ -38,13 +38,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/go/bin
-          key: go-tools-${{ runner.os }}-go1.26-goimports-v0.38.0-govulncheck-v1.1.4-gosec-v2.22.9
+          key: go-tools-${{ runner.os }}-go1.26-goimports-v0.38.0-govulncheck-v1.1.4-gosec-v2.22.9-golangci-lint-v2.4.0
 
       - name: Install missing CI tools
         run: |
           command -v goimports >/dev/null || go install golang.org/x/tools/cmd/goimports@v0.38.0
           command -v govulncheck >/dev/null || go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           command -v gosec >/dev/null || go install github.com/securego/gosec/v2/cmd/gosec@v2.22.9
+          command -v golangci-lint >/dev/null || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.4.0
 
       - name: Check formatting
         run: make fmt-check
