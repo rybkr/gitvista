@@ -27,12 +27,11 @@ export function cleanupActiveView(cleanup) {
 }
 
 export function clearRoot(root) {
-    // Remove status dot
     document.querySelectorAll("[data-gv-status-dot]").forEach((el) => el.remove());
     root.innerHTML = "";
 }
 
-/** Bootstraps the local graph view. */
+/** Bootstraps the graph view. */
 export function bootstrapGraph(root, options = {}) {
     const {
         parsePermalinkHash = null,
@@ -732,7 +731,6 @@ export function bootstrapGraph(root, options = {}) {
         onStatus: (status) => {
             const fileExplorer = fileExplorerLoader.get();
             latestStatus = status;
-            indexView.updateStatus(status);
             fileExplorer?.updateWorkingTreeStatus?.(status);
             stagingView.updateStatus(status);
         },

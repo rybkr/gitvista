@@ -205,7 +205,7 @@ export class LaneStrategy {
 		/** @type {Array<string>} Branch name owning each logical lane (index → name) */
 		this._laneOwners = [];
 
-		/** @type {Map<string, number>|null} Phase 1 commit hash → lane index */
+		/** @type {Map<string, number>|null} First-parent-owned commit hash → lane index */
 		this._phase1Commits = null;
 
 		/** @type {Array<Object>} Computed segments with position info */
@@ -372,7 +372,6 @@ export class LaneStrategy {
 	 * @param {Object} node The node that was dragged
 	 */
 	handleDragEnd(node) {
-		// No-op: dragging is disabled
 	}
 
 	/**
@@ -444,17 +443,15 @@ export class LaneStrategy {
 	/**
 	 * Assigns commits to lanes using a first-parent ownership heuristic.
 	 *
-	 * Phase 1 — First-parent chains:
-	 *   Walk the first-parent chain from each branch tip in priority order
-	 *   (main/master/trunk first, then alphabetical). Each chain claims its
-	 *   commits for a dedicated lane. Walking stops when a commit already
-	 *   claimed by a higher-priority branch is reached, so shared ancestors
-	 *   (like the init commit) are attributed to the most important branch.
+	 * Walk the first-parent chain from each branch tip in priority order
+	 * (main/master/trunk first, then alphabetical). Each chain claims its
+	 * commits for a dedicated lane. Walking stops when a commit already
+	 * claimed by a higher-priority branch is reached, so shared ancestors
+	 * are attributed to the highest-priority branch.
 	 *
-	 * Phase 2 — Remaining commits:
-	 *   Any commits not on a first-parent chain (merge parents reachable only
-	 *   via non-first-parent edges) are assigned via column-reuse: lowest
-	 *   free lane, with active-lane tracking for convergence.
+	 * Any commits not on a claimed first-parent chain are assigned by reusing
+	 * the lowest available lane while tracking which parent each lane expects
+	 * next so merges converge cleanly.
 	 *
 	 * @param {Array<Object>} nodes Array of graph nodes
 	 * @param {Map<string, Object>} commits Map of commit hash to commit data
@@ -468,7 +465,6 @@ export class LaneStrategy {
 
 		const commitHashes = new Set(commitNodes.map((n) => n.hash));
 
-		// --- Phase 1: First-parent chain ownership ---
 		const sortedBranches = this._prioritizeBranches(branches);
 		const commitOwner = new Map(); // hash → lane index
 		let nextLane = 0;
@@ -495,7 +491,6 @@ export class LaneStrategy {
 			}
 		}
 
-		// --- Phase 2: Assign remaining commits (merge parents, orphans) ---
 		const ordered = [...commitNodes].sort((a, b) => {
 			const aTime = getCommitTimestamp(commits.get(a.hash));
 			const bTime = getCommitTimestamp(commits.get(b.hash));
@@ -579,8 +574,7 @@ export class LaneStrategy {
 			} else {
 				const firstParent = parents[0];
 
-				// If this commit was assigned by Phase 1, its first parent is on
-				// the same chain — always continue the lane.
+				// Commits claimed from a prioritized first-parent chain keep that lane.
 				if (commitOwner.get(hash) === lane) {
 					activeLanes[lane] = firstParent;
 				} else if (!commitOwner.has(firstParent) || commitOwner.get(firstParent) === lane) {
@@ -634,8 +628,8 @@ export class LaneStrategy {
 			}
 		}
 
-		// Save Phase 1 ownership so _buildSegments can distinguish
-		// Phase 1 commits from Phase 2 commits that reused the same lane.
+		// Preserve first-parent ownership so _buildSegments can distinguish
+		// lane owners from later commits that reused the same lane.
 		this._phase1Commits = commitOwner;
 
 		// Apply lane assignments to nodes
@@ -1062,8 +1056,8 @@ export class LaneStrategy {
 
 			for (const groupHashes of groups.values()) {
 				// Only inherit the lane's branch name if this segment actually
-				// contains Phase 1 commits for this lane.  Phase 2 commits that
-				// reused a freed lane slot should NOT inherit the old name.
+				// contains first-parent-owned commits for this lane. Later commits
+				// that reused a freed lane slot should not inherit the old name.
 				const ownsLane = groupHashes.some(
 					(h) => this._phase1Commits?.get(h) === laneIndex,
 				);
@@ -1593,9 +1587,7 @@ export class LaneStrategy {
 
 	/**
 	 * Disable auto-centering.
-	 * No-op for lane layout since it doesn't auto-center.
 	 */
 	disableAutoCenter() {
-		// No-op: lane layout doesn't auto-center
 	}
 }

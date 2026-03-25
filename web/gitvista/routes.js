@@ -1,14 +1,12 @@
 const COMMIT_HASH_RE = /^[0-9a-f]{40}$/i;
-export function parseLocalHash(hash) {
+export function parseHashFragment(hash) {
     const fragment = typeof hash === "string" ? hash.replace(/^#/, "") : "";
-    if (!fragment) return { page: "repo", repoId: null, commitHash: null, docsSection: null };
-    if (COMMIT_HASH_RE.test(fragment)) return { page: "repo", repoId: null, commitHash: fragment, docsSection: null };
-    return { page: "repo", repoId: null, commitHash: null, docsSection: null };
+    return { commitHash: COMMIT_HASH_RE.test(fragment) ? fragment : null };
 }
 
-export function parseLocalLaunchTarget(search, hash) {
+export function parseLaunchTarget(search, hash) {
     const params = new URLSearchParams(typeof search === "string" ? search : "");
     const path = params.get("path") || null;
-    const commitHash = parseLocalHash(hash)?.commitHash || null;
+    const commitHash = parseHashFragment(hash).commitHash;
     return { path, commitHash };
 }

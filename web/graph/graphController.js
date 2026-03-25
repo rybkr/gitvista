@@ -100,7 +100,6 @@ export function createGraphController(rootElement, options = {}) {
         viewportWidth,
         viewportHeight,
         onTick: tick,
-        onSettle: handleForceSettle,
     });
     const laneStrategy = new LaneStrategy({ onTick: tick });
 
@@ -1511,7 +1510,6 @@ export function createGraphController(rootElement, options = {}) {
             tagReconciliation.changed ||
             linkStructureChanged;
 
-        // Delegate layout updates to the strategy
         layoutStrategy.updateGraph(
             nodes,
             links,
@@ -1521,35 +1519,19 @@ export function createGraphController(rootElement, options = {}) {
             structureChanged,
         );
 
-        // Snap branch and tag nodes AFTER layout so laneIndex/x/y are set
         snapBranchesToTargets(branchReconciliation.alignments);
         snapTagsToTargets(tagReconciliation.alignments);
 
-        // Inject ghost merge node
         injectGhostMergeNode(commitNodeByHash);
 
-        // Apply the active compound predicate (A2 search + A3 filters) to set
-        // node.dimmed.  This runs after layout so lane segments are rebuilt and
-        // newly-created nodes are correctly included in isolation predicates.
         applyDimmingFromPredicate();
 
-        // Center on latest commit if auto-centering is requested
         if (layoutStrategy.shouldAutoCenter()) {
             centerOnLatestCommit();
         }
 
         enqueueHydration(collectVisibleForceHydrationHashes());
 
-    }
-
-    /**
-     * Handles the force simulation convergence event.
-     * Force mode uses the eager path so no Phase B transition is needed.
-     * The onSettle callback is still wired so the settled flag and position
-     * snapshot are captured inside ForceStrategy.
-     */
-    function handleForceSettle() {
-        // No-op
     }
 
     /**
@@ -1574,12 +1556,104 @@ export function createGraphController(rootElement, options = {}) {
         return result;
     }
 
+    function hydrateVisibleEntries(entries) {
+        lastViewportEntryCount = entries.length;
+        const hashesToHydrate = [];
+        for (const entry of entries) {
+            hashesToHydrate.push(entry.hash);
+            const commit = commits.get(entry.hash);
+            for (const parent of commit?.parents ?? []) {
+                hashesToHydrate.push(parent);
+            }
+        }
+        enqueueHydration(hashesToHydrate);
+    }
+
+    function rebuildVisibleGraph(entries, options = {}) {
+        const {
+            skipIfUnchanged = false,
+            reconcileInteractions = false,
+            autoCenter = false,
+        } = options;
+
+        hydrateVisibleEntries(entries);
+
+        const syncResult = nodeMaterializer.synchronize(entries, commits);
+        const { nodes: commitNodes, added = [], removed = [] } = syncResult;
+        if (skipIfUnchanged && added.length === 0 && removed.length === 0) {
+            return false;
+        }
+
+        const materializedHashes = new Set(commitNodes.map((n) => n.hash));
+        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
+
+        const existingBranchNodes = new Map();
+        const existingTagNodes = new Map();
+        for (const node of nodes) {
+            if (node.type === "branch" && node.branch) {
+                existingBranchNodes.set(node.branch, node);
+            } else if (node.type === "tag" && node.tag) {
+                existingTagNodes.set(node.tag, node);
+            }
+        }
+
+        const commitNodeByHash = new Map(commitNodes.map((n) => [n.hash, n]));
+        const branchReconciliation = reconcileBranchNodes(
+            existingBranchNodes,
+            branches,
+            commitNodeByHash,
+        );
+        const tagReconciliation = reconcileTagNodes(
+            existingTagNodes,
+            state.tags,
+            commitNodeByHash,
+        );
+
+        const allNodes = [
+            ...commitNodes,
+            ...(showRefDecorators ? branchReconciliation.nodes : []),
+            ...(showRefDecorators ? tagReconciliation.nodes : []),
+        ];
+        const allLinks = [
+            ...commitLinks,
+            ...(showRefDecorators ? branchReconciliation.links : []),
+            ...(showRefDecorators ? tagReconciliation.links : []),
+        ];
+
+        nodes.splice(0, nodes.length, ...allNodes);
+        links.splice(0, links.length, ...allLinks);
+
+        if (reconcileInteractions) {
+            if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
+                releaseDrag();
+            }
+
+            const currentTarget = tooltipManager.getTargetData();
+            if (currentTarget && !nodes.includes(currentTarget)) {
+                hideTooltip();
+            }
+        }
+
+        if (showRefDecorators) {
+            snapBranchesToTargets(branchReconciliation.alignments);
+            snapTagsToTargets(tagReconciliation.alignments);
+        }
+
+        injectGhostMergeNode(commitNodeByHash);
+        applyDimmingFromPredicate();
+
+        if (autoCenter && layoutStrategy.shouldAutoCenter()) {
+            centerOnLatestCommit();
+        }
+
+        return true;
+    }
+
     /**
      * Lazy graph update — runs laneStrategy on pseudo-nodes, then materializes
      * only the viewport-visible subset as real GraphNode objects.
      */
     function updateGraphLazy() {
-        // 1. Build pseudo-nodes from commits + stash data
         const stashSet = new Set((state.stashes ?? []).map(s => s?.hash).filter(Boolean));
         const stashInternalSet = new Set();
         const stashInternalKinds = new Map();
@@ -1604,97 +1678,17 @@ export function createGraphController(rootElement, options = {}) {
             });
         }
 
-        // 2. Run laneStrategy on pseudo-nodes (computes layout into internal maps)
         const viewport = { width: viewportWidth, height: viewportHeight };
         layoutStrategy.updateGraph(pseudoNodes, [], commits, branches, viewport, true);
 
-        // 3. Build CommitIndex from laneStrategy position data
         commitIndex.rebuild(commits, layoutStrategy.getPositionData(), state.stashes);
 
-        // 4. Query ViewportWindow
         viewportWindow.invalidate();
         const { entries } = viewportWindow.update(zoomTransform, viewportWidth, viewportHeight);
-        lastViewportEntryCount = entries.length;
-        const hashesToHydrate = [];
-        for (const entry of entries) {
-            hashesToHydrate.push(entry.hash);
-            const commit = commits.get(entry.hash);
-            for (const parent of commit?.parents ?? []) {
-                hashesToHydrate.push(parent);
-            }
-        }
-        enqueueHydration(hashesToHydrate);
-
-        // 5. Materialize nodes for visible commits
-        const { nodes: commitNodes } = nodeMaterializer.synchronize(entries, commits);
-
-        // 6. Build links for materialized subgraph only
-        const materializedHashes = new Set(commitNodes.map(n => n.hash));
-        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
-
-        // 7. Reconcile branch/tag nodes (only for branches pointing at materialized commits)
-        const existingBranchNodes = new Map();
-        const existingTagNodes = new Map();
-        for (const node of nodes) {
-            if (node.type === "branch" && node.branch) {
-                existingBranchNodes.set(node.branch, node);
-            } else if (node.type === "tag" && node.tag) {
-                existingTagNodes.set(node.tag, node);
-            }
-        }
-
-        const commitNodeByHash = new Map(commitNodes.map(n => [n.hash, n]));
-        const branchReconciliation = reconcileBranchNodes(
-            existingBranchNodes,
-            branches,
-            commitNodeByHash,
-        );
-        const tagReconciliation = reconcileTagNodes(
-            existingTagNodes,
-            state.tags,
-            commitNodeByHash,
-        );
-
-        // 8. Assemble state.nodes and state.links
-            const allNodes = [
-                ...commitNodes,
-                ...(showRefDecorators ? branchReconciliation.nodes : []),
-                ...(showRefDecorators ? tagReconciliation.nodes : []),
-            ];
-            const allLinks = [
-                ...commitLinks,
-                ...(showRefDecorators ? branchReconciliation.links : []),
-                ...(showRefDecorators ? tagReconciliation.links : []),
-            ];
-
-        nodes.splice(0, nodes.length, ...allNodes);
-        links.splice(0, links.length, ...allLinks);
-
-        if (dragState && !dragState.laneDrag && !nodes.includes(dragState.node)) {
-            releaseDrag();
-        }
-
-        const currentTarget = tooltipManager.getTargetData();
-        if (currentTarget && !nodes.includes(currentTarget)) {
-            hideTooltip();
-        }
-
-        // Snap decorators AFTER materialization so positions are set
-        if (showRefDecorators) {
-            snapBranchesToTargets(branchReconciliation.alignments);
-            snapTagsToTargets(tagReconciliation.alignments);
-        }
-
-        // Inject ghost merge node
-        injectGhostMergeNode(commitNodeByHash);
-
-        // Apply dimming
-        applyDimmingFromPredicate();
-
-        // Center on latest commit if auto-centering is requested
-        if (layoutStrategy.shouldAutoCenter()) {
-            centerOnLatestCommit();
-        }
+        rebuildVisibleGraph(entries, {
+            reconcileInteractions: true,
+            autoCenter: true,
+        });
     }
 
     /**
@@ -1704,73 +1698,7 @@ export function createGraphController(rootElement, options = {}) {
      * @param {import("./state/commitIndex.js").CommitEntry[]} entries Visible entries from ViewportWindow.
      */
     function rematerializeFromViewport(entries) {
-        lastViewportEntryCount = entries.length;
-        const hashesToHydrate = [];
-        for (const entry of entries) {
-            hashesToHydrate.push(entry.hash);
-            const commit = commits.get(entry.hash);
-            for (const parent of commit?.parents ?? []) {
-                hashesToHydrate.push(parent);
-            }
-        }
-        enqueueHydration(hashesToHydrate);
-
-        const { nodes: commitNodes, added, removed } = nodeMaterializer.synchronize(entries, commits);
-        if (added.length === 0 && removed.length === 0) return;
-
-        // Rebuild links for new materialized set
-        const materializedHashes = new Set(commitNodes.map(n => n.hash));
-        const commitLinks = buildLinksForMaterialized(commits, materializedHashes);
-
-        // Reconcile branch/tag nodes for currently-materialized commits
-        const existingBranchNodes = new Map();
-        const existingTagNodes = new Map();
-        for (const node of nodes) {
-            if (node.type === "branch" && node.branch) {
-                existingBranchNodes.set(node.branch, node);
-            } else if (node.type === "tag" && node.tag) {
-                existingTagNodes.set(node.tag, node);
-            }
-        }
-
-        const commitNodeByHash = new Map(commitNodes.map(n => [n.hash, n]));
-        const branchReconciliation = reconcileBranchNodes(
-            existingBranchNodes,
-            branches,
-            commitNodeByHash,
-        );
-        const tagReconciliation = reconcileTagNodes(
-            existingTagNodes,
-            state.tags,
-            commitNodeByHash,
-        );
-
-        // Assemble
-        const allNodes = [
-            ...commitNodes,
-            ...(showRefDecorators ? branchReconciliation.nodes : []),
-            ...(showRefDecorators ? tagReconciliation.nodes : []),
-        ];
-        const allLinks = [
-            ...commitLinks,
-            ...(showRefDecorators ? branchReconciliation.links : []),
-            ...(showRefDecorators ? tagReconciliation.links : []),
-        ];
-
-        nodes.splice(0, nodes.length, ...allNodes);
-        links.splice(0, links.length, ...allLinks);
-
-        // Snap decorators
-        if (showRefDecorators) {
-            snapBranchesToTargets(branchReconciliation.alignments);
-            snapTagsToTargets(tagReconciliation.alignments);
-        }
-
-        // Inject ghost merge node
-        injectGhostMergeNode(commitNodeByHash);
-
-        // Re-apply dimming for new nodes
-        applyDimmingFromPredicate();
+        rebuildVisibleGraph(entries, { skipIfUnchanged: true });
     }
 
     /**
@@ -1992,7 +1920,6 @@ export function createGraphController(rootElement, options = {}) {
         for (const n of nodes) {
             if (n.type === "commit") commitMap.set(n.hash, n);
         }
-        // Pass 1: position branch pills below commits
         const bCount = new Map();
         for (const n of nodes) {
             if (n.type !== "branch" || !n.targetHash) continue;
@@ -2005,7 +1932,6 @@ export function createGraphController(rootElement, options = {}) {
             n.maxPillWidth = LANE_BRANCH_CHIP_MAX_WIDTH;
             n.compactLaneChip = true;
         }
-        // Pass 2: position tags below branch pills
         const tCount = new Map();
         for (const n of nodes) {
             if (n.type !== "tag" || !n.targetHash) continue;
@@ -2017,7 +1943,6 @@ export function createGraphController(rootElement, options = {}) {
             n.x = t.x;
             n.y = t.y + NODE_RADIUS + 14 + bc * 25 + (bc > 0 ? 4 : 0) + i * 25;
         }
-        // Pass 3: snap ghost merge node to ours lane
         if (state.mergePreview) {
             const ours = commitMap.get(state.mergePreview.oursHash);
             if (ours) {

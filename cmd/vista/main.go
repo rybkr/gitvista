@@ -1,4 +1,4 @@
-// Package main is the entry point for the local GitVista server.
+// Package main is the entry point for the GitVista server.
 package main
 
 import (
@@ -346,9 +346,9 @@ func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
 	addr := fmt.Sprintf("%s:%s", resolveBindHost(parsed.host), parsed.port)
 	baseURL, openURL := buildURLs(addr, target)
 
-	webFS, err := gitvista.GetLocalWebFS()
+	webFS, err := gitvista.GetWebFS()
 	if err != nil {
-		slog.Error("Failed to load local frontend", "err", err)
+		slog.Error("Failed to load frontend assets", "err", err)
 		return 1
 	}
 

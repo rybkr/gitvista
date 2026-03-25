@@ -254,9 +254,5 @@ export function createIndexView() {
             };
             render();
         },
-        updateStatus(status) {
-            // No-op: Working Tree details were intentionally removed from Repository tab.
-            if (!status) return;
-        },
     };
 }

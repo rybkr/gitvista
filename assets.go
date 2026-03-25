@@ -7,11 +7,11 @@ import (
 )
 
 //go:embed all:web/*.js all:web/*.css all:web/*.png all:web/graph all:web/tooltips all:web/utils all:web/vendor all:web/images all:web/gitvista all:web/local
-var localEmbeddedFS embed.FS
+var embeddedWebFS embed.FS
 
-// GetLocalWebFS returns the embedded filesystem for the local app shell.
-func GetLocalWebFS() (fs.FS, error) {
-	webFS, err := fs.Sub(localEmbeddedFS, "web")
+// GetWebFS returns the embedded web filesystem.
+func GetWebFS() (fs.FS, error) {
+	webFS, err := fs.Sub(embeddedWebFS, "web")
 	if err != nil {
 		return nil, err
 	}
