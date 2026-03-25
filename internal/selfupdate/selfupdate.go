@@ -1,7 +1,6 @@
-// Package selfupdate provides lightweight self-update functionality for
-// GitVista binaries using only Go stdlib. It queries GitHub releases for
-// the latest version, downloads the archive and checksums, verifies
-// integrity, and performs an atomic binary replacement.
+// Package selfupdate provides lightweight self-update functionality for GitVista binaries using only Go stdlib. It
+// queries GitHub releases for the latest version, downloads the archive and checksums, verifies integrity, and performs
+// an atomic binary replacement.
 package selfupdate
 
 import (
@@ -22,6 +21,8 @@ import (
 	"strings"
 )
 
+var replaceBinaryFunc = replaceBinary
+
 // Release represents the minimal fields from a GitHub release API response.
 type Release struct {
 	TagName string `json:"tag_name"`
@@ -41,7 +42,9 @@ func checkLatestFrom(url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("checking latest version: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
@@ -59,18 +62,15 @@ func checkLatestFrom(url string) (string, error) {
 	return rel.TagName, nil
 }
 
-// NeedsUpdate returns true when current differs from latest and current is
-// not a development build ("dev").
+// NeedsUpdate reports whether the current version should be updated.
 func NeedsUpdate(current, latest string) bool {
 	if current == "dev" || current == "" {
 		return false
 	}
-	// Normalize: strip leading "v" for comparison.
 	return strings.TrimPrefix(current, "v") != strings.TrimPrefix(latest, "v")
 }
 
-// ArchiveName returns the platform-specific archive filename for a release
-// (e.g. gitvista_1.2.3_darwin_arm64.tar.gz).
+// ArchiveName returns the platform-specific archive filename for a release (e.g. gitvista_1.2.3_darwin_arm64.tar.gz).
 func ArchiveName(project, version string) string {
 	v := strings.TrimPrefix(version, "v")
 	ext := "tar.gz"
@@ -80,9 +80,8 @@ func ArchiveName(project, version string) string {
 	return fmt.Sprintf("%s_%s_%s_%s.%s", project, v, runtime.GOOS, runtime.GOARCH, ext)
 }
 
-// Update downloads the release archive from GitHub, verifies its SHA-256
-// checksum against the checksums file, extracts the named binary, and
-// atomically replaces the currently running executable.
+// Update downloads the release archive from GitHub, verifies its SHA-256 checksum against the checksums file, extracts
+// the named binary, and atomically replaces the currently running executable.
 func Update(repo, project, version string) error {
 	return updateFrom(
 		fmt.Sprintf("https://github.com/%s/releases/download/%s", repo, version),
@@ -95,13 +94,11 @@ func updateFrom(baseURL, project, version string) error {
 	archiveURL := baseURL + "/" + archive
 	checksumsURL := baseURL + "/checksums.txt"
 
-	// Download archive.
 	archiveData, err := httpGetBytes(archiveURL)
 	if err != nil {
 		return fmt.Errorf("downloading archive: %w", err)
 	}
 
-	// Download and verify checksum.
 	checksumsData, err := httpGetBytes(checksumsURL)
 	if err != nil {
 		return fmt.Errorf("downloading checksums: %w", err)
@@ -112,13 +109,12 @@ func updateFrom(baseURL, project, version string) error {
 		return verifyErr
 	}
 
-	// Extract the binary from the archive.
 	binaryData, err := extractBinary(archiveData, archive, project)
 	if err != nil {
 		return fmt.Errorf("extracting binary: %w", err)
 	}
 
-	return replaceBinary(binaryData)
+	return replaceBinaryFunc(binaryData)
 }
 
 func replaceBinary(binaryData []byte) error {
@@ -131,6 +127,10 @@ func replaceBinary(binaryData []byte) error {
 		return fmt.Errorf("resolving executable path: %w", err)
 	}
 
+	return replaceBinaryAtPath(execPath, binaryData)
+}
+
+func replaceBinaryAtPath(execPath string, binaryData []byte) error {
 	dir := filepath.Dir(execPath)
 	tmp, err := os.CreateTemp(dir, ".gitvista-update-*")
 	if err != nil {
@@ -138,7 +138,9 @@ func replaceBinary(binaryData []byte) error {
 	}
 	tmpPath := tmp.Name()
 
-	cleanup := func() { _ = os.Remove(tmpPath) }
+	cleanup := func() {
+		_ = os.Remove(tmpPath)
+	}
 
 	if _, writeErr := tmp.Write(binaryData); writeErr != nil {
 		_ = tmp.Close()
@@ -206,8 +208,7 @@ func findChecksum(checksums []byte, filename string) (string, error) {
 	return "", fmt.Errorf("checksum not found for %s", filename)
 }
 
-// extractBinary pulls the named binary out of a tar.gz or zip archive held
-// entirely in memory.
+// extractBinary pulls the named binary out of a tar.gz or zip archive held entirely in memory.
 func extractBinary(archiveData []byte, archiveName, binaryName string) ([]byte, error) {
 	if strings.HasSuffix(archiveName, ".zip") {
 		return extractFromZip(archiveData, binaryName)
@@ -220,7 +221,9 @@ func extractFromTarGz(data []byte, binaryName string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gzip reader: %w", err)
 	}
-	defer func() { _ = gr.Close() }()
+	defer func() {
+		_ = gr.Close()
+	}()
 
 	tr := tar.NewReader(gr)
 	for {

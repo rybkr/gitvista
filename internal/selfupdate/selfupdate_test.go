@@ -2,12 +2,15 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -70,6 +73,37 @@ func TestCheckLatest(t *testing.T) {
 				t.Errorf("got tag %q, want %q", tag, tt.wantTag)
 			}
 		})
+	}
+}
+
+func TestCheckLatest_TransportError(t *testing.T) {
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("boom")
+	})
+
+	_, err := checkLatestFrom("https://example.test/releases/latest")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "checking latest version") {
+		t.Fatalf("expected wrapped transport error, got %v", err)
+	}
+}
+
+func TestCheckLatest_Wrapper(t *testing.T) {
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != "https://api.github.com/repos/rybkr/gitvista/releases/latest" {
+			t.Fatalf("unexpected URL %q", req.URL.String())
+		}
+		return newTestResponse(req, http.StatusOK, `{"tag_name": "v1.2.3"}`), nil
+	})
+
+	tag, err := CheckLatest("rybkr/gitvista")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tag != "v1.2.3" {
+		t.Fatalf("got tag %q, want %q", tag, "v1.2.3")
 	}
 }
 
@@ -174,6 +208,82 @@ func TestExtractFromTarGz_NotFound(t *testing.T) {
 	}
 }
 
+func TestExtractFromTarGz_InvalidGzip(t *testing.T) {
+	_, err := extractFromTarGz([]byte("not-gzip"), "gitvista")
+	if err == nil {
+		t.Fatal("expected error for invalid gzip data")
+	}
+	if !strings.Contains(err.Error(), "gzip reader") {
+		t.Fatalf("expected gzip reader error, got %v", err)
+	}
+}
+
+func TestExtractFromZip(t *testing.T) {
+	binaryContent := []byte("windows-binary")
+	archive := makeZip(t, "gitvista.exe", binaryContent)
+
+	got, err := extractFromZip(archive, "gitvista")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(got, binaryContent) {
+		t.Fatalf("got %q, want %q", got, binaryContent)
+	}
+}
+
+func TestExtractFromZip_NotFound(t *testing.T) {
+	archive := makeZip(t, "other.exe", []byte("data"))
+
+	_, err := extractFromZip(archive, "gitvista")
+	if err == nil {
+		t.Fatal("expected error for missing binary")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestExtractBinary_Zip(t *testing.T) {
+	binaryContent := []byte("windows-binary")
+	archive := makeZip(t, "nested/gitvista.exe", binaryContent)
+
+	got, err := extractBinary(archive, "gitvista_1.0.0_windows_amd64.zip", "gitvista")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(got, binaryContent) {
+		t.Fatalf("got %q, want %q", got, binaryContent)
+	}
+}
+
+func TestHTTPGetBytes(t *testing.T) {
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		return newTestResponse(req, http.StatusOK, "payload"), nil
+	})
+
+	got, err := httpGetBytes("https://example.test/archive")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != "payload" {
+		t.Fatalf("got %q, want %q", got, "payload")
+	}
+}
+
+func TestHTTPGetBytes_TransportError(t *testing.T) {
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("network down")
+	})
+
+	_, err := httpGetBytes("https://example.test/archive")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "network down") {
+		t.Fatalf("expected transport error, got %v", err)
+	}
+}
+
 func TestUpdateFlow(t *testing.T) {
 	binaryContent := []byte("#!/bin/updated-binary")
 	archive := makeTarGz(t, "gitvista", binaryContent)
@@ -198,39 +308,178 @@ func TestUpdateFlow(t *testing.T) {
 		}
 	})
 
-	// Create a fake executable to be replaced.
+	originalReplaceBinary := replaceBinaryFunc
+	t.Cleanup(func() {
+		replaceBinaryFunc = originalReplaceBinary
+	})
+
+	var replaced []byte
+	replaceBinaryFunc = func(data []byte) error {
+		replaced = append([]byte(nil), data...)
+		return nil
+	}
+
+	if err := updateFrom(baseURL, "gitvista", "v1.0.0"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(replaced, binaryContent) {
+		t.Fatalf("replaceBinary received %q, want %q", replaced, binaryContent)
+	}
+}
+
+func TestUpdate_Wrapper(t *testing.T) {
+	originalReplaceBinary := replaceBinaryFunc
+	t.Cleanup(func() {
+		replaceBinaryFunc = originalReplaceBinary
+	})
+	replaceBinaryFunc = func(data []byte) error {
+		if len(data) == 0 {
+			t.Fatal("expected binary data")
+		}
+		return nil
+	}
+
+	archiveName := ArchiveName("gitvista", "v1.0.0")
+	archive := makeTarGz(t, "gitvista", []byte("updated"))
+	sum := sha256.Sum256(archive)
+	checksums := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), archiveName)
+
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.String() {
+		case "https://github.com/rybkr/gitvista/releases/download/v1.0.0/" + archiveName:
+			return responseWithBytes(req, http.StatusOK, archive), nil
+		case "https://github.com/rybkr/gitvista/releases/download/v1.0.0/checksums.txt":
+			return newTestResponse(req, http.StatusOK, checksums), nil
+		default:
+			t.Fatalf("unexpected URL %q", req.URL.String())
+			return nil, nil
+		}
+	})
+
+	if err := Update("rybkr/gitvista", "gitvista", "v1.0.0"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpdateFrom_DownloadArchiveError(t *testing.T) {
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		return newTestResponse(req, http.StatusNotFound, "missing"), nil
+	})
+
+	err := updateFrom("https://example.test/releases/download/v1.0.0", "gitvista", "v1.0.0")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "downloading archive") {
+		t.Fatalf("expected archive download error, got %v", err)
+	}
+}
+
+func TestUpdateFrom_DownloadChecksumsError(t *testing.T) {
+	archiveName := ArchiveName("gitvista", "v1.0.0")
+	archive := makeTarGz(t, "gitvista", []byte("updated"))
+	baseURL := "https://example.test/releases/download/v1.0.0"
+
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.String() {
+		case baseURL + "/" + archiveName:
+			return responseWithBytes(req, http.StatusOK, archive), nil
+		case baseURL + "/checksums.txt":
+			return newTestResponse(req, http.StatusNotFound, "missing"), nil
+		default:
+			t.Fatalf("unexpected URL %q", req.URL.String())
+			return nil, nil
+		}
+	})
+
+	err := updateFrom(baseURL, "gitvista", "v1.0.0")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "downloading checksums") {
+		t.Fatalf("expected checksums download error, got %v", err)
+	}
+}
+
+func TestUpdateFrom_ChecksumMismatch(t *testing.T) {
+	archiveName := ArchiveName("gitvista", "v1.0.0")
+	archive := makeTarGz(t, "gitvista", []byte("updated"))
+	baseURL := "https://example.test/releases/download/v1.0.0"
+
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.String() {
+		case baseURL + "/" + archiveName:
+			return responseWithBytes(req, http.StatusOK, archive), nil
+		case baseURL + "/checksums.txt":
+			return newTestResponse(req, http.StatusOK, "deadbeef  "+archiveName+"\n"), nil
+		default:
+			t.Fatalf("unexpected URL %q", req.URL.String())
+			return nil, nil
+		}
+	})
+
+	err := updateFrom(baseURL, "gitvista", "v1.0.0")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("expected checksum mismatch, got %v", err)
+	}
+}
+
+func TestUpdateFrom_ExtractError(t *testing.T) {
+	archiveName := ArchiveName("gitvista", "v1.0.0")
+	archive := makeTarGz(t, "other-binary", []byte("updated"))
+	sum := sha256.Sum256(archive)
+	baseURL := "https://example.test/releases/download/v1.0.0"
+	checksums := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), archiveName)
+
+	withMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.String() {
+		case baseURL + "/" + archiveName:
+			return responseWithBytes(req, http.StatusOK, archive), nil
+		case baseURL + "/checksums.txt":
+			return newTestResponse(req, http.StatusOK, checksums), nil
+		default:
+			t.Fatalf("unexpected URL %q", req.URL.String())
+			return nil, nil
+		}
+	})
+
+	err := updateFrom(baseURL, "gitvista", "v1.0.0")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "extracting binary") {
+		t.Fatalf("expected extract error, got %v", err)
+	}
+}
+
+func TestReplaceBinaryAtPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	fakeBin := filepath.Join(tmpDir, "gitvista")
-	if err := os.WriteFile(fakeBin, []byte("old-binary"), 0o755); err != nil {
+	execPath := filepath.Join(tmpDir, "gitvista")
+	if err := os.WriteFile(execPath, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// Override os.Executable by using the updateFrom function directly
-	// and replacing the exec path resolution.
-	// Since we can't easily mock os.Executable, test the download/verify/extract
-	// portion by calling the internal pieces.
-	archiveData, err := httpGetBytes(baseURL + "/" + archiveName)
+	if err := replaceBinaryAtPath(execPath, []byte("new")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := os.ReadFile(execPath)
 	if err != nil {
-		t.Fatalf("download archive: %v", err)
+		t.Fatalf("reading replaced binary: %v", err)
+	}
+	if string(got) != "new" {
+		t.Fatalf("got %q, want %q", got, "new")
 	}
 
-	checksumsData, err := httpGetBytes(baseURL + "/checksums.txt")
+	info, err := os.Stat(execPath)
 	if err != nil {
-		t.Fatalf("download checksums: %v", err)
+		t.Fatalf("stat replaced binary: %v", err)
 	}
-
-	verifyErr := verifyChecksum(archiveData, checksumsData, archiveName)
-	if verifyErr != nil {
-		t.Fatalf("verify checksum: %v", verifyErr)
-	}
-
-	extracted, err := extractBinary(archiveData, archiveName, "gitvista")
-	if err != nil {
-		t.Fatalf("extract binary: %v", err)
-	}
-
-	if !bytes.Equal(extracted, binaryContent) {
-		t.Errorf("extracted binary mismatch: got %q, want %q", extracted, binaryContent)
+	if info.Mode().Perm() != fs.FileMode(0o755) {
+		t.Fatalf("got permissions %o, want 755", info.Mode().Perm())
 	}
 }
 
@@ -251,10 +500,14 @@ func withMockHTTPClient(t *testing.T, fn roundTripFunc) {
 }
 
 func newTestResponse(req *http.Request, statusCode int, body string) *http.Response {
+	return responseWithBytes(req, statusCode, []byte(body))
+}
+
+func responseWithBytes(req *http.Request, statusCode int, body []byte) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
 		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(body)),
+		Body:       io.NopCloser(bytes.NewReader(body)),
 		Request:    req,
 	}
 }
@@ -283,6 +536,26 @@ func makeTarGz(t *testing.T, name string, content []byte) []byte {
 		t.Fatal(err)
 	}
 	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	return buf.Bytes()
+}
+
+func makeZip(t *testing.T, name string, content []byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	w, err := zw.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
 
