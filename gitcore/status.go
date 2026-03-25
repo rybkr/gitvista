@@ -4,8 +4,8 @@ import (
 	"crypto/sha1" // #nosec G505 -- Git requires SHA-1 for blob hashing
 	"fmt"
 	"io/fs"
-	"math"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
