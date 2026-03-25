@@ -131,6 +131,11 @@ func replaceBinary(binaryData []byte) error {
 }
 
 func replaceBinaryAtPath(execPath string, binaryData []byte) error {
+	execInfo, err := os.Stat(execPath)
+	if err != nil {
+		return fmt.Errorf("stat current binary: %w", err)
+	}
+
 	dir := filepath.Dir(execPath)
 	tmp, err := os.CreateTemp(dir, ".gitvista-update-*")
 	if err != nil {
@@ -151,13 +156,12 @@ func replaceBinaryAtPath(execPath string, binaryData []byte) error {
 		cleanup()
 		return fmt.Errorf("closing temp file: %w", closeErr)
 	}
-	if chmodErr := os.Chmod(tmpPath, 0o755); chmodErr != nil { // #nosec G302,G703 -- binary must be executable; tmpPath is a local temp file
-		cleanup()
-		return fmt.Errorf("setting permissions: %w", chmodErr)
-	}
 	if renameErr := os.Rename(tmpPath, execPath); renameErr != nil { // #nosec G703 -- execPath is resolved from os.Executable
 		cleanup()
 		return fmt.Errorf("replacing binary: %w", renameErr)
+	}
+	if chmodErr := os.Chmod(execPath, execInfo.Mode().Perm()); chmodErr != nil { // #nosec G302,G703 -- replacement binary must preserve the existing executable mode after atomic rename
+		return fmt.Errorf("restoring permissions: %w", chmodErr)
 	}
 
 	return nil

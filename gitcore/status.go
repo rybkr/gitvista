@@ -4,6 +4,7 @@ import (
 	"crypto/sha1" // #nosec G505 -- Git requires SHA-1 for blob hashing
 	"fmt"
 	"io/fs"
+	"math"
 	"maps"
 	"os"
 	"path/filepath"
@@ -149,7 +150,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		}
 
 		diskSize := info.Size()
-		if uint32(diskSize) != entry.FileSize { // #nosec G115
+		if diskSize < 0 || diskSize > math.MaxUint32 || uint32(diskSize) != entry.FileSize {
 			sizeContent, sizeReadErr := readWorktreeFile(workDir, normalizedPath)
 			if sizeReadErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, sizeReadErr)
