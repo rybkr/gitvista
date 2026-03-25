@@ -11,7 +11,9 @@ import (
 	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
-const broadcastChannelSize = 256
+const (
+	broadcastChannelSize = 256
+)
 
 const (
 	initialBootstrapWindowDays  = 30
@@ -19,17 +21,17 @@ const (
 	bootstrapBatchTarget        = 300 * 1024 // bytes (estimated JSON payload)
 	bootstrapMaxCommitsPerBatch = 300
 	bootstrapBatchPause         = 8 * time.Millisecond
-	forceModeMaxCommits         = 10000
 )
 
-// ReloadFunc returns a freshly-loaded repository, used by updateRepository to
-// reload state from disk. For local mode this calls gitcore.NewRepository; for
-// hosted mode it returns the latest repo pointer from the RepoManager.
+const (
+	forceModeMaxCommits = 10000
+)
+
+// ReloadFunc returns a freshly-loaded repository, used by updateRepository to reload state from disk.
 type ReloadFunc func() (*gitcore.Repository, error)
 
-// RepoSession holds per-repository state that was previously embedded in the
-// monolithic Server struct. Each session manages its own cached repository,
-// WebSocket clients, broadcast channel, and LRU caches.
+// RepoSession holds per-repository state. Each session manages its own cached repository, WebSocket
+// clients, broadcast channel, and LRU caches.
 type RepoSession struct {
 	id       string
 	logger   *slog.Logger
@@ -37,7 +39,9 @@ type RepoSession struct {
 
 	updateMu sync.Mutex
 	cacheMu  sync.RWMutex
-	cached   struct{ repo *gitcore.Repository }
+	cached   struct {
+		repo *gitcore.Repository
+	}
 
 	clientsMu sync.RWMutex
 	clients   map[*websocket.Conn]*sync.Mutex
@@ -101,13 +105,13 @@ func (rs *RepoSession) Repo() *gitcore.Repository {
 	return repo
 }
 
-// Start launches the broadcast goroutine.
+// Start launches the session broadcast goroutine.
 func (rs *RepoSession) Start() {
 	rs.wg.Add(1)
 	go rs.handleBroadcast()
 }
 
-// Close cancels the session context, waits for server-side goroutines, sends
+// Close shuts down the session, waits for goroutines, sends
 // WebSocket close frames to all clients, then force-closes connections.
 func (rs *RepoSession) Close() {
 	rs.cancel()
@@ -176,6 +180,8 @@ func (rs *RepoSession) updateRepository() {
 	rs.cacheMu.Lock()
 	rs.cached.repo = newRepo
 	rs.cacheMu.Unlock()
+	rs.blameCache.Clear()
+	rs.diffCache.Clear()
 	rs.scheduleAnalyticsPrewarm(newRepo)
 
 	status := getWorkingTreeStatus(newRepo)

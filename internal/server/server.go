@@ -22,56 +22,37 @@ const (
 	maxHeaderBytes    = 1 << 20 // 1 MiB
 )
 
-// FrontendConfig controls which frontend shell the server exposes.
-type FrontendConfig struct {
+// AppConfig controls which embedded app shell the server exposes.
+type AppConfig struct {
 	IndexPath   string
 	SPAFallback bool
-	ConfigMode  string
 }
 
 // Server contains all behavior for the GitVista application server.
 type Server struct {
-	addr        string
-	webFS       fs.FS
-	indexPath   string
-	spaFallback bool
-	rateLimiter *rateLimiter
-	httpServer  *http.Server
-	logger      *slog.Logger
+	addr       string
+	webFS      fs.FS
+	app        AppConfig
+	httpServer *http.Server
+	logger     *slog.Logger
 
-	configMode    string
-	localSession  *RepoSession
-	cacheSize     int
-	extraRoutes   []func(*http.ServeMux)
-	middlewares   []func(http.Handler) http.Handler
-	shutdownHooks []func() error
+	session     *RepoSession
+	cacheSize   int
+	extraRoutes []func(*http.ServeMux)
 
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
-// NewServer constructs a local-mode Server ready to be started.
-// Backward-compatible alias for NewLocalServer.
+// NewServer constructs a Server ready to serve a single repository on localhost.
 func NewServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
-	return NewSingleRepoServer(repo, addr, webFS)
-}
-
-// NewLocalServer constructs a Server in local mode with a single repository.
-func NewLocalServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
-	return NewSingleRepoServer(repo, addr, webFS)
-}
-
-// NewSingleRepoServer constructs a Server that serves a single repository.
-func NewSingleRepoServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Server {
-	s := NewFrontendServer(addr, webFS, FrontendConfig{
-		IndexPath:   "local/index.html",
+	s := newConfiguredServer(addr, webFS, AppConfig{
 		SPAFallback: false,
-		ConfigMode:  "local",
 	})
 
-	s.localSession = NewRepoSession(SessionConfig{
-		ID:          "local",
+	s.session = NewRepoSession(SessionConfig{
+		ID:          "default",
 		InitialRepo: repo,
 		ReloadFn: func() (*gitcore.Repository, error) {
 			return gitcore.NewRepository(repo.GitDir())
@@ -83,50 +64,50 @@ func NewSingleRepoServer(repo *gitcore.Repository, addr string, webFS fs.FS) *Se
 	return s
 }
 
-// NewFrontendServer constructs a server shell for a specific frontend.
-func NewFrontendServer(addr string, webFS fs.FS, frontend FrontendConfig) *Server {
+func newConfiguredServer(addr string, webFS fs.FS, app AppConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
-	rl := newRateLimiter(100, 200, time.Second)
 
 	cacheSize := readCacheSize()
 
-	if frontend.IndexPath == "" {
-		frontend.IndexPath = "local/index.html"
-	}
-	if frontend.ConfigMode == "" {
-		frontend.ConfigMode = "local"
+	if app.IndexPath == "" {
+		app.IndexPath = defaultIndexPath(webFS)
 	}
 
 	return &Server{
-		addr:        addr,
-		webFS:       webFS,
-		indexPath:   frontend.IndexPath,
-		spaFallback: frontend.SPAFallback,
-		rateLimiter: rl,
-		logger:      slog.Default(),
-		configMode:  frontend.ConfigMode,
-		cacheSize:   cacheSize,
-		ctx:         ctx,
-		cancel:      cancel,
+		addr:      addr,
+		webFS:     webFS,
+		app:       app,
+		logger:    slog.Default(),
+		cacheSize: cacheSize,
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
+func defaultIndexPath(webFS fs.FS) string {
+	if _, err := fs.Stat(webFS, "index.html"); err == nil {
+		return "index.html"
+	}
+
+	matches, err := fs.Glob(webFS, "*/index.html")
+	if err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+
+	return "index.html"
+}
+
+// AddRoutes registers additional HTTP routes on the server mux before startup.
 func (s *Server) AddRoutes(register func(*http.ServeMux)) {
 	s.extraRoutes = append(s.extraRoutes, register)
 }
 
-func (s *Server) AddMiddleware(middleware func(http.Handler) http.Handler) {
-	s.middlewares = append(s.middlewares, middleware)
-}
-
-func (s *Server) AddShutdownHook(hook func() error) {
-	s.shutdownHooks = append(s.shutdownHooks, hook)
-}
-
+// Logger returns the server logger.
 func (s *Server) Logger() *slog.Logger {
 	return s.logger
 }
 
+// CacheSize returns the configured cache size for server-side LRU caches.
 func (s *Server) CacheSize() int {
 	return s.cacheSize
 }
@@ -143,43 +124,36 @@ func readCacheSize() int {
 }
 
 // Start begins serving and blocks until the server exits or encounters a fatal error.
-func (s *Server) Start() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", s.handleHealth)
-	mux.HandleFunc("/api/config", s.handleConfig)
+// Start starts the HTTP server and blocks until it exits.
+func (s *Server) Start() (err error) {
+	started := false
+	defer func() {
+		if started {
+			return
+		}
+		s.cancel()
+		s.wg.Wait()
+		if s.session != nil {
+			s.session.Close()
+		}
+	}()
 
-	if s.localSession != nil {
-		ls := s.localSession
-		ls.Start()
-
-		mux.HandleFunc("/api/repository", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleRepository))))
-		mux.HandleFunc("/api/tree/blame/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleTreeBlame))))
-		mux.HandleFunc("/api/tree/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleTree))))
-		mux.HandleFunc("/api/blob/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBlob))))
-		mux.HandleFunc("/api/commit/diff/", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleCommitDiff))))
-		mux.HandleFunc("/api/commits/diffstats", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleBulkDiffStats))))
-		mux.HandleFunc("/api/analytics", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleAnalytics))))
-		mux.HandleFunc("/api/index/diff", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleIndexDiff))))
-		mux.HandleFunc("/api/working-tree/diff", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleWorkingTreeDiff))))
-		mux.HandleFunc("/api/merge-preview/file", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreviewFileDiff))))
-		mux.HandleFunc("/api/merge-preview", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleMergePreview))))
-		mux.HandleFunc("/api/graph/commits", writeDeadline(s.rateLimiter.middleware(withLocalSession(ls, s.handleGraphCommits))))
-		mux.HandleFunc("/api/ws", withLocalSession(ls, s.handleWebSocket))
+	if s.session != nil {
+		s.session.Start()
 	}
+
+	mux := s.newServeMux()
 	for _, register := range s.extraRoutes {
 		register(mux)
 	}
 	mux.Handle("/", s.staticHandler())
 
 	handler := requestLogger(s.logger, mux)
-	for i := len(s.middlewares) - 1; i >= 0; i-- {
-		handler = s.middlewares[i](handler)
-	}
 	handler = securityHeadersMiddleware(handler)
 
 	s.httpServer = s.newHTTPServer(handler)
 
-	if s.localSession != nil {
+	if s.session != nil {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
@@ -189,12 +163,44 @@ func (s *Server) Start() error {
 		}()
 	}
 
-	s.logger.Info("GitVista server starting", "addr", "http://"+s.addr, "mode", s.modeString())
-	err := s.httpServer.ListenAndServe()
+	s.logger.Info("GitVista server starting", "addr", "http://"+s.addr)
+	err = s.httpServer.ListenAndServe()
 	if err == http.ErrServerClosed {
+		started = true
 		return nil
 	}
+	if err == nil {
+		started = true
+	}
 	return err
+}
+
+func (s *Server) newServeMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/api/config", s.handleConfig)
+
+	if s.session == nil {
+		return mux
+	}
+
+	session := s.session
+	mux.HandleFunc("/api/repository", writeDeadline(withSession(session, s.handleRepository)))
+	mux.HandleFunc("/api/tree/blame/", writeDeadline(withSession(session, s.handleTreeBlame)))
+	mux.HandleFunc("/api/tree/", writeDeadline(withSession(session, s.handleTree)))
+	mux.HandleFunc("/api/blob/", writeDeadline(withSession(session, s.handleBlob)))
+	mux.HandleFunc("/api/commit/diff/", writeDeadline(withSession(session, s.handleCommitDiff)))
+	mux.HandleFunc("/api/commits/diffstats", writeDeadline(withSession(session, s.handleBulkDiffStats)))
+	mux.HandleFunc("/api/analytics", writeDeadline(withSession(session, s.handleAnalytics)))
+	mux.HandleFunc("/api/index/diff", writeDeadline(withSession(session, s.handleIndexDiff)))
+	mux.HandleFunc("/api/working-tree/diff", writeDeadline(withSession(session, s.handleWorkingTreeDiff)))
+	mux.HandleFunc("/api/merge-preview/file", writeDeadline(withSession(session, s.handleMergePreviewFileDiff)))
+	mux.HandleFunc("/api/merge-preview", writeDeadline(withSession(session, s.handleMergePreview)))
+	mux.HandleFunc("/api/graph/summary", writeDeadline(withSession(session, s.handleGraphSummary)))
+	mux.HandleFunc("/api/graph/commits", writeDeadline(withSession(session, s.handleGraphCommits)))
+	mux.HandleFunc("/api/ws", withSession(session, s.handleWebSocket))
+
+	return mux
 }
 
 func (s *Server) staticHandler() http.Handler {
@@ -226,7 +232,7 @@ func (s *Server) staticHandler() http.Handler {
 			return
 		}
 
-		if s.spaFallback {
+		if s.app.SPAFallback {
 			s.serveIndexHTML(w, r)
 			return
 		}
@@ -236,12 +242,12 @@ func (s *Server) staticHandler() http.Handler {
 }
 
 func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
-	body, err := fs.ReadFile(s.webFS, s.indexPath)
+	body, err := fs.ReadFile(s.webFS, s.app.IndexPath)
 	if err != nil {
 		http.Error(w, "frontend index not found", http.StatusInternalServerError)
 		return
 	}
-	http.ServeContent(w, r, path.Base(s.indexPath), time.Time{}, bytes.NewReader(body))
+	http.ServeContent(w, r, path.Base(s.app.IndexPath), time.Time{}, bytes.NewReader(body))
 }
 
 func (s *Server) assetExists(name string) bool {
@@ -260,15 +266,7 @@ func looksLikeStaticAsset(reqPath string) bool {
 	return strings.Contains(base, ".")
 }
 
-func (s *Server) modeString() string {
-	if s.configMode != "" {
-		return s.configMode
-	}
-	return "local"
-}
-
-// newHTTPServer builds the net/http server with explicit production-safe
-// timeout and header size limits.
+// newHTTPServer builds the net/http server with explicit production-safe timeout and header size limits.
 func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
 	// WriteTimeout must remain 0 because WebSocket connections are long-lived.
 	// Non-WebSocket handlers enforce per-response write deadlines via the
@@ -284,40 +282,7 @@ func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
 	}
 }
 
-func (s *Server) HandleRepoRequest(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.URL.Path == "/api/repository" && r.Method == http.MethodGet:
-		s.handleRepository(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/tree/blame/"):
-		s.handleTreeBlame(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/tree/"):
-		s.handleTree(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/blob/"):
-		s.handleBlob(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/commit/diff/"):
-		s.handleCommitDiff(w, r)
-	case r.URL.Path == "/api/commits/diffstats" && r.Method == http.MethodGet:
-		s.handleBulkDiffStats(w, r)
-	case r.URL.Path == "/api/analytics" && r.Method == http.MethodGet:
-		s.handleAnalytics(w, r)
-	case r.URL.Path == "/api/index/diff" && r.Method == http.MethodGet:
-		s.handleIndexDiff(w, r)
-	case r.URL.Path == "/api/graph/commits" && r.Method == http.MethodGet:
-		s.handleGraphCommits(w, r)
-	case r.URL.Path == "/api/working-tree/diff" && r.Method == http.MethodGet:
-		s.handleWorkingTreeDiff(w, r)
-	case r.URL.Path == "/api/merge-preview/file" && r.Method == http.MethodGet:
-		s.handleMergePreviewFileDiff(w, r)
-	case r.URL.Path == "/api/merge-preview" && r.Method == http.MethodGet:
-		s.handleMergePreview(w, r)
-	case r.URL.Path == "/api/ws":
-		s.handleWebSocket(w, r)
-	default:
-		http.Error(w, "Not found", http.StatusNotFound)
-	}
-}
-
-// Shutdown gracefully shuts down the server and all sessions.
+// Shutdown gracefully shuts down the server and its background work.
 func (s *Server) Shutdown() {
 	start := time.Now()
 	s.logger.Info("Server shutting down")
@@ -334,20 +299,13 @@ func (s *Server) Shutdown() {
 
 	s.logger.Info("Canceling server context")
 	s.cancel()
-	s.rateLimiter.Close()
 
 	s.logger.Info("Waiting for watcher goroutines to exit")
 	s.wg.Wait()
 	s.logger.Info("Watcher goroutines stopped")
 
-	if s.localSession != nil {
-		s.localSession.Close()
-	}
-
-	for _, hook := range s.shutdownHooks {
-		if err := hook(); err != nil {
-			s.logger.Error("Shutdown hook failed", "err", err)
-		}
+	if s.session != nil {
+		s.session.Close()
 	}
 
 	s.logger.Info("Server shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))

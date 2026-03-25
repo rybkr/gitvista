@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -53,6 +54,12 @@ func TestSameHostUpgrader_CheckOrigin(t *testing.T) {
 			want:   true,
 		},
 		{
+			name:   "allows default https port omission",
+			host:   "gitvista.io",
+			origin: "https://gitvista.io:443",
+			want:   true,
+		},
+		{
 			name:   "rejects cross-site origin",
 			host:   "127.0.0.1:8080",
 			origin: "https://evil.example",
@@ -76,6 +83,9 @@ func TestSameHostUpgrader_CheckOrigin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://"+tt.host+"/api/ws", nil)
 			req.Host = tt.host
+			if strings.HasPrefix(tt.origin, "https://") {
+				req.TLS = &tls.ConnectionState{}
+			}
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)
 			}
@@ -84,6 +94,17 @@ func TestSameHostUpgrader_CheckOrigin(t *testing.T) {
 				t.Errorf("sameHostUpgrader.CheckOrigin() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSameHostUpgrader_CheckOrigin_WithForwardedProto(t *testing.T) {
+	req := httptest.NewRequest("GET", "http://127.0.0.1/api/ws", nil)
+	req.Host = "gitvista.io"
+	req.Header.Set("Origin", "https://gitvista.io")
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	if !sameHostUpgrader.CheckOrigin(req) {
+		t.Fatal("sameHostUpgrader.CheckOrigin() = false, want true")
 	}
 }
 
@@ -96,9 +117,9 @@ func TestHandleWebSocket_SendsBootstrapSequenceBeforeRegisteringClient(t *testin
 		Logger:      silentLogger(),
 	})
 	s := newTestServer(t)
-	s.localSession = session
+	s.session = session
 
-	handler := withLocalSession(session, s.handleWebSocket)
+	handler := withSession(session, s.handleWebSocket)
 	ts := newWebSocketTestServer(t, http.HandlerFunc(handler))
 	defer ts.Close()
 
@@ -156,9 +177,9 @@ func TestHandleWebSocket_DoesNotReloadRepositoryDuringBootstrap(t *testing.T) {
 		Logger: silentLogger(),
 	})
 	s := newTestServer(t)
-	s.localSession = session
+	s.session = session
 
-	handler := withLocalSession(session, s.handleWebSocket)
+	handler := withSession(session, s.handleWebSocket)
 	ts := newWebSocketTestServer(t, http.HandlerFunc(handler))
 	defer ts.Close()
 
@@ -189,9 +210,9 @@ func TestSendToAllClients_DeliversBroadcastPayload(t *testing.T) {
 		Logger:      silentLogger(),
 	})
 	s := newTestServer(t)
-	s.localSession = session
+	s.session = session
 
-	handler := withLocalSession(session, s.handleWebSocket)
+	handler := withSession(session, s.handleWebSocket)
 	ts := newWebSocketTestServer(t, http.HandlerFunc(handler))
 	defer ts.Close()
 

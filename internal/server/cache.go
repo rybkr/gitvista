@@ -5,28 +5,24 @@ import (
 	"sync"
 )
 
-// defaultCacheSize is the number of entries held before the LRU evicts the
-// oldest entry. 500 covers typical usage patterns (hundreds of unique
-// commit+path combinations) without unbounded memory growth.
-const defaultCacheSize = 500
+const (
+	defaultCacheSize = 500
+)
 
-// lruEntry is the value stored inside each list.Element so we can delete the
-// map key without a separate lookup when evicting.
+// lruEntry is the value stored in each list.Element so we can delete a map key without a separate lookup when evicting.
 type lruEntry[V any] struct {
 	key string
 	val V
 }
 
-// LRUCache is a generic, thread-safe least-recently-used cache bounded by an
-// entry count. Every Get is a write operation (it moves the entry to the front
-// of the list), so a plain sync.Mutex is used rather than sync.RWMutex.
-//
+// LRUCache is a generic, thread-safe least-recently-used cache bounded by an entry count.
+// Every Get is a write operation (moves entry to the front), so a plain sync.Mutex is used rather than sync.RWMutex.
 // The zero value is not usable; always construct via NewLRUCache.
 type LRUCache[V any] struct {
 	mu      sync.Mutex
 	maxSize int
-	items   map[string]*list.Element // O(1) key lookup
-	order   *list.List               // front = most-recently-used
+	items   map[string]*list.Element
+	order   *list.List
 }
 
 // NewLRUCache constructs an LRUCache that holds at most maxSize entries.

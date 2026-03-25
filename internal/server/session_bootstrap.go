@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rybkr/gitvista/gitcore"
+	"github.com/rybkr/gitvista/internal/analytics"
 	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
@@ -301,14 +302,14 @@ func (rs *RepoSession) scheduleAnalyticsPrewarm(repo *gitcore.Repository) {
 				return
 			}
 
-			key := analyticsCacheKey(repo, period)
+			key := analytics.CacheKey(repo, period)
 			if _, ok := rs.diffCache.Get(key); ok {
 				continue
 			}
 
-			analytics, err := buildAnalytics(repo, analyticsQuery{
-				period:   period,
-				cacheKey: period,
+			response, err := analytics.Build(repo, analytics.Query{
+				Period:   period,
+				CacheKey: period,
 			})
 			if err != nil {
 				rs.logger.Warn("Analytics prewarm failed", "period", period, "err", err)
@@ -317,7 +318,7 @@ func (rs *RepoSession) scheduleAnalyticsPrewarm(repo *gitcore.Repository) {
 			if !rs.analyticsGenCurrent(gen) {
 				return
 			}
-			rs.diffCache.Put(key, analytics)
+			rs.diffCache.Put(key, response)
 		}
 	}(repo, gen)
 }

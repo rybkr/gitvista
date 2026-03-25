@@ -35,7 +35,7 @@ func requestWithSession(method, target string, session *RepoSession) *http.Reque
 	return req.WithContext(ctx)
 }
 
-func requestWithHostedRepo(method, target string, session *RepoSession, repoName string) *http.Request {
+func requestWithRepoNameOverride(method, target string, session *RepoSession, repoName string) *http.Request {
 	req := httptest.NewRequest(method, target, nil)
 	ctx := WithSessionContext(req.Context(), session)
 	ctx = WithRepoNameOverrideContext(ctx, repoName)
@@ -162,6 +162,67 @@ func TestHandleRepository_Success(t *testing.T) {
 	}
 }
 
+func TestHandleConfig_Methods(t *testing.T) {
+	s := newTestServer(t)
+
+	t.Run("get", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+		req.Host = "gitvista.test"
+		w := httptest.NewRecorder()
+
+		s.handleConfig(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		var response configResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("decode config response: %v", err)
+		}
+		if response.Host != "gitvista.test" {
+			t.Fatalf("host = %q, want %q", response.Host, "gitvista.test")
+		}
+	})
+
+	t.Run("rejects post", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/config", nil)
+		w := httptest.NewRecorder()
+
+		s.handleConfig(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func TestHandleHealth_Methods(t *testing.T) {
+	s := newTestServer(t)
+
+	t.Run("get", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		w := httptest.NewRecorder()
+
+		s.handleHealth(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+		}
+	})
+
+	t.Run("rejects post", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/health", nil)
+		w := httptest.NewRecorder()
+
+		s.handleHealth(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+		}
+	})
+}
+
 func TestHandleRepository_NoSession(t *testing.T) {
 	s := newTestServer(t)
 
@@ -176,12 +237,27 @@ func TestHandleRepository_NoSession(t *testing.T) {
 	}
 }
 
-func TestHandleRepository_UsesHostedDisplayName(t *testing.T) {
+func TestHandleRepository_Methods(t *testing.T) {
 	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 	s := newTestServer(t)
 
-	req := requestWithHostedRepo("GET", "/api/repository", session, "golang/example")
+	req := requestWithSession(http.MethodPost, "/api/repository", session)
+	w := httptest.NewRecorder()
+
+	s.handleRepository(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleRepository_UsesRepoNameOverride(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	session := newTestSession(repo)
+	s := newTestServer(t)
+
+	req := requestWithRepoNameOverride("GET", "/api/repository", session, "golang/example")
 	w := httptest.NewRecorder()
 
 	s.handleRepository(w, req)
@@ -199,44 +275,51 @@ func TestHandleRepository_UsesHostedDisplayName(t *testing.T) {
 	}
 }
 
-func TestHandleRepoRequest_RepositoryRoute(t *testing.T) {
+func TestNewServeMux_RepositoryRoute(t *testing.T) {
 	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 	s := newTestServer(t)
+	mux := s.newServeMux()
 
 	req := requestWithSession(http.MethodGet, "/api/repository", session)
 	w := httptest.NewRecorder()
 
-	s.HandleRepoRequest(w, req)
+	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
 	}
 }
 
-func TestHandleRepoRequest_UnknownRoute(t *testing.T) {
+func TestNewServeMux_UnknownRoute(t *testing.T) {
 	s := newTestServer(t)
+	mux := s.newServeMux()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
 	w := httptest.NewRecorder()
 
-	s.HandleRepoRequest(w, req)
+	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status code = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 
-func TestHandleRepoRequest_DispatchesToSharedHandlers(t *testing.T) {
+func TestNewServeMux_DispatchesToSharedHandlers(t *testing.T) {
 	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 	s := newTestServer(t)
+	mux := s.newServeMux()
+	sWithoutSession := newTestServer(t)
+	sWithoutSession.session = nil
+	muxWithoutSession := sWithoutSession.newServeMux()
 
 	tests := []struct {
 		name       string
 		method     string
 		target     string
 		wantStatus int
+		noSession  bool
 	}{
 		{
 			name:       "tree blame rejects unsupported method",
@@ -257,22 +340,25 @@ func TestHandleRepoRequest_DispatchesToSharedHandlers(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "bulk diff stats rejects missing session",
+			name:       "bulk diff stats route is absent without session",
 			method:     http.MethodGet,
 			target:     "/api/commits/diffstats",
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusNotFound,
+			noSession:  true,
 		},
 		{
-			name:       "analytics rejects missing session",
+			name:       "analytics route is absent without session",
 			method:     http.MethodGet,
 			target:     "/api/analytics",
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusNotFound,
+			noSession:  true,
 		},
 		{
-			name:       "index diff rejects missing session",
+			name:       "index diff route is absent without session",
 			method:     http.MethodGet,
 			target:     "/api/index/diff?path=file.txt",
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusNotFound,
+			noSession:  true,
 		},
 		{
 			name:       "graph commits works for empty repository",
@@ -281,10 +367,17 @@ func TestHandleRepoRequest_DispatchesToSharedHandlers(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "working tree diff rejects missing session",
+			name:       "graph summary route is registered",
+			method:     http.MethodGet,
+			target:     "/api/graph/summary",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "working tree diff route is absent without session",
 			method:     http.MethodGet,
 			target:     "/api/working-tree/diff?path=file.txt",
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusNotFound,
+			noSession:  true,
 		},
 		{
 			name:       "merge preview file validates required path",
@@ -303,18 +396,16 @@ func TestHandleRepoRequest_DispatchesToSharedHandlers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var req *http.Request
-			switch tt.target {
-			case "/api/commits/diffstats", "/api/analytics", "/api/index/diff", "/api/working-tree/diff":
+			targetMux := mux
+			if tt.noSession {
 				req = httptest.NewRequest(tt.method, tt.target, nil)
-			default:
+				targetMux = muxWithoutSession
+			} else {
 				req = requestWithSession(tt.method, tt.target, session)
-			}
-			if strings.HasPrefix(tt.target, "/api/commits/diffstats") || strings.HasPrefix(tt.target, "/api/analytics") || strings.HasPrefix(tt.target, "/api/index/diff") || strings.HasPrefix(tt.target, "/api/working-tree/diff") {
-				req = httptest.NewRequest(tt.method, tt.target, nil)
 			}
 
 			w := httptest.NewRecorder()
-			s.HandleRepoRequest(w, req)
+			targetMux.ServeHTTP(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("status code = %d, want %d; body=%q", w.Code, tt.wantStatus, w.Body.String())

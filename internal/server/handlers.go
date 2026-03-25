@@ -48,13 +48,26 @@ func (s *Server) extractHashParam(w http.ResponseWriter, r *http.Request, prefix
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(configResponse{Mode: s.modeString()}); err != nil {
+	host := r.Host
+	if host == "" {
+		host = s.addr
+	}
+	if err := json.NewEncoder(w).Encode(configResponse{Host: host}); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 
 func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)

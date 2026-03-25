@@ -66,28 +66,16 @@ func TestShutdown_CancelsContext(t *testing.T) {
 	}
 }
 
-func TestShutdown_ClosesRateLimiterOnce(t *testing.T) {
-	s := newTestServer(t)
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("Shutdown() panicked on second call (double-close of rateLimiter): %v", r)
-		}
-	}()
-
-	s.Shutdown()
-}
-
 // TestShutdown_EmptyClientsMap verifies that Shutdown() with no connected WebSocket
 // clients neither panics nor leaves the session's clients map in a nil state.
 func TestShutdown_EmptyClientsMap(t *testing.T) {
 	s := newTestServer(t)
 	s.Shutdown()
 
-	s.localSession.clientsMu.RLock()
-	defer s.localSession.clientsMu.RUnlock()
+	s.session.clientsMu.RLock()
+	defer s.session.clientsMu.RUnlock()
 
-	if s.localSession.clients == nil {
+	if s.session.clients == nil {
 		t.Error("clients map is nil after Shutdown(); expected an initialized empty map")
 	}
 }
@@ -98,7 +86,7 @@ func TestShutdown_WaitGroupReachesZero(t *testing.T) {
 	s := newTestServer(t)
 
 	// Simulate what Start() does for the session's broadcast goroutine.
-	s.localSession.Start()
+	s.session.Start()
 
 	done := make(chan struct{})
 	go func() {
@@ -124,16 +112,13 @@ func TestNewServer_InitialisesFields(t *testing.T) {
 	if s.cancel == nil {
 		t.Error("cancel is nil after NewServer()")
 	}
-	if s.rateLimiter == nil {
-		t.Error("rateLimiter is nil after NewServer()")
+	if s.session == nil {
+		t.Error("session is nil after NewServer()")
 	}
-	if s.localSession == nil {
-		t.Error("localSession is nil after NewServer()")
-	}
-	if s.localSession.clients == nil {
+	if s.session.clients == nil {
 		t.Error("session clients map is nil after NewServer()")
 	}
-	if s.localSession.broadcast == nil {
+	if s.session.broadcast == nil {
 		t.Error("session broadcast channel is nil after NewServer()")
 	}
 	if s.httpServer != nil {
@@ -203,6 +188,37 @@ func TestHTTPServer_TimeoutConfiguration(t *testing.T) {
 	}
 }
 
+func TestStart_FailedListen_CleansUpBackgroundState(t *testing.T) {
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping listener test in restricted environment: %v", err)
+		}
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	s := newTestServer(t)
+	s.addr = ln.Addr().String()
+
+	startErr := s.Start()
+	if startErr == nil {
+		t.Fatal("Start() error = nil, want listen failure")
+	}
+
+	select {
+	case <-s.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("server context was not canceled after failed Start()")
+	}
+
+	select {
+	case <-s.session.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("session context was not canceled after failed Start()")
+	}
+}
+
 func httpGetNoKeepalive(url string) (*http.Response, error) {
 	client := &http.Client{
 		Transport: &http.Transport{DisableKeepAlives: true},
@@ -238,54 +254,17 @@ func TestShutdown_Concurrent(t *testing.T) {
 	wg.Wait()
 }
 
-func TestShutdown_CallsShutdownHooks(t *testing.T) {
-	s := newTestServer(t)
-
-	var mu sync.Mutex
-	var calls []string
-	s.AddShutdownHook(func() error {
-		mu.Lock()
-		calls = append(calls, "first")
-		mu.Unlock()
-		return nil
-	})
-	s.AddShutdownHook(func() error {
-		mu.Lock()
-		calls = append(calls, "second")
-		mu.Unlock()
-		return errors.New("hook failure")
-	})
-
-	s.Shutdown()
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(calls) != 2 {
-		t.Fatalf("shutdown hook calls = %d, want 2", len(calls))
-	}
-	if calls[0] != "first" || calls[1] != "second" {
-		t.Fatalf("shutdown hook order = %v, want [first second]", calls)
-	}
-}
-
-func TestHostedServer_Start_UsesAddedRoutesAndMiddleware(t *testing.T) {
+func TestServer_Start_UsesAddedRoutes(t *testing.T) {
 	addr := freePort(t)
 	webFS := os.DirFS(t.TempDir())
-	s := NewFrontendServer(addr, webFS, FrontendConfig{
-		IndexPath:   "site/index.html",
+	s := newConfiguredServer(addr, webFS, AppConfig{
+		IndexPath:   "app/index.html",
 		SPAFallback: true,
-		ConfigMode:  "hosted",
 	})
 	s.logger = silentLogger()
 	s.AddRoutes(func(mux *http.ServeMux) {
 		mux.HandleFunc("/custom", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
-		})
-	})
-	s.AddMiddleware(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("X-Test-Middleware", "applied")
-			next.ServeHTTP(w, r)
 		})
 	})
 
@@ -316,10 +295,6 @@ func TestHostedServer_Start_UsesAddedRoutesAndMiddleware(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		s.Shutdown()
 		t.Fatalf("status code = %d, want %d", resp.StatusCode, http.StatusNoContent)
-	}
-	if got := resp.Header.Get("X-Test-Middleware"); got != "applied" {
-		s.Shutdown()
-		t.Fatalf("X-Test-Middleware = %q, want %q", got, "applied")
 	}
 
 	s.Shutdown()

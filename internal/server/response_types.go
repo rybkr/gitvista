@@ -3,7 +3,7 @@ package server
 import "github.com/rybkr/gitvista/gitcore"
 
 type configResponse struct {
-	Mode string `json:"mode"`
+	Host string `json:"host"`
 }
 
 type repositoryResponse struct {

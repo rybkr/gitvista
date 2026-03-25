@@ -21,17 +21,17 @@ const (
 // apiWriteDeadline is the per-response write deadline for API handlers.
 const apiWriteDeadline = 30 * time.Second
 
-// withSessionCtx returns a new context carrying the given RepoSession.
+// WithSessionContext returns a new context carrying the given repository session.
 func WithSessionContext(ctx context.Context, rs *RepoSession) context.Context {
 	return context.WithValue(ctx, sessionKey, rs)
 }
 
+// WithRepoNameOverrideContext returns a new context with a repository display-name override.
 func WithRepoNameOverrideContext(ctx context.Context, repoName string) context.Context {
 	return context.WithValue(ctx, repoNameOverrideKey, repoName)
 }
 
-// sessionFromCtx extracts the RepoSession from the request context.
-// Returns nil if no session is present.
+// SessionFromContext returns the repository session stored in ctx, if any.
 func SessionFromContext(ctx context.Context) *RepoSession {
 	rs, _ := ctx.Value(sessionKey).(*RepoSession)
 	return rs
@@ -42,9 +42,9 @@ func repoNameOverrideFromCtx(ctx context.Context) (string, bool) {
 	return repoName, ok && repoName != ""
 }
 
-// withLocalSession wraps a handler to inject the given (local-mode) session
-// into every request's context.
-func withLocalSession(session *RepoSession, next http.HandlerFunc) http.HandlerFunc {
+// withSession wraps a handler to inject the given repository session into every
+// request's context.
+func withSession(session *RepoSession, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := WithSessionContext(r.Context(), session)
 		next(w, r.WithContext(ctx))
@@ -55,6 +55,10 @@ func withLocalSession(session *RepoSession, next http.HandlerFunc) http.HandlerF
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
+}
+
+func (sr *statusRecorder) Unwrap() http.ResponseWriter {
+	return sr.ResponseWriter
 }
 
 func (sr *statusRecorder) WriteHeader(code int) {
@@ -121,30 +125,6 @@ func writeDeadline(next http.HandlerFunc) http.HandlerFunc {
 		_ = rc.SetWriteDeadline(time.Now().Add(apiWriteDeadline))
 		next(w, r)
 	}
-}
-
-// corsMiddleware validates the request Origin against an allowlist and sets
-// CORS headers only for permitted origins. If the allowlist is empty or the
-// origin is not present, no Access-Control-Allow-Origin header is set and the
-// browser will enforce same-origin policy.
-func corsMiddleware(allowedOrigins map[string]bool, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin != "" {
-			w.Header().Set("Vary", "Origin")
-		}
-		if origin != "" && allowedOrigins[origin] {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-			w.Header().Set("Access-Control-Max-Age", "86400")
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 func securityHeadersMiddleware(next http.Handler) http.Handler {

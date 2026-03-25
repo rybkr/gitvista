@@ -2,8 +2,10 @@ package server
 
 import (
 	"compress/flate"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -27,22 +29,61 @@ var sameHostUpgrader = websocket.Upgrader{
 		if err != nil {
 			return false
 		}
-		return u.Host == r.Host
+		return sameOriginHost(u, r)
 	},
 	EnableCompression: true,
 }
 
-// handleWebSocket upgrades the connection and delegates client management to
-// the session extracted from the request context. WebSocket upgrades go through
-// the rate limiter to prevent resource exhaustion.
-func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Rate-limit WebSocket upgrades to prevent connection exhaustion.
-	ip := getClientIP(r)
-	if !s.rateLimiter.allow(ip) {
-		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-		return
+func sameOriginHost(origin *url.URL, r *http.Request) bool {
+	originHost, originPort := splitHostPort(origin.Host)
+	requestHost, requestPort := splitHostPort(r.Host)
+	if !strings.EqualFold(originHost, requestHost) {
+		return false
 	}
 
+	originScheme := origin.Scheme
+	if originScheme == "" {
+		originScheme = effectiveRequestScheme(r)
+	}
+	requestScheme := effectiveRequestScheme(r)
+
+	return defaultedPort(originPort, originScheme) == defaultedPort(requestPort, requestScheme)
+}
+
+func effectiveRequestScheme(r *http.Request) string {
+	if proto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]); proto != "" {
+		return strings.ToLower(proto)
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func splitHostPort(hostport string) (string, string) {
+	if host, port, err := net.SplitHostPort(hostport); err == nil {
+		return host, port
+	}
+	return hostport, ""
+}
+
+func defaultedPort(port string, scheme string) string {
+	if port != "" {
+		return port
+	}
+	switch strings.ToLower(scheme) {
+	case "https", "wss":
+		return "443"
+	case "http", "ws":
+		return "80"
+	default:
+		return ""
+	}
+}
+
+// handleWebSocket upgrades the connection and delegates client management to
+// the session extracted from the request context.
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	session := SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, "Repository not available", http.StatusInternalServerError)

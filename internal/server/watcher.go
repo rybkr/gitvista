@@ -11,19 +11,30 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-const debounceTime = 100 * time.Millisecond
+const (
+	debounceTime = 100 * time.Millisecond
 
-// statusPollInterval controls how often the working tree is polled for
-// changes that do not touch .git (e.g., new untracked files, edits).
-const statusPollInterval = 2 * time.Second
+	// statusPollInterval controls how often the working tree is polled for
+	// changes that do not touch .git (e.g., new untracked files, edits).
+	statusPollInterval = 2 * time.Second
+)
 
 func (s *Server) startWatcher() error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
+	ownedByLoop := false
+	defer func() {
+		if ownedByLoop {
+			return
+		}
+		if closeErr := watcher.Close(); closeErr != nil {
+			s.logger.Error("Failed to close watcher", "err", closeErr)
+		}
+	}()
 
-	repo := s.localSession.Repo()
+	repo := s.session.Repo()
 	gitDir := repo.GitDir()
 	if err := watcher.Add(gitDir); err != nil {
 		return err
@@ -46,6 +57,7 @@ func (s *Server) startWatcher() error {
 
 	s.wg.Add(1)
 	go s.watchLoop(watcher)
+	ownedByLoop = true
 
 	s.logger.Info("Watching Git repository for changes", "gitDir", gitDir)
 	return nil
@@ -91,7 +103,7 @@ func (s *Server) statusPollLoop() {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			repo := s.localSession.Repo()
+			repo := s.session.Repo()
 			status := getWorkingTreeStatus(repo)
 			if status == nil {
 				continue
@@ -107,7 +119,7 @@ func (s *Server) statusPollLoop() {
 			}
 			lastJSON = cur
 
-			s.localSession.broadcastUpdate(UpdateMessage{Type: messageTypeStatus, Status: status})
+			s.session.broadcastUpdate(UpdateMessage{Type: messageTypeStatus, Status: status})
 		}
 	}
 }
@@ -131,6 +143,7 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 			if !ok {
 				return
 			}
+			watchNewDirectory(watcher, event, s.logger)
 			if shouldIgnoreEvent(event) {
 				continue
 			}
@@ -144,7 +157,7 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 				if s.ctx.Err() != nil {
 					return
 				}
-				s.localSession.updateRepository()
+				s.session.updateRepository()
 			})
 
 		case err, ok := <-watcher.Errors:
@@ -154,6 +167,19 @@ func (s *Server) watchLoop(watcher *fsnotify.Watcher) {
 			s.logger.Error("Watcher error", "err", err)
 		}
 	}
+}
+
+func watchNewDirectory(watcher *fsnotify.Watcher, event fsnotify.Event, logger *slog.Logger) {
+	if event.Op&(fsnotify.Create|fsnotify.Rename) == 0 {
+		return
+	}
+
+	info, err := os.Stat(event.Name)
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	walkAndWatch(watcher, event.Name, logger)
 }
 
 func shouldIgnoreEvent(event fsnotify.Event) bool {

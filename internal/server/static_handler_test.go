@@ -13,17 +13,17 @@ import (
 
 func newStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 	t.Helper()
-	s := NewLocalServer(gitcore.NewEmptyRepository(), "127.0.0.1:0", webFS)
+	s := NewServer(gitcore.NewEmptyRepository(), "127.0.0.1:0", webFS)
+	s.app.IndexPath = "app/index.html"
 	s.logger = silentLogger()
 	return s
 }
 
-func newHostedStaticTestServer(t *testing.T, webFS fs.FS) *Server {
+func newSPAStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 	t.Helper()
-	s := NewFrontendServer("127.0.0.1:0", webFS, FrontendConfig{
-		IndexPath:   "site/index.html",
+	s := newConfiguredServer("127.0.0.1:0", webFS, AppConfig{
+		IndexPath:   "app/index.html",
 		SPAFallback: true,
-		ConfigMode:  "hosted",
 	})
 	s.logger = silentLogger()
 	return s
@@ -31,25 +31,23 @@ func newHostedStaticTestServer(t *testing.T, webFS fs.FS) *Server {
 
 func testWebFS() fs.FS {
 	return fstest.MapFS{
-		"local/index.html": {Data: []byte("<!doctype html><title>GitVista Local</title>")},
-		"site/index.html":  {Data: []byte("<!doctype html><title>GitVista Site</title>")},
-		"local/app.js":     {Data: []byte("console.log('local');")},
-		"site/app.js":      {Data: []byte("console.log('site');")},
-		"styles.css":       {Data: []byte("body { color: black; }")},
-		"favicon.png":      {Data: []byte("png")},
+		"app/index.html": {Data: []byte("<!doctype html><title>GitVista App</title>")},
+		"assets/app.js":  {Data: []byte("console.log('app');")},
+		"styles.css":     {Data: []byte("body { color: black; }")},
+		"favicon.png":    {Data: []byte("png")},
 	}
 }
 
 func TestStaticHandler_ServesSPAForFrontendRoutes(t *testing.T) {
-	s := newHostedStaticTestServer(t, testWebFS())
+	s := newSPAStaticTestServer(t, testWebFS())
 	handler := s.staticHandler()
 
 	tests := []string{
 		"/",
 		"/docs",
 		"/docs/install",
-		"/docs/hosted",
-		"/docs/local",
+		"/docs/setup",
+		"/docs/reference",
 		"/a/personal/r/test-repo",
 		"/a/personal/r/test-repo/loading",
 		"/repo/test-repo",
@@ -66,7 +64,7 @@ func TestStaticHandler_ServesSPAForFrontendRoutes(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 			}
-			if body := w.Body.String(); !strings.Contains(body, "<title>GitVista Site</title>") {
+			if body := w.Body.String(); !strings.Contains(body, "<title>GitVista App</title>") {
 				t.Fatalf("expected index.html body for %s, got %q", route, body)
 			}
 		})
@@ -78,7 +76,7 @@ func TestStaticHandler_ServesAssetsAndMissingAssets(t *testing.T) {
 	handler := s.staticHandler()
 
 	t.Run("asset", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/local/app.js", nil)
+		req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -86,7 +84,7 @@ func TestStaticHandler_ServesAssetsAndMissingAssets(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 		}
-		if body := w.Body.String(); !strings.Contains(body, "console.log('local');") {
+		if body := w.Body.String(); !strings.Contains(body, "console.log('app');") {
 			t.Fatalf("expected asset body, got %q", body)
 		}
 	})
@@ -102,7 +100,7 @@ func TestStaticHandler_ServesAssetsAndMissingAssets(t *testing.T) {
 		}
 	})
 
-	t.Run("install script unavailable in local app", func(t *testing.T) {
+	t.Run("install script unavailable", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/install.sh", nil)
 		w := httptest.NewRecorder()
 
@@ -114,8 +112,8 @@ func TestStaticHandler_ServesAssetsAndMissingAssets(t *testing.T) {
 	})
 }
 
-func TestHostedStaticHandler_DoesNotServeInstallScript(t *testing.T) {
-	s := newHostedStaticTestServer(t, testWebFS())
+func TestSPAStaticHandler_DoesNotServeInstallScript(t *testing.T) {
+	s := newSPAStaticTestServer(t, testWebFS())
 	handler := s.staticHandler()
 
 	req := httptest.NewRequest(http.MethodGet, "/install.sh", nil)
@@ -142,7 +140,7 @@ func TestStaticHandler_DoesNotOverrideAPIHandlers(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	if body := w.Body.String(); !strings.Contains(body, `"mode":"local"`) {
+	if body := w.Body.String(); !strings.Contains(body, `"host":"example.com"`) {
 		t.Fatalf("expected config payload, got %q", body)
 	}
 }
@@ -161,7 +159,7 @@ func TestStaticHandler_UnknownAPIPathReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestLocalStaticHandler_DoesNotFallbackUnknownRoutes(t *testing.T) {
+func TestStaticHandler_DoesNotFallbackUnknownRoutes(t *testing.T) {
 	s := newStaticTestServer(t, testWebFS())
 	handler := s.staticHandler()
 

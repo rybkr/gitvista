@@ -34,12 +34,12 @@ func TestSessionFromCtx_Absent(t *testing.T) {
 	}
 }
 
-func TestWithLocalSession(t *testing.T) {
+func TestWithSession(t *testing.T) {
 	repo := gitcore.NewEmptyRepository()
 	session := newTestSession(repo)
 
 	var captured *RepoSession
-	handler := withLocalSession(session, func(w http.ResponseWriter, r *http.Request) {
+	handler := withSession(session, func(w http.ResponseWriter, r *http.Request) {
 		captured = SessionFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
@@ -50,7 +50,7 @@ func TestWithLocalSession(t *testing.T) {
 	handler(w, req)
 
 	if captured != session {
-		t.Error("withLocalSession did not inject the session into the request context")
+		t.Error("withSession did not inject the session into the request context")
 	}
 	if w.Code != http.StatusOK {
 		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
@@ -96,9 +96,9 @@ func TestShouldLogRequestAtDebug(t *testing.T) {
 	}{
 		{name: "graph commits", path: "/api/graph/commits", status: http.StatusOK, want: true},
 		{name: "websocket", path: "/api/ws", status: http.StatusOK, want: true},
-		{name: "asset", path: "/local/app.js", status: http.StatusOK, want: true},
+		{name: "asset", path: "/assets/app.js", status: http.StatusOK, want: true},
 		{name: "api summary", path: "/api/graph/summary", status: http.StatusOK, want: false},
-		{name: "error remains info", path: "/local/app.js", status: http.StatusNotFound, want: false},
+		{name: "error remains info", path: "/assets/app.js", status: http.StatusNotFound, want: false},
 	}
 
 	for _, tt := range tests {
@@ -125,84 +125,6 @@ func TestRequestLogger_DowngradesNoisyRequests(t *testing.T) {
 	}
 	if !strings.Contains(out, "path=/api/graph/commits") {
 		t.Fatalf("expected graph commits path in log, got: %s", out)
-	}
-}
-
-func TestCorsMiddleware_AllowedOrigin(t *testing.T) {
-	allowed := map[string]bool{"https://app.example.com": true}
-	h := corsMiddleware(allowed, nopHandler)
-
-	req := httptest.NewRequest("GET", "/api/test", nil)
-	req.Header.Set("Origin", "https://app.example.com")
-	w := httptest.NewRecorder()
-
-	h.ServeHTTP(w, req)
-
-	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "https://app.example.com")
-	}
-	if got := w.Header().Get("Vary"); got != "Origin" {
-		t.Errorf("Vary = %q, want %q", got, "Origin")
-	}
-	if got := w.Header().Get("Access-Control-Allow-Methods"); got == "" {
-		t.Error("expected Access-Control-Allow-Methods to be set")
-	}
-}
-
-func TestCorsMiddleware_DisallowedOrigin(t *testing.T) {
-	allowed := map[string]bool{"https://app.example.com": true}
-	h := corsMiddleware(allowed, nopHandler)
-
-	req := httptest.NewRequest("GET", "/api/test", nil)
-	req.Header.Set("Origin", "https://evil.com")
-	w := httptest.NewRecorder()
-
-	h.ServeHTTP(w, req)
-
-	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want empty", got)
-	}
-	if got := w.Header().Get("Vary"); got != "Origin" {
-		t.Errorf("Vary = %q, want %q (must be set even for disallowed origins)", got, "Origin")
-	}
-}
-
-func TestCorsMiddleware_NoOrigin(t *testing.T) {
-	allowed := map[string]bool{"https://app.example.com": true}
-	h := corsMiddleware(allowed, nopHandler)
-
-	req := httptest.NewRequest("GET", "/api/test", nil)
-	// No Origin header set
-	w := httptest.NewRecorder()
-
-	h.ServeHTTP(w, req)
-
-	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want empty", got)
-	}
-	if got := w.Header().Get("Vary"); got != "" {
-		t.Errorf("Vary = %q, want empty (no Origin header in request)", got)
-	}
-}
-
-func TestCorsMiddleware_Preflight(t *testing.T) {
-	allowed := map[string]bool{"https://app.example.com": true}
-	h := corsMiddleware(allowed, nopHandler)
-
-	req := httptest.NewRequest("OPTIONS", "/api/test", nil)
-	req.Header.Set("Origin", "https://app.example.com")
-	w := httptest.NewRecorder()
-
-	h.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNoContent {
-		t.Errorf("status code = %d, want %d", w.Code, http.StatusNoContent)
-	}
-	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "https://app.example.com")
-	}
-	if got := w.Header().Get("Access-Control-Allow-Methods"); got == "" {
-		t.Error("expected Access-Control-Allow-Methods on preflight")
 	}
 }
 
@@ -256,6 +178,15 @@ func (h *hijackableRecorder) Flush() {
 	h.flushed = true
 }
 
+func TestStatusRecorder_UnwrapReturnsUnderlyingWriter(t *testing.T) {
+	recorder := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	sr := &statusRecorder{ResponseWriter: recorder}
+
+	if got := sr.Unwrap(); got != recorder {
+		t.Fatalf("Unwrap() = %T, want underlying recorder", got)
+	}
+}
+
 func TestWriteDeadline_SetsPerResponseDeadline(t *testing.T) {
 	recorder := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	var called bool
@@ -278,6 +209,20 @@ func TestWriteDeadline_SetsPerResponseDeadline(t *testing.T) {
 	}
 	if remaining := time.Until(recorder.deadline); remaining <= 0 || remaining > apiWriteDeadline+time.Second {
 		t.Fatalf("deadline remaining = %s, want within (0, %s]", remaining, apiWriteDeadline+time.Second)
+	}
+}
+
+func TestWriteDeadline_SetsDeadlineThroughStatusRecorder(t *testing.T) {
+	recorder := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
+	handler := requestLogger(logger, http.HandlerFunc(writeDeadline(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})))
+
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/test", nil))
+
+	if recorder.deadline.IsZero() {
+		t.Fatal("write deadline was not set through statusRecorder")
 	}
 }
 

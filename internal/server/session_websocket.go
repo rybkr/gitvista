@@ -275,6 +275,7 @@ func (rs *RepoSession) clientWritePump(conn *websocket.Conn, done chan struct{},
 	}
 }
 
+// StartFetchTicker starts a periodic repository refresh loop for the session.
 func (rs *RepoSession) StartFetchTicker(interval time.Duration) {
 	rs.wg.Add(1)
 	go func() {

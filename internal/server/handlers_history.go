@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rybkr/gitvista/gitcore"
+	"github.com/rybkr/gitvista/internal/analytics"
 	"github.com/rybkr/gitvista/internal/repositoryview"
 )
 
@@ -291,7 +292,7 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query, err := parseAnalyticsQuery(
+	query, err := analytics.ParseQuery(
 		r.URL.Query().Get("period"),
 		r.URL.Query().Get("start"),
 		r.URL.Query().Get("end"),
@@ -301,7 +302,7 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheKey := analyticsCacheKey(repo, query.cacheKey)
+	cacheKey := analytics.CacheKey(repo, query.CacheKey)
 	if cached, ok := session.diffCache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		if encodeErr := json.NewEncoder(w).Encode(cached); encodeErr != nil {
@@ -310,16 +311,16 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	analytics, err := buildAnalytics(repo, query)
+	response, err := analytics.Build(repo, query)
 	if err != nil {
-		s.logger.Error("Failed to build analytics", "query", query.cacheKey, "err", err)
+		s.logger.Error("Failed to build analytics", "query", query.CacheKey, "err", err)
 		http.Error(w, "Failed to build analytics", http.StatusInternalServerError)
 		return
 	}
-	session.diffCache.Put(cacheKey, analytics)
+	session.diffCache.Put(cacheKey, response)
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(analytics); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }

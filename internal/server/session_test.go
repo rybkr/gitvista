@@ -125,6 +125,28 @@ func TestRepoSession_DefaultLogger(t *testing.T) {
 	}
 }
 
+func TestRepoSession_UpdateRepositoryClearsCaches(t *testing.T) {
+	repo := gitcore.NewEmptyRepository()
+	rs := NewRepoSession(SessionConfig{
+		ID:          "test",
+		InitialRepo: repo,
+		ReloadFn:    func() (*gitcore.Repository, error) { return repo, nil },
+		Logger:      silentLogger(),
+	})
+
+	rs.blameCache.Put("blame", "value")
+	rs.diffCache.Put("diff", "value")
+
+	rs.updateRepository()
+
+	if _, ok := rs.blameCache.Get("blame"); ok {
+		t.Fatal("expected stale blame cache entry to be cleared")
+	}
+	if _, ok := rs.diffCache.Get("diff"); ok {
+		t.Fatal("expected stale diff cache entry to be cleared")
+	}
+}
+
 func TestMarshalPacketPayload(t *testing.T) {
 	msg := UpdateMessage{
 		Delta: &repositoryview.RepositoryDelta{

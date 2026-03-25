@@ -12,7 +12,12 @@ type HealthStatus struct {
 }
 
 // handleHealth returns a health check response for load balancers and monitoring.
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	status := HealthStatus{
@@ -20,10 +25,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	// When serving a single repository, include the human-readable repo name (not the filesystem path)
-	// so operational monitoring knows which repo is being served without leaking
-	// internal directory structure to unauthenticated callers.
-	if s.localSession != nil {
-		if repo := s.localSession.Repo(); repo != nil {
+	// so operational monitoring knows which repo is being served without leaking internal directory
+	// structure to unauthenticated callers.
+	if s.session != nil {
+		if repo := s.session.Repo(); repo != nil {
 			status.Repo = repo.Name()
 		}
 	}
