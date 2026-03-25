@@ -7,7 +7,10 @@ import (
 )
 
 func TestParseGlobalFlagsDefaults(t *testing.T) {
-	flags, remaining := parseGlobalFlags(nil)
+	flags, remaining, err := parseGlobalFlags(nil)
+	if err != nil {
+		t.Fatalf("parseGlobalFlags() error = %v", err)
+	}
 
 	if flags.colorMode != cli.ColorAuto {
 		t.Fatalf("colorMode = %v, want %v", flags.colorMode, cli.ColorAuto)
@@ -27,7 +30,7 @@ func TestParseGlobalFlagsDefaults(t *testing.T) {
 }
 
 func TestParseGlobalFlagsParsesSupportedFlags(t *testing.T) {
-	flags, remaining := parseGlobalFlags([]string{
+	flags, remaining, err := parseGlobalFlags([]string{
 		"--no-color",
 		"--repo", "/tmp/repo",
 		"--cpuprofile=cpu.pprof",
@@ -35,6 +38,9 @@ func TestParseGlobalFlagsParsesSupportedFlags(t *testing.T) {
 		"rev-list",
 		"HEAD",
 	})
+	if err != nil {
+		t.Fatalf("parseGlobalFlags() error = %v", err)
+	}
 
 	if flags.colorMode != cli.ColorNever {
 		t.Fatalf("colorMode = %v, want %v", flags.colorMode, cli.ColorNever)
@@ -73,7 +79,10 @@ func TestParseGlobalFlagsParsesColorForms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			flags, remaining := parseGlobalFlags(tt.args)
+			flags, remaining, err := parseGlobalFlags(tt.args)
+			if err != nil {
+				t.Fatalf("parseGlobalFlags() error = %v", err)
+			}
 			if flags.colorMode != tt.want {
 				t.Fatalf("colorMode = %v, want %v", flags.colorMode, tt.want)
 			}
@@ -93,6 +102,7 @@ func TestParseStringFlag(t *testing.T) {
 		wantValue string
 		wantSkip  int
 		wantOK    bool
+		wantErr   string
 	}{
 		{
 			name:      "separate value",
@@ -119,14 +129,52 @@ func TestParseStringFlag(t *testing.T) {
 			flag:   "--repo",
 			wantOK: false,
 		},
+		{
+			name:    "missing separate value",
+			args:    []string{"--repo"},
+			index:   0,
+			flag:    "--repo",
+			wantErr: "missing value",
+		},
+		{
+			name:    "missing inline value",
+			args:    []string{"--repo="},
+			index:   0,
+			flag:    "--repo",
+			wantErr: "missing value",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotValue, gotSkip, gotOK := parseStringFlag(tt.args, tt.index, tt.flag)
+			gotValue, gotSkip, gotOK, err := parseStringFlag(tt.args, tt.index, tt.flag)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() == "" || gotOK {
+					t.Fatalf("parseStringFlag() = (%q, %d, %t, %v)", gotValue, gotSkip, gotOK, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseStringFlag() error = %v", err)
+			}
 			if gotValue != tt.wantValue || gotSkip != tt.wantSkip || gotOK != tt.wantOK {
 				t.Fatalf("parseStringFlag() = (%q, %d, %t), want (%q, %d, %t)", gotValue, gotSkip, gotOK, tt.wantValue, tt.wantSkip, tt.wantOK)
 			}
 		})
+	}
+}
+
+func TestParseGlobalFlagsRejectsMissingValues(t *testing.T) {
+	tests := [][]string{
+		{"--repo"},
+		{"--cpuprofile"},
+		{"--memprofile="},
+		{"--color"},
+	}
+
+	for _, args := range tests {
+		if _, _, err := parseGlobalFlags(args); err == nil {
+			t.Fatalf("parseGlobalFlags(%v) unexpectedly succeeded", args)
+		}
 	}
 }

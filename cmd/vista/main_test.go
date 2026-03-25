@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -184,5 +185,29 @@ func TestParseFlagsRejectsUnexpectedArgument(t *testing.T) {
 	}
 	if err.Error() != "unexpected argument: extra" {
 		t.Fatalf("error = %q, want %q", err.Error(), "unexpected argument: extra")
+	}
+}
+
+func TestParseFlagsReportsFlagErrors(t *testing.T) {
+	_, err := parseFlags([]string{"--bad-flag"}, func(key, fallback string) string {
+		return fallback
+	})
+	if err == nil {
+		t.Fatal("expected parseFlags to reject unknown flag")
+	}
+	if !strings.Contains(err.Error(), "flag provided but not defined") {
+		t.Fatalf("error = %q", err.Error())
+	}
+}
+
+func TestParseFlagsRejectsMissingPortValue(t *testing.T) {
+	_, err := parseFlags([]string{"--port"}, func(key, fallback string) string {
+		return fallback
+	})
+	if err == nil {
+		t.Fatal("expected parseFlags to reject missing port value")
+	}
+	if !strings.Contains(err.Error(), "flag needs an argument") {
+		t.Fatalf("error = %q", err.Error())
 	}
 }

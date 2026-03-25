@@ -23,7 +23,11 @@ func main() {
 }
 
 func run() int {
-	gf, args := parseGlobalFlags(os.Args[1:])
+	gf, args, err := parseGlobalFlags(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	cw := cli.NewWriter(os.Stdout, gf.colorMode)
 
 	if gf.cpuProfilePath != "" {
@@ -68,11 +72,9 @@ func run() int {
 		}()
 	}
 
-	for _, a := range args {
-		if a == "--version" {
-			printVersion(cw)
-			return 0
-		}
+	if len(args) == 1 && args[0] == "--version" {
+		printVersion(cw)
+		return 0
 	}
 
 	app := cli.NewApp("gitvista-cli", version)
@@ -84,7 +86,6 @@ func run() int {
 		cmd := app.Lookup(args[0])
 		if cmd != nil && cmd.NeedsRepo {
 			start := time.Now()
-			var err error
 			repoCtx.repo, err = gitcore.NewRepository(repoCtx.path)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "fatal: %v\n", err)

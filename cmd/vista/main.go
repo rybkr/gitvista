@@ -2,11 +2,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	neturl "net/url"
@@ -96,6 +96,7 @@ func main() {
 
 	parsed, err := parseFlags(os.Args[1:], getEnv)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 	applyInvocationDefaults(&parsed)
@@ -172,8 +173,9 @@ func parseFlags(args []string, getenv func(string, string) string) (appFlags, er
 		}
 	}
 
+	var parseOutput bytes.Buffer
 	fs := flag.NewFlagSet("gitvista "+flags.command, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(&parseOutput)
 	fs.StringVar(&flags.repoPath, "repo", getenv("GITVISTA_REPO", ""), "Path to git repository")
 	fs.StringVar(&flags.port, "port", getenv("GITVISTA_PORT", "8080"), "Port to listen on")
 	fs.StringVar(&flags.host, "host", getenv("GITVISTA_HOST", ""), "Host to bind to (empty = loopback)")
@@ -204,7 +206,11 @@ func parseFlags(args []string, getenv func(string, string) string) (appFlags, er
 	}
 
 	if err := fs.Parse(args); err != nil {
-		return flags, err
+		msg := strings.TrimSpace(parseOutput.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return flags, fmt.Errorf("%s", msg)
 	}
 
 	rest := fs.Args()
@@ -321,6 +327,15 @@ func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
 		slog.Error("Failed to load repository", "path", parsed.repoPath, "err", err)
 		return 1
 	}
+	repoOwned := true
+	defer func() {
+		if !repoOwned {
+			return
+		}
+		if err := repo.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "%s close repository: %v\n", cw.Red("error:"), err)
+		}
+	}()
 
 	target, err := resolveLaunchTarget(repo, parsed)
 	if err != nil {
@@ -338,6 +353,7 @@ func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
 	}
 
 	serv := server.NewServer(repo, addr, webFS)
+	repoOwned = false
 
 	slog.Info("Starting GitVista", "version", version, "command", parsed.command)
 	slog.Info("Repository loaded", "path", parsed.repoPath)
@@ -392,6 +408,11 @@ func runURL(parsed appFlags) int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
+	defer func() {
+		if err := repo.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: close repository: %v\n", err)
+		}
+	}()
 
 	target, err := resolveLaunchTarget(repo, parsed)
 	if err != nil {
@@ -437,12 +458,16 @@ func runDoctor(parsed appFlags, cw *cli.Writer) int {
 			Message: err.Error(),
 		})
 	} else {
+		defer func() {
+			if err := repo.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "%s close repository: %v\n", cw.Red("error:"), err)
+			}
+		}()
 		report.Checks = append(report.Checks, doctorCheck{
 			Name:    "repository",
 			Status:  "ok",
 			Message: fmt.Sprintf("loaded %s", parsed.repoPath),
 		})
-		_ = repo
 	}
 
 	ln, err := net.Listen("tcp", addr)

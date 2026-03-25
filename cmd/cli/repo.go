@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 
 func runRepo(repoCtx *repositoryContext, args []string, cw *cli.Writer) int {
 	if len(args) != 0 {
-		fmt.Printf("usage: gitvista-cli repo\n")
+		fmt.Fprintln(os.Stderr, "usage: gitvista-cli repo")
 		return 1
 	}
 
