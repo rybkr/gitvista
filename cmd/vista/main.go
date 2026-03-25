@@ -19,9 +19,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/gitcore"
-	app "github.com/rybkr/gitvista/internal/app/local"
 	"github.com/rybkr/gitvista/internal/cli"
+	"github.com/rybkr/gitvista/internal/server"
 	"github.com/rybkr/gitvista/internal/selfupdate"
 )
 
@@ -329,11 +330,13 @@ func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
 	addr := fmt.Sprintf("%s:%s", resolveBindHost(parsed.host), parsed.port)
 	baseURL, openURL := buildURLs(addr, target)
 
-	serv, err := app.NewServer(repo, addr)
+	webFS, err := gitvista.GetLocalWebFS()
 	if err != nil {
 		slog.Error("Failed to load local frontend", "err", err)
 		return 1
 	}
+
+	serv := server.NewLocalServer(repo, addr, webFS)
 
 	slog.Info("Starting GitVista", "version", version, "mode", modeLocal, "command", parsed.command)
 	slog.Info("Repository loaded", "path", parsed.repoPath)
