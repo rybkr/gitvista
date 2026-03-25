@@ -2,7 +2,7 @@
 
 **Real-time Git repository visualization in your browser.**
 
-GitVista is a lightweight local tool that renders your Git history as an interactive graph, with live updates as you commit, branch, and merge. The installable `gitvista` binary now ships only the localhost product. The public `gitvista.io` site is built separately.
+GitVista is a lightweight local tool that renders your Git history as an interactive graph, with live updates as you commit, branch, and merge.
 
 ## Features
 
@@ -60,12 +60,10 @@ All options can be set via CLI flags or environment variables.
 
 ```
 cmd/vista/              Local GitVista binary
-cmd/site/               Hosted gitvista.io binary
 gitcore/                Pure Go git engine and object parsing (no git CLI)
-internal/server/        Shared HTTP + WebSocket server components
-internal/app/           App composition for local and hosted products
-web/gitvista/           Shared GitVista repository experience
-web/local + web/site/   Thin local and hosted shells
+internal/server/        Local HTTP + WebSocket server components
+web/gitvista/           Shared repository experience modules
+web/local/              Local app shell
 ```
 
 **Backend**: Go 1.24, two dependencies (`fsnotify`, `gorilla/websocket`). Parses `.git/` directly — loose objects, pack files, refs, tags, blame, working tree status, and diffs. No git CLI required for core parsing.
@@ -81,21 +79,9 @@ make build
 ./vista
 ```
 
-## Run Hosted Site
+## Hosted Product
 
-```bash
-go run ./cmd/site
-make run-site SITE_ARGS='-data-dir /srv/gitvista/repos'
-```
-
-## Deploy Hosted Site
-
-```bash
-fly launch --no-deploy
-fly deploy
-```
-
-The included `fly.toml` and `Dockerfile` target the hosted deployment path. The local binary remains the default release artifact for end users.
+The hosted `gitvista.io` service now lives in a separate private repository. This public repo builds and ships only the local product.
 
 ## Development
 

@@ -22,17 +22,19 @@ import (
 	"github.com/rybkr/gitvista"
 	"github.com/rybkr/gitvista/gitcore"
 	"github.com/rybkr/gitvista/internal/cli"
-	"github.com/rybkr/gitvista/internal/server"
 	"github.com/rybkr/gitvista/internal/selfupdate"
+	"github.com/rybkr/gitvista/internal/server"
 )
 
 const (
-	modeLocal      = "local"
 	outputFormatJS = "json"
-	commandOpen    = "open"
-	commandServe   = "serve"
-	commandURL     = "url"
-	commandDoctor  = "doctor"
+)
+
+const (
+	commandOpen   = "open"
+	commandServe  = "serve"
+	commandURL    = "url"
+	commandDoctor = "doctor"
 )
 
 // Build-time variables set via -ldflags.
@@ -70,7 +72,6 @@ type startupInfo struct {
 	Version    string `json:"version"`
 	Commit     string `json:"commit"`
 	BuildDate  string `json:"build_date"`
-	Mode       string `json:"mode"`
 	Listen     string `json:"listen"`
 	OpenURL    string `json:"open_url,omitempty"`
 	RepoPath   string `json:"repo_path,omitempty"`
@@ -336,9 +337,9 @@ func runServe(parsed appFlags, cw *cli.Writer, launchBrowser bool) int {
 		return 1
 	}
 
-	serv := server.NewLocalServer(repo, addr, webFS)
+	serv := server.NewServer(repo, addr, webFS)
 
-	slog.Info("Starting GitVista", "version", version, "mode", modeLocal, "command", parsed.command)
+	slog.Info("Starting GitVista", "version", version, "command", parsed.command)
 	slog.Info("Repository loaded", "path", parsed.repoPath)
 	slog.Info("Listening for GitVista requests")
 
@@ -557,7 +558,7 @@ func buildURLs(addr string, target launchTarget) (string, string) {
 
 func printStartupBanner(cw *cli.Writer, command, baseURL, openURL, repoPath string, repoLoadDur time.Duration, launchBrowser bool) {
 	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
-	fmt.Printf("  %s    %s  (%s)\n", cw.Cyan("cmd:"), command, modeLocal)
+	fmt.Printf("  %s    %s\n", cw.Cyan("cmd:"), command)
 	timing := fmt.Sprintf("loaded in %s", cw.Yellow(repoLoadDur.String()))
 	fmt.Printf("  %s   %s  (%s)\n", cw.Cyan("repo:"), repoPath, timing)
 	fmt.Printf("  %s %s\n", cw.Cyan("listen:"), baseURL)
@@ -578,7 +579,6 @@ func printStartupJSON(command, baseURL, openURL, repoPath string, repoLoadDur ti
 		Version:    version,
 		Commit:     commit,
 		BuildDate:  buildDate,
-		Mode:       modeLocal,
 		Listen:     baseURL,
 		OpenURL:    openURL,
 		RepoPath:   repoPath,

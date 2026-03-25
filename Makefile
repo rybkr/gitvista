@@ -1,10 +1,10 @@
 .PHONY: help \
 	test unit e2e test-js validate-js \
 	fmt fmt-check vet lint security \
-	build build-site run-site profile \
+	build profile \
 	ci-local ci-remote \
-	deploy clean cloc docker-build deps-check \
-	setup-test-repos docs-api
+	clean cloc deps-check \
+	setup-test-repos
 
 GOCMD = go
 GOTEST = $(GOCMD) test
@@ -24,8 +24,6 @@ PROFILE ?= /tmp/gitvista-cli.cpu.prof
 MEMPROFILE ?= /tmp/gitvista-cli.mem.prof
 PPROF_WEB ?= 0
 SECURITY_BEST_EFFORT ?= 0
-DEPLOY_ENV ?= staging
-SITE_ARGS ?=
 
 .DEFAULT_GOAL := help
 
@@ -208,10 +206,6 @@ build:
 	@echo "Building main binary..."
 	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o vista ./cmd/vista
 
-## docs-api: Generate embedded API docs with doc2go
-docs-api:
-	./scripts/generate_doc2go_embed.sh
-
 ##@ Profiling
 ## profile: Capture repo profiles
 ##   options: REPO=... (required), PROFILE=..., MEMPROFILE=..., PPROF_WEB=0|1
@@ -244,7 +238,7 @@ ci-local: fmt-check vet lint security test validate-js build
 	@echo "All local CI checks passed!"
 
 ## ci-remote: Run full CI checks
-ci-remote: fmt-check vet lint security test validate-js build docker-build deps-check
+ci-remote: fmt-check vet lint security test validate-js build deps-check
 	@echo "All CI checks passed!"
 
 ##@ Maintenance
@@ -252,7 +246,7 @@ ci-remote: fmt-check vet lint security test validate-js build docker-build deps-
 clean:
 	@echo "Cleaning..."
 	$(GOCLEAN)
-	@rm -f vista cli gitvista-site
+	@rm -f vista cli
 	@rm -rf test/cover/
 	@echo "Clean complete"
 
@@ -264,28 +258,6 @@ cloc:
 	else \
 		echo "cloc not found - install with: brew install cloc or apt install cloc"; \
 	fi
-
-##@ Deployment
-## deploy: Deploy to Fly.io
-##   options: DEPLOY_ENV=staging|production (default staging)
-deploy:
-	@case "$(DEPLOY_ENV)" in \
-		staging) \
-			echo "Deploying to staging..."; \
-			flyctl deploy --config fly.staging.toml --app gitvista-staging ;; \
-		production) \
-			echo "Deploying to production..."; \
-			flyctl deploy --app gitvista ;; \
-		*) \
-			echo "DEPLOY_ENV must be 'staging' or 'production'"; \
-			exit 1 ;; \
-	esac
-
-##@ Internal
-## docker-build: Build the Docker image used by full CI
-docker-build:
-	@echo "Building Docker image..."
-	@docker build -t gitvista:latest .
 
 ## deps-check: Verify module downloads and tidy state
 deps-check:

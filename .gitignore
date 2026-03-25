@@ -17,3 +17,8 @@ gosec-report.json
 .ruff_cache/
 .cache/
 __pycache__/
+
+AGENTS.md
+.agents/
+.claude/
+skills-lock.json
