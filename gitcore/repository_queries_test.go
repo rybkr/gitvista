@@ -3,6 +3,7 @@ package gitcore
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -175,7 +176,7 @@ func TestRepositoryAccessDescriptionAndTagNames(t *testing.T) {
 	if len(tagNames) != 2 {
 		t.Fatalf("TagNames() len = %d, want 2", len(tagNames))
 	}
-	if !strings.Contains(strings.Join(tagNames, ","), "v1.0") || !strings.Contains(strings.Join(tagNames, ","), "v1.1") {
+	if !slices.Equal(tagNames, []string{"v1.0", "v1.1"}) {
 		t.Fatalf("TagNames() = %#v", tagNames)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -211,6 +212,7 @@ func (r *Repository) TagNames() []string {
 			result = append(result, name)
 		}
 	}
+	slices.Sort(result)
 	return result
 }
 

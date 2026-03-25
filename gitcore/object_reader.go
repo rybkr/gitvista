@@ -3,6 +3,7 @@ package gitcore
 import (
 	"bytes"
 	"compress/zlib"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,15 +36,18 @@ func (r *Repository) readObject(id Hash) (Object, error) {
 	}
 
 	header, content, err := r.readLooseObjectRaw(id)
-	if err == nil {
-		objectType, err := objectTypeFromHeader(header)
-		if err != nil {
-			return nil, fmt.Errorf("unrecognized loose object type: %q for %s", header, id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("object not found: %s", id)
 		}
-		return parseObject(id, objectType, content)
+		return nil, fmt.Errorf("failed to read loose object %s: %w", id, err)
 	}
 
-	return nil, fmt.Errorf("object not found: %s", id)
+	objectType, err := objectTypeFromHeader(header)
+	if err != nil {
+		return nil, fmt.Errorf("unrecognized loose object type: %q for %s", header, id)
+	}
+	return parseObject(id, objectType, content)
 }
 
 func (r *Repository) readObjectData(id Hash, depth int) ([]byte, ObjectType, error) {
@@ -52,15 +56,18 @@ func (r *Repository) readObjectData(id Hash, depth int) ([]byte, ObjectType, err
 	}
 
 	header, content, err := r.readLooseObjectRaw(id)
-	if err == nil {
-		objectType, err := objectTypeFromHeader(header)
-		if err != nil {
-			return nil, ObjectTypeInvalid, err
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ObjectTypeInvalid, fmt.Errorf("object not found: %s", id)
 		}
-		return content, objectType, nil
+		return nil, ObjectTypeInvalid, fmt.Errorf("failed to read loose object %s: %w", id, err)
 	}
 
-	return nil, ObjectTypeInvalid, fmt.Errorf("object not found: %s", id)
+	objectType, err := objectTypeFromHeader(header)
+	if err != nil {
+		return nil, ObjectTypeInvalid, err
+	}
+	return content, objectType, nil
 }
 
 func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte, err error) {

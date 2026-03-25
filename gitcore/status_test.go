@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 )
@@ -244,5 +245,28 @@ func TestComputeWorkingTreeStatus_PropagatesWalkErrors(t *testing.T) {
 
 	if _, err := ComputeWorkingTreeStatus(repo); err == nil {
 		t.Fatal("ComputeWorkingTreeStatus() error = nil, want walk error")
+	}
+}
+
+func TestComputeWorkingTreeStatus_ReturnsFilesSortedByPath(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	writeDiskFile(t, repo, "z-last.txt", []byte("z\n"))
+	writeDiskFile(t, repo, "a-first.txt", []byte("a\n"))
+	writeDiskFile(t, repo, "m-middle.txt", []byte("m\n"))
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+
+	got := make([]string, 0, len(status.Files))
+	for _, file := range status.Files {
+		got = append(got, file.Path)
+	}
+
+	want := []string{"a-first.txt", "m-middle.txt", "z-last.txt"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("status file order = %v, want %v", got, want)
 	}
 }

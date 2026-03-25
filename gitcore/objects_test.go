@@ -322,6 +322,34 @@ func TestReadCompressedDataAndLooseObjects(t *testing.T) {
 	}
 }
 
+func TestReadObjectPreservesLooseObjectCorruptionErrors(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	corruptID := mustHash(t, testHash1)
+	corruptDir := filepath.Join(repo.gitDir, "objects", string(corruptID)[:2])
+	if err := os.MkdirAll(corruptDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(corruptDir, string(corruptID)[2:]), []byte("bad"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repo.readObject(corruptID); err == nil || strings.Contains(err.Error(), "object not found") {
+		t.Fatalf("readObject() error = %v, want corruption error", err)
+	}
+	if _, _, err := repo.readObjectData(corruptID, 0); err == nil || strings.Contains(err.Error(), "object not found") {
+		t.Fatalf("readObjectData() error = %v, want corruption error", err)
+	}
+
+	missingID := mustHash(t, testHash2)
+	if _, err := repo.readObject(missingID); err == nil || !strings.Contains(err.Error(), "object not found") {
+		t.Fatalf("readObject(missing) error = %v, want not found", err)
+	}
+	if _, _, err := repo.readObjectData(missingID, 0); err == nil || !strings.Contains(err.Error(), "object not found") {
+		t.Fatalf("readObjectData(missing) error = %v, want not found", err)
+	}
+}
+
 func TestRepositoryAndRefsFlow(t *testing.T) {
 	repo := newRepoSkeleton(t)
 	config := `[remote "origin"]

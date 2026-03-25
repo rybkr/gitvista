@@ -173,7 +173,7 @@ func chronologicalRevListCommits(commits map[Hash]*Commit, starts []Hash) []*Com
 
 	ordered := make([]*Commit, 0, len(commits))
 	for h.Len() > 0 {
-		commitItem := mustRevListCommitItem(heap.Pop(h))
+		commitItem := h.popItem()
 		commit := commitItem.commit
 		ordered = append(ordered, commit)
 		for _, parent := range commit.Parents {
@@ -225,7 +225,7 @@ func topoOrderRevListCommits(commits []*Commit, useDate bool) []*Commit {
 
 		ordered := make([]*Commit, 0, len(commits))
 		for h.Len() > 0 {
-			commit := mustRevListCommitItem(heap.Pop(h)).commit
+			commit := h.popItem().commit
 			ordered = append(ordered, commit)
 			indegree[commit.ID] = 0
 			for _, parent := range commit.Parents {
@@ -309,7 +309,8 @@ func (h revListCommitHeap) Swap(i, j int) {
 }
 
 func (h *revListCommitHeap) Push(x any) {
-	*h = append(*h, mustRevListCommitItem(x))
+	item, _ := x.(revListCommitItem)
+	*h = append(*h, item)
 }
 
 func (h *revListCommitHeap) Pop() any {
@@ -321,10 +322,7 @@ func (h *revListCommitHeap) Pop() any {
 	return item
 }
 
-func mustRevListCommitItem(v any) revListCommitItem {
-	item, ok := v.(revListCommitItem)
-	if !ok {
-		panic("gitcore: expected revListCommitItem")
-	}
+func (h *revListCommitHeap) popItem() revListCommitItem {
+	item, _ := heap.Pop(h).(revListCommitItem)
 	return item
 }

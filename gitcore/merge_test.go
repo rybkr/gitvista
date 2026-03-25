@@ -1,6 +1,7 @@
 package gitcore
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -233,5 +234,51 @@ func TestMergePreview_IdenticalChanges(t *testing.T) {
 	}
 	if result.Stats.Conflicts != 0 {
 		t.Fatalf("Conflicts = %d, want 0", result.Stats.Conflicts)
+	}
+}
+
+func TestMergePreview_ReturnsEntriesSortedByPath(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	blobBase := createBlob(t, repo, []byte("base"))
+	blobOurs := createBlob(t, repo, []byte("ours"))
+	blobTheirs := createBlob(t, repo, []byte("theirs"))
+
+	baseTree := createTree(t, repo, []TreeEntry{
+		{ID: blobBase, Name: "a.txt", Mode: "100644", Type: ObjectTypeBlob},
+		{ID: blobBase, Name: "m.txt", Mode: "100644", Type: ObjectTypeBlob},
+		{ID: blobBase, Name: "z.txt", Mode: "100644", Type: ObjectTypeBlob},
+	})
+	oursTree := createTree(t, repo, []TreeEntry{
+		{ID: blobOurs, Name: "a.txt", Mode: "100644", Type: ObjectTypeBlob},
+		{ID: blobBase, Name: "m.txt", Mode: "100644", Type: ObjectTypeBlob},
+		{ID: blobBase, Name: "z.txt", Mode: "100644", Type: ObjectTypeBlob},
+	})
+	theirsTree := createTree(t, repo, []TreeEntry{
+		{ID: blobBase, Name: "a.txt", Mode: "100644", Type: ObjectTypeBlob},
+		{ID: blobTheirs, Name: "m.txt", Mode: "100644", Type: ObjectTypeBlob},
+		{ID: blobTheirs, Name: "z.txt", Mode: "100644", Type: ObjectTypeBlob},
+	})
+
+	hashBase := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hashOurs := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	hashTheirs := Hash("cccccccccccccccccccccccccccccccccccccccc")
+	addCommit(repo, makeCommit(hashBase, nil, baseTree, 30))
+	addCommit(repo, makeCommit(hashOurs, []Hash{hashBase}, oursTree, 20))
+	addCommit(repo, makeCommit(hashTheirs, []Hash{hashBase}, theirsTree, 10))
+
+	result, err := MergePreview(repo, hashOurs, hashTheirs)
+	if err != nil {
+		t.Fatalf("MergePreview() error = %v", err)
+	}
+
+	got := make([]string, 0, len(result.Entries))
+	for _, entry := range result.Entries {
+		got = append(got, entry.Path)
+	}
+
+	want := []string{"a.txt", "m.txt", "z.txt"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("entry order = %v, want %v", got, want)
 	}
 }

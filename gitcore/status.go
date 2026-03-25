@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // FileStatus represents the status of a single file in the working tree.
@@ -218,6 +219,9 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	for _, fs := range results {
 		status.Files = append(status.Files, *fs)
 	}
+	slices.SortFunc(status.Files, func(a, b FileStatus) int {
+		return compareStrings(a.Path, b.Path)
+	})
 
 	return status, nil
 }

@@ -1,6 +1,9 @@
 package gitcore
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // ConflictType classifies how a file is affected in a merge preview.
 type ConflictType string
@@ -249,6 +252,10 @@ func MergePreview(repo *Repository, oursHash, theirsHash Hash) (*MergePreviewRes
 		}
 		entries = append(entries, entry)
 	}
+
+	slices.SortFunc(entries, func(a, b MergePreviewEntry) int {
+		return compareStrings(a.Path, b.Path)
+	})
 
 	return &MergePreviewResult{
 		MergeBaseHash: baseHash,
