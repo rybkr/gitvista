@@ -1,6 +1,7 @@
 /vista
 /cli
-/gitvista-site
+/gitvista
+/gitvista-cli
 *.exe
 *.out
 

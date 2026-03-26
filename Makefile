@@ -202,9 +202,9 @@ security:
 ##   options: VERSION=..., COMMIT=..., BUILD_DATE=...
 build:
 	@echo "Building CLI binary..."
-	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o cli ./cmd/cli
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista-cli ./cmd/cli
 	@echo "Building main binary..."
-	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o vista ./cmd/vista
+	$(GOBUILD) -v -ldflags "$(LDFLAGS)" -o gitvista ./cmd/vista
 
 ##@ Profiling
 ## profile: Capture repo profiles
@@ -246,7 +246,7 @@ ci-remote: fmt-check vet lint security test validate-js build deps-check
 clean:
 	@echo "Cleaning..."
 	$(GOCLEAN)
-	@rm -f vista cli
+	@rm -f vista cli gitvista gitvista-cli
 	@rm -rf test/cover/
 	@echo "Clean complete"
 

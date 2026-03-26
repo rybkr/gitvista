@@ -156,12 +156,7 @@ func TestHandleWebSocket_SendsBootstrapSequenceBeforeRegisteringClient(t *testin
 		t.Fatalf("fourth message type = %q, want %q", msg4.Type, messageTypeHead)
 	}
 
-	session.clientsMu.RLock()
-	clientCount := len(session.clients)
-	session.clientsMu.RUnlock()
-	if clientCount != 1 {
-		t.Fatalf("registered clients = %d, want 1", clientCount)
-	}
+	waitForRegisteredClients(t, session, 1)
 }
 
 func TestHandleWebSocket_DoesNotReloadRepositoryDuringBootstrap(t *testing.T) {

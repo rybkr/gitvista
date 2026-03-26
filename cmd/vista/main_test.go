@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/rybkr/gitvista/internal/cli"
 )
 
 func TestParseFlagsDefaultsToServe(t *testing.T) {
@@ -197,6 +201,18 @@ func TestParseFlagsDoctorJSON(t *testing.T) {
 	}
 }
 
+func TestParseFlagsRecognizesUpdate(t *testing.T) {
+	flags, err := parseFlags([]string{"update"}, func(key, fallback string) string {
+		return fallback
+	})
+	if err != nil {
+		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if flags.command != commandUpdate {
+		t.Fatalf("command = %q, want %q", flags.command, commandUpdate)
+	}
+}
+
 func TestParseFlagsRejectsUnexpectedArgument(t *testing.T) {
 	_, err := parseFlags([]string{"serve", "extra"}, func(key, fallback string) string {
 		return fallback
@@ -230,5 +246,127 @@ func TestParseFlagsRejectsMissingPortValue(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "flag needs an argument") {
 		t.Fatalf("error = %q", err.Error())
+	}
+}
+
+func TestUpdateInstructionForPath(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "homebrew cellar install",
+			path: "/opt/homebrew/Cellar/gitvista/1.2.3/bin/vista",
+			want: "brew upgrade gitvista",
+		},
+		{
+			name: "direct install",
+			path: "/usr/local/bin/vista",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := updateInstructionForPath(tt.path)
+			if got != tt.want {
+				t.Fatalf("updateInstructionForPath(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunUpdateRejectsHomebrewInstall(t *testing.T) {
+	restore := stubUpdateDeps(
+		func(string) (string, error) { return "v1.2.4", nil },
+		func(string, string, string) error { return nil },
+		func() (string, error) { return "/opt/homebrew/Cellar/gitvista/1.2.3/bin/vista", nil },
+	)
+	defer restore()
+
+	version = "v1.2.3"
+	code := runUpdate(cli.NewWriter(os.Stdout, cli.ColorNever))
+	if code != 1 {
+		t.Fatalf("runUpdate() = %d, want 1", code)
+	}
+}
+
+func TestRunUpdateNoopWhenAlreadyCurrent(t *testing.T) {
+	restore := stubUpdateDeps(
+		func(string) (string, error) { return "v1.2.3", nil },
+		func(string, string, string) error {
+			t.Fatal("performUpdateFunc should not be called")
+			return nil
+		},
+		func() (string, error) { return "/usr/local/bin/vista", nil },
+	)
+	defer restore()
+
+	version = "v1.2.3"
+	code := runUpdate(cli.NewWriter(os.Stdout, cli.ColorNever))
+	if code != 0 {
+		t.Fatalf("runUpdate() = %d, want 0", code)
+	}
+}
+
+func TestRunUpdatePerformsUpdate(t *testing.T) {
+	var gotRepo, gotProject, gotVersion string
+	restore := stubUpdateDeps(
+		func(string) (string, error) { return "v1.2.4", nil },
+		func(repo, project, latest string) error {
+			gotRepo = repo
+			gotProject = project
+			gotVersion = latest
+			return nil
+		},
+		func() (string, error) { return "/usr/local/bin/vista", nil },
+	)
+	defer restore()
+
+	version = "v1.2.3"
+	code := runUpdate(cli.NewWriter(os.Stdout, cli.ColorNever))
+	if code != 0 {
+		t.Fatalf("runUpdate() = %d, want 0", code)
+	}
+	if gotRepo != "rybkr/gitvista" || gotProject != "gitvista" || gotVersion != "v1.2.4" {
+		t.Fatalf("update args = (%q, %q, %q)", gotRepo, gotProject, gotVersion)
+	}
+}
+
+func TestRunUpdatePropagatesCheckLatestError(t *testing.T) {
+	restore := stubUpdateDeps(
+		func(string) (string, error) { return "", errors.New("boom") },
+		func(string, string, string) error { return nil },
+		func() (string, error) { return "/usr/local/bin/vista", nil },
+	)
+	defer restore()
+
+	version = "v1.2.3"
+	code := runUpdate(cli.NewWriter(os.Stdout, cli.ColorNever))
+	if code != 1 {
+		t.Fatalf("runUpdate() = %d, want 1", code)
+	}
+}
+
+func stubUpdateDeps(
+	checkLatest func(string) (string, error),
+	performUpdate func(string, string, string) error,
+	resolveExecPath func() (string, error),
+) func() {
+	oldVersion := version
+	oldCheckLatest := checkLatestFunc
+	oldPerformUpdate := performUpdateFunc
+	oldResolveExecPath := resolveExecPathFunc
+
+	checkLatestFunc = checkLatest
+	performUpdateFunc = performUpdate
+	resolveExecPathFunc = resolveExecPath
+
+	return func() {
+		version = oldVersion
+		checkLatestFunc = oldCheckLatest
+		performUpdateFunc = oldPerformUpdate
+		resolveExecPathFunc = oldResolveExecPath
 	}
 }

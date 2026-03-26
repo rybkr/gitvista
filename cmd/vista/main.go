@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -36,13 +37,17 @@ const (
 	commandServe  = "serve"
 	commandURL    = "url"
 	commandDoctor = "doctor"
+	commandUpdate = "update"
 )
 
 // Build-time variables set via -ldflags.
 var (
-	version   = "dev"
-	commit    = "unknown"
-	buildDate = "unknown"
+	version             = "dev"
+	commit              = "unknown"
+	buildDate           = "unknown"
+	checkLatestFunc     = selfupdate.CheckLatest
+	performUpdateFunc   = selfupdate.Update
+	resolveExecPathFunc = resolveExecutablePath
 )
 
 type appFlags struct {
@@ -147,6 +152,8 @@ func main() {
 		os.Exit(runURL(parsed))
 	case commandDoctor:
 		os.Exit(runDoctor(parsed, cw))
+	case commandUpdate:
+		os.Exit(runUpdate(cw))
 	default:
 		fmt.Fprintf(os.Stderr, "%s unknown command %q\n", cw.Red("error:"), parsed.command)
 		os.Exit(1)
@@ -160,7 +167,7 @@ func parseFlags(args []string, getenv func(string, string) string) (appFlags, er
 	}
 	if len(args) > 0 {
 		switch args[0] {
-		case commandOpen, commandServe, commandURL, commandDoctor:
+		case commandOpen, commandServe, commandURL, commandDoctor, commandUpdate:
 			flags.command = args[0]
 			args = args[1:]
 		case commandHelp:
@@ -168,7 +175,7 @@ func parseFlags(args []string, getenv func(string, string) string) (appFlags, er
 			flags.showHelp = true
 			if len(args) > 1 {
 				switch args[1] {
-				case commandHelp, commandOpen, commandServe, commandURL, commandDoctor:
+				case commandHelp, commandOpen, commandServe, commandURL, commandDoctor, commandUpdate:
 					flags.command = args[1]
 				}
 			}
@@ -284,7 +291,7 @@ func runCheckUpdate(cw *cli.Writer) {
 	const repo = "rybkr/gitvista"
 	fmt.Printf("%s %s\n", cw.Cyan("Current version:"), version)
 
-	latest, err := selfupdate.CheckLatest(repo)
+	latest, err := checkLatestFunc(repo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("Error checking for updates:"), err)
 		os.Exit(1)
@@ -302,8 +309,81 @@ func runCheckUpdate(cw *cli.Writer) {
 
 	fmt.Printf("\n%s %s → %s\n", cw.Bold("Update available:"), version, cw.Green(latest))
 	fmt.Println("To update, run one of:")
-	fmt.Printf("  %s\n", cw.Command("gitvista-cli update"))
-	fmt.Println("  brew upgrade gitvista")
+	fmt.Printf("  %s\n", cw.Command("gitvista update"))
+	if installHint := updateInstructionForExecutable(); installHint != "" {
+		fmt.Printf("  %s\n", installHint)
+	}
+}
+
+func runUpdate(cw *cli.Writer) int {
+	const (
+		repo    = "rybkr/gitvista"
+		project = "gitvista"
+	)
+
+	if version == "dev" || version == "" {
+		fmt.Fprintf(os.Stderr, "%s self-update is unavailable for development builds\n", cw.Red("error:"))
+		return 1
+	}
+
+	execPath, err := resolveExecPathFunc()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s resolve executable: %v\n", cw.Red("error:"), err)
+		return 1
+	}
+
+	if hint := updateInstructionForPath(execPath); hint != "" {
+		fmt.Fprintf(os.Stderr, "%s this installation is managed externally; run %s\n", cw.Red("error:"), cw.Command(hint))
+		return 1
+	}
+
+	latest, err := checkLatestFunc(repo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s check latest version: %v\n", cw.Red("error:"), err)
+		return 1
+	}
+
+	fmt.Printf("%s %s\n", cw.Cyan("Current version:"), version)
+	fmt.Printf("%s  %s\n", cw.Cyan("Latest version:"), latest)
+
+	if !selfupdate.NeedsUpdate(version, latest) {
+		fmt.Println("Already up to date.")
+		return 0
+	}
+
+	fmt.Printf("%s %s → %s\n", cw.Bold("Updating:"), version, cw.Green(latest))
+	if err := performUpdateFunc(repo, project, latest); err != nil {
+		fmt.Fprintf(os.Stderr, "%s update failed: %v\n", cw.Red("error:"), err)
+		return 1
+	}
+
+	fmt.Printf("%s Updated GitVista to %s\n", cw.Green("success:"), latest)
+	return 0
+}
+
+func resolveExecutablePath() (string, error) {
+	execPath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(execPath)
+}
+
+func updateInstructionForExecutable() string {
+	execPath, err := resolveExecPathFunc()
+	if err != nil {
+		return ""
+	}
+	return updateInstructionForPath(execPath)
+}
+
+func updateInstructionForPath(execPath string) string {
+	cleanPath := filepath.Clean(execPath)
+	needle := string(filepath.Separator) + filepath.Join("Cellar", "gitvista") + string(filepath.Separator)
+	if strings.Contains(cleanPath, needle) {
+		return "brew upgrade gitvista"
+	}
+	return ""
 }
 
 func validateConfig(repoPath, outputFormat string, portNum int) error {
@@ -636,6 +716,7 @@ func printHelp(cw *cli.Writer, command string) {
 	fmt.Println("  gitvista serve [flags]")
 	fmt.Println("  gitvista url [flags]")
 	fmt.Println("  gitvista doctor [flags]")
+	fmt.Println("  gitvista update")
 	fmt.Println("  gitvista help [command]")
 	fmt.Println()
 	fmt.Println(cw.Bold("Commands:"))
@@ -644,6 +725,7 @@ func printHelp(cw *cli.Writer, command string) {
 	fmt.Println("  serve    Start GitVista without launching the browser")
 	fmt.Println("  url      Print the resolved launch URL")
 	fmt.Println("  doctor   Validate repo, listener, and browser readiness")
+	fmt.Println("  update   Download and install the latest release")
 	fmt.Println()
 	fmt.Println(cw.Bold("Global flags:"))
 	printFlag("-repo <path>", "Path to git repository (default: current directory)")
@@ -685,11 +767,12 @@ func printHelp(cw *cli.Writer, command string) {
 
 	fmt.Println(cw.Bold("Examples:"))
 	fmt.Println("  gitvista")
-	fmt.Println("  git vista open --branch main")
-	fmt.Println("  git vista open --path internal/server")
-	fmt.Println("  git vista serve --port 3000")
-	fmt.Println("  git vista url --commit HEAD~1")
-	fmt.Println("  git vista doctor")
+	fmt.Println("  gitvista open --branch main")
+	fmt.Println("  gitvista open --path internal/server")
+	fmt.Println("  gitvista serve --port 3000")
+	fmt.Println("  gitvista url --commit HEAD~1")
+	fmt.Println("  gitvista doctor")
+	fmt.Println("  gitvista update")
 	fmt.Println()
 	fmt.Println(cw.Bold("Environment Variables:"))
 	fmt.Println("  GITVISTA_REPO         Repository path (default: current directory)")
@@ -795,6 +878,18 @@ func printCommandHelp(cw *cli.Writer, command string, printFlag func(string, str
 		fmt.Println(cw.Bold("Examples:"))
 		fmt.Println("  gitvista doctor")
 		fmt.Println("  gitvista doctor --json")
+	case commandUpdate:
+		fmt.Println(cw.Bold("Usage:"))
+		fmt.Println("  gitvista update")
+		fmt.Println()
+		fmt.Println("Download and install the latest release.")
+		fmt.Println()
+		fmt.Println(cw.Bold("Behavior:"))
+		fmt.Println("  Refuses Homebrew-managed installs and tells you to use brew upgrade gitvista.")
+		fmt.Println("  Replaces direct binary installs in place after checksum verification.")
+		fmt.Println()
+		fmt.Println(cw.Bold("Examples:"))
+		fmt.Println("  gitvista update")
 	}
 }
 
