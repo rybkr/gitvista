@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func setupTestRepo(t *testing.T) *Repository {
@@ -265,14 +264,5 @@ func TestDetectRenamesEdgeCases(t *testing.T) {
 		if entry.Path == "new_b.go" && entry.OldMode != "100755" {
 			t.Fatalf("entry.OldMode = %q, want 100755", entry.OldMode)
 		}
-	}
-}
-
-func TestMergeBaseCommitHeapOrdering(t *testing.T) {
-	now := time.Now()
-	a := &Commit{Committer: Signature{When: now}}
-	b := &Commit{Committer: Signature{When: now.Add(time.Hour)}}
-	if !(mergeBaseCommitHeap{b, a}).Less(0, 1) {
-		t.Fatal("expected newer commit to sort first")
 	}
 }

@@ -1,92 +1,114 @@
 package gitcore
 
-import (
-	"container/heap"
-	"fmt"
-)
+import "fmt"
 
-type mergeBaseCommitHeap []*Commit
-
-func (h mergeBaseCommitHeap) Len() int {
-	return len(h)
-}
-
-func (h mergeBaseCommitHeap) Less(i, j int) bool {
-	return h[i].Committer.When.After(h[j].Committer.When)
-}
-
-func (h mergeBaseCommitHeap) Swap(i, j int) {
-	h[i], h[j] = h[j], h[i]
-}
-
-func (h *mergeBaseCommitHeap) Push(x any) {
-	*h = append(*h, x.(*Commit)) //nolint:errcheck
-}
-
-func (h *mergeBaseCommitHeap) Pop() any {
-	old := *h
-	n := len(old)
-	item := old[n-1]
-	old[n-1] = nil
-	*h = old[:n-1]
-	return item
-}
-
-// MergeBase finds the best common ancestor of two commits using a
-// bidirectional BFS with date-ordered priority queues.
+// MergeBase finds the best common ancestor of two commits.
 func MergeBase(repo *Repository, ours, theirs Hash) (Hash, error) {
 	repo.mu.RLock()
 	defer repo.mu.RUnlock()
 
 	commits := repo.commitMap
 
-	oursCommit, ok := commits[ours]
-	if !ok {
+	if _, ok := commits[ours]; !ok {
 		return "", fmt.Errorf("commit not found: %s", ours)
 	}
-	theirsCommit, ok := commits[theirs]
-	if !ok {
+	if _, ok := commits[theirs]; !ok {
 		return "", fmt.Errorf("commit not found: %s", theirs)
 	}
 	if ours == theirs {
 		return ours, nil
 	}
 
-	const sideOurs = 1
-	const sideTheirs = 2
+	oursAncestors := collectReachableCommits(commits, ours)
+	theirsAncestors := collectReachableCommits(commits, theirs)
 
-	visited := map[Hash]int{
-		ours:   sideOurs,
-		theirs: sideTheirs,
-	}
-
-	h := &mergeBaseCommitHeap{}
-	heap.Init(h)
-	heap.Push(h, oursCommit)
-	heap.Push(h, theirsCommit)
-
-	for h.Len() > 0 {
-		commit := heap.Pop(h).(*Commit) //nolint:errcheck
-		side := visited[commit.ID]
-		if side == sideOurs|sideTheirs {
-			return commit.ID, nil
-		}
-
-		for _, parentHash := range commit.Parents {
-			prevSide := visited[parentHash]
-			newSide := prevSide | side
-			if newSide == sideOurs|sideTheirs {
-				return parentHash, nil
-			}
-			if newSide == prevSide {
-				continue
-			}
-			visited[parentHash] = newSide
-			if parent, found := commits[parentHash]; found {
-				heap.Push(h, parent)
-			}
+	common := make(map[Hash]*Commit)
+	for hash := range oursAncestors {
+		if _, ok := theirsAncestors[hash]; ok {
+			common[hash] = commits[hash]
 		}
 	}
+	if len(common) == 0 {
+		return "", fmt.Errorf("no common ancestor between %s and %s", ours.Short(), theirs.Short())
+	}
 
-	return "", fmt.Errorf("no common ancestor between %s and %s", ours.Short(), theirs.Short())
+	best := bestCommonAncestor(commits, common)
+	if best == "" {
+		return "", fmt.Errorf("no common ancestor between %s and %s", ours.Short(), theirs.Short())
+	}
+	return best, nil
+}
+
+func collectReachableCommits(commits map[Hash]*Commit, start Hash) map[Hash]struct{} {
+	reachable := make(map[Hash]struct{})
+	stack := []Hash{start}
+
+	for len(stack) > 0 {
+		hash := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, seen := reachable[hash]; seen {
+			continue
+		}
+		reachable[hash] = struct{}{}
+
+		commit, ok := commits[hash]
+		if !ok {
+			continue
+		}
+		stack = append(stack, commit.Parents...)
+	}
+
+	return reachable
+}
+
+func bestCommonAncestor(commits map[Hash]*Commit, common map[Hash]*Commit) Hash {
+	redundant := make(map[Hash]struct{})
+	for _, commit := range common {
+		for _, parent := range commit.Parents {
+			markCommonAncestors(commits, common, redundant, parent)
+		}
+	}
+
+	var best *Commit
+	for hash, commit := range common {
+		if _, isRedundant := redundant[hash]; isRedundant {
+			continue
+		}
+		if best == nil || commit.Committer.When.After(best.Committer.When) {
+			best = commit
+			continue
+		}
+		if commit.Committer.When.Equal(best.Committer.When) && string(commit.ID) < string(best.ID) {
+			best = commit
+		}
+	}
+
+	if best == nil {
+		return ""
+	}
+	return best.ID
+}
+
+func markCommonAncestors(commits map[Hash]*Commit, common map[Hash]*Commit, redundant map[Hash]struct{}, start Hash) {
+	stack := []Hash{start}
+	visited := make(map[Hash]struct{})
+
+	for len(stack) > 0 {
+		hash := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, seen := visited[hash]; seen {
+			continue
+		}
+		visited[hash] = struct{}{}
+
+		if _, ok := common[hash]; ok {
+			redundant[hash] = struct{}{}
+		}
+
+		commit, ok := commits[hash]
+		if !ok {
+			continue
+		}
+		stack = append(stack, commit.Parents...)
+	}
 }
