@@ -31,6 +31,7 @@ const (
 )
 
 const (
+	commandHelp   = "help"
 	commandOpen   = "open"
 	commandServe  = "serve"
 	commandURL    = "url"
@@ -114,15 +115,7 @@ func main() {
 	cw := cli.NewWriter(os.Stdout, colorMode)
 
 	if parsed.command == "" {
-		parsed.command = commandOpen
-	}
-
-	portNum, _ := strconv.Atoi(parsed.port)
-	if parsed.command == commandOpen || parsed.command == commandServe || parsed.command == commandDoctor || parsed.command == commandURL {
-		if err := validateConfig(parsed.repoPath, parsed.outputFormat, portNum); err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("error:"), err) // #nosec G705
-			os.Exit(1)
-		}
+		parsed.command = commandServe
 	}
 
 	switch {
@@ -135,6 +128,14 @@ func main() {
 	case parsed.showHelp:
 		printHelp(cw, parsed.command)
 		os.Exit(0)
+	}
+
+	portNum, _ := strconv.Atoi(parsed.port)
+	if parsed.command == commandOpen || parsed.command == commandServe || parsed.command == commandDoctor || parsed.command == commandURL {
+		if err := validateConfig(parsed.repoPath, parsed.outputFormat, portNum); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", cw.Red("error:"), err) // #nosec G705
+			os.Exit(1)
+		}
 	}
 
 	switch parsed.command {
@@ -154,18 +155,20 @@ func main() {
 
 func parseFlags(args []string, getenv func(string, string) string) (appFlags, error) {
 	flags := appFlags{
-		command: commandOpen,
+		command: commandServe,
+		color:   "auto",
 	}
 	if len(args) > 0 {
 		switch args[0] {
 		case commandOpen, commandServe, commandURL, commandDoctor:
 			flags.command = args[0]
 			args = args[1:]
-		case "help":
+		case commandHelp:
+			flags.command = commandHelp
 			flags.showHelp = true
 			if len(args) > 1 {
 				switch args[1] {
-				case commandOpen, commandServe, commandURL, commandDoctor:
+				case commandHelp, commandOpen, commandServe, commandURL, commandDoctor:
 					flags.command = args[1]
 				}
 			}
@@ -521,7 +524,7 @@ func runDoctor(parsed appFlags, cw *cli.Writer) int {
 		case "fail":
 			label = cw.Red("fail")
 		}
-		fmt.Printf("  %-10s %s  %s\n", check.Name+":", label, check.Message)
+		fmt.Printf("  %-11s %-4s %s\n", check.Name+":", label, check.Message)
 	}
 
 	if report.OK {
@@ -615,91 +618,68 @@ func printStartupJSON(command, baseURL, openURL, repoPath string, repoLoadDur ti
 }
 
 func printHelp(cw *cli.Writer, command string) {
+	printFlag := func(flagText, description string) {
+		fmt.Printf("  %-24s %s\n", cw.Flag(flagText), description)
+	}
+
+	if command != "" && command != commandHelp {
+		printCommandHelp(cw, command, printFlag)
+		return
+	}
+
 	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
 	fmt.Println("Real-time local Git repository visualization")
 	fmt.Println()
 	fmt.Println(cw.Bold("Usage:"))
-	fmt.Println("  gitvista [open] [flags]")
+	fmt.Println("  gitvista [flags]")
+	fmt.Println("  gitvista open [flags]")
 	fmt.Println("  gitvista serve [flags]")
 	fmt.Println("  gitvista url [flags]")
 	fmt.Println("  gitvista doctor [flags]")
+	fmt.Println("  gitvista help [command]")
 	fmt.Println()
 	fmt.Println(cw.Bold("Commands:"))
-	fmt.Println("  open     Start GitVista and launch the browser (default)")
+	fmt.Println("  help     Show general or command-specific help")
+	fmt.Println("  open     Start GitVista and launch the browser")
 	fmt.Println("  serve    Start GitVista without launching the browser")
 	fmt.Println("  url      Print the resolved launch URL")
 	fmt.Println("  doctor   Validate repo, listener, and browser readiness")
 	fmt.Println()
 	fmt.Println(cw.Bold("Global flags:"))
-	fmt.Printf("  %s string\n", cw.Flag("-repo"))
-	fmt.Println("        Path to git repository (default: current directory)")
-	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Flag("-port, --port"))
-	fmt.Println("        Port to listen on (default: 8080; long form accepted)")
-	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Flag("-host"))
-	fmt.Println("        Host to bind to (default: 127.0.0.1)")
-	fmt.Println()
-	fmt.Printf("  %s string\n", cw.Flag("-color"))
-	fmt.Println("        Color output: auto, always, never")
-	fmt.Println()
-	fmt.Printf("  %s\n", cw.Flag("-no-color"))
-	fmt.Println("        Disable color output")
-	fmt.Println()
-	fmt.Printf("  %s\n", cw.Flag("-version"))
-	fmt.Println("        Show version and exit")
-	fmt.Println()
-	fmt.Printf("  %s\n", cw.Flag("-check-update"))
-	fmt.Println("        Check for a newer release and exit")
-	fmt.Println()
-	fmt.Printf("  %s\n", cw.Flag("-help, -h"))
-	fmt.Println("        Show help and exit")
+	printFlag("-repo <path>", "Path to git repository (default: current directory)")
+	printFlag("-port, --port <port>", "Port to listen on (default: 8080)")
+	printFlag("-host <host>", "Host to bind to (default: 127.0.0.1)")
+	printFlag("-color <mode>", "Color output: auto, always, never")
+	printFlag("-no-color", "Disable color output")
+	printFlag("-version", "Show version and exit")
+	printFlag("-check-update", "Check for a newer release and exit")
+	printFlag("-help, -h", "Show help and exit")
 	fmt.Println()
 
 	switch command {
 	case commandOpen:
 		fmt.Println(cw.Bold("Open flags:"))
-		fmt.Printf("  %s string\n", cw.Flag("-commit"))
-		fmt.Println("        Open focused on a commit or revision")
-		fmt.Println()
-		fmt.Printf("  %s string\n", cw.Flag("-branch"))
-		fmt.Println("        Open focused on a branch tip")
-		fmt.Println()
-		fmt.Printf("  %s string\n", cw.Flag("-path"))
-		fmt.Println("        Open the file explorer focused on a path")
-		fmt.Println()
-		fmt.Printf("  %s\n", cw.Flag("-no-browser"))
-		fmt.Println("        Start the server without opening a browser")
-		fmt.Println()
-		fmt.Printf("  %s\n", cw.Flag("-print-url"))
-		fmt.Println("        Print the resolved launch URL")
-		fmt.Println()
-		fmt.Printf("  %s string\n", cw.Flag("-output"))
-		fmt.Println("        Startup output format: json")
+		printFlag("-commit <rev>", "Open focused on a commit or revision")
+		printFlag("-branch <name>", "Open focused on a branch tip")
+		printFlag("-path <path>", "Open the file explorer focused on a path")
+		printFlag("-no-browser", "Start the server without opening a browser")
+		printFlag("-print-url", "Print the resolved launch URL")
+		printFlag("-output <format>", "Startup output format: json")
 		fmt.Println()
 	case commandServe:
 		fmt.Println(cw.Bold("Serve flags:"))
-		fmt.Printf("  %s string\n", cw.Flag("-output"))
-		fmt.Println("        Startup output format: json")
+		printFlag("-output <format>", "Startup output format: json")
 		fmt.Println()
 	case commandURL:
 		fmt.Println(cw.Bold("URL flags:"))
-		fmt.Printf("  %s string\n", cw.Flag("-commit"))
-		fmt.Println("        Build a URL focused on a commit or revision")
-		fmt.Println()
-		fmt.Printf("  %s string\n", cw.Flag("-branch"))
-		fmt.Println("        Build a URL focused on a branch tip")
-		fmt.Println()
-		fmt.Printf("  %s string\n", cw.Flag("-path"))
-		fmt.Println("        Build a URL focused on a path")
-		fmt.Println()
-		fmt.Printf("  %s\n", cw.Flag("-json"))
-		fmt.Println("        Print structured JSON output")
+		printFlag("-commit <rev>", "Build a URL focused on a commit or revision")
+		printFlag("-branch <name>", "Build a URL focused on a branch tip")
+		printFlag("-path <path>", "Build a URL focused on a path")
+		printFlag("-json", "Print structured JSON output")
 		fmt.Println()
 	case commandDoctor:
 		fmt.Println(cw.Bold("Doctor flags:"))
-		fmt.Printf("  %s\n", cw.Flag("-json"))
-		fmt.Println("        Print structured JSON output")
+		printFlag("-json", "Print structured JSON output")
 		fmt.Println()
 	}
 
@@ -717,6 +697,105 @@ func printHelp(cw *cli.Writer, command string) {
 	fmt.Println("  GITVISTA_HOST         Default host")
 	fmt.Println("  GITVISTA_LOG_LEVEL    Log level: debug, info, warn, error (default: info)")
 	fmt.Println("  GITVISTA_LOG_FORMAT   Log format: text, json (default: text)")
+}
+
+func printCommandHelp(cw *cli.Writer, command string, printFlag func(string, string)) {
+	fmt.Printf("%s %s\n", cw.Command("GitVista"), cw.Muted(version))
+	fmt.Println()
+
+	switch command {
+	case commandOpen:
+		fmt.Println(cw.Bold("Usage:"))
+		fmt.Println("  gitvista open [flags] [revision]")
+		fmt.Println()
+		fmt.Println("Start GitVista and launch the browser.")
+		fmt.Println()
+		fmt.Println(cw.Bold("Flags:"))
+		printFlag("-repo <path>", "Path to git repository (default: current directory)")
+		printFlag("-port, --port <port>", "Port to listen on (default: 8080)")
+		printFlag("-host <host>", "Host to bind to (default: 127.0.0.1)")
+		printFlag("-color <mode>", "Color output: auto, always, never")
+		printFlag("-no-color", "Disable color output")
+		printFlag("-version", "Show version and exit")
+		printFlag("-check-update", "Check for a newer release and exit")
+		printFlag("-help, -h", "Show help and exit")
+		printFlag("-commit <rev>", "Open focused on a commit or revision")
+		printFlag("-branch <name>", "Open focused on a branch tip")
+		printFlag("-path <path>", "Open the file explorer focused on a path")
+		printFlag("-no-browser", "Start the server without opening a browser")
+		printFlag("-print-url", "Print the resolved launch URL")
+		printFlag("-output <format>", "Startup output format: json")
+		fmt.Println()
+		fmt.Println(cw.Bold("Examples:"))
+		fmt.Println("  gitvista open")
+		fmt.Println("  gitvista open HEAD~2")
+		fmt.Println("  gitvista open --branch main")
+		fmt.Println("  gitvista open --path internal/server")
+	case commandServe:
+		fmt.Println(cw.Bold("Usage:"))
+		fmt.Println("  gitvista serve [flags]")
+		fmt.Println()
+		fmt.Println("Start GitVista without launching the browser.")
+		fmt.Println()
+		fmt.Println(cw.Bold("Flags:"))
+		printFlag("-repo <path>", "Path to git repository (default: current directory)")
+		printFlag("-port, --port <port>", "Port to listen on (default: 8080)")
+		printFlag("-host <host>", "Host to bind to (default: 127.0.0.1)")
+		printFlag("-color <mode>", "Color output: auto, always, never")
+		printFlag("-no-color", "Disable color output")
+		printFlag("-version", "Show version and exit")
+		printFlag("-check-update", "Check for a newer release and exit")
+		printFlag("-help, -h", "Show help and exit")
+		printFlag("-output <format>", "Startup output format: json")
+		fmt.Println()
+		fmt.Println(cw.Bold("Examples:"))
+		fmt.Println("  gitvista serve")
+		fmt.Println("  gitvista serve --port 3000")
+	case commandURL:
+		fmt.Println(cw.Bold("Usage:"))
+		fmt.Println("  gitvista url [flags]")
+		fmt.Println()
+		fmt.Println("Print the resolved launch URL.")
+		fmt.Println()
+		fmt.Println(cw.Bold("Flags:"))
+		printFlag("-repo <path>", "Path to git repository (default: current directory)")
+		printFlag("-port, --port <port>", "Port to listen on (default: 8080)")
+		printFlag("-host <host>", "Host to bind to (default: 127.0.0.1)")
+		printFlag("-color <mode>", "Color output: auto, always, never")
+		printFlag("-no-color", "Disable color output")
+		printFlag("-version", "Show version and exit")
+		printFlag("-check-update", "Check for a newer release and exit")
+		printFlag("-help, -h", "Show help and exit")
+		printFlag("-commit <rev>", "Build a URL focused on a commit or revision")
+		printFlag("-branch <name>", "Build a URL focused on a branch tip")
+		printFlag("-path <path>", "Build a URL focused on a path")
+		printFlag("-json", "Print structured JSON output")
+		fmt.Println()
+		fmt.Println(cw.Bold("Examples:"))
+		fmt.Println("  gitvista url")
+		fmt.Println("  gitvista url --commit HEAD~1")
+		fmt.Println("  gitvista url --branch main --json")
+	case commandDoctor:
+		fmt.Println(cw.Bold("Usage:"))
+		fmt.Println("  gitvista doctor [flags]")
+		fmt.Println()
+		fmt.Println("Validate repo, listener, and browser readiness.")
+		fmt.Println()
+		fmt.Println(cw.Bold("Flags:"))
+		printFlag("-repo <path>", "Path to git repository (default: current directory)")
+		printFlag("-port, --port <port>", "Port to listen on (default: 8080)")
+		printFlag("-host <host>", "Host to bind to (default: 127.0.0.1)")
+		printFlag("-color <mode>", "Color output: auto, always, never")
+		printFlag("-no-color", "Disable color output")
+		printFlag("-version", "Show version and exit")
+		printFlag("-check-update", "Check for a newer release and exit")
+		printFlag("-help, -h", "Show help and exit")
+		printFlag("-json", "Print structured JSON output")
+		fmt.Println()
+		fmt.Println(cw.Bold("Examples:"))
+		fmt.Println("  gitvista doctor")
+		fmt.Println("  gitvista doctor --json")
+	}
 }
 
 func resolveHash(repo *gitcore.Repository, rev string) (gitcore.Hash, error) {

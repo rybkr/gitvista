@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-func TestParseFlagsDefaultsToOpen(t *testing.T) {
+func TestParseFlagsDefaultsToServe(t *testing.T) {
 	flags, err := parseFlags(nil, func(key, fallback string) string {
 		return fallback
 	})
 	if err != nil {
 		t.Fatalf("parseFlags returned error: %v", err)
 	}
-	if flags.command != commandOpen {
-		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandOpen)
+	if flags.command != commandServe {
+		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandServe)
 	}
 	if flags.port != "8080" {
 		t.Fatalf("parseFlags default port = %q, want %q", flags.port, "8080")
@@ -27,8 +27,8 @@ func TestParseFlagsAcceptsLongPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags returned error: %v", err)
 	}
-	if flags.command != commandOpen {
-		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandOpen)
+	if flags.command != commandServe {
+		t.Fatalf("parseFlags command = %q, want %q", flags.command, commandServe)
 	}
 	if flags.port != "9090" {
 		t.Fatalf("parseFlags port = %q, want %q", flags.port, "9090")
@@ -137,6 +137,27 @@ func TestParseFlagsHelpCommand(t *testing.T) {
 	}
 	if flags.command != commandURL {
 		t.Fatalf("command = %q, want %q", flags.command, commandURL)
+	}
+	if flags.color != "auto" {
+		t.Fatalf("color = %q, want %q", flags.color, "auto")
+	}
+}
+
+func TestParseFlagsBareHelpCommand(t *testing.T) {
+	flags, err := parseFlags([]string{"help"}, func(key, fallback string) string {
+		return fallback
+	})
+	if err != nil {
+		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if !flags.showHelp {
+		t.Fatal("showHelp = false, want true")
+	}
+	if flags.command != commandHelp {
+		t.Fatalf("command = %q, want %q", flags.command, commandHelp)
+	}
+	if flags.color != "auto" {
+		t.Fatalf("color = %q, want %q", flags.color, "auto")
 	}
 }
 
