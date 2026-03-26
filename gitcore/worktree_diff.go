@@ -67,9 +67,9 @@ func resolveTreeEntryAtPath(repo *Repository, treeHash Hash, filePath string) (T
 	currentTreeHash := treeHash
 
 	for _, component := range components[:len(components)-1] {
-		tree, err := repo.GetTree(currentTreeHash)
-		if err != nil {
-			return TreeEntry{}, fmt.Errorf("resolveTreeEntryAtPath: failed to read tree %s: %w", currentTreeHash, err)
+		tree, treeErr := repo.GetTree(currentTreeHash)
+		if treeErr != nil {
+			return TreeEntry{}, fmt.Errorf("resolveTreeEntryAtPath: failed to read tree %s: %w", currentTreeHash, treeErr)
 		}
 
 		found := false
@@ -134,12 +134,12 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		commits := repo.Commits()
 		headCommit, exists := commits[headHash]
 		if exists {
-			entry, err := resolveTreeEntryAtPath(repo, headCommit.Tree, normalizedPath)
-			if err != nil && !errors.Is(err, errBlobNotFound) {
-				return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: resolving HEAD entry: %w", err)
+			entry, resolveErr := resolveTreeEntryAtPath(repo, headCommit.Tree, normalizedPath)
+			if resolveErr != nil && !errors.Is(resolveErr, errBlobNotFound) {
+				return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: resolving HEAD entry: %w", resolveErr)
 			}
 
-			if err == nil {
+			if resolveErr == nil {
 				result.OldHash = entry.ID
 				if isSubmodule(entry) {
 					result.IsBinary = true

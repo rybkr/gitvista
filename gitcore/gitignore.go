@@ -29,7 +29,7 @@ func loadIgnoreMatcher(workDir, gitDir string) *ignoreMatcher {
 		loadedBases: make(map[string]struct{}),
 	}
 	m.loadConfiguredGlobalExcludes(gitDir)
-	m.loadExcludeFile(filepath.Join(gitDir, "info", "exclude"))
+	m.loadRepositoryExcludeFile(gitDir, filepath.Join("info", "exclude"), "")
 	_ = filepath.WalkDir(workDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -60,12 +60,21 @@ func (m *ignoreMatcher) loadFile(workDir, baseDir string) {
 		return
 	}
 	m.loadedBases[baseDir] = struct{}{}
-	path := filepath.Join(workDir, filepath.FromSlash(baseDir), ".gitignore")
-	m.loadExcludeFileWithBase(path, baseDir)
+	m.loadWorktreeIgnoreFile(workDir, baseDir)
 }
 
-func (m *ignoreMatcher) loadExcludeFile(path string) {
-	m.loadExcludeFileWithBase(path, "")
+func resolvePathWithinBase(base, relativePath string) (string, error) {
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", err
+	}
+
+	candidate := filepath.Join(absBase, filepath.FromSlash(relativePath))
+	if err := ensurePathWithinBase(absBase, candidate); err != nil {
+		return "", err
+	}
+
+	return candidate, nil
 }
 
 func (m *ignoreMatcher) loadConfiguredGlobalExcludes(gitDir string) {
@@ -86,13 +95,35 @@ func (m *ignoreMatcher) loadConfiguredGlobalExcludes(gitDir string) {
 		}
 	}
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(gitDir, path)
+		resolvedPath, resolveErr := resolvePathWithinBase(gitDir, path)
+		if resolveErr != nil {
+			return
+		}
+		path = resolvedPath
+	} else {
+		path = filepath.Clean(path)
 	}
-	m.loadExcludeFile(path)
+	m.loadAbsoluteExcludeFile(path, "")
 }
 
-func (m *ignoreMatcher) loadExcludeFileWithBase(path, baseDir string) {
-	// #nosec G304 -- callers build paths from the repository worktree or gitDir.
+func (m *ignoreMatcher) loadWorktreeIgnoreFile(workDir, baseDir string) {
+	path, err := resolvePathWithinBase(workDir, filepath.ToSlash(filepath.Join(baseDir, ".gitignore")))
+	if err != nil {
+		return
+	}
+	m.loadAbsoluteExcludeFile(path, baseDir)
+}
+
+func (m *ignoreMatcher) loadRepositoryExcludeFile(gitDir, relativePath, baseDir string) {
+	path, err := resolvePathWithinBase(gitDir, relativePath)
+	if err != nil {
+		return
+	}
+	m.loadAbsoluteExcludeFile(path, baseDir)
+}
+
+func (m *ignoreMatcher) loadAbsoluteExcludeFile(path, baseDir string) {
+	// #nosec G304 -- path is either constrained to the repository base or cleaned from explicit config.
 	f, err := os.Open(path)
 	if err != nil {
 		return
