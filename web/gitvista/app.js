@@ -239,7 +239,6 @@ export function bootstrapGraph(root, options = {}) {
     graphHost.className = "graph-host";
     const fileExplorerPanel = createLazyHost("Loading file explorer…");
     const analyticsPanel = createLazyHost("Loading analytics…");
-    const comparePanel = createLazyHost("Loading merge preview…");
 
     const fetchAnalytics = async ({ period, start, end } = {}) => {
         const params = new URLSearchParams();
@@ -290,25 +289,8 @@ export function bootstrapGraph(root, options = {}) {
             })
     );
 
-    const mergePreviewLoader = createDeferredViewLoader(() =>
-        import("../mergePreviewView.js")
-            .then(({ createMergePreviewView }) => {
-                if (disposed) return null;
-                const view = createMergePreviewView({
-                    getBranches: () => graph?.getBranches?.() ?? new Map(),
-                    onPreviewResult: (preview) => {
-                        graph?.setMergePreview(preview);
-                    },
-                });
-                comparePanel.setLoaded(view.el);
-                view.updateBranches();
-                return view;
-            })
-    );
-
     const ensureFileExplorerLoaded = () => fileExplorerLoader.ensure();
     const ensureAnalyticsLoaded = () => analyticsLoader.ensure();
-    const ensureMergePreviewLoaded = () => mergePreviewLoader.ensure();
 
     workbench = createWorkbench([
         {
@@ -348,20 +330,6 @@ export function bootstrapGraph(root, options = {}) {
                         if (!view) return;
                         preloadAnalyticsOnce();
                         requestAnimationFrame(() => view.update());
-                    })
-                    .catch(() => {
-                        // Keep tab open; view shows its own recoverable errors.
-                    });
-            },
-        },
-        {
-            name: "compare",
-            tooltip: "Compare",
-            content: comparePanel.host,
-            onShow: () => {
-                ensureMergePreviewLoaded()
-                    .then((view) => {
-                        view?.updateBranches?.();
                     })
                     .catch(() => {
                         // Keep tab open; view shows its own recoverable errors.
@@ -627,9 +595,7 @@ export function bootstrapGraph(root, options = {}) {
     }
 
     function syncBranchDependentViews() {
-        const mergePreviewView = mergePreviewLoader.get();
         graphFilters.updateBranches(graph.getBranches());
-        mergePreviewView?.updateBranches?.();
         graphSettings.refresh();
     }
 
@@ -700,20 +666,10 @@ export function bootstrapGraph(root, options = {}) {
         },
         onDelta: (delta) => {
             const analyticsView = analyticsLoader.get();
-            const mergePreviewView = mergePreviewLoader.get();
             graph.applyDelta(delta);
             analyticsView?.update?.();
             preloadAnalyticsOnce();
             syncBranchDependentViews();
-
-            // If a selected branch tip moved, refresh the merge preview.
-            if (delta.amendedBranches && mergePreviewView) {
-                const selected = mergePreviewView.getSelectedBranches();
-                const amended = Object.keys(delta.amendedBranches);
-                if (amended.includes(selected.ours) || amended.includes(selected.theirs)) {
-                    mergePreviewView.refresh();
-                }
-            }
 
             const addedCount = delta.addedCommits?.length ?? 0;
             if (addedCount > 0 && currentBranchName && !delta.bootstrap) {

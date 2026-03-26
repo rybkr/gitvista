@@ -5,9 +5,6 @@ from pathlib import Path
 
 import pytest
 
-ALL_REPOS = ["express", "gitvista", "cpython", "octocat", "git"]
-QUICK_REPOS = ["express", "gitvista", "octocat"]
-
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -16,15 +13,6 @@ def pytest_addoption(parser):
         default=False,
         help="skip the largest e2e repos (git and cpython)",
     )
-
-
-def pytest_generate_tests(metafunc):
-    if "repo_name" not in metafunc.fixturenames:
-        return
-
-    config = metafunc.config
-    repo_names = QUICK_REPOS if config.getoption("--quick") else ALL_REPOS
-    metafunc.parametrize("repo_name", repo_names)
 
 
 def repo_root() -> Path:

@@ -2,6 +2,17 @@ from pathlib import Path
 
 import pytest
 
+ALL_REPOS = ["express", "gitvista", "cpython", "octocat", "git", "merge-base-traps"]
+QUICK_REPOS = ["express", "gitvista", "octocat"]
+
+
+def pytest_generate_tests(metafunc):
+    if "repo_name" not in metafunc.fixturenames:
+        return
+
+    repo_names = QUICK_REPOS if metafunc.config.getoption("--quick") else ALL_REPOS
+    metafunc.parametrize("repo_name", repo_names)
+
 
 def test_rev_list_all(
     repo_name: str,

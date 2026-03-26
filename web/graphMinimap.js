@@ -45,7 +45,7 @@ export function createGraphMinimap(deps) {
     function computeBounds(nodes) {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const n of nodes) {
-            if (n.type === "branch" || n.type === "tag" || n.type === "ghost-merge") continue;
+            if (n.type === "branch" || n.type === "tag") continue;
             if (typeof n.x !== "number" || typeof n.y !== "number") continue;
             if (n.x < minX) minX = n.x;
             if (n.x > maxX) maxX = n.x;

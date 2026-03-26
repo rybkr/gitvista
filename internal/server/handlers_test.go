@@ -379,18 +379,6 @@ func TestNewServeMux_DispatchesToSharedHandlers(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 			noSession:  true,
 		},
-		{
-			name:       "merge preview file validates required path",
-			method:     http.MethodGet,
-			target:     "/api/merge-preview/file",
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "merge preview validates required branches",
-			method:     http.MethodGet,
-			target:     "/api/merge-preview",
-			wantStatus: http.StatusBadRequest,
-		},
 	}
 
 	for _, tt := range tests {
@@ -738,56 +726,6 @@ func TestSessionFromCtx(t *testing.T) {
 			t.Error("sessionFromCtx returned non-nil for empty context")
 		}
 	})
-}
-
-func TestHandleMergePreview_MissingParams(t *testing.T) {
-	s := newTestServer(t)
-	session := newTestSession(nil)
-
-	tests := []struct {
-		name  string
-		query string
-	}{
-		{"no params", "/api/merge-preview"},
-		{"missing theirs", "/api/merge-preview?ours=main"},
-		{"missing ours", "/api/merge-preview?theirs=feature"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := requestWithSession("GET", tt.query, session)
-			w := httptest.NewRecorder()
-			s.handleMergePreview(w, req)
-			if w.Code != http.StatusBadRequest {
-				t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-			}
-		})
-	}
-}
-
-func TestHandleMergePreview_UnknownBranch(t *testing.T) {
-	s := newTestServer(t)
-	session := newTestSession(nil)
-
-	req := requestWithSession("GET", "/api/merge-preview?ours=nonexistent&theirs=also-nonexistent", session)
-	w := httptest.NewRecorder()
-	s.handleMergePreview(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestHandleMergePreview_MethodNotAllowed(t *testing.T) {
-	s := newTestServer(t)
-
-	req := httptest.NewRequest("POST", "/api/merge-preview?ours=main&theirs=feat", nil)
-	w := httptest.NewRecorder()
-	s.handleMergePreview(w, req)
-
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
-	}
 }
 
 func TestHandleGraphSummary(t *testing.T) {

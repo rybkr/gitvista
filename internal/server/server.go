@@ -194,8 +194,6 @@ func (s *Server) newServeMux() *http.ServeMux {
 	mux.HandleFunc("/api/analytics", writeDeadline(withSession(session, s.handleAnalytics)))
 	mux.HandleFunc("/api/index/diff", writeDeadline(withSession(session, s.handleIndexDiff)))
 	mux.HandleFunc("/api/working-tree/diff", writeDeadline(withSession(session, s.handleWorkingTreeDiff)))
-	mux.HandleFunc("/api/merge-preview/file", writeDeadline(withSession(session, s.handleMergePreviewFileDiff)))
-	mux.HandleFunc("/api/merge-preview", writeDeadline(withSession(session, s.handleMergePreview)))
 	mux.HandleFunc("/api/graph/summary", writeDeadline(withSession(session, s.handleGraphSummary)))
 	mux.HandleFunc("/api/graph/commits", writeDeadline(withSession(session, s.handleGraphCommits)))
 	mux.HandleFunc("/api/ws", withSession(session, s.handleWebSocket))

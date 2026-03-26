@@ -328,7 +328,6 @@ export function createGraphController(rootElement, options = {}) {
         let bestDist = Infinity;
 
         for (const node of nodes) {
-            if (node.type === "ghost-merge") continue;
             if (type && node.type !== type) {
                 continue;
             }
@@ -1522,8 +1521,6 @@ export function createGraphController(rootElement, options = {}) {
         snapBranchesToTargets(branchReconciliation.alignments);
         snapTagsToTargets(tagReconciliation.alignments);
 
-        injectGhostMergeNode(commitNodeByHash);
-
         applyDimmingFromPredicate();
 
         if (layoutStrategy.shouldAutoCenter()) {
@@ -1639,7 +1636,6 @@ export function createGraphController(rootElement, options = {}) {
             snapTagsToTargets(tagReconciliation.alignments);
         }
 
-        injectGhostMergeNode(commitNodeByHash);
         applyDimmingFromPredicate();
 
         if (autoCenter && layoutStrategy.shouldAutoCenter()) {
@@ -1699,55 +1695,6 @@ export function createGraphController(rootElement, options = {}) {
      */
     function rematerializeFromViewport(entries) {
         rebuildVisibleGraph(entries, { skipIfUnchanged: true });
-    }
-
-    /**
-     * Injects ghost merge node into the nodes/links arrays if mergePreview is active.
-     *
-     * @param {Map<string, Object>} commitNodeByHash Map of hash → commit node.
-     */
-    function injectGhostMergeNode(commitNodeByHash) {
-        if (!state.mergePreview) return;
-
-        const mp = state.mergePreview;
-        const oursNode = commitNodeByHash.get(mp.oursHash);
-        const theirsNode = commitNodeByHash.get(mp.theirsHash);
-        if (!oursNode || !theirsNode) return;
-
-        const useLane = state.layoutMode === "lane" &&
-            oursNode.laneIndex !== undefined;
-        let ghostX, ghostY;
-        if (useLane) {
-            ghostX = oursNode.x;
-            const commitYs = nodes
-                .filter(n => n.type === "commit")
-                .map(n => n.y)
-                .sort((a, b) => a - b);
-            const minY = commitYs[0] ?? oursNode.y;
-            const step = commitYs.length >= 2
-                ? (commitYs[commitYs.length - 1] - commitYs[0]) /
-                  (commitYs.length - 1)
-                : LANE_VERTICAL_STEP;
-            ghostY = minY - step;
-        } else {
-            ghostX = (oursNode.x + theirsNode.x) / 2;
-            ghostY = Math.min(oursNode.y, theirsNode.y) - 60;
-        }
-        const ghostNode = {
-            type: "ghost-merge",
-            hash: "__ghost_merge__",
-            x: ghostX,
-            y: ghostY,
-            fx: ghostX,
-            fy: ghostY,
-        };
-        if (useLane) {
-            ghostNode.laneIndex = oursNode.laneIndex;
-            ghostNode.laneColor = oursNode.laneColor;
-        }
-        nodes.push(ghostNode);
-        links.push({ source: ghostNode, target: oursNode, kind: "ghost" });
-        links.push({ source: ghostNode, target: theirsNode, kind: "ghost" });
     }
 
     /**
@@ -1943,19 +1890,6 @@ export function createGraphController(rootElement, options = {}) {
             n.x = t.x;
             n.y = t.y + NODE_RADIUS + 14 + bc * 25 + (bc > 0 ? 4 : 0) + i * 25;
         }
-        if (state.mergePreview) {
-            const ours = commitMap.get(state.mergePreview.oursHash);
-            if (ours) {
-                for (const n of nodes) {
-                    if (n.type !== "ghost-merge") continue;
-                    n.x = ours.x;
-                    n.fx = ours.x;
-                    n.laneIndex = ours.laneIndex;
-                    n.laneColor = ours.laneColor;
-                    break;
-                }
-            }
-        }
     }
 
     function snapTagsToTargets(pairs) {
@@ -2011,7 +1945,6 @@ export function createGraphController(rootElement, options = {}) {
                 layoutMode: state.layoutMode,
                 showLaneBranchLabels: state.graphSettings?.scope?.showLaneBranchLabels !== false,
                 laneInfo: state.layoutMode === "lane" ? laneStrategy.getLaneInfo() : [],
-                mergePreview: state.mergePreview,
             });
             // Notify minimap after every main canvas render.
             if (minimapCallback) {
@@ -2357,18 +2290,6 @@ export function createGraphController(rootElement, options = {}) {
             state.isolatedLanePosition = null;
             rebuildAndApplyPredicate();
             return true;
-        },
-        /**
-         * Sets or clears the merge preview ghost node on the graph.
-         * When preview is non-null, a ghost diamond node appears between the
-         * two branch tips. Pass null to remove it.
-         *
-         * @param {{ oursHash: string, theirsHash: string, mergeBaseHash: string } | null} preview
-         */
-        setMergePreview: (preview) => {
-            state.mergePreview = preview || null;
-            updateGraph();
-            render();
         },
         /** Returns the live nodes array for the minimap. */
         getNodes: () => nodes,

@@ -30,7 +30,6 @@ describe("GraphRenderer.render", () => {
         let linkBounds = null;
         let nodeBounds = null;
         let layoutMode = null;
-        let mergeBaseHash = null;
         renderer.renderLinks = (_links, _nodes, vpBounds) => {
             linkBounds = vpBounds;
         };
@@ -42,11 +41,9 @@ describe("GraphRenderer.render", () => {
             _hoverNode,
             _tags,
             mode,
-            mergeBase,
             vpBounds,
         ) => {
             layoutMode = mode;
-            mergeBaseHash = mergeBase;
             nodeBounds = vpBounds;
         };
         renderer.renderLaneBackgrounds = () => {};
@@ -59,14 +56,12 @@ describe("GraphRenderer.render", () => {
             zoomTransform: { x: 100, y: -50, k: 2 },
             viewportWidth: 800,
             viewportHeight: 600,
-            mergePreview: { mergeBaseHash: "deadbeef" },
         });
 
         const expected = { left: -250, top: -175, right: 550, bottom: 525 };
         assert.deepEqual(linkBounds, expected);
         assert.deepEqual(nodeBounds, expected);
         assert.equal(layoutMode, "force");
-        assert.equal(mergeBaseHash, "deadbeef");
     });
 
     it("renders lane overlays only when lane info exists", () => {
