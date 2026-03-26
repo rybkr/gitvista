@@ -27,6 +27,11 @@ type WorkingTreeStatus struct {
 	Files []FileStatus
 }
 
+type treeFile struct {
+	Hash Hash
+	Mode string
+}
+
 var walkWorktree = filepath.WalkDir
 
 func markWorktreeModified(results map[string]*FileStatus, path string, indexHash Hash) *FileStatus {
@@ -42,7 +47,7 @@ func markWorktreeModified(results map[string]*FileStatus, path string, indexHash
 
 // ComputeWorkingTreeStatus computes the status of the working tree.
 func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
-	headTree := make(map[string]Hash)
+	headTree := make(map[string]treeFile)
 
 	headHash := repo.Head()
 	if headHash != "" {
@@ -69,31 +74,31 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 	results := make(map[string]*FileStatus)
 	for path, entry := range index.ByPath {
-		headBlobHash, inHead := headTree[path]
+		headFile, inHead := headTree[path]
 
 		var idxStatus string
 		if !inHead {
 			idxStatus = StatusAdded
-		} else if headBlobHash != entry.Hash {
-			idxStatus = StatusModified
+		} else {
+			idxStatus = compareTreeAndIndex(headFile, *entry)
 		}
 
 		if idxStatus != "" {
 			results[path] = &FileStatus{
 				Path:        path,
 				IndexStatus: idxStatus,
-				HeadHash:    headBlobHash,
+				HeadHash:    headFile.Hash,
 				IndexHash:   entry.Hash,
 			}
 		}
 	}
 
-	for path, blobHash := range headTree {
+	for path, file := range headTree {
 		if _, inIndex := index.ByPath[path]; !inIndex {
 			results[path] = &FileStatus{
 				Path:        path,
 				IndexStatus: StatusDeleted,
-				HeadHash:    blobHash,
+				HeadHash:    file.Hash,
 			}
 		}
 	}
@@ -108,7 +113,8 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ComputeWorkingTreeStatus: invalid worktree path %q: %w", normalizedPath, err)
 		}
-		isSymlink := entry.Mode&0170000 == 0120000
+		entryMode := indexModeString(entry.Mode)
+		isSymlink := entryModeKind(entryMode) == "symlink"
 
 		info, statErr := os.Lstat(diskPath)
 		if statErr != nil {
@@ -126,12 +132,17 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			continue
 		}
 
-		if isSymlink {
-			if info.Mode()&os.ModeSymlink == 0 {
-				markWorktreeModified(results, path, entry.Hash)
-				continue
-			}
+		diskMode := worktreeModeString(info)
+		if worktreeTypeStatus(entryMode, diskMode) == StatusTypeChanged {
+			fs := markWorktreeModified(results, path, entry.Hash)
+			fs.WorkStatus = StatusTypeChanged
+			continue
+		}
+		if diskMode != entryMode {
+			markWorktreeModified(results, path, entry.Hash)
+		}
 
+		if isSymlink {
 			linkTarget, linkErr := os.Readlink(diskPath)
 			if linkErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: readlink %s: %w", diskPath, linkErr)
@@ -144,7 +155,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			continue
 		}
 
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		if !info.Mode().IsRegular() {
 			markWorktreeModified(results, path, entry.Hash)
 			continue
 		}
@@ -192,6 +203,13 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 				if ignore.isIgnored(relPath, true) {
 					return filepath.SkipDir
 				}
+				if !hasTrackedPathPrefix(indexPaths, relPath+"/") {
+					results[relPath+"/"] = &FileStatus{
+						Path:        relPath + "/",
+						IsUntracked: true,
+					}
+					return filepath.SkipDir
+				}
 				ignore.loadFile(workDir, relPath+"/")
 			}
 			return nil
@@ -221,14 +239,20 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		status.Files = append(status.Files, *fs)
 	}
 	slices.SortFunc(status.Files, func(a, b FileStatus) int {
+		switch {
+		case a.IsUntracked && !b.IsUntracked:
+			return 1
+		case !a.IsUntracked && b.IsUntracked:
+			return -1
+		}
 		return compareStrings(a.Path, b.Path)
 	})
 
 	return status, nil
 }
 
-func flattenTree(repo *Repository, treeHash Hash, prefix string) (map[string]Hash, error) {
-	result := make(map[string]Hash)
+func flattenTree(repo *Repository, treeHash Hash, prefix string) (map[string]treeFile, error) {
+	result := make(map[string]treeFile)
 
 	tree, err := repo.GetTree(treeHash)
 	if err != nil {
@@ -248,7 +272,7 @@ func flattenTree(repo *Repository, treeHash Hash, prefix string) (map[string]Has
 			}
 			maps.Copy(result, sub)
 		} else {
-			result[fullPath] = entry.ID
+			result[fullPath] = treeFile{Hash: entry.ID, Mode: normalizeTreeMode(entry.Mode)}
 		}
 	}
 
@@ -263,4 +287,89 @@ func hashBlobContent(content []byte) Hash {
 	h.Write(content)
 
 	return Hash(fmt.Sprintf("%x", h.Sum(nil)))
+}
+
+func compareTreeAndIndex(headFile treeFile, entry IndexEntry) string {
+	indexMode := indexModeString(entry.Mode)
+	if typeStatus := worktreeTypeStatus(headFile.Mode, indexMode); typeStatus != "" {
+		return typeStatus
+	}
+	if headFile.Mode != indexMode || headFile.Hash != entry.Hash {
+		return StatusModified
+	}
+	return ""
+}
+
+func worktreeTypeStatus(expectedMode, actualMode string) string {
+	if entryModeKind(expectedMode) != entryModeKind(actualMode) {
+		return StatusTypeChanged
+	}
+	return ""
+}
+
+func entryModeKind(mode string) string {
+	switch normalizeTreeMode(mode) {
+	case "100644", "100755":
+		return "regular"
+	case "120000":
+		return "symlink"
+	case "160000":
+		return "gitlink"
+	case "040000":
+		return "tree"
+	default:
+		return mode
+	}
+}
+
+func normalizeTreeMode(mode string) string {
+	switch mode {
+	case "40000":
+		return "040000"
+	default:
+		return mode
+	}
+}
+
+func indexModeString(mode uint32) string {
+	switch mode & 0170000 {
+	case 0100000:
+		if mode&0o111 != 0 {
+			return "100755"
+		}
+		return "100644"
+	case 0120000:
+		return "120000"
+	case 0160000:
+		return "160000"
+	case 0040000:
+		return "040000"
+	default:
+		return fmt.Sprintf("%06o", mode&0o177777)
+	}
+}
+
+func worktreeModeString(info fs.FileInfo) string {
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		return "120000"
+	case info.Mode().IsRegular():
+		if info.Mode().Perm()&0o111 != 0 {
+			return "100755"
+		}
+		return "100644"
+	case info.IsDir():
+		return "040000"
+	default:
+		return info.Mode().String()
+	}
+}
+
+func hasTrackedPathPrefix(indexPaths map[string]struct{}, prefix string) bool {
+	for path := range indexPaths {
+		if len(path) >= len(prefix) && path[:len(prefix)] == prefix {
+			return true
+		}
+	}
+	return false
 }

@@ -33,8 +33,11 @@ func TestHashBlobContentAndFlattenTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("flattenTree() error = %v", err)
 	}
-	if got["dir/deep.txt"] != blob {
-		t.Fatalf("flattenTree()[dir/deep.txt] = %s, want %s", got["dir/deep.txt"], blob)
+	if got["dir/deep.txt"].Hash != blob {
+		t.Fatalf("flattenTree()[dir/deep.txt].Hash = %s, want %s", got["dir/deep.txt"].Hash, blob)
+	}
+	if got["dir/deep.txt"].Mode != "100644" {
+		t.Fatalf("flattenTree()[dir/deep.txt].Mode = %q, want %q", got["dir/deep.txt"].Mode, "100644")
 	}
 }
 
@@ -183,8 +186,8 @@ func TestComputeWorkingTreeStatus_TrackedRegularFileReplacedBySymlink(t *testing
 		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
 	}
 	got := statusByPath(t, status)
-	if got["tracked.txt"].WorkStatus != StatusModified {
-		t.Fatalf("tracked.txt WorkStatus = %q, want modified", got["tracked.txt"].WorkStatus)
+	if got["tracked.txt"].WorkStatus != StatusTypeChanged {
+		t.Fatalf("tracked.txt WorkStatus = %q, want typechanged", got["tracked.txt"].WorkStatus)
 	}
 }
 
@@ -202,8 +205,8 @@ func TestComputeWorkingTreeStatus_TrackedSymlinkReplacedByRegularFile(t *testing
 		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
 	}
 	got := statusByPath(t, status)
-	if got["link.txt"].WorkStatus != StatusModified {
-		t.Fatalf("link.txt WorkStatus = %q, want modified", got["link.txt"].WorkStatus)
+	if got["link.txt"].WorkStatus != StatusTypeChanged {
+		t.Fatalf("link.txt WorkStatus = %q, want typechanged", got["link.txt"].WorkStatus)
 	}
 }
 
@@ -226,8 +229,8 @@ func TestComputeWorkingTreeStatus_TrackedFileReplacedByDirectory(t *testing.T) {
 		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
 	}
 	got := statusByPath(t, status)
-	if got["tracked.txt"].WorkStatus != StatusModified {
-		t.Fatalf("tracked.txt WorkStatus = %q, want modified", got["tracked.txt"].WorkStatus)
+	if got["tracked.txt"].WorkStatus != StatusTypeChanged {
+		t.Fatalf("tracked.txt WorkStatus = %q, want typechanged", got["tracked.txt"].WorkStatus)
 	}
 }
 
@@ -268,5 +271,127 @@ func TestComputeWorkingTreeStatus_ReturnsFilesSortedByPath(t *testing.T) {
 	want := []string{"a-first.txt", "m-middle.txt", "z-last.txt"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("status file order = %v, want %v", got, want)
+	}
+}
+
+func TestComputeWorkingTreeStatus_StagedModeOnlyChange(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("#!/bin/sh\necho hi\n"))
+	root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "script.sh", Mode: "100644", Type: ObjectTypeBlob}})
+	wireHeadCommit(repo, root)
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "script.sh", blobHash: blob, fileSize: uint32(len("#!/bin/sh\necho hi\n")), mode: 0o100755},
+	})
+	writeDiskFile(t, repo, "script.sh", []byte("#!/bin/sh\necho hi\n"))
+	if err := os.Chmod(filepath.Join(repo.workDir, "script.sh"), 0o755); err != nil {
+		t.Fatalf("Chmod(script.sh): %v", err)
+	}
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+
+	if got["script.sh"].IndexStatus != StatusModified {
+		t.Fatalf("script.sh IndexStatus = %q, want %q", got["script.sh"].IndexStatus, StatusModified)
+	}
+}
+
+func TestComputeWorkingTreeStatus_WorktreeModeOnlyChange(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("#!/bin/sh\necho hi\n"))
+	root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "script.sh", Mode: "100644", Type: ObjectTypeBlob}})
+	wireHeadCommit(repo, root)
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "script.sh", blobHash: blob, fileSize: uint32(len("#!/bin/sh\necho hi\n")), mode: 0o100644},
+	})
+	writeDiskFile(t, repo, "script.sh", []byte("#!/bin/sh\necho hi\n"))
+	if err := os.Chmod(filepath.Join(repo.workDir, "script.sh"), 0o755); err != nil {
+		t.Fatalf("Chmod(script.sh): %v", err)
+	}
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+
+	if got["script.sh"].WorkStatus != StatusModified {
+		t.Fatalf("script.sh WorkStatus = %q, want %q", got["script.sh"].WorkStatus, StatusModified)
+	}
+}
+
+func TestComputeWorkingTreeStatus_StagedTypeChange(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("replace me\n"))
+	root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "tracked.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	wireHeadCommit(repo, root)
+
+	linkHash := Hash(computeExpectedBlobHash([]byte("target.txt")))
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "tracked.txt", blobHash: linkHash, fileSize: uint32(len("target.txt")), mode: 0o120000},
+	})
+	if err := os.Symlink("target.txt", filepath.Join(repo.workDir, "tracked.txt")); err != nil {
+		t.Fatalf("Symlink(tracked.txt): %v", err)
+	}
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+
+	if got["tracked.txt"].IndexStatus != StatusTypeChanged {
+		t.Fatalf("tracked.txt IndexStatus = %q, want %q", got["tracked.txt"].IndexStatus, StatusTypeChanged)
+	}
+}
+
+func TestComputeWorkingTreeStatus_WorktreeTypeChange(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("replace me\n"))
+	root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "tracked.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	wireHeadCommit(repo, root)
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "tracked.txt", blobHash: blob, fileSize: uint32(len("replace me\n")), mode: 0o100644},
+	})
+	if err := os.Symlink("target.txt", filepath.Join(repo.workDir, "tracked.txt")); err != nil {
+		t.Fatalf("Symlink(tracked.txt): %v", err)
+	}
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+
+	if got["tracked.txt"].WorkStatus != StatusTypeChanged {
+		t.Fatalf("tracked.txt WorkStatus = %q, want %q", got["tracked.txt"].WorkStatus, StatusTypeChanged)
+	}
+}
+
+func TestComputeWorkingTreeStatus_CollapsesUntrackedDirectories(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	writeDiskFile(t, repo, "nested/untracked-a.txt", []byte("a\n"))
+	writeDiskFile(t, repo, "nested/untracked-b.txt", []byte("b\n"))
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+
+	if !got["nested/"].IsUntracked {
+		t.Fatalf("nested/ IsUntracked = %v, want true", got["nested/"].IsUntracked)
+	}
+	if _, ok := got["nested/untracked-a.txt"]; ok {
+		t.Fatal("nested/untracked-a.txt should be collapsed into nested/")
+	}
+	if _, ok := got["nested/untracked-b.txt"]; ok {
+		t.Fatal("nested/untracked-b.txt should be collapsed into nested/")
 	}
 }

@@ -9,11 +9,12 @@ import (
 
 // File status label constants reference the canonical values in gitcore.
 const (
-	fileStatusAdded    = gitcore.StatusAdded
-	fileStatusModified = gitcore.StatusModified
-	fileStatusDeleted  = gitcore.StatusDeleted
-	fileStatusRenamed  = gitcore.StatusRenamed
-	fileStatusCopied   = gitcore.StatusCopied
+	fileStatusAdded       = gitcore.StatusAdded
+	fileStatusModified    = gitcore.StatusModified
+	fileStatusDeleted     = gitcore.StatusDeleted
+	fileStatusRenamed     = gitcore.StatusRenamed
+	fileStatusCopied      = gitcore.StatusCopied
+	fileStatusTypeChanged = gitcore.StatusTypeChanged
 )
 
 // FileStatus represents the status of a file and its path.
@@ -104,6 +105,8 @@ func indexStatusCode(s string) string {
 		return "R"
 	case fileStatusCopied:
 		return "C"
+	case fileStatusTypeChanged:
+		return "T"
 	default:
 		return ""
 	}
@@ -117,6 +120,8 @@ func workStatusCode(s string) string {
 		return "M"
 	case fileStatusDeleted:
 		return "D"
+	case fileStatusTypeChanged:
+		return "T"
 	default:
 		return ""
 	}

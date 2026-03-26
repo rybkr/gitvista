@@ -94,6 +94,21 @@ func registerCommands(app *cli.App, repoCtx *repositoryContext, cw *cli.Writer) 
 	})
 
 	app.Register(&cli.Command{
+		Name:      "status",
+		Summary:   "Show working tree status",
+		Usage:     "gitvista-cli status [--short]",
+		NeedsRepo: true,
+		Flags: []string{
+			"--short       Show a two-letter status code per path",
+		},
+		Examples: []string{
+			"Show the working tree status\ngitvista-cli status",
+			"Show porcelain-style short status\ngitvista-cli status --short",
+		},
+		Run: func(args []string) int { return runStatus(repoCtx, args, cw) },
+	})
+
+	app.Register(&cli.Command{
 		Name:    "version",
 		Summary: "Show version information",
 		Usage:   "gitvista-cli version",

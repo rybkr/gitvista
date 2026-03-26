@@ -10,12 +10,13 @@ const (
 )
 
 const (
-	StatusAdded    = "added"
-	StatusModified = "modified"
-	StatusDeleted  = "deleted"
-	StatusRenamed  = "renamed"
-	StatusCopied   = "copied"
-	StatusUnknown  = "unknown"
+	StatusAdded       = "added"
+	StatusModified    = "modified"
+	StatusDeleted     = "deleted"
+	StatusRenamed     = "renamed"
+	StatusCopied      = "copied"
+	StatusTypeChanged = "typechanged"
+	StatusUnknown     = "unknown"
 )
 
 // DiffStatus represents the type of change applied to a file in a diff.
