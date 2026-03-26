@@ -1,6 +1,7 @@
 package gitcore
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -116,5 +117,66 @@ func TestMergeBase_PrefersBestAncestorOverNewerWorseAncestor(t *testing.T) {
 	}
 	if base != hashX {
 		t.Fatalf("MergeBase() = %s, want %s", base, hashX)
+	}
+}
+
+func TestMergeBases_CrissCrossReturnsAllBestBases(t *testing.T) {
+	left1 := Hash("1111111111111111111111111111111111111111")
+	right1 := Hash("2222222222222222222222222222222222222222")
+	leftMerge := Hash("3333333333333333333333333333333333333333")
+	rightMerge := Hash("4444444444444444444444444444444444444444")
+
+	repo := NewEmptyRepository()
+	repo.commits = []*Commit{
+		{ID: left1},
+		{ID: right1},
+		{ID: leftMerge, Parents: []Hash{left1, right1}},
+		{ID: rightMerge, Parents: []Hash{right1, left1}},
+	}
+	repo.commitMap = map[Hash]*Commit{
+		left1:      repo.commits[0],
+		right1:     repo.commits[1],
+		leftMerge:  repo.commits[2],
+		rightMerge: repo.commits[3],
+	}
+
+	bases, err := MergeBases(repo, leftMerge, rightMerge)
+	if err != nil {
+		t.Fatalf("MergeBases() error = %v", err)
+	}
+
+	want := []Hash{left1, right1}
+	if !slices.Equal(bases, want) {
+		t.Fatalf("MergeBases() = %v, want %v", bases, want)
+	}
+}
+
+func TestMergeBase_UsesPreferredBaseFromBestBaseSet(t *testing.T) {
+	left1 := Hash("1111111111111111111111111111111111111111")
+	right1 := Hash("2222222222222222222222222222222222222222")
+	leftMerge := Hash("3333333333333333333333333333333333333333")
+	rightMerge := Hash("4444444444444444444444444444444444444444")
+
+	now := time.Unix(1_700_000_000, 0)
+	repo := NewEmptyRepository()
+	repo.commits = []*Commit{
+		{ID: left1, Committer: Signature{When: now.Add(-2 * time.Hour)}},
+		{ID: right1, Committer: Signature{When: now.Add(-time.Hour)}},
+		{ID: leftMerge, Parents: []Hash{left1, right1}, Committer: Signature{When: now}},
+		{ID: rightMerge, Parents: []Hash{right1, left1}, Committer: Signature{When: now}},
+	}
+	repo.commitMap = map[Hash]*Commit{
+		left1:      repo.commits[0],
+		right1:     repo.commits[1],
+		leftMerge:  repo.commits[2],
+		rightMerge: repo.commits[3],
+	}
+
+	base, err := MergeBase(repo, leftMerge, rightMerge)
+	if err != nil {
+		t.Fatalf("MergeBase() error = %v", err)
+	}
+	if base != right1 {
+		t.Fatalf("MergeBase() = %s, want %s", base, right1)
 	}
 }

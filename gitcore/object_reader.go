@@ -71,6 +71,10 @@ func (r *Repository) readObjectData(id Hash, depth int) ([]byte, ObjectType, err
 }
 
 func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte, err error) {
+	if _, err := NewHashFromString(string(id)); err != nil {
+		return "", nil, fmt.Errorf("invalid object hash %q: %w", id, err)
+	}
+
 	path := filepath.Join(r.gitDir, "objects", string(id)[:2], string(id)[2:])
 
 	//nolint:gosec // G304: Object paths are controlled by git repository structure

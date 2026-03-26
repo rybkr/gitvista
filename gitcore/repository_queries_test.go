@@ -521,3 +521,23 @@ func TestLsTreeRejectsNonCommitRevision(t *testing.T) {
 		t.Fatalf("unexpected non-commit error: %v", err)
 	}
 }
+
+func TestGetTreeRejectsInvalidHash(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	if _, err := repo.GetTree(Hash("abc")); err == nil {
+		t.Fatal("expected invalid hash error")
+	} else if !strings.Contains(err.Error(), "invalid object hash") {
+		t.Fatalf("unexpected invalid hash error: %v", err)
+	}
+}
+
+func TestGetBlobRejectsInvalidHash(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	if _, err := repo.GetBlob(Hash("abc")); err == nil {
+		t.Fatal("expected invalid hash error")
+	} else if !strings.Contains(err.Error(), "blob not found") {
+		t.Fatalf("unexpected invalid hash error: %v", err)
+	}
+}

@@ -1,24 +1,62 @@
 package gitcore
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
-// MergeBase finds the best common ancestor of two commits.
+// MergeBase finds a single best common ancestor of two commits.
 func MergeBase(repo *Repository, ours, theirs Hash) (Hash, error) {
+	bases, err := MergeBases(repo, ours, theirs)
+	if err != nil {
+		return "", err
+	}
+	return selectPreferredMergeBase(repo.commitMap, bases), nil
+}
+
+// MergeBases returns all best common ancestors of two commits.
+func MergeBases(repo *Repository, ours, theirs Hash) ([]Hash, error) {
 	repo.mu.RLock()
 	defer repo.mu.RUnlock()
 
 	commits := repo.commitMap
 
 	if _, ok := commits[ours]; !ok {
-		return "", fmt.Errorf("commit not found: %s", ours)
+		return nil, fmt.Errorf("commit not found: %s", ours)
 	}
 	if _, ok := commits[theirs]; !ok {
-		return "", fmt.Errorf("commit not found: %s", theirs)
+		return nil, fmt.Errorf("commit not found: %s", theirs)
 	}
 	if ours == theirs {
-		return ours, nil
+		return []Hash{ours}, nil
 	}
 
+	common := collectCommonAncestors(commits, ours, theirs)
+	if len(common) == 0 {
+		return nil, fmt.Errorf("no common ancestor between %s and %s", ours.Short(), theirs.Short())
+	}
+
+	bases := bestCommonAncestors(commits, common)
+	if len(bases) == 0 {
+		return nil, fmt.Errorf("no common ancestor between %s and %s", ours.Short(), theirs.Short())
+	}
+
+	slices.SortFunc(bases, compareHashes)
+	return bases, nil
+}
+
+func compareHashes(left, right Hash) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func collectCommonAncestors(commits map[Hash]*Commit, ours, theirs Hash) map[Hash]*Commit {
 	oursAncestors := collectReachableCommits(commits, ours)
 	theirsAncestors := collectReachableCommits(commits, theirs)
 
@@ -28,15 +66,7 @@ func MergeBase(repo *Repository, ours, theirs Hash) (Hash, error) {
 			common[hash] = commits[hash]
 		}
 	}
-	if len(common) == 0 {
-		return "", fmt.Errorf("no common ancestor between %s and %s", ours.Short(), theirs.Short())
-	}
-
-	best := bestCommonAncestor(commits, common)
-	if best == "" {
-		return "", fmt.Errorf("no common ancestor between %s and %s", ours.Short(), theirs.Short())
-	}
-	return best, nil
+	return common
 }
 
 func collectReachableCommits(commits map[Hash]*Commit, start Hash) map[Hash]struct{} {
@@ -61,7 +91,7 @@ func collectReachableCommits(commits map[Hash]*Commit, start Hash) map[Hash]stru
 	return reachable
 }
 
-func bestCommonAncestor(commits map[Hash]*Commit, common map[Hash]*Commit) Hash {
+func bestCommonAncestors(commits map[Hash]*Commit, common map[Hash]*Commit) []Hash {
 	redundant := make(map[Hash]struct{})
 	for _, commit := range common {
 		for _, parent := range commit.Parents {
@@ -69,9 +99,21 @@ func bestCommonAncestor(commits map[Hash]*Commit, common map[Hash]*Commit) Hash 
 		}
 	}
 
-	var best *Commit
-	for hash, commit := range common {
+	bases := make([]Hash, 0, len(common))
+	for hash := range common {
 		if _, isRedundant := redundant[hash]; isRedundant {
+			continue
+		}
+		bases = append(bases, hash)
+	}
+	return bases
+}
+
+func selectPreferredMergeBase(commits map[Hash]*Commit, bases []Hash) Hash {
+	var best *Commit
+	for _, hash := range bases {
+		commit, ok := commits[hash]
+		if !ok {
 			continue
 		}
 		if best == nil || commit.Committer.When.After(best.Committer.When) {
@@ -82,7 +124,6 @@ func bestCommonAncestor(commits map[Hash]*Commit, common map[Hash]*Commit) Hash 
 			best = commit
 		}
 	}
-
 	if best == nil {
 		return ""
 	}
