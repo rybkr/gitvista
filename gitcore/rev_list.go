@@ -63,8 +63,10 @@ func (r *Repository) ResolveRevision(revision string) (Hash, error) {
 	}
 
 	if strings.HasPrefix(revision, "HEAD~") {
-		head := r.Head()
-		if head == "" {
+		r.mu.RLock()
+		defer r.mu.RUnlock()
+
+		if r.head == "" {
 			return "", fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
 		}
 
@@ -73,9 +75,9 @@ func (r *Repository) ResolveRevision(revision string) (Hash, error) {
 			return "", fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
 		}
 
-		current := head
+		current := r.head
 		for range distance {
-			commit, ok := r.Commits()[current]
+			commit, ok := r.commitMap[current]
 			if !ok || len(commit.Parents) == 0 {
 				return "", fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
 			}
