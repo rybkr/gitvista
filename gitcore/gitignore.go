@@ -15,7 +15,8 @@ type ignorePattern struct {
 }
 
 type ignoreMatcher struct {
-	rules []ignoreRule
+	rules       []ignoreRule
+	loadedBases map[string]struct{}
 }
 
 type ignoreRule struct {
@@ -24,19 +25,70 @@ type ignoreRule struct {
 }
 
 func loadIgnoreMatcher(workDir, gitDir string) *ignoreMatcher {
-	m := &ignoreMatcher{}
+	m := &ignoreMatcher{
+		loadedBases: make(map[string]struct{}),
+	}
+	m.loadConfiguredGlobalExcludes(gitDir)
 	m.loadExcludeFile(filepath.Join(gitDir, "info", "exclude"))
-	m.loadFile(workDir, "")
+	_ = filepath.WalkDir(workDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() {
+			return nil
+		}
+
+		relPath, relErr := filepath.Rel(workDir, path)
+		if relErr != nil {
+			return relErr
+		}
+		baseDir := ""
+		if relPath != "." {
+			baseDir = filepath.ToSlash(relPath) + "/"
+		}
+		m.loadFile(workDir, baseDir)
+		return nil
+	})
 	return m
 }
 
 func (m *ignoreMatcher) loadFile(workDir, baseDir string) {
+	if _, loaded := m.loadedBases[baseDir]; loaded {
+		return
+	}
+	m.loadedBases[baseDir] = struct{}{}
 	path := filepath.Join(workDir, filepath.FromSlash(baseDir), ".gitignore")
 	m.loadExcludeFileWithBase(path, baseDir)
 }
 
 func (m *ignoreMatcher) loadExcludeFile(path string) {
 	m.loadExcludeFileWithBase(path, "")
+}
+
+func (m *ignoreMatcher) loadConfiguredGlobalExcludes(gitDir string) {
+	configPath := filepath.Join(gitDir, "config")
+	// #nosec G304 -- config path is derived from the repository git dir.
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+
+	path := parseCoreExcludesFileFromConfig(string(content))
+	if path == "" {
+		return
+	}
+	if strings.HasPrefix(path, "~/") {
+		if home, homeErr := os.UserHomeDir(); homeErr == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(gitDir, path)
+	}
+	m.loadExcludeFile(path)
 }
 
 func (m *ignoreMatcher) loadExcludeFileWithBase(path, baseDir string) {
@@ -60,9 +112,6 @@ func (m *ignoreMatcher) loadExcludeFileWithBase(path, baseDir string) {
 func (m *ignoreMatcher) isIgnored(relPath string, isDir bool) bool {
 	ignored := false
 	for _, rule := range m.rules {
-		if rule.pat.dirOnly && !isDir {
-			continue
-		}
 		if matchPattern(rule, relPath, isDir) {
 			ignored = !rule.pat.negated
 		}
@@ -124,6 +173,31 @@ func trimTrailingIgnoreWhitespace(line string) string {
 	return line[:end]
 }
 
+func parseCoreExcludesFileFromConfig(config string) string {
+	inCore := false
+	for _, raw := range strings.Split(config, "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case line == "":
+			continue
+		case strings.HasPrefix(line, "[core]"):
+			inCore = true
+			continue
+		case strings.HasPrefix(line, "["):
+			inCore = false
+			continue
+		}
+
+		if !inCore {
+			continue
+		}
+		if strings.HasPrefix(line, "excludesFile = ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "excludesFile = "))
+		}
+	}
+	return ""
+}
+
 func matchPattern(rule ignoreRule, relPath string, _ bool) bool {
 	pat := rule.pat
 	target := relPath
@@ -132,6 +206,10 @@ func matchPattern(rule ignoreRule, relPath string, _ bool) bool {
 			return false
 		}
 		target = relPath[len(rule.baseDir):]
+	}
+
+	if pat.dirOnly && matchDirectoryPattern(pat.pattern, target, pat.anchored) {
+		return true
 	}
 
 	if pat.anchored {
@@ -147,6 +225,26 @@ func matchPattern(rule ignoreRule, relPath string, _ bool) bool {
 	}
 
 	return matchGlob(pat.pattern, target)
+}
+
+func matchDirectoryPattern(pattern, target string, anchored bool) bool {
+	target = strings.TrimPrefix(target, "/")
+	if target == "" {
+		return false
+	}
+
+	if anchored {
+		return target == pattern || strings.HasPrefix(target, pattern+"/")
+	}
+
+	parts := strings.Split(target, "/")
+	for i := range parts {
+		candidate := parts[i]
+		if matchGlob(pattern, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchGlob(pattern, name string) bool {
