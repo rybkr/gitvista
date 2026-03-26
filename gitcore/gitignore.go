@@ -71,7 +71,7 @@ func (m *ignoreMatcher) isIgnored(relPath string, isDir bool) bool {
 }
 
 func parseIgnoreLine(line string) (ignorePattern, bool) {
-	line = strings.TrimRight(line, " \t")
+	line = trimTrailingIgnoreWhitespace(line)
 	if line == "" || line[0] == '#' {
 		return ignorePattern{}, false
 	}
@@ -79,6 +79,8 @@ func parseIgnoreLine(line string) (ignorePattern, bool) {
 	var pat ignorePattern
 	if line[0] == '!' {
 		pat.negated = true
+		line = line[1:]
+	} else if strings.HasPrefix(line, `\!`) || strings.HasPrefix(line, `\#`) {
 		line = line[1:]
 	}
 	if strings.HasSuffix(line, "/") {
@@ -100,6 +102,26 @@ func parseIgnoreLine(line string) (ignorePattern, bool) {
 
 	pat.pattern = line
 	return pat, line != ""
+}
+
+func trimTrailingIgnoreWhitespace(line string) string {
+	end := len(line)
+	for end > 0 {
+		last := line[end-1]
+		if last != ' ' && last != '\t' {
+			break
+		}
+
+		backslashes := 0
+		for i := end - 2; i >= 0 && line[i] == '\\'; i-- {
+			backslashes++
+		}
+		if backslashes%2 == 1 {
+			break
+		}
+		end--
+	}
+	return line[:end]
 }
 
 func matchPattern(rule ignoreRule, relPath string, _ bool) bool {

@@ -80,3 +80,40 @@ func TestMatchGlobDoubleStar(t *testing.T) {
 		t.Fatal("unexpected ** glob match")
 	}
 }
+
+func TestParseIgnoreLine_LiteralEscapes(t *testing.T) {
+	hashPattern, ok := parseIgnoreLine(`\#notes.txt`)
+	if !ok {
+		t.Fatal("parseIgnoreLine(escaped #) = false, want true")
+	}
+	if hashPattern.negated {
+		t.Fatalf("escaped # pattern parsed as negation: %+v", hashPattern)
+	}
+	if !matchGlob(hashPattern.pattern, "#notes.txt") {
+		t.Fatalf("escaped # pattern %q should match literal filename", hashPattern.pattern)
+	}
+
+	bangPattern, ok := parseIgnoreLine(`\!important.txt`)
+	if !ok {
+		t.Fatal("parseIgnoreLine(escaped !) = false, want true")
+	}
+	if bangPattern.negated {
+		t.Fatalf("escaped ! pattern parsed as negation: %+v", bangPattern)
+	}
+	if !matchGlob(bangPattern.pattern, "!important.txt") {
+		t.Fatalf("escaped ! pattern %q should match literal filename", bangPattern.pattern)
+	}
+}
+
+func TestParseIgnoreLine_PreservesEscapedTrailingSpace(t *testing.T) {
+	pat, ok := parseIgnoreLine("space\\ ")
+	if !ok {
+		t.Fatal("parseIgnoreLine(escaped trailing space) = false, want true")
+	}
+	if !matchGlob(pat.pattern, "space ") {
+		t.Fatalf("pattern %q should match filename with trailing space", pat.pattern)
+	}
+	if matchGlob(pat.pattern, "space") {
+		t.Fatalf("pattern %q should not match filename without trailing space", pat.pattern)
+	}
+}
