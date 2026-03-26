@@ -122,21 +122,22 @@ func (r *Repository) classifyUpstreamRelation(localHash, upstreamHash Hash) (sta
 	if err != nil {
 		return UpstreamStatusUnavailable, 0, 0, UpstreamReasonNoCommonBase
 	}
+
+	ahead = countExclusiveCommits(r, localHash, upstreamHash)
+	behind = countExclusiveCommits(r, upstreamHash, localHash)
+
 	if base == upstreamHash {
-		return UpstreamStatusAhead, countCommitsSince(r, localHash, base), 0, ""
+		return UpstreamStatusAhead, ahead, 0, ""
 	}
 	if base == localHash {
-		return UpstreamStatusBehind, 0, countCommitsSince(r, upstreamHash, base), ""
+		return UpstreamStatusBehind, 0, behind, ""
 	}
 
-	return UpstreamStatusDiverged,
-		countCommitsSince(r, localHash, base),
-		countCommitsSince(r, upstreamHash, base),
-		""
+	return UpstreamStatusDiverged, ahead, behind, ""
 }
 
-func countCommitsSince(r *Repository, start, stop Hash) int {
-	if start == "" || stop == "" || start == stop {
+func countExclusiveCommits(r *Repository, include, exclude Hash) int {
+	if include == "" || exclude == "" {
 		return 0
 	}
 
@@ -144,28 +145,45 @@ func countCommitsSince(r *Repository, start, stop Hash) int {
 	defer r.mu.RUnlock()
 
 	commits := r.commitMap
-	visited := map[Hash]struct{}{stop: {}}
-	queue := []Hash{start}
-	count := 0
+	excluded := make(map[Hash]struct{})
+	stack := []Hash{exclude}
 
-	for len(queue) > 0 {
-		hash := queue[0]
-		queue = queue[1:]
-		if _, seen := visited[hash]; seen {
+	for len(stack) > 0 {
+		hash := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, seen := excluded[hash]; seen {
 			continue
 		}
-		visited[hash] = struct{}{}
+		excluded[hash] = struct{}{}
 
 		commit, ok := commits[hash]
 		if !ok {
 			continue
 		}
+		stack = append(stack, commit.Parents...)
+	}
 
+	visited := make(map[Hash]struct{})
+	stack = []Hash{include}
+	count := 0
+	for len(stack) > 0 {
+		hash := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, seen := visited[hash]; seen {
+			continue
+		}
+		visited[hash] = struct{}{}
+		if _, seen := excluded[hash]; seen {
+			continue
+		}
+
+		commit, ok := commits[hash]
+		if !ok {
+			continue
+		}
 		count++
 		for _, parent := range commit.Parents {
-			if _, seen := visited[parent]; !seen {
-				queue = append(queue, parent)
-			}
+			stack = append(stack, parent)
 		}
 	}
 

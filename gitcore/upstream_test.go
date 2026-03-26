@@ -194,3 +194,48 @@ func TestRepositoryCurrentBranchUpstream(t *testing.T) {
 		})
 	}
 }
+
+func TestRepositoryCurrentBranchUpstream_MergedUpstreamAheadCount(t *testing.T) {
+	base := &Commit{ID: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")}
+	feature := &Commit{ID: Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), Parents: []Hash{base.ID}}
+	main := &Commit{ID: Hash("cccccccccccccccccccccccccccccccccccccccc"), Parents: []Hash{base.ID}}
+	merge := &Commit{ID: Hash("dddddddddddddddddddddddddddddddddddddddd"), Parents: []Hash{feature.ID, main.ID}}
+
+	gitDir := t.TempDir()
+	config := `[branch "feature"]
+	remote = origin
+	merge = refs/heads/main`
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(config), 0o644); err != nil {
+		t.Fatalf("WriteFile(config): %v", err)
+	}
+
+	repo := &Repository{
+		gitDir:  gitDir,
+		workDir: gitDir,
+		head:    merge.ID,
+		headRef: "refs/heads/feature",
+		refs: map[string]Hash{
+			"refs/heads/feature":       merge.ID,
+			"refs/heads/main":          main.ID,
+			"refs/remotes/origin/main": main.ID,
+		},
+		commits: []*Commit{base, feature, main, merge},
+		commitMap: map[Hash]*Commit{
+			base.ID:    base,
+			feature.ID: feature,
+			main.ID:    main,
+			merge.ID:   merge,
+		},
+	}
+
+	got := repo.CurrentBranchUpstream()
+	if got == nil {
+		t.Fatal("CurrentBranchUpstream() = nil")
+	}
+	if got.Status != UpstreamStatusAhead {
+		t.Fatalf("Status = %q, want %q", got.Status, UpstreamStatusAhead)
+	}
+	if got.AheadCount != 2 || got.BehindCount != 0 {
+		t.Fatalf("Ahead/Behind = %d/%d, want 2/0", got.AheadCount, got.BehindCount)
+	}
+}
