@@ -52,7 +52,7 @@ func (r *Repository) Commits() map[Hash]*Commit {
 
 	result := make(map[Hash]*Commit, len(r.commitMap))
 	for hash, commit := range r.commitMap {
-		result[hash] = commit
+		result[hash] = cloneCommit(commit)
 	}
 	return result
 }
@@ -116,7 +116,9 @@ func (r *Repository) Stashes() []*StashEntry {
 	defer r.mu.RUnlock()
 
 	result := make([]*StashEntry, len(r.stashes))
-	copy(result, r.stashes)
+	for i, stash := range r.stashes {
+		result[i] = cloneStashEntry(stash)
+	}
 	return result
 }
 
@@ -279,9 +281,30 @@ func (r *Repository) GetCommit(hash Hash) (*Commit, error) {
 	defer r.mu.RUnlock()
 
 	if commit, ok := r.commitMap[hash]; ok {
-		return commit, nil
+		return cloneCommit(commit), nil
 	}
 	return nil, fmt.Errorf("commit not found: %s", hash)
+}
+
+func cloneCommit(commit *Commit) *Commit {
+	if commit == nil {
+		return nil
+	}
+
+	cloned := *commit
+	if commit.Parents != nil {
+		cloned.Parents = append([]Hash(nil), commit.Parents...)
+	}
+	return &cloned
+}
+
+func cloneStashEntry(stash *StashEntry) *StashEntry {
+	if stash == nil {
+		return nil
+	}
+
+	cloned := *stash
+	return &cloned
 }
 
 func (r *Repository) getCommit(hash Hash) (*Commit, error) {

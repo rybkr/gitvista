@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -59,6 +60,28 @@ func (r *Repository) ResolveRevision(revision string) (Hash, error) {
 			return "", fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
 		}
 		return head, nil
+	}
+
+	if strings.HasPrefix(revision, "HEAD~") {
+		head := r.Head()
+		if head == "" {
+			return "", fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
+		}
+
+		distance, err := strconv.Atoi(strings.TrimPrefix(revision, "HEAD~"))
+		if err != nil || distance < 0 {
+			return "", fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
+		}
+
+		current := head
+		for range distance {
+			commit, ok := r.Commits()[current]
+			if !ok || len(commit.Parents) == 0 {
+				return "", fmt.Errorf("fatal: ambiguous argument %q: unknown revision or path not in the working tree", revision)
+			}
+			current = commit.Parents[0]
+		}
+		return current, nil
 	}
 
 	if hash, ok := r.Branches()[revision]; ok {

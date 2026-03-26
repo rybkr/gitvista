@@ -111,12 +111,20 @@ func TestRepositoryAccessCollections(t *testing.T) {
 	repo.stashes = []*StashEntry{stash}
 
 	commits := repo.Commits()
-	if len(commits) != 2 || commits[commit1.ID] != commit1 || commits[commit2.ID] != commit2 {
+	if len(commits) != 2 || commits[commit1.ID] == nil || commits[commit2.ID] == nil {
 		t.Fatalf("Commits() = %#v", commits)
+	}
+	if commits[commit1.ID] == commit1 || commits[commit2.ID] == commit2 {
+		t.Fatal("Commits() should return cloned commit values")
 	}
 	delete(commits, commit1.ID)
 	if len(repo.commitMap) != 2 {
 		t.Fatal("Commits() should return a copy of the map")
+	}
+	commits[commit2.ID].Message = "changed"
+	commits[commit2.ID].Parents = append(commits[commit2.ID].Parents, mustHash(t, testHash4))
+	if repo.commitMap[commit2.ID].Message == "changed" || len(repo.commitMap[commit2.ID].Parents) != 0 {
+		t.Fatal("Commits() should not expose mutable internal commit state")
 	}
 
 	branches := repo.Branches()
@@ -144,12 +152,47 @@ func TestRepositoryAccessCollections(t *testing.T) {
 	}
 
 	stashes := repo.Stashes()
-	if len(stashes) != 1 || stashes[0] != stash {
+	if len(stashes) != 1 || stashes[0] == nil {
 		t.Fatalf("Stashes() = %#v", stashes)
+	}
+	if stashes[0] == stash {
+		t.Fatal("Stashes() should return cloned stash values")
 	}
 	stashes[0] = nil
 	if repo.stashes[0] == nil {
 		t.Fatal("Stashes() should return a copied slice")
+	}
+	stashes = repo.Stashes()
+	stashes[0].Message = "changed"
+	if repo.stashes[0].Message == "changed" {
+		t.Fatal("Stashes() should not expose mutable internal stash state")
+	}
+}
+
+func TestRepositoryAccessGetCommitReturnsClone(t *testing.T) {
+	repo := newRepoSkeleton(t)
+	commit := &Commit{
+		ID:      mustHash(t, testHash1),
+		Parents: []Hash{mustHash(t, testHash2)},
+		Message: "original",
+	}
+	repo.commitMap[commit.ID] = commit
+
+	got, err := repo.GetCommit(commit.ID)
+	if err != nil {
+		t.Fatalf("GetCommit() error = %v", err)
+	}
+	if got == commit {
+		t.Fatal("GetCommit() should return a cloned commit")
+	}
+
+	got.Message = "changed"
+	got.Parents[0] = mustHash(t, testHash3)
+	if repo.commitMap[commit.ID].Message != "original" {
+		t.Fatal("GetCommit() should not expose mutable commit message state")
+	}
+	if repo.commitMap[commit.ID].Parents[0] != mustHash(t, testHash2) {
+		t.Fatal("GetCommit() should not expose mutable parent slice state")
 	}
 }
 

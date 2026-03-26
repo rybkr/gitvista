@@ -10,6 +10,7 @@ func TestResolveRevision(t *testing.T) {
 	other := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	tagObject := Hash("cccccccccccccccccccccccccccccccccccccccc")
 	remote := Hash("dddddddddddddddddddddddddddddddddddddddd")
+	grandparent := Hash("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
 
 	repo := &Repository{
 		head: head,
@@ -19,9 +20,10 @@ func TestResolveRevision(t *testing.T) {
 			"refs/tags/v1.0.0":         tagObject,
 		},
 		commitMap: map[Hash]*Commit{
-			head:   {ID: head},
-			other:  {ID: other},
-			remote: {ID: remote},
+			head:        {ID: head, Parents: []Hash{other}},
+			other:       {ID: other, Parents: []Hash{grandparent}},
+			remote:      {ID: remote},
+			grandparent: {ID: grandparent},
 		},
 		tags: []*Tag{{ID: tagObject, Object: other}},
 	}
@@ -37,6 +39,9 @@ func TestResolveRevision(t *testing.T) {
 		{name: "remote ref", revision: "refs/remotes/origin/main", want: remote},
 		{name: "full hash", revision: string(other), want: other},
 		{name: "short hash", revision: "bbbbbbb", want: other},
+		{name: "head tilde zero", revision: "HEAD~0", want: head},
+		{name: "head tilde one", revision: "HEAD~1", want: other},
+		{name: "head tilde two", revision: "HEAD~2", want: grandparent},
 	}
 
 	for _, tc := range tests {
@@ -64,6 +69,26 @@ func TestResolveRevisionAmbiguousShortHash(t *testing.T) {
 
 	if _, err := repo.ResolveRevision("aaaaaaa"); err == nil {
 		t.Fatal("ResolveRevision should fail for ambiguous short hash")
+	}
+}
+
+func TestResolveRevisionHeadTildeErrors(t *testing.T) {
+	head := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	parent := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	repo := &Repository{
+		head: head,
+		commitMap: map[Hash]*Commit{
+			head:   {ID: head, Parents: []Hash{parent}},
+			parent: {ID: parent},
+		},
+	}
+
+	for _, revision := range []string{"HEAD~x", "HEAD~-1", "HEAD~2"} {
+		t.Run(revision, func(t *testing.T) {
+			if _, err := repo.ResolveRevision(revision); err == nil {
+				t.Fatalf("ResolveRevision(%q) error = nil, want error", revision)
+			}
+		})
 	}
 }
 

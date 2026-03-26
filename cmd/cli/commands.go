@@ -79,6 +79,21 @@ func registerCommands(app *cli.App, repoCtx *repositoryContext, cw *cli.Writer) 
 	})
 
 	app.Register(&cli.Command{
+		Name:      "merge-base",
+		Summary:   "Find the best common ancestor of two commits",
+		Usage:     "gitvista-cli merge-base <commit> <commit>",
+		NeedsRepo: true,
+		Flags: []string{
+			"<commit>      A commit hash, short hash, branch, tag, remote ref, or HEAD",
+		},
+		Examples: []string{
+			"Print the merge base of main and feature\ngitvista-cli merge-base main feature",
+			"Print the merge base of HEAD and origin/main\ngitvista-cli merge-base HEAD refs/remotes/origin/main",
+		},
+		Run: func(args []string) int { return runMergeBase(repoCtx, args) },
+	})
+
+	app.Register(&cli.Command{
 		Name:    "version",
 		Summary: "Show version information",
 		Usage:   "gitvista-cli version",
