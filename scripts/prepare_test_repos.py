@@ -18,6 +18,7 @@ REPOSITORIES = (
 )
 LOCAL_REPOSITORIES = (
     ("merge-base-traps", SCRIPT_DIR / "create_merge_base_trap_repo.sh"),
+    ("status-traps", SCRIPT_DIR / "create_status_trap_repo.sh"),
 )
 
 timestamp_format: str = "%Y-%m-%d %H:%M:%S"
