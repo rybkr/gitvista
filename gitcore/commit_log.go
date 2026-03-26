@@ -56,7 +56,7 @@ func (r *Repository) CommitLog(maxCount int) []*Commit {
 		}
 
 		commit := heap.Pop(h).(*Commit) //nolint:errcheck
-		result = append(result, commit)
+		result = append(result, cloneCommit(commit))
 
 		for _, parentHash := range commit.Parents {
 			if visited[parentHash] {

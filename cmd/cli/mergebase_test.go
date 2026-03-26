@@ -103,3 +103,53 @@ func TestRunMergeBase(t *testing.T) {
 		t.Fatalf("runMergeBase(main) = code %d stderr %q", code, stderr)
 	}
 }
+
+func TestRunMergeBase_MultipleMergeBases(t *testing.T) {
+	repo := newCLIRepo(t)
+
+	treeID := mustCLIHash(t, "1111111111111111111111111111111111111111")
+	leftBaseID := mustCLIHash(t, "2222222222222222222222222222222222222222")
+	rightBaseID := mustCLIHash(t, "3333333333333333333333333333333333333333")
+	leftMergeID := mustCLIHash(t, "4444444444444444444444444444444444444444")
+	rightMergeID := mustCLIHash(t, "5555555555555555555555555555555555555555")
+	blobID := mustCLIHash(t, "6666666666666666666666666666666666666666")
+
+	writeCLILooseObject(t, repo, blobID, "blob", []byte("hello\n"))
+	writeCLILooseObject(t, repo, treeID, "tree", treeBody(treeEntryBytes("100644", "file.txt", blobID)))
+
+	leftBaseRaw := []byte("tree " + string(treeID) + "\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\nleft base\n")
+	rightBaseRaw := []byte("tree " + string(treeID) + "\nauthor Jane Doe <jane@example.com> 1700000600 +0000\ncommitter Jane Doe <jane@example.com> 1700000600 +0000\n\nright base\n")
+	leftMergeRaw := []byte("tree " + string(treeID) + "\nparent " + string(leftBaseID) + "\nparent " + string(rightBaseID) + "\nauthor Jane Doe <jane@example.com> 1700001200 +0000\ncommitter Jane Doe <jane@example.com> 1700001200 +0000\n\nleft merge\n")
+	rightMergeRaw := []byte("tree " + string(treeID) + "\nparent " + string(rightBaseID) + "\nparent " + string(leftBaseID) + "\nauthor Jane Doe <jane@example.com> 1700001800 +0000\ncommitter Jane Doe <jane@example.com> 1700001800 +0000\n\nright merge\n")
+
+	writeCLILooseObject(t, repo, leftBaseID, "commit", leftBaseRaw)
+	writeCLILooseObject(t, repo, rightBaseID, "commit", rightBaseRaw)
+	writeCLILooseObject(t, repo, leftMergeID, "commit", leftMergeRaw)
+	writeCLILooseObject(t, repo, rightMergeID, "commit", rightMergeRaw)
+
+	writeCLITextFile(t, filepath.Join(repo, "HEAD"), "ref: refs/heads/main\n")
+	writeCLITextFile(t, filepath.Join(repo, "refs", "heads", "main"), string(leftMergeID)+"\n")
+	writeCLITextFile(t, filepath.Join(repo, "refs", "heads", "feature"), string(rightMergeID)+"\n")
+
+	repository, err := gitcore.NewRepository(filepath.Dir(repo))
+	if err != nil {
+		t.Fatalf("NewRepository() error: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatalf("Close() error: %v", err)
+		}
+	})
+
+	repoCtx := &repositoryContext{repo: repository}
+
+	stdout, stderr, code := captureCLIOutput(t, func() int {
+		return runMergeBase(repoCtx, []string{"main", "feature"})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("runMergeBase(main, feature) = code %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	if stdout != string(rightBaseID)+"\n" {
+		t.Fatalf("runMergeBase(main, feature) stdout = %q, want %q", stdout, string(rightBaseID)+"\n")
+	}
+}

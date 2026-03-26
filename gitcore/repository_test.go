@@ -184,6 +184,27 @@ func TestRepositoryCommitLog(t *testing.T) {
 		}
 	})
 
+	t.Run("returned commits are detached copies", func(t *testing.T) {
+		log := repo.CommitLog(1)
+		if len(log) != 1 {
+			t.Fatalf("CommitLog(1) returned %d commits, want 1", len(log))
+		}
+
+		log[0].Message = "mutated"
+		log[0].Parents[0] = commit1.ID
+
+		stored := repo.commitMap[commit3.ID]
+		if stored.Message != "third" {
+			t.Fatalf("repo commit message mutated to %q, want %q", stored.Message, "third")
+		}
+		if len(stored.Parents) != 1 || stored.Parents[0] != commit2.ID {
+			t.Fatalf("repo commit parents mutated to %v, want [%s]", stored.Parents, commit2.ID)
+		}
+		if log[0] == stored {
+			t.Fatal("CommitLog() returned repository-owned commit pointer")
+		}
+	})
+
 	t.Run("empty head", func(t *testing.T) {
 		if log := NewEmptyRepository().CommitLog(0); log != nil {
 			t.Fatalf("CommitLog() on empty repo = %v, want nil", log)
