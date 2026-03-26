@@ -257,12 +257,12 @@ func TestUpdateInstructionForPath(t *testing.T) {
 	}{
 		{
 			name: "homebrew cellar install",
-			path: "/opt/homebrew/Cellar/gitvista/1.2.3/bin/vista",
+			path: "/opt/homebrew/Cellar/gitvista/1.2.3/bin/gitvista",
 			want: "brew upgrade gitvista",
 		},
 		{
 			name: "direct install",
-			path: "/usr/local/bin/vista",
+			path: "/usr/local/bin/gitvista",
 			want: "",
 		},
 	}
@@ -281,7 +281,7 @@ func TestRunUpdateRejectsHomebrewInstall(t *testing.T) {
 	restore := stubUpdateDeps(
 		func(string) (string, error) { return "v1.2.4", nil },
 		func(string, string, string) error { return nil },
-		func() (string, error) { return "/opt/homebrew/Cellar/gitvista/1.2.3/bin/vista", nil },
+		func() (string, error) { return "/opt/homebrew/Cellar/gitvista/1.2.3/bin/gitvista", nil },
 	)
 	defer restore()
 
@@ -299,7 +299,7 @@ func TestRunUpdateNoopWhenAlreadyCurrent(t *testing.T) {
 			t.Fatal("performUpdateFunc should not be called")
 			return nil
 		},
-		func() (string, error) { return "/usr/local/bin/vista", nil },
+		func() (string, error) { return "/usr/local/bin/gitvista", nil },
 	)
 	defer restore()
 
@@ -320,7 +320,7 @@ func TestRunUpdatePerformsUpdate(t *testing.T) {
 			gotVersion = latest
 			return nil
 		},
-		func() (string, error) { return "/usr/local/bin/vista", nil },
+		func() (string, error) { return "/usr/local/bin/gitvista", nil },
 	)
 	defer restore()
 
@@ -338,7 +338,7 @@ func TestRunUpdatePropagatesCheckLatestError(t *testing.T) {
 	restore := stubUpdateDeps(
 		func(string) (string, error) { return "", errors.New("boom") },
 		func(string, string, string) error { return nil },
-		func() (string, error) { return "/usr/local/bin/vista", nil },
+		func() (string, error) { return "/usr/local/bin/gitvista", nil },
 	)
 	defer restore()
 

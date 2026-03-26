@@ -2,8 +2,8 @@
 set -eu
 
 REPO="rybkr/gitvista"
-BINARY="vista"
-INSTALL_NAME="vista"
+BINARY="gitvista"
+INSTALL_NAME="gitvista"
 GIT_SUBCOMMAND_NAME="git-vista"
 INSTALL_DIR="${GITVISTA_INSTALL_DIR:-/usr/local/bin}"
 
@@ -104,7 +104,7 @@ install() {
     ok "Installed ${INSTALL_NAME} ${VERSION} to ${INSTALL_DIR}/${INSTALL_NAME}"
     ok "Installed Git subcommand shim to ${INSTALL_DIR}/${GIT_SUBCOMMAND_NAME}"
     echo ""
-    echo "  Run '${INSTALL_NAME} --help' or 'git vista --help' to get started."
+    echo "  Run '${INSTALL_NAME} --help' to get started."
     echo ""
 }
 

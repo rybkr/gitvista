@@ -38,7 +38,7 @@ gitvista -repo /path/to/your/repo
 git clone https://github.com/rybkr/gitvista.git
 cd gitvista
 make build
-./vista -repo /path/to/your/repo
+./gitvista -repo /path/to/your/repo
 ```
 
 Then open [http://localhost:8080](http://localhost:8080).
@@ -76,7 +76,7 @@ web/local/              Local app shell
 
 ```bash
 make build
-./vista
+./gitvista
 ```
 
 ## Development

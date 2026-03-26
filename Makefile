@@ -246,7 +246,7 @@ ci-remote: fmt-check vet lint security test validate-js build deps-check
 clean:
 	@echo "Cleaning..."
 	$(GOCLEAN)
-	@rm -f vista cli gitvista gitvista-cli
+	@rm -f gitvista gitvista-cli
 	@rm -rf test/cover/
 	@echo "Clean complete"
 
