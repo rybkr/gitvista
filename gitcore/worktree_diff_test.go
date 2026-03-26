@@ -186,3 +186,22 @@ func TestComputeWorkingTreeFileDiff_RejectsEscapingPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeWorkingTreeFileDiff_SubmoduleDoesNotReadGitlinkAsBlob(t *testing.T) {
+	repo := setupTestRepo(t)
+	submoduleCommit := Hash(strings.Repeat("b", 40))
+	root := createTree(t, repo, []TreeEntry{{ID: submoduleCommit, Name: "mod", Mode: "160000", Type: ObjectTypeCommit}})
+	wireHeadCommit(repo, root)
+
+	if err := os.Mkdir(filepath.Join(repo.workDir, "mod"), 0o755); err != nil {
+		t.Fatalf("Mkdir(mod): %v", err)
+	}
+
+	diff, err := ComputeWorkingTreeFileDiff(repo, "mod", DefaultContextLines)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeFileDiff(submodule) error = %v", err)
+	}
+	if diff == nil {
+		t.Fatal("ComputeWorkingTreeFileDiff(submodule) = nil")
+	}
+}

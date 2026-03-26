@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -393,5 +394,27 @@ func TestComputeWorkingTreeStatus_CollapsesUntrackedDirectories(t *testing.T) {
 	}
 	if _, ok := got["nested/untracked-b.txt"]; ok {
 		t.Fatal("nested/untracked-b.txt should be collapsed into nested/")
+	}
+}
+
+func TestComputeWorkingTreeStatus_CleanSubmoduleIsNotReportedModified(t *testing.T) {
+	repo := setupTestRepo(t)
+	submoduleCommit := Hash(strings.Repeat("b", 40))
+	root := createTree(t, repo, []TreeEntry{{ID: submoduleCommit, Name: "mod", Mode: "160000", Type: ObjectTypeCommit}})
+	wireHeadCommit(repo, root)
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "mod", blobHash: submoduleCommit, fileSize: 0, mode: 0o160000},
+	})
+	if err := os.Mkdir(filepath.Join(repo.workDir, "mod"), 0o755); err != nil {
+		t.Fatalf("Mkdir(mod): %v", err)
+	}
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	if len(status.Files) != 0 {
+		t.Fatalf("expected clean submodule to be omitted from status, got %#v", status.Files)
 	}
 }

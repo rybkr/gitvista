@@ -45,6 +45,16 @@ func markWorktreeModified(results map[string]*FileStatus, path string, indexHash
 	return fileStatus
 }
 
+func trackedGitlinkPaths(index *Index) map[string]struct{} {
+	paths := make(map[string]struct{})
+	for path, entry := range index.ByPath {
+		if entryModeKind(indexModeString(entry.Mode)) == "gitlink" {
+			paths[path] = struct{}{}
+		}
+	}
+	return paths
+}
+
 // ComputeWorkingTreeStatus computes the status of the working tree.
 func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	headTree := make(map[string]treeFile)
@@ -71,6 +81,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	for path := range index.ByPath {
 		indexPaths[path] = struct{}{}
 	}
+	gitlinkPaths := trackedGitlinkPaths(index)
 
 	results := make(map[string]*FileStatus)
 	for path, entry := range index.ByPath {
@@ -115,6 +126,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		}
 		entryMode := indexModeString(entry.Mode)
 		isSymlink := entryModeKind(entryMode) == "symlink"
+		isGitlink := entryModeKind(entryMode) == "gitlink"
 
 		info, statErr := os.Lstat(diskPath)
 		if statErr != nil {
@@ -128,6 +140,14 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 				fs.IndexHash = entry.Hash
 			} else {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: stat %s: %w", diskPath, statErr)
+			}
+			continue
+		}
+
+		if isGitlink {
+			if !info.IsDir() {
+				fs := markWorktreeModified(results, path, entry.Hash)
+				fs.WorkStatus = StatusTypeChanged
 			}
 			continue
 		}
@@ -200,6 +220,9 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 		if d.IsDir() {
 			if relPath != "." {
+				if _, trackedGitlink := gitlinkPaths[relPath]; trackedGitlink {
+					return filepath.SkipDir
+				}
 				if ignore.isIgnored(relPath, true) {
 					return filepath.SkipDir
 				}

@@ -57,10 +57,10 @@ func readWorktreeFile(workDir, relativePath string) ([]byte, error) {
 	return os.ReadFile(diskPath)
 }
 
-func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, error) {
+func resolveTreeEntryAtPath(repo *Repository, treeHash Hash, filePath string) (TreeEntry, error) {
 	normalizedPath, err := normalizeWorktreeRelativePath(filePath)
 	if err != nil {
-		return "", fmt.Errorf("resolveBlobAtPath: %w", err)
+		return TreeEntry{}, fmt.Errorf("resolveTreeEntryAtPath: %w", err)
 	}
 
 	components := strings.Split(normalizedPath, "/")
@@ -69,14 +69,14 @@ func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, 
 	for _, component := range components[:len(components)-1] {
 		tree, err := repo.GetTree(currentTreeHash)
 		if err != nil {
-			return "", fmt.Errorf("resolveBlobAtPath: failed to read tree %s: %w", currentTreeHash, err)
+			return TreeEntry{}, fmt.Errorf("resolveTreeEntryAtPath: failed to read tree %s: %w", currentTreeHash, err)
 		}
 
 		found := false
 		for _, entry := range tree.Entries {
 			if entry.Name == component {
 				if !isTreeEntry(entry) {
-					return "", errBlobNotFound
+					return TreeEntry{}, errBlobNotFound
 				}
 				currentTreeHash = entry.ID
 				found = true
@@ -84,26 +84,34 @@ func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, 
 			}
 		}
 		if !found {
-			return "", errBlobNotFound
+			return TreeEntry{}, errBlobNotFound
 		}
 	}
 
 	leafName := components[len(components)-1]
 	tree, err := repo.GetTree(currentTreeHash)
 	if err != nil {
-		return "", fmt.Errorf("resolveBlobAtPath: failed to read leaf tree %s: %w", currentTreeHash, err)
+		return TreeEntry{}, fmt.Errorf("resolveTreeEntryAtPath: failed to read leaf tree %s: %w", currentTreeHash, err)
 	}
 
 	for _, entry := range tree.Entries {
 		if entry.Name == leafName {
-			if isTreeEntry(entry) {
-				return "", errBlobNotFound
-			}
-			return entry.ID, nil
+			return entry, nil
 		}
 	}
 
-	return "", errBlobNotFound
+	return TreeEntry{}, errBlobNotFound
+}
+
+func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, error) {
+	entry, err := resolveTreeEntryAtPath(repo, treeHash, filePath)
+	if err != nil {
+		return "", err
+	}
+	if isTreeEntry(entry) || isSubmodule(entry) {
+		return "", errBlobNotFound
+	}
+	return entry.ID, nil
 }
 
 // ComputeWorkingTreeFileDiff diffs the on-disk content of filePath against HEAD.
@@ -126,14 +134,21 @@ func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines 
 		commits := repo.Commits()
 		headCommit, exists := commits[headHash]
 		if exists {
-			blobHash, err := resolveBlobAtPath(repo, headCommit.Tree, normalizedPath)
+			entry, err := resolveTreeEntryAtPath(repo, headCommit.Tree, normalizedPath)
 			if err != nil && !errors.Is(err, errBlobNotFound) {
-				return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: resolving HEAD blob: %w", err)
+				return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: resolving HEAD entry: %w", err)
 			}
 
 			if err == nil {
-				result.OldHash = blobHash
-				content, readErr := repo.GetBlob(blobHash)
+				result.OldHash = entry.ID
+				if isSubmodule(entry) {
+					result.IsBinary = true
+					return result, nil
+				}
+				if isTreeEntry(entry) {
+					return result, nil
+				}
+				content, readErr := repo.GetBlob(entry.ID)
 				if readErr != nil {
 					return nil, fmt.Errorf("ComputeWorkingTreeFileDiff: reading HEAD blob: %w", readErr)
 				}
