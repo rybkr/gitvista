@@ -181,39 +181,6 @@ func isBinaryContent(content []byte) bool {
 	return gitcore.IsBinaryContent(content)
 }
 
-func (s *Server) handleTreeBlame(w http.ResponseWriter, r *http.Request) {
-	commitHash, repo, session, ok := s.extractHashParam(w, r, "/api/tree/blame/")
-	if !ok {
-		return
-	}
-
-	dirPath := r.URL.Query().Get("path")
-	sanitized, err := sanitizePath(dirPath)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid path: %v", err), http.StatusBadRequest)
-		return
-	}
-	dirPath = sanitized
-
-	cacheKey := string(commitHash) + ":" + dirPath
-	blame, ok := session.blameCache.Get(cacheKey)
-	if !ok {
-		result, blameErr := repo.GetFileBlame(commitHash, dirPath)
-		if blameErr != nil {
-			s.logger.Error("Failed to compute blame", "hash", commitHash, "path", dirPath, "err", blameErr)
-			http.Error(w, "Blame computation failed", http.StatusNotFound)
-			return
-		}
-		blame = result
-		session.blameCache.Put(cacheKey, blame)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(blameEntriesResponse{Entries: blame}); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-	}
-}
-
 // handleCommitDiff routes to either the commit-level diff list or the
 // file-level line diff based on whether the URL path ends with "/file".
 func (s *Server) handleCommitDiff(w http.ResponseWriter, r *http.Request) {

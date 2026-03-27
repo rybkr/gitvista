@@ -37,9 +37,6 @@ func TestNewRepoSession(t *testing.T) {
 	if rs.broadcast == nil {
 		t.Error("broadcast channel is nil")
 	}
-	if rs.blameCache == nil {
-		t.Error("blameCache is nil")
-	}
 	if rs.diffCache == nil {
 		t.Error("diffCache is nil")
 	}
@@ -106,8 +103,8 @@ func TestRepoSession_DefaultCacheSize(t *testing.T) {
 		// CacheSize: 0 — should default to defaultCacheSize
 	})
 
-	if rs.blameCache == nil {
-		t.Error("blameCache was not initialized with default size")
+	if rs.diffCache == nil {
+		t.Error("diffCache was not initialized with default size")
 	}
 }
 
@@ -134,14 +131,10 @@ func TestRepoSession_UpdateRepositoryClearsCaches(t *testing.T) {
 		Logger:      silentLogger(),
 	})
 
-	rs.blameCache.Put("blame", "value")
 	rs.diffCache.Put("diff", "value")
 
 	rs.updateRepository()
 
-	if _, ok := rs.blameCache.Get("blame"); ok {
-		t.Fatal("expected stale blame cache entry to be cleared")
-	}
 	if _, ok := rs.diffCache.Get("diff"); ok {
 		t.Fatal("expected stale diff cache entry to be cleared")
 	}

@@ -28,10 +28,6 @@ type blobResponse struct {
 	Content   string `json:"content"`
 }
 
-type blameEntriesResponse struct {
-	Entries any `json:"entries"`
-}
-
 type commitDiffEntryResponse struct {
 	Path    string `json:"path"`
 	OldPath string `json:"oldPath,omitempty"`

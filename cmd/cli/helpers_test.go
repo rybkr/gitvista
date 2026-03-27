@@ -22,6 +22,22 @@ func writeCLITextFile(t *testing.T, path, content string) {
 	}
 }
 
+func newCLIRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	gitDir := filepath.Join(root, ".git")
+	for _, dir := range []string{
+		filepath.Join(gitDir, "objects"),
+		filepath.Join(gitDir, "refs", "heads"),
+		filepath.Join(gitDir, "refs", "tags"),
+	} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	return gitDir
+}
+
 func writeCLILooseObject(t *testing.T, gitDir string, id gitcore.Hash, objectType string, body []byte) {
 	t.Helper()
 	dir := filepath.Join(gitDir, "objects", string(id)[:2])

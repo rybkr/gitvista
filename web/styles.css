@@ -1412,24 +1412,6 @@ body.gv-sidebar-dock-fullscreen .sidebar-panel-title {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.explorer-blame {
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-    font-size: 11px;
-    color: rgba(99, 110, 123, 0.7);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.explorer-blame-age {
-    width: 48px;
-    text-align: right;
-}
-
-.explorer-blame-hash {
-    width: 52px;
-}
-
 /* ── Canvas Toolbar ── */
 
 /*
@@ -3097,15 +3079,6 @@ canvas {
 .explorer-skeleton-bar {
     height: 10px;
     border-radius: 3px;
-    background: var(--border-color);
-    animation: skeleton-pulse 1.2s ease-in-out infinite;
-}
-
-.explorer-blame-skeleton {
-    display: inline-block;
-    width: 36px;
-    height: 8px;
-    border-radius: 2px;
     background: var(--border-color);
     animation: skeleton-pulse 1.2s ease-in-out infinite;
 }

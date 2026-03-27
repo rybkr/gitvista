@@ -1,6 +1,8 @@
 package gitcore
 
-import "container/heap"
+import (
+	"container/heap"
+)
 
 type commitLogHeap []*Commit
 
@@ -17,7 +19,7 @@ func (h commitLogHeap) Swap(i, j int) {
 }
 
 func (h *commitLogHeap) Push(x any) {
-	*h = append(*h, x.(*Commit)) //nolint:errcheck
+	*h = append(*h, x.(*Commit)) //nolint:errcheck: commitLogHeap can only contain Commits.
 }
 
 func (h *commitLogHeap) Pop() any {

@@ -8,7 +8,7 @@ GitVista is a lightweight local tool that renders your Git history as an interac
 
 - **Live commit graph** — Force-directed and lane-based layouts, zoomable canvas with progressive detail (message at 1.5x, author at 2x, date at 3x)
 - **Real-time updates** — Filesystem watcher on `.git/` broadcasts changes over WebSocket as you work
-- **File explorer** — Lazy-loaded tree browser with blame annotations and keyboard navigation (W3C APG TreeView)
+- **File explorer** — Lazy-loaded tree browser with keyboard navigation (W3C APG TreeView)
 - **Syntax-highlighted diffs** — Unified diff view with dual line number gutters, expand-context, and highlight.js coloring
 - **Author-colored nodes** — Distinct colors per contributor across both graph layouts
 - **Search and filter** — Qualifier syntax (`author:`, `hash:`, `after:`, `before:`, `merge:`, `branch:`), debounced with recent search history
@@ -54,7 +54,7 @@ All options can be set via CLI flags or environment variables.
 | `-host` | `GITVISTA_HOST` | `127.0.0.1` | Bind address |
 | | `GITVISTA_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | | `GITVISTA_LOG_FORMAT` | `text` | Log format: `text`, `json` |
-| | `GITVISTA_CACHE_SIZE` | `500` | LRU cache capacity (blame + diff entries) |
+| | `GITVISTA_CACHE_SIZE` | `500` | LRU cache capacity for diff entries |
 
 ## Architecture
 
@@ -66,7 +66,7 @@ web/gitvista/           Shared repository experience modules
 web/local/              Local app shell
 ```
 
-**Backend**: Go 1.24, two dependencies (`fsnotify`, `gorilla/websocket`). Parses `.git/` directly — loose objects, pack files, refs, tags, blame, working tree status, and diffs. No git CLI required for core parsing.
+**Backend**: Go 1.24, two dependencies (`fsnotify`, `gorilla/websocket`). Parses `.git/` directly — loose objects, pack files, refs, tags, working tree status, and diffs. No git CLI required for core parsing.
 
 **Frontend**: No build toolchain. ES modules loaded natively by the browser. D3.js v7.9.0 via ESM CDN import. Canvas-based graph rendering with two layout strategies (force-directed and topological lane DAG). highlight.js 11.9.0 for syntax coloring.
 

@@ -1,10 +1,10 @@
 /**
  * File explorer component — a tree-based file browser with expand/collapse,
- * lazy blame annotations, file content viewing, keyboard navigation, and ARIA.
+ * file content viewing, keyboard navigation, and ARIA.
  *
  * Architecture:
  * - Flat list rendering: builds visibleEntries array from expanded directories
- * - Lazy fetching: tree data cached on expand, blame data fetched async
+ * - Lazy fetching: tree data cached on expand
  * - Stale response handling: generation counter discards outdated responses
  * - File viewing: switches to file content viewer when file is clicked
  * - Keyboard navigation: W3C APG TreeView pattern (arrow keys, Enter, Home/End)
@@ -17,7 +17,6 @@ import { createFileContentViewer } from "./fileContentViewer.js";
 import { createDiffView } from "./diffView.js";
 import { createDiffContentViewer } from "./diffContentViewer.js";
 import { getFileIcon } from "./fileIcons.js";
-import { formatRelativeTime } from "./utils/format.js";
 
 // SVG icons
 const FOLDER_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -87,7 +86,6 @@ export function createFileExplorer() {
         rootTreeHash: null,         // Root tree hash of the commit
         expandedDirs: new Set(),    // Set of expanded directory paths (e.g. "src/internal")
         treeCache: new Map(),       // treeHash -> Tree { hash, entries: [] }
-        blameCache: new Map(),      // "commitHash:path" -> { filename: BlameEntry }
         selectedFile: null,         // { path, blobHash } or null
         generation: 0,              // Incremented on openCommit to discard stale responses
         focusedIndex: 0,            // Index into the visibleEntries array for keyboard nav
@@ -118,15 +116,6 @@ export function createFileExplorer() {
         const payload = await response.json();
         const commits = Array.isArray(payload?.commits) ? payload.commits : [];
         return commits[0] || null;
-    }
-
-    async function fetchBlame(commitHash, dirPath) {
-        const url = apiUrl(`/tree/blame/${commitHash}?path=${encodeURIComponent(dirPath)}`);
-        const response = await apiFetch(url);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch blame for ${dirPath}: ${response.status}`);
-        }
-        return response.json();
     }
 
     /**
@@ -170,17 +159,9 @@ export function createFileExplorer() {
                     treeHash: isDir ? entry.hash : null,
                     blobHash: !isDir ? entry.hash : null,
                     mode: entry.mode,
-                    blame: null,
                     setSize,
                     posInSet: pos + 1,
                 };
-
-                // Check if we have blame data for this entry
-                const blameKey = `${state.commitHash}:${parentPath}`;
-                const blameData = state.blameCache.get(blameKey);
-                if (blameData && blameData.entries && blameData.entries[entry.name]) {
-                    visibleEntry.blame = blameData.entries[entry.name];
-                }
 
                 visible.push(visibleEntry);
 
@@ -628,27 +609,6 @@ export function createFileExplorer() {
                 }
             }
 
-            const blameContainer = document.createElement("span");
-            blameContainer.className = "explorer-blame";
-
-            if (entry.blame) {
-                const age = document.createElement("span");
-                age.className = "explorer-blame-age";
-                age.textContent = formatRelativeTime(entry.blame.when);
-                blameContainer.appendChild(age);
-
-                const hash = document.createElement("span");
-                hash.className = "explorer-blame-hash";
-                hash.textContent = entry.blame.commitHash.substring(0, 7);
-                blameContainer.appendChild(hash);
-            } else {
-                const skeleton = document.createElement("span");
-                skeleton.className = "explorer-blame-skeleton";
-                blameContainer.appendChild(skeleton);
-            }
-
-            row.appendChild(blameContainer);
-
             row.addEventListener("click", () => {
                 state.focusedIndex = i;
                 if (entry.isDir) {
@@ -864,19 +824,6 @@ export function createFileExplorer() {
             const entries = buildVisibleEntries();
             const idx = entries.findIndex(e => e.path === entry.path);
             if (idx >= 0) state.focusedIndex = idx;
-
-            const blameKey = `${state.commitHash}:${entry.path}`;
-            if (!state.blameCache.has(blameKey)) {
-                try {
-                    const gen = state.generation;
-                    const blameData = await fetchBlame(state.commitHash, entry.path);
-                    if (state.generation !== gen) return;
-                    state.blameCache.set(blameKey, blameData);
-                    render();
-                } catch (err) {
-                    console.error("Failed to fetch blame:", err);
-                }
-            }
         }
     }
 
@@ -926,7 +873,6 @@ export function createFileExplorer() {
         state.rootTreeHash = resolvedCommit.tree;
         state.expandedDirs.clear();
         state.treeCache.clear();
-        state.blameCache.clear();
         state.selectedFile = null;
         state.focusedIndex = 0;
         state.filterText = "";
@@ -958,16 +904,6 @@ export function createFileExplorer() {
 
         state.loading = false;
         render();
-
-        const blameKey = `${state.commitHash}:`;
-        try {
-            const blameData = await fetchBlame(state.commitHash, "");
-            if (state.generation !== gen) return;
-            state.blameCache.set(blameKey, blameData);
-            render();
-        } catch (err) {
-            console.error("Failed to fetch root blame:", err);
-        }
     }
 
     async function revealPath(path) {

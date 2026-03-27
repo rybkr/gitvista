@@ -48,8 +48,7 @@ type RepoSession struct {
 
 	broadcast chan UpdateMessage
 
-	blameCache *LRUCache[any]
-	diffCache  *LRUCache[any]
+	diffCache *LRUCache[any]
 
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -81,15 +80,14 @@ func NewRepoSession(cfg SessionConfig) *RepoSession {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	rs := &RepoSession{
-		id:         cfg.ID,
-		logger:     cfg.Logger.With("session", cfg.ID),
-		reloadFn:   cfg.ReloadFn,
-		clients:    make(map[*websocket.Conn]*sync.Mutex),
-		broadcast:  make(chan UpdateMessage, broadcastChannelSize),
-		blameCache: NewLRUCache[any](cfg.CacheSize),
-		diffCache:  NewLRUCache[any](cfg.CacheSize),
-		ctx:        ctx,
-		cancel:     cancel,
+		id:        cfg.ID,
+		logger:    cfg.Logger.With("session", cfg.ID),
+		reloadFn:  cfg.ReloadFn,
+		clients:   make(map[*websocket.Conn]*sync.Mutex),
+		broadcast: make(chan UpdateMessage, broadcastChannelSize),
+		diffCache: NewLRUCache[any](cfg.CacheSize),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 	rs.cached.repo = cfg.InitialRepo
 	rs.scheduleAnalyticsPrewarm(cfg.InitialRepo)
@@ -180,7 +178,6 @@ func (rs *RepoSession) updateRepository() {
 	rs.cacheMu.Lock()
 	rs.cached.repo = newRepo
 	rs.cacheMu.Unlock()
-	rs.blameCache.Clear()
 	rs.diffCache.Clear()
 	rs.scheduleAnalyticsPrewarm(newRepo)
 

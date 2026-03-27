@@ -186,7 +186,6 @@ func (s *Server) newServeMux() *http.ServeMux {
 
 	session := s.session
 	mux.HandleFunc("/api/repository", writeDeadline(withSession(session, s.handleRepository)))
-	mux.HandleFunc("/api/tree/blame/", writeDeadline(withSession(session, s.handleTreeBlame)))
 	mux.HandleFunc("/api/tree/", writeDeadline(withSession(session, s.handleTree)))
 	mux.HandleFunc("/api/blob/", writeDeadline(withSession(session, s.handleBlob)))
 	mux.HandleFunc("/api/commit/diff/", writeDeadline(withSession(session, s.handleCommitDiff)))

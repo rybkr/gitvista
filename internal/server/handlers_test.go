@@ -322,12 +322,6 @@ func TestNewServeMux_DispatchesToSharedHandlers(t *testing.T) {
 		noSession  bool
 	}{
 		{
-			name:       "tree blame rejects unsupported method",
-			method:     http.MethodPost,
-			target:     "/api/tree/blame/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?path=file.txt",
-			wantStatus: http.StatusMethodNotAllowed,
-		},
-		{
 			name:       "blob rejects unsupported method",
 			method:     http.MethodPost,
 			target:     "/api/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -555,33 +549,6 @@ func TestHandleBlob_InvalidHash(t *testing.T) {
 				t.Errorf("status code = %d, want %d for hash %q", w.Code, http.StatusBadRequest, tt.hash)
 			}
 		})
-	}
-}
-
-func TestHandleTreeBlame_MissingCommitHash(t *testing.T) {
-	s := newTestServer(t)
-
-	req := httptest.NewRequest("GET", "/api/tree/blame/?path=src", nil)
-	w := httptest.NewRecorder()
-
-	s.handleTreeBlame(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-func TestHandleTreeBlame_InvalidCommitHash(t *testing.T) {
-	session := newTestSession(nil)
-	s := newTestServer(t)
-
-	req := requestWithSession("GET", "/api/tree/blame/invalidhash?path=src", session)
-	w := httptest.NewRecorder()
-
-	s.handleTreeBlame(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status code = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 }
 
