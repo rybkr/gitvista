@@ -96,26 +96,19 @@ func TestHashHelpers(t *testing.T) {
 	if _, err := NewHash("short"); err == nil {
 		t.Fatal("expected invalid length error")
 	}
-	if _, err := NewHashFromString("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"); err == nil {
+	if _, err := NewHash("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"); err == nil {
 		t.Fatal("expected invalid hex error")
 	}
 
-	h, err := NewHashFromString("ABCDEFabcdef0123456789012345678901234567")
+	h, err := NewHash("ABCDEFabcdef0123456789012345678901234567")
 	if err != nil {
-		t.Fatalf("NewHashFromString: %v", err)
+		t.Fatalf("NewHash: %v", err)
 	}
 	if got := h.Short(); got != "ABCDEFa" {
 		t.Fatalf("Short() = %q", got)
 	}
 	if got := Hash("abc").Short(); got != "abc" {
 		t.Fatalf("short hash Short() = %q", got)
-	}
-
-	if fromHexChar('f') != 15 || fromHexChar('A') != 10 || fromHexChar('9') != 9 || fromHexChar('x') != -1 {
-		t.Fatal("fromHexChar cases not covered as expected")
-	}
-	if toHexChar(0) != '0' || toHexChar(10) != 'a' {
-		t.Fatal("toHexChar cases not covered as expected")
 	}
 }
 

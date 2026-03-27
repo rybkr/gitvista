@@ -1,8 +1,10 @@
-//go:build !(darwin || linux || freebsd || netbsd || openbsd)
+//go:build !unix
 
 package gitcore
 
-import "os"
+import (
+	"os"
+)
 
 func mapPackFile(_ *os.File, _ int64) ([]byte, error) {
 	return nil, nil

@@ -71,7 +71,7 @@ func (r *Repository) readObjectData(id Hash, depth int) ([]byte, ObjectType, err
 }
 
 func (r *Repository) readLooseObjectRaw(id Hash) (header string, content []byte, err error) {
-	if _, err := NewHashFromString(string(id)); err != nil {
+	if _, err := NewHash(string(id)); err != nil {
 		return "", nil, fmt.Errorf("invalid object hash %q: %w", id, err)
 	}
 
