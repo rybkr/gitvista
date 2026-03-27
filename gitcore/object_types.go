@@ -23,36 +23,38 @@ const (
 	ObjectTypeRefDelta ObjectType = 7
 )
 
+var objectTypeNames = map[ObjectType]string{
+	ObjectTypeCommit:   "commit",
+	ObjectTypeTree:     "tree",
+	ObjectTypeBlob:     "blob",
+	ObjectTypeTag:      "tag",
+	ObjectTypeReserved: "reserved",
+	ObjectTypeOfsDelta: "ofsdelta",
+	ObjectTypeRefDelta: "refdelta",
+}
+
+var objectTypeValues = func() map[string]ObjectType {
+	m := make(map[string]ObjectType, len(objectTypeNames))
+	for k, v := range objectTypeNames {
+		m[v] = k
+	}
+	return m
+}()
+
 // String returns the Git object type name (e.g., "commit", "tree", "blob", "tag").
 func (t ObjectType) String() string {
-	switch t {
-	case ObjectTypeCommit:
-		return "commit"
-	case ObjectTypeTree:
-		return "tree"
-	case ObjectTypeBlob:
-		return "blob"
-	case ObjectTypeTag:
-		return "tag"
-	default:
-		return "invalid"
+	if name, ok := objectTypeNames[t]; ok {
+		return name
 	}
+	return "invalid"
 }
 
 // ParseObjectType converts a string representation of an object type to an ObjectType.
 func ParseObjectType(s string) ObjectType {
-	switch s {
-	case "commit":
-		return ObjectTypeCommit
-	case "tree":
-		return ObjectTypeTree
-	case "blob":
-		return ObjectTypeBlob
-	case "tag":
-		return ObjectTypeTag
-	default:
-		return ObjectTypeInvalid
+	if t, ok := objectTypeValues[s]; ok {
+		return t
 	}
+	return ObjectTypeInvalid
 }
 
 func objectTypeFromHeader(header string) (ObjectType, error) {
@@ -70,14 +72,13 @@ func objectTypeFromHeader(header string) (ObjectType, error) {
 }
 
 // Object represents a generic Git object.
-// It is used to define a common contract for each Obejct type.
 // See: https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 type Object interface {
 	Type() ObjectType
 }
 
 // ObjectResolver retrieves raw object data and type by hash.
-// Used for resolving delta base objects during pack file reading.
+// It is used for resolving delta base objects during pack file reading.
 type ObjectResolver func(id Hash, depth int) (data []byte, objectType ObjectType, err error)
 
 // Commit represents a Git commit object.
