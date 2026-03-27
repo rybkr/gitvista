@@ -17,6 +17,7 @@ type mailmapEntry struct {
 }
 
 // Mailmap holds parsed .mailmap entries and resolves author identities.
+// See: https://git-scm.com/docs/gitmailmap
 type Mailmap struct {
 	entries        []mailmapEntry
 	entriesByEmail map[string][]int
@@ -50,24 +51,20 @@ func parseMailmapLine(line string) (mailmapEntry, bool) {
 	remaining := line
 
 	for {
-		open := strings.IndexByte(remaining, '<')
-		if open == -1 {
+		openIdx := strings.IndexByte(remaining, '<')
+		if openIdx == -1 {
 			textParts = append(textParts, remaining)
 			break
 		}
-		close := strings.IndexByte(remaining[open:], '>')
-		if close == -1 {
+		closeIdx := strings.IndexByte(remaining[openIdx:], '>')
+		if closeIdx == -1 {
 			return mailmapEntry{}, false
 		}
-		close += open
+		closeIdx += openIdx
 
-		textParts = append(textParts, remaining[:open])
-		emails = append(emails, strings.TrimSpace(remaining[open+1:close]))
-		remaining = remaining[close+1:]
-	}
-
-	if len(emails) == 0 {
-		return mailmapEntry{}, false
+		textParts = append(textParts, remaining[:openIdx])
+		emails = append(emails, strings.TrimSpace(remaining[openIdx+1:closeIdx]))
+		remaining = remaining[closeIdx+1:]
 	}
 
 	names := make([]string, len(textParts))

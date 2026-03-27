@@ -56,6 +56,7 @@ func TestParseMailmapLineForms(t *testing.T) {
 		{name: "form 4: full mapping", line: "Joe Developer <joe@proper.com> Joseph Dev <joseph@old.com>", wantOK: true, wantProper: "Joe Developer", wantPEmail: "joe@proper.com", wantCName: "Joseph Dev", wantCEmail: "joseph@old.com"},
 		{name: "no email brackets", line: "Just some text", wantOK: false},
 		{name: "unclosed bracket", line: "Name <email@example.com", wantOK: false},
+		{name: "empty commit email", line: "Proper Name <proper@example.com> <>", wantOK: false},
 	}
 
 	for _, tt := range tests {
