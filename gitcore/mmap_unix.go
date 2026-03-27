@@ -18,6 +18,7 @@ func mapPackFile(file *os.File, size int64) ([]byte, error) {
 	}
 	fd := file.Fd()
 
+	//#nosec G115 -- fd is a valid file descriptor, size is validated above
 	return syscall.Mmap(int(fd), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
 }
 
