@@ -9,6 +9,7 @@ import (
 )
 
 // CatFileOptions configures a Repository.CatFile lookup.
+// See: https://git-scm.com/docs/git-cat-file
 type CatFileOptions struct {
 	// Revision is the object name, ref, or unique short hash to inspect.
 	Revision string
@@ -16,17 +17,14 @@ type CatFileOptions struct {
 
 // CatFileResult contains the resolved object metadata and raw object data.
 type CatFileResult struct {
-	// Hash is the fully resolved object ID.
 	Hash Hash
-	// Type is the resolved object's Git type.
 	Type ObjectType
-	// Size is the raw object body size in bytes.
 	Size int
-	// Data contains the raw object body bytes.
 	Data []byte
 }
 
 // CatFile resolves a revision to an object and returns its metadata and raw bytes.
+// See: https://git-scm.com/docs/git-cat-file
 func (r *Repository) CatFile(opts CatFileOptions) (*CatFileResult, error) {
 	hash, err := r.resolveObjectRevision(opts.Revision)
 	if err != nil {
@@ -58,15 +56,12 @@ func (r *Repository) resolveObjectRevision(revision string) (Hash, error) {
 	if revision == "" {
 		return "", ambiguousObjectRevisionError(revision)
 	}
-
 	if hash, ok := r.Branches()[revision]; ok {
 		return hash, nil
 	}
-
 	if hash, ok := r.GraphBranches()[revision]; ok {
 		return hash, nil
 	}
-
 	if hash, ok := r.refs["refs/tags/"+revision]; ok {
 		return hash, nil
 	}

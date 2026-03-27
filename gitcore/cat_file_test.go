@@ -106,6 +106,36 @@ func TestCatFileShortHashResolution(t *testing.T) {
 	}
 }
 
+func TestCatFileResolvesBranchName(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	branchID := mustHash(t, testHash1)
+	writeLooseObject(t, repo.gitDir, branchID, "blob", []byte("branch object\n"))
+	repo.refs["refs/heads/main"] = branchID
+
+	result, err := repo.CatFile(CatFileOptions{Revision: "main"})
+	if err != nil {
+		t.Fatalf("CatFile(main) error: %v", err)
+	}
+	if result.Hash != branchID || result.Type != ObjectTypeBlob || string(result.Data) != "branch object\n" {
+		t.Fatalf("CatFile(main) = %+v", result)
+	}
+}
+
+func TestCatFileReturnsErrorWhenMatchingObjectHashesFails(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	if err := os.WriteFile(filepath.Join(repo.gitDir, "objects", "ab"), []byte("not a dir"), 0o600); err != nil {
+		t.Fatalf("write bad loose object prefix path: %v", err)
+	}
+
+	if _, err := repo.CatFile(CatFileOptions{Revision: "ab"}); err == nil {
+		t.Fatal("expected matchingObjectHashes error")
+	} else if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestCatFilePackedObject(t *testing.T) {
 	packPath := filepath.Join(t.TempDir(), "blob.pack")
 	if err := os.WriteFile(packPath, packObjectBytes(t, ObjectTypeBlob, []byte("packed hello\n")), 0o600); err != nil {
