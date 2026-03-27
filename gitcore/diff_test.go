@@ -282,6 +282,104 @@ func TestTreeDiff_InvalidHash(t *testing.T) {
 	}
 }
 
+func TestTreeDiff_RecursiveErrorPaths(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	validBlob := createBlob(t, repo, []byte("blob"))
+	validLeafTree := createTree(t, repo, []TreeEntry{
+		{ID: validBlob, Name: "file.txt", Mode: "100644", Type: ObjectTypeBlob},
+	})
+	emptyTree := createTree(t, repo, nil)
+	invalidTreeID := Hash(strings.Repeat("a", 40))
+
+	t.Run("added tree recursion failure", func(t *testing.T) {
+		newRoot := createTree(t, repo, []TreeEntry{
+			{ID: invalidTreeID, Name: "dir", Mode: "040000", Type: ObjectTypeTree},
+		})
+
+		entries, err := TreeDiff(repo, emptyTree, newRoot, "")
+		if err == nil || entries != nil {
+			t.Fatalf("TreeDiff() = (%v, %v), want recursive error", entries, err)
+		}
+	})
+
+	t.Run("deleted tree recursion failure", func(t *testing.T) {
+		oldRoot := createTree(t, repo, []TreeEntry{
+			{ID: invalidTreeID, Name: "dir", Mode: "040000", Type: ObjectTypeTree},
+		})
+
+		entries, err := TreeDiff(repo, oldRoot, emptyTree, "")
+		if err == nil || entries != nil {
+			t.Fatalf("TreeDiff() = (%v, %v), want recursive error", entries, err)
+		}
+	})
+
+	t.Run("tree to tree recursion failure", func(t *testing.T) {
+		oldRoot := createTree(t, repo, []TreeEntry{
+			{ID: invalidTreeID, Name: "dir", Mode: "040000", Type: ObjectTypeTree},
+		})
+		newRoot := createTree(t, repo, []TreeEntry{
+			{ID: validLeafTree, Name: "dir", Mode: "040000", Type: ObjectTypeTree},
+		})
+
+		entries, err := TreeDiff(repo, oldRoot, newRoot, "")
+		if err == nil || entries != nil {
+			t.Fatalf("TreeDiff() = (%v, %v), want recursive error", entries, err)
+		}
+	})
+
+	t.Run("tree to file old-side recursion failure", func(t *testing.T) {
+		oldRoot := createTree(t, repo, []TreeEntry{
+			{ID: invalidTreeID, Name: "node", Mode: "040000", Type: ObjectTypeTree},
+		})
+		newRoot := createTree(t, repo, []TreeEntry{
+			{ID: validBlob, Name: "node", Mode: "100644", Type: ObjectTypeBlob},
+		})
+
+		entries, err := TreeDiff(repo, oldRoot, newRoot, "")
+		if err == nil || entries != nil {
+			t.Fatalf("TreeDiff() = (%v, %v), want recursive error", entries, err)
+		}
+	})
+
+	t.Run("file to tree new-side recursion failure", func(t *testing.T) {
+		oldRoot := createTree(t, repo, []TreeEntry{
+			{ID: validBlob, Name: "node", Mode: "100644", Type: ObjectTypeBlob},
+		})
+		newRoot := createTree(t, repo, []TreeEntry{
+			{ID: invalidTreeID, Name: "node", Mode: "040000", Type: ObjectTypeTree},
+		})
+
+		entries, err := TreeDiff(repo, oldRoot, newRoot, "")
+		if err == nil || entries != nil {
+			t.Fatalf("TreeDiff() = (%v, %v), want recursive error", entries, err)
+		}
+	})
+}
+
+func TestTreeDiff_TooLarge(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	blob := createBlob(t, repo, []byte("same"))
+	oldEntries := make([]TreeEntry, 0, maxDiffEntries+1)
+	for i := 0; i < maxDiffEntries+1; i++ {
+		oldEntries = append(oldEntries, TreeEntry{
+			ID:   blob,
+			Name: fmt.Sprintf("file-%04d.txt", i),
+			Mode: "100644",
+			Type: ObjectTypeBlob,
+		})
+	}
+
+	oldTree := createTree(t, repo, oldEntries)
+	newTree := createTree(t, repo, nil)
+
+	entries, err := TreeDiff(repo, oldTree, newTree, "")
+	if err == nil || entries != nil {
+		t.Fatalf("TreeDiff() = (%v, %v), want diff too large error", entries, err)
+	}
+}
+
 func TestComputeFileDiff_TextBinaryAndLarge(t *testing.T) {
 	repo := setupTestRepo(t)
 
