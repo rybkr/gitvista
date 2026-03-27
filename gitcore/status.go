@@ -9,6 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+)
+
+const (
+	StatusAdded       = "added"
+	StatusModified    = "modified"
+	StatusDeleted     = "deleted"
+	StatusRenamed     = "renamed"
+	StatusCopied      = "copied"
+	StatusTypeChanged = "typechanged"
+	StatusUnknown     = "unknown"
 )
 
 // FileStatus represents the status of a single file in the working tree.
@@ -268,7 +279,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		case !a.IsUntracked && b.IsUntracked:
 			return -1
 		}
-		return compareStrings(a.Path, b.Path)
+		return strings.Compare(a.Path, b.Path)
 	})
 
 	return status, nil

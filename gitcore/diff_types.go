@@ -9,16 +9,6 @@ const (
 	DefaultContextLines = 3
 )
 
-const (
-	StatusAdded       = "added"
-	StatusModified    = "modified"
-	StatusDeleted     = "deleted"
-	StatusRenamed     = "renamed"
-	StatusCopied      = "copied"
-	StatusTypeChanged = "typechanged"
-	StatusUnknown     = "unknown"
-)
-
 // DiffStatus represents the type of change applied to a file in a diff.
 type DiffStatus int
 
@@ -30,32 +20,46 @@ const (
 	DiffStatusRenamed
 )
 
-// LineType represents the type of line in a unified diff.
-type LineType string
-
-const (
-	LineTypeContext  = "context"
-	LineTypeAddition = "addition"
-	LineTypeDeletion = "deletion"
-)
+var diffStatusNames = map[DiffStatus]string{
+	DiffStatusAdded:    "added",
+	DiffStatusModified: "modified",
+	DiffStatusDeleted:  "deleted",
+	DiffStatusRenamed:  "renamed",
+}
 
 // String returns the string representation of a DiffStatus.
 func (s DiffStatus) String() string {
-	switch s {
-	case DiffStatusAdded:
-		return StatusAdded
-	case DiffStatusModified:
-		return StatusModified
-	case DiffStatusDeleted:
-		return StatusDeleted
-	case DiffStatusRenamed:
-		return StatusRenamed
-	default:
-		return StatusUnknown
+	if name, ok := diffStatusNames[s]; ok {
+		return name
 	}
+	return "unknown"
+}
+
+// LineType represents the type of line in a unified diff.
+type LineType int
+
+const (
+	LineTypeContext LineType = iota
+	LineTypeAddition
+	LineTypeDeletion
+)
+
+var lineTypeNames = map[LineType]string{
+	LineTypeContext:  "context",
+	LineTypeAddition: "addition",
+	LineTypeDeletion: "deletion",
+}
+
+// String returns the string representation of a LineType.
+func (t LineType) String() string {
+	if name, ok := lineTypeNames[t]; ok {
+		return name
+	}
+	return "unknown"
 }
 
 // DiffEntry represents a single file change within a diff.
+// See: https://git-scm.com/docs/git-diff
 type DiffEntry struct {
 	Path     string     `json:"path"`
 	OldPath  string     `json:"oldPath,omitempty"`
@@ -67,13 +71,6 @@ type DiffEntry struct {
 	NewMode  string     `json:"newMode,omitempty"`
 }
 
-// CommitDiff represents the full diff associated with a single commit.
-type CommitDiff struct {
-	CommitHash Hash        `json:"commitHash"`
-	Entries    []DiffEntry `json:"entries"`
-	Stats      DiffStats   `json:"stats"`
-}
-
 // DiffStats describes the number of insertions, deletions, and changed files.
 type DiffStats struct {
 	FilesChanged int `json:"filesChanged"`
@@ -81,12 +78,19 @@ type DiffStats struct {
 	Deletions    int `json:"deletions"`
 }
 
+// CommitDiff represents the full diff associated with a single commit.
+type CommitDiff struct {
+	CommitHash Hash        `json:"commitHash"`
+	Entries    []DiffEntry `json:"entries"`
+	Stats      DiffStats   `json:"stats"`
+}
+
 // DiffLine represents a single line within a diff hunk.
 type DiffLine struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
-	OldLine int    `json:"oldLine"`
-	NewLine int    `json:"newLine"`
+	Type    LineType `json:"type"`
+	Content string   `json:"content"`
+	OldLine int      `json:"oldLine"`
+	NewLine int      `json:"newLine"`
 }
 
 // DiffHunk represents a contiguous block of changes within a file diff.

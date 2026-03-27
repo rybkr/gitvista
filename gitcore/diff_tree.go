@@ -1,6 +1,8 @@
 package gitcore
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // TreeDiff recursively compares two trees and returns a flat list of changed files.
 func TreeDiff(repo *Repository, oldTreeHash, newTreeHash Hash, prefix string) ([]DiffEntry, error) {
