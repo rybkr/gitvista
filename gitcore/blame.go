@@ -6,6 +6,7 @@ import (
 )
 
 // BlameEntry represents the last-modified metadata for a directory entry.
+// See: https://git-scm.com/docs/git-blame
 type BlameEntry struct {
 	CommitHash    Hash      `json:"commitHash"`
 	CommitMessage string    `json:"commitMessage"`
@@ -13,11 +14,14 @@ type BlameEntry struct {
 	When          time.Time `json:"when"`
 }
 
-// GetFileBlame returns per-entry last-modified info for the immediate children
-// of dirPath at the given commit.
-func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*BlameEntry, error) {
-	const maxDepth = 1000
+const (
+	maxBlameDepth = 1000
+)
 
+// GetFileBlame returns per-entry last-modified info for the immediate children of dirPath at the given commit.
+// Traversal is capped at maxBlameDepth levels. Any entries still unresolved above this depth are assigned to
+// targetCommit as a best-effort fallback.
+func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*BlameEntry, error) {
 	commits := r.Commits()
 	targetCommit, ok := commits[commitHash]
 	if !ok {
@@ -35,24 +39,30 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 	}
 
 	blame := make(map[string]*BlameEntry)
-
 	type queueItem struct {
 		commit *Commit
 		depth  int
 	}
 
-	queue := []queueItem{{commit: targetCommit, depth: 0}}
-	visited := map[Hash]bool{commitHash: true}
+	queue := []queueItem{{
+		commit: targetCommit,
+		depth:  0,
+	}}
+	visited := map[Hash]bool{
+		commitHash: true,
+	}
 
 	for len(queue) > 0 && len(blame) < len(currentEntries) {
 		item := queue[0]
 		queue = queue[1:]
 
-		if item.depth >= maxDepth {
+		if item.depth >= maxBlameDepth {
 			continue
 		}
 
-		preserved := make(map[string]bool, len(currentEntries))
+		matchedByAnyParent := make(map[string]bool, len(currentEntries))
+		hasParents := false
+
 		for _, parentHash := range item.commit.Parents {
 			if visited[parentHash] {
 				continue
@@ -64,13 +74,20 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 				continue
 			}
 
+			hasParents = true
+			queue = append(queue, queueItem{
+				commit: parentCommit,
+				depth:  item.depth + 1,
+			})
+
 			parentTree, err := r.resolveTreeAtPath(parentCommit.Tree, dirPath)
 			if err != nil {
-				queue = append(queue, queueItem{commit: parentCommit, depth: item.depth + 1})
+				// Parent didn't have this path, meaning all entries are new relative to it.
+				// But other parents might still match, so we continue.
 				continue
 			}
 
-			parentEntries := make(map[string]Hash)
+			parentEntries := make(map[string]Hash, len(parentTree.Entries))
 			for _, entry := range parentTree.Entries {
 				parentEntries[entry.Name] = entry.ID
 			}
@@ -79,26 +96,24 @@ func (r *Repository) GetFileBlame(commitHash Hash, dirPath string) (map[string]*
 				if _, alreadyBlamed := blame[name]; alreadyBlamed {
 					continue
 				}
-				parentEntryHash, existedInParent := parentEntries[name]
-				if existedInParent && parentEntryHash == currentHash {
-					preserved[name] = true
+				if parentHash, existsInParent := parentEntries[name]; existsInParent && parentHash == currentHash {
+					matchedByAnyParent[name] = true
 				}
 			}
-
-			queue = append(queue, queueItem{commit: parentCommit, depth: item.depth + 1})
 		}
 
 		for name := range currentEntries {
 			if _, alreadyBlamed := blame[name]; alreadyBlamed {
 				continue
 			}
-			if !preserved[name] {
+			if !hasParents || !matchedByAnyParent[name] {
 				blame[name] = newBlameEntry(item.commit)
 			}
 		}
 	}
 
 	blameUnresolved(blame, currentEntries, targetCommit)
+
 	return blame, nil
 }
 

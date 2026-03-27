@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// Repository represents a Git repository, providing access to its commits,
-// branches, tags, analytics, and other metadata.
+// Repository represents a Git repository, providing access to
+// its commits, branches, tags, analytics, and other metadata.
 type Repository struct {
 	gitDir  string
 	workDir string
