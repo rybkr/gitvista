@@ -17,6 +17,7 @@ gosec-report.json
 
 .ruff_cache/
 .cache/
+.gocache/
 __pycache__/
 
 AGENTS.md
