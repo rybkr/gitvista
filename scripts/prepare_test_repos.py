@@ -10,15 +10,26 @@ USE_SSH_TEST_REPOS = os.environ.get("USE_SSH_TEST_REPOS") == "1"
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 REPOSITORIES = (
-    ("express", "git@github.com:expressjs/express.git" if USE_SSH_TEST_REPOS else "https://github.com/expressjs/express.git"),
-    ("gitvista", "git@github.com:rybkr/gitvista.git" if USE_SSH_TEST_REPOS else "https://github.com/rybkr/gitvista.git"),
+    (
+        "express",
+        "git@github.com:expressjs/express.git" if USE_SSH_TEST_REPOS else "https://github.com/expressjs/express.git",
+    ),
+    (
+        "gitvista",
+        "git@github.com:rybkr/gitvista.git" if USE_SSH_TEST_REPOS else "https://github.com/rybkr/gitvista.git",
+    ),
     ("cpython", "git@github.com:python/cpython.git" if USE_SSH_TEST_REPOS else "https://github.com/python/cpython.git"),
-    ("octocat", "git@github.com:octocat/Hello-World.git" if USE_SSH_TEST_REPOS else "https://github.com/octocat/Hello-World.git"),
+    (
+        "octocat",
+        "git@github.com:octocat/Hello-World.git"
+        if USE_SSH_TEST_REPOS
+        else "https://github.com/octocat/Hello-World.git",
+    ),
     ("git", "git@github.com:git/git.git" if USE_SSH_TEST_REPOS else "https://github.com/git/git.git"),
 )
 LOCAL_REPOSITORIES = (
-    ("merge-base-traps", SCRIPT_DIR / "create_merge_base_trap_repo.sh"),
-    ("status-traps", SCRIPT_DIR / "create_status_trap_repo.sh"),
+    ("merge-base-traps", SCRIPT_DIR / "repobuilders" / "build_merge_base_repo.sh"),
+    ("status-traps", SCRIPT_DIR / "repobuilders" / "build_status_repo.sh"),
 )
 
 timestamp_format: str = "%Y-%m-%d %H:%M:%S"
@@ -165,7 +176,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--root",
-        default="testdata",
+        default="testdata/repos",
         help="Directory where repositories are cloned.",
     )
     parser.add_argument("--force", action="store_true", help="Force repository updates, even if done recently.")

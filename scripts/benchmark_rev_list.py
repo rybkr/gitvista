@@ -220,9 +220,7 @@ def main() -> int:
     missing = [name for name in repo_names if not (testdata_root / name / ".git").exists()]
     if missing:
         print(
-            "missing prepared repositories: "
-            + ", ".join(missing)
-            + "; run scripts/prepare_test_repos.py first",
+            "missing prepared repositories: " + ", ".join(missing) + "; run scripts/prepare_test_repos.py first",
             file=sys.stderr,
         )
         return 1

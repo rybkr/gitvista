@@ -20,7 +20,7 @@ def test_rev_list_all(
     run_git,
     run_cli,
 ) -> None:
-    repo_dir = root_dir / "testdata" / repo_name
+    repo_dir = root_dir / "testdata" / "repos" / repo_name
     git_dir = repo_dir / ".git"
 
     assert git_dir.exists(), f"prepared repository missing at {repo_dir}; run scripts/prepare_test_repos.py first"
@@ -36,7 +36,7 @@ def test_rev_list_all_topo(
     run_git,
     run_cli,
 ) -> None:
-    repo_dir = root_dir / "testdata" / repo_name
+    repo_dir = root_dir / "testdata" / "repos" / repo_name
     git_dir = repo_dir / ".git"
 
     assert git_dir.exists(), f"prepared repository missing at {repo_dir}; run scripts/prepare_test_repos.py first"
@@ -51,7 +51,7 @@ def test_rev_list_all_date(
     run_git,
     run_cli,
 ) -> None:
-    repo_dir = root_dir / "testdata" / repo_name
+    repo_dir = root_dir / "testdata" / "repos" / repo_name
     git_dir = repo_dir / ".git"
 
     assert git_dir.exists(), f"prepared repository missing at {repo_dir}; run scripts/prepare_test_repos.py first"
@@ -66,7 +66,7 @@ def test_rev_list_count_all(
     run_git,
     run_cli,
 ) -> None:
-    repo_dir = root_dir / "testdata" / repo_name
+    repo_dir = root_dir / "testdata" / "repos" / repo_name
     git_dir = repo_dir / ".git"
 
     assert git_dir.exists(), f"prepared repository missing at {repo_dir}; run scripts/prepare_test_repos.py first"
@@ -81,7 +81,7 @@ def test_rev_list_no_merges(
     run_git,
     run_cli,
 ) -> None:
-    repo_dir = root_dir / "testdata" / repo_name
+    repo_dir = root_dir / "testdata" / "repos" / repo_name
     git_dir = repo_dir / ".git"
 
     assert git_dir.exists(), f"prepared repository missing at {repo_dir}; run scripts/prepare_test_repos.py first"
