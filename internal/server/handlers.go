@@ -253,7 +253,7 @@ func resolveCommitAndParent(w http.ResponseWriter, repo *gitcore.Repository, com
 func allDeletions(hunks []gitcore.DiffHunk) bool {
 	for _, hunk := range hunks {
 		for _, line := range hunk.Lines {
-			if line.Type != "deletion" {
+			if line.Type != gitcore.LineTypeDeletion {
 				return false
 			}
 		}
