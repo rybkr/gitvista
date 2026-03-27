@@ -23,6 +23,22 @@ func registerCommands(app *cli.App, repoCtx *repositoryContext, cw *cli.Writer) 
 	})
 
 	app.Register(&cli.Command{
+		Name:      "blame",
+		Summary:   "Show porcelain-style blame for a path at HEAD",
+		Usage:     "gitvista-cli blame [-p] <path>",
+		NeedsRepo: true,
+		Flags: []string{
+			"-p            Print porcelain output (default)",
+			"<path>        File or directory path relative to the repository root",
+		},
+		Examples: []string{
+			"Show porcelain blame for a file at HEAD\ngitvista-cli blame README.md",
+			"Show porcelain blame for a directory at HEAD\ngitvista-cli blame -p cmd/cli",
+		},
+		Run: func(args []string) int { return runBlame(repoCtx, args) },
+	})
+
+	app.Register(&cli.Command{
 		Name:      "cat-file",
 		Summary:   "Inspect git objects like git cat-file",
 		Usage:     "gitvista-cli cat-file (-t | -s | -p) <object>",
