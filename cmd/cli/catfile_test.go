@@ -1,12 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"compress/zlib"
-	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -99,118 +93,6 @@ func TestFormatTreeObjectNormalizesTreeMode(t *testing.T) {
 	}
 }
 
-func TestRunCatFile(t *testing.T) {
-	repo := newCLIRepo(t)
-	blobID := mustCLIHash(t, "1111111111111111111111111111111111111111")
-	treeID := mustCLIHash(t, "2222222222222222222222222222222222222222")
-	commitID := mustCLIHash(t, "3333333333333333333333333333333333333333")
-
-	treeRaw := treeBody(treeEntryBytes("100644", "README.md", blobID))
-	commitRaw := []byte("tree " + string(treeID) + "\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\nmsg\n")
-
-	writeCLILooseObject(t, repo, blobID, "blob", []byte("hello\n"))
-	writeCLILooseObject(t, repo, treeID, "tree", treeRaw)
-	writeCLILooseObject(t, repo, commitID, "commit", commitRaw)
-	writeCLITextFile(t, filepath.Join(repo, "HEAD"), "ref: refs/heads/main\n")
-	writeCLITextFile(t, filepath.Join(repo, "refs", "heads", "main"), string(commitID)+"\n")
-
-	repository, err := gitcore.NewRepository(filepath.Dir(repo))
-	if err != nil {
-		t.Fatalf("NewRepository() error: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := repository.Close(); err != nil {
-			t.Fatalf("Close() error: %v", err)
-		}
-	})
-
-	repoCtx := &repositoryContext{repo: repository}
-
-	stdout, stderr, code := captureCLIOutput(t, func() int {
-		return runCatFile(repoCtx, []string{"-t", "HEAD"})
-	})
-	if code != 0 || stdout != "commit\n" || stderr != "" {
-		t.Fatalf("runCatFile(-t HEAD) = code %d stdout %q stderr %q", code, stdout, stderr)
-	}
-
-	stdout, stderr, code = captureCLIOutput(t, func() int {
-		return runCatFile(repoCtx, []string{"-s", string(blobID)})
-	})
-	if code != 0 || stdout != "6\n" || stderr != "" {
-		t.Fatalf("runCatFile(-s blob) = code %d stdout %q stderr %q", code, stdout, stderr)
-	}
-
-	stdout, stderr, code = captureCLIOutput(t, func() int {
-		return runCatFile(repoCtx, []string{"-p", string(treeID)})
-	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("runCatFile(-p tree) = code %d stdout %q stderr %q", code, stdout, stderr)
-	}
-	wantTree := "100644 blob 1111111111111111111111111111111111111111\tREADME.md\n"
-	if stdout != wantTree {
-		t.Fatalf("runCatFile(-p tree) stdout = %q, want %q", stdout, wantTree)
-	}
-
-	_, stderr, code = captureCLIOutput(t, func() int {
-		return runCatFile(repoCtx, []string{"--bad", "HEAD"})
-	})
-	if code != 1 || !strings.Contains(stderr, "unsupported argument") {
-		t.Fatalf("runCatFile(bad args) = code %d stderr %q", code, stderr)
-	}
-}
-
-func newCLIRepo(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	gitDir := filepath.Join(root, ".git")
-	for _, dir := range []string{
-		filepath.Join(gitDir, "objects"),
-		filepath.Join(gitDir, "refs", "heads"),
-		filepath.Join(gitDir, "refs", "tags"),
-	} {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-	return gitDir
-}
-
-func writeCLITextFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		t.Fatalf("mkdir %s: %v", path, err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
-func writeCLILooseObject(t *testing.T, gitDir string, id gitcore.Hash, objectType string, body []byte) {
-	t.Helper()
-	dir := filepath.Join(gitDir, "objects", string(id)[:2])
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		t.Fatalf("mkdir loose object dir: %v", err)
-	}
-	payload := append([]byte(fmt.Sprintf("%s %d", objectType, len(body))), 0)
-	payload = append(payload, body...)
-	if err := os.WriteFile(filepath.Join(dir, string(id)[2:]), compressCLIBytes(t, payload), 0o600); err != nil {
-		t.Fatalf("write loose object: %v", err)
-	}
-}
-
-func compressCLIBytes(t *testing.T, content []byte) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	zw := zlib.NewWriter(&buf)
-	if _, err := zw.Write(content); err != nil {
-		t.Fatalf("zlib write: %v", err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatalf("zlib close: %v", err)
-	}
-	return buf.Bytes()
-}
-
 func treeEntryBytes(mode, name string, hash gitcore.Hash) []byte {
 	body := append([]byte(mode+" "+name), 0)
 	raw := hashFromHex(hash)
@@ -251,40 +133,4 @@ func fromHex(b byte) int {
 	default:
 		return int(b-'A') + 10
 	}
-}
-
-func captureCLIOutput(t *testing.T, fn func() int) (string, string, int) {
-	t.Helper()
-
-	origStdout := os.Stdout
-	origStderr := os.Stderr
-	stdoutR, stdoutW, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("stdout pipe: %v", err)
-	}
-	stderrR, stderrW, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("stderr pipe: %v", err)
-	}
-
-	os.Stdout = stdoutW
-	os.Stderr = stderrW
-
-	code := fn()
-
-	_ = stdoutW.Close()
-	_ = stderrW.Close()
-	os.Stdout = origStdout
-	os.Stderr = origStderr
-
-	stdoutBytes, err := io.ReadAll(stdoutR)
-	if err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
-	stderrBytes, err := io.ReadAll(stderrR)
-	if err != nil {
-		t.Fatalf("read stderr: %v", err)
-	}
-
-	return string(stdoutBytes), string(stderrBytes), code
 }

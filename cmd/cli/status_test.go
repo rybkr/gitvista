@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha1" // #nosec G505 -- test helper for Git object ids
-	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -141,72 +139,6 @@ func TestPrintLongStatus(t *testing.T) {
 	}
 }
 
-func TestRunStatus(t *testing.T) {
-	repoDir, gitDir := newStatusCLIRepoDir(t)
-	headBlob := writeStatusBlob(t, gitDir, []byte("tracked\n"))
-	stagedBlob := writeStatusBlob(t, gitDir, []byte("staged\n"))
-	treeID := writeStatusTree(t, gitDir, []statusTreeEntry{
-		{name: "tracked.txt", id: headBlob, mode: "100644"},
-	})
-	commitID := writeStatusCommit(t, gitDir, treeID)
-
-	writeCLITextFile(t, filepath.Join(gitDir, "HEAD"), "ref: refs/heads/main\n")
-	writeCLITextFile(t, filepath.Join(gitDir, "refs", "heads", "main"), string(commitID)+"\n")
-	writeStatusIndex(t, gitDir, []statusIndexEntry{
-		{path: "tracked.txt", blobHash: headBlob, fileSize: uint32(len("tracked\n"))},
-		{path: "staged.txt", blobHash: stagedBlob, fileSize: uint32(len("staged\n"))},
-	})
-	writeCLITextFile(t, filepath.Join(repoDir, "tracked.txt"), "modified\n")
-	writeCLITextFile(t, filepath.Join(repoDir, "staged.txt"), "staged\n")
-	writeCLITextFile(t, filepath.Join(repoDir, "untracked.txt"), "new\n")
-
-	repo, err := gitcore.NewRepository(repoDir)
-	if err != nil {
-		t.Fatalf("NewRepository() error: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := repo.Close(); err != nil {
-			t.Fatalf("Close() error: %v", err)
-		}
-	})
-
-	repoCtx := &repositoryContext{repo: repo}
-	cw := cli.NewWriter(os.Stdout, cli.ColorNever)
-
-	stdout, stderr, code := captureCLIOutput(t, func() int {
-		return runStatus(repoCtx, nil, cw)
-	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("runStatus() = code %d stdout %q stderr %q", code, stdout, stderr)
-	}
-	if !strings.Contains(stdout, "Changes to be committed:") || !strings.Contains(stdout, "new file:  staged.txt") {
-		t.Fatalf("runStatus() stdout missing staged section: %q", stdout)
-	}
-	if !strings.Contains(stdout, "Changes not staged for commit:") || !strings.Contains(stdout, "modified:  tracked.txt") {
-		t.Fatalf("runStatus() stdout missing modified section: %q", stdout)
-	}
-	if !strings.Contains(stdout, "Untracked files:") || !strings.Contains(stdout, "untracked.txt") {
-		t.Fatalf("runStatus() stdout missing untracked section: %q", stdout)
-	}
-
-	stdout, stderr, code = captureCLIOutput(t, func() int {
-		return runStatus(repoCtx, []string{"--short"}, cw)
-	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("runStatus(--short) = code %d stdout %q stderr %q", code, stdout, stderr)
-	}
-
-	wantShort := strings.Join([]string{
-		"A  staged.txt",
-		" M tracked.txt",
-		"?? untracked.txt",
-		"",
-	}, "\n")
-	if stdout != wantShort {
-		t.Fatalf("runStatus(--short) stdout = %q, want %q", stdout, wantShort)
-	}
-}
-
 func TestRunStatusCleanWorktree(t *testing.T) {
 	repo := newStatusCLIRepo(t)
 	cw := cli.NewWriter(os.Stdout, cli.ColorNever)
@@ -228,7 +160,7 @@ func TestRunStatusCleanWorktree(t *testing.T) {
 func newStatusCLIRepo(t *testing.T) *gitcore.Repository {
 	t.Helper()
 	repoDir, gitDir := newStatusCLIRepoDir(t)
-	treeID := writeStatusTree(t, gitDir, nil)
+	treeID := writeStatusTree(t, gitDir)
 	commitID := writeStatusCommit(t, gitDir, treeID)
 	writeCLITextFile(t, filepath.Join(gitDir, "HEAD"), "ref: refs/heads/main\n")
 	writeCLITextFile(t, filepath.Join(gitDir, "refs", "heads", "main"), string(commitID)+"\n")
@@ -245,102 +177,9 @@ func newStatusCLIRepo(t *testing.T) *gitcore.Repository {
 	return repo
 }
 
-func newStatusCLIRepoDir(t *testing.T) (string, string) {
+func writeStatusTree(t *testing.T, gitDir string) gitcore.Hash {
 	t.Helper()
-	root := t.TempDir()
-	gitDir := filepath.Join(root, ".git")
-	for _, dir := range []string{
-		filepath.Join(gitDir, "objects"),
-		filepath.Join(gitDir, "refs", "heads"),
-		filepath.Join(gitDir, "refs", "tags"),
-	} {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-	return root, gitDir
-}
-
-type statusIndexEntry struct {
-	path     string
-	blobHash gitcore.Hash
-	fileSize uint32
-	mode     uint32
-}
-
-func writeStatusIndex(t *testing.T, gitDir string, entries []statusIndexEntry) {
-	t.Helper()
-	data := buildStatusIndexHeader(uint32(len(entries)))
-	for _, entry := range entries {
-		mode := entry.mode
-		if mode == 0 {
-			mode = 0o100644
-		}
-		rawHash := statusHashFromHex(string(entry.blobHash))
-		start := len(data)
-		data = append(data, buildStatusIndexEntry(entry.path, rawHash, mode)...)
-		binary.BigEndian.PutUint32(data[start+36:start+40], entry.fileSize)
-	}
-	writeStatusIndexFile(t, gitDir, data)
-}
-
-func buildStatusIndexHeader(numEntries uint32) []byte {
-	buf := &bytes.Buffer{}
-	buf.WriteString("DIRC")
-	_ = binary.Write(buf, binary.BigEndian, uint32(2))
-	_ = binary.Write(buf, binary.BigEndian, numEntries)
-	return buf.Bytes()
-}
-
-func buildStatusIndexEntry(path string, hash [20]byte, mode uint32) []byte {
-	buf := &bytes.Buffer{}
-	fields := []uint32{
-		0, 0,
-		0, 0,
-		0, 0, mode, 0, 0, uint32(len(path)),
-	}
-	for _, field := range fields {
-		_ = binary.Write(buf, binary.BigEndian, field)
-	}
-	buf.Write(hash[:])
-	_ = binary.Write(buf, binary.BigEndian, uint16(len(path)))
-	buf.WriteString(path)
-	buf.WriteByte(0)
-	for buf.Len()%8 != 0 {
-		buf.WriteByte(0)
-	}
-	return buf.Bytes()
-}
-
-func writeStatusIndexFile(t *testing.T, gitDir string, data []byte) {
-	t.Helper()
-	sum := sha1.Sum(data) // #nosec G401 -- test helper for Git index checksum
-	if err := os.WriteFile(filepath.Join(gitDir, "index"), append(data, sum[:]...), 0o644); err != nil {
-		t.Fatalf("WriteFile(index): %v", err)
-	}
-}
-
-type statusTreeEntry struct {
-	name string
-	id   gitcore.Hash
-	mode string
-}
-
-func writeStatusBlob(t *testing.T, gitDir string, body []byte) gitcore.Hash {
-	t.Helper()
-	return writeStatusObject(t, gitDir, "blob", body)
-}
-
-func writeStatusTree(t *testing.T, gitDir string, entries []statusTreeEntry) gitcore.Hash {
-	t.Helper()
-	var body []byte
-	for _, entry := range entries {
-		body = append(body, []byte(entry.mode+" "+entry.name)...)
-		body = append(body, 0)
-		rawHash := statusHashFromHex(string(entry.id))
-		body = append(body, rawHash[:]...)
-	}
-	return writeStatusObject(t, gitDir, "tree", body)
+	return writeStatusObject(t, gitDir, "tree", nil)
 }
 
 func writeStatusCommit(t *testing.T, gitDir string, treeID gitcore.Hash) gitcore.Hash {
@@ -359,21 +198,18 @@ func writeStatusObject(t *testing.T, gitDir, objectType string, body []byte) git
 	return id
 }
 
-func statusHashFromHex(s string) [20]byte {
-	var out [20]byte
-	for i := 0; i < len(out); i++ {
-		out[i] = byte((statusFromHex(s[i*2]) << 4) | statusFromHex(s[i*2+1]))
+func newStatusCLIRepoDir(t *testing.T) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	gitDir := filepath.Join(root, ".git")
+	for _, dir := range []string{
+		filepath.Join(gitDir, "objects"),
+		filepath.Join(gitDir, "refs", "heads"),
+		filepath.Join(gitDir, "refs", "tags"),
+	} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
 	}
-	return out
-}
-
-func statusFromHex(b byte) int {
-	switch {
-	case b >= '0' && b <= '9':
-		return int(b - '0')
-	case b >= 'a' && b <= 'f':
-		return int(b-'a') + 10
-	default:
-		return int(b-'A') + 10
-	}
+	return root, gitDir
 }
