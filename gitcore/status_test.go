@@ -65,9 +65,9 @@ func writeIndexWithEntries(t *testing.T, gitDir string, entries []indexEntrySpec
 	writeIndexFile(t, gitDir, data)
 }
 
-func statusByPath(t *testing.T, status *WorkingTreeStatus) map[string]FileStatus {
+func statusByPath(t *testing.T, status *WorkingTreeStatus) map[string]FileState {
 	t.Helper()
-	m := make(map[string]FileStatus, len(status.Files))
+	m := make(map[string]FileState, len(status.Files))
 	for _, file := range status.Files {
 		m[file.Path] = file
 	}
@@ -102,11 +102,11 @@ func TestComputeWorkingTreeStatus_BasicScenarios(t *testing.T) {
 	}
 	got := statusByPath(t, status)
 
-	if got["staged.txt"].IndexStatus != StatusAdded {
-		t.Fatalf("staged.txt IndexStatus = %q, want added", got["staged.txt"].IndexStatus)
+	if got["staged.txt"].StagedChange != ChangeTypeAdded {
+		t.Fatalf("staged.txt StagedChange = %q, want %q", got["staged.txt"].StagedChange, ChangeTypeAdded)
 	}
-	if got["tracked.txt"].WorkStatus != StatusModified {
-		t.Fatalf("tracked.txt WorkStatus = %q, want modified", got["tracked.txt"].WorkStatus)
+	if got["tracked.txt"].UnstagedChange != ChangeTypeModified {
+		t.Fatalf("tracked.txt UnstagedChange = %q, want %q", got["tracked.txt"].UnstagedChange, ChangeTypeModified)
 	}
 	if !got["untracked.txt"].IsUntracked {
 		t.Fatal("untracked.txt should be untracked")
@@ -126,8 +126,8 @@ func TestComputeWorkingTreeStatus_StagedDeletionAndNoChanges(t *testing.T) {
 		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
 	}
 	got := statusByPath(t, status)
-	if got["gone.txt"].IndexStatus != StatusDeleted {
-		t.Fatalf("gone.txt IndexStatus = %q, want deleted", got["gone.txt"].IndexStatus)
+	if got["gone.txt"].StagedChange != ChangeTypeDeleted {
+		t.Fatalf("gone.txt StagedChange = %q, want %q", got["gone.txt"].StagedChange, ChangeTypeDeleted)
 	}
 
 	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{{path: "gone.txt", blobHash: blob, fileSize: uint32(len("same\n"))}})
@@ -187,8 +187,8 @@ func TestComputeWorkingTreeStatus_TrackedRegularFileReplacedBySymlink(t *testing
 		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
 	}
 	got := statusByPath(t, status)
-	if got["tracked.txt"].WorkStatus != StatusTypeChanged {
-		t.Fatalf("tracked.txt WorkStatus = %q, want typechanged", got["tracked.txt"].WorkStatus)
+	if got["tracked.txt"].UnstagedChange != ChangeTypeTypeChanged {
+		t.Fatalf("tracked.txt UnstagedChange = %q, want %q", got["tracked.txt"].UnstagedChange, ChangeTypeTypeChanged)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestComputeWorkingTreeStatus_TrackedSymlinkReplacedByRegularFile(t *testing
 		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
 	}
 	got := statusByPath(t, status)
-	if got["link.txt"].WorkStatus != StatusTypeChanged {
-		t.Fatalf("link.txt WorkStatus = %q, want typechanged", got["link.txt"].WorkStatus)
+	if got["link.txt"].UnstagedChange != ChangeTypeTypeChanged {
+		t.Fatalf("link.txt UnstagedChange = %q, want %q", got["link.txt"].UnstagedChange, ChangeTypeTypeChanged)
 	}
 }
 
@@ -230,8 +230,8 @@ func TestComputeWorkingTreeStatus_TrackedFileReplacedByDirectory(t *testing.T) {
 		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
 	}
 	got := statusByPath(t, status)
-	if got["tracked.txt"].WorkStatus != StatusTypeChanged {
-		t.Fatalf("tracked.txt WorkStatus = %q, want typechanged", got["tracked.txt"].WorkStatus)
+	if got["tracked.txt"].UnstagedChange != ChangeTypeTypeChanged {
+		t.Fatalf("tracked.txt UnstagedChange = %q, want %q", got["tracked.txt"].UnstagedChange, ChangeTypeTypeChanged)
 	}
 }
 
@@ -295,8 +295,8 @@ func TestComputeWorkingTreeStatus_StagedModeOnlyChange(t *testing.T) {
 	}
 	got := statusByPath(t, status)
 
-	if got["script.sh"].IndexStatus != StatusModified {
-		t.Fatalf("script.sh IndexStatus = %q, want %q", got["script.sh"].IndexStatus, StatusModified)
+	if got["script.sh"].StagedChange != ChangeTypeModified {
+		t.Fatalf("script.sh StagedChange = %q, want %q", got["script.sh"].StagedChange, ChangeTypeModified)
 	}
 }
 
@@ -320,8 +320,8 @@ func TestComputeWorkingTreeStatus_WorktreeModeOnlyChange(t *testing.T) {
 	}
 	got := statusByPath(t, status)
 
-	if got["script.sh"].WorkStatus != StatusModified {
-		t.Fatalf("script.sh WorkStatus = %q, want %q", got["script.sh"].WorkStatus, StatusModified)
+	if got["script.sh"].UnstagedChange != ChangeTypeModified {
+		t.Fatalf("script.sh UnstagedChange = %q, want %q", got["script.sh"].UnstagedChange, ChangeTypeModified)
 	}
 }
 
@@ -345,8 +345,8 @@ func TestComputeWorkingTreeStatus_StagedTypeChange(t *testing.T) {
 	}
 	got := statusByPath(t, status)
 
-	if got["tracked.txt"].IndexStatus != StatusTypeChanged {
-		t.Fatalf("tracked.txt IndexStatus = %q, want %q", got["tracked.txt"].IndexStatus, StatusTypeChanged)
+	if got["tracked.txt"].StagedChange != ChangeTypeTypeChanged {
+		t.Fatalf("tracked.txt StagedChange = %q, want %q", got["tracked.txt"].StagedChange, ChangeTypeTypeChanged)
 	}
 }
 
@@ -369,8 +369,8 @@ func TestComputeWorkingTreeStatus_WorktreeTypeChange(t *testing.T) {
 	}
 	got := statusByPath(t, status)
 
-	if got["tracked.txt"].WorkStatus != StatusTypeChanged {
-		t.Fatalf("tracked.txt WorkStatus = %q, want %q", got["tracked.txt"].WorkStatus, StatusTypeChanged)
+	if got["tracked.txt"].UnstagedChange != ChangeTypeTypeChanged {
+		t.Fatalf("tracked.txt UnstagedChange = %q, want %q", got["tracked.txt"].UnstagedChange, ChangeTypeTypeChanged)
 	}
 }
 
@@ -418,8 +418,8 @@ func TestComputeWorkingTreeStatus_TrackedFileUnderIgnoredDirectoryIsReported(t *
 	}
 	got := statusByPath(t, status)
 
-	if got["build/keep.txt"].WorkStatus != StatusModified {
-		t.Fatalf("build/keep.txt WorkStatus = %q, want %q", got["build/keep.txt"].WorkStatus, StatusModified)
+	if got["build/keep.txt"].UnstagedChange != ChangeTypeModified {
+		t.Fatalf("build/keep.txt UnstagedChange = %q, want %q", got["build/keep.txt"].UnstagedChange, ChangeTypeModified)
 	}
 }
 

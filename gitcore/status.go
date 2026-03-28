@@ -12,30 +12,52 @@ import (
 	"strings"
 )
 
+// ChangeType represents the kind of change applied to a file.
+type ChangeType int
+
+// nolint:revive // See: https://git-scm.com/docs/git-status
 const (
-	StatusAdded       = "added"
-	StatusModified    = "modified"
-	StatusDeleted     = "deleted"
-	StatusRenamed     = "renamed"
-	StatusCopied      = "copied"
-	StatusTypeChanged = "typechanged"
-	StatusUnknown     = "unknown"
+	ChangeTypeUntracked ChangeType = iota
+	ChangeTypeAdded
+	ChangeTypeModified
+	ChangeTypeDeleted
+	ChangeTypeRenamed
+	ChangeTypeCopied
+	ChangeTypeTypeChanged
 )
 
-// FileStatus represents the status of a single file in the working tree.
-type FileStatus struct {
-	Path        string
-	IndexStatus string
-	WorkStatus  string
-	IsUntracked bool
-	HeadHash    Hash
-	IndexHash   Hash
-	WorkHash    Hash
+var changeTypeNames = map[ChangeType]string{
+	ChangeTypeUntracked:   "untracked",
+	ChangeTypeAdded:       "added",
+	ChangeTypeModified:    "modified",
+	ChangeTypeDeleted:     "deleted",
+	ChangeTypeRenamed:     "renamed",
+	ChangeTypeCopied:      "copied",
+	ChangeTypeTypeChanged: "typechanged",
+}
+
+// String returns the string representation of a ChangeType.
+func (c ChangeType) String() string {
+	if name, ok := changeTypeNames[c]; ok {
+		return name
+	}
+	return "unknown"
+}
+
+// FileState represents the state of a single file across the three Git trees.
+type FileState struct {
+	Path           string
+	StagedChange   ChangeType
+	UnstagedChange ChangeType
+	IsUntracked    bool
+	HeadHash       Hash
+	StagedHash     Hash
+	WorktreeHash   Hash
 }
 
 // WorkingTreeStatus is the full working tree status computed without shelling out to git.
 type WorkingTreeStatus struct {
-	Files []FileStatus
+	Files []FileState
 }
 
 type treeFile struct {
@@ -45,15 +67,15 @@ type treeFile struct {
 
 var walkWorktree = filepath.WalkDir
 
-func markWorktreeModified(results map[string]*FileStatus, path string, indexHash Hash) *FileStatus {
-	fileStatus, exists := results[path]
+func markWorktreeModified(results map[string]*FileState, path string, stagedHash Hash) *FileState {
+	fileState, exists := results[path]
 	if !exists {
-		results[path] = &FileStatus{Path: path}
-		fileStatus = results[path]
+		results[path] = &FileState{Path: path}
+		fileState = results[path]
 	}
-	fileStatus.WorkStatus = StatusModified
-	fileStatus.IndexHash = indexHash
-	return fileStatus
+	fileState.UnstagedChange = ChangeTypeModified
+	fileState.StagedHash = stagedHash
+	return fileState
 }
 
 func trackedGitlinkPaths(index *Index) map[string]struct{} {
@@ -99,33 +121,35 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	}
 	gitlinkPaths := trackedGitlinkPaths(index)
 
-	results := make(map[string]*FileStatus)
+	results := make(map[string]*FileState)
 	for path, entry := range index.ByPath {
 		headFile, inHead := headTree[path]
 
-		var idxStatus string
+		var stagedChange ChangeType
+		var hasStagedChange bool
 		if !inHead {
-			idxStatus = StatusAdded
+			stagedChange = ChangeTypeAdded
+			hasStagedChange = true
 		} else {
-			idxStatus = compareTreeAndIndex(headFile, *entry)
+			stagedChange, hasStagedChange = compareTreeAndIndex(headFile, *entry)
 		}
 
-		if idxStatus != "" {
-			results[path] = &FileStatus{
-				Path:        path,
-				IndexStatus: idxStatus,
-				HeadHash:    headFile.Hash,
-				IndexHash:   entry.Hash,
+		if hasStagedChange {
+			results[path] = &FileState{
+				Path:         path,
+				StagedChange: stagedChange,
+				HeadHash:     headFile.Hash,
+				StagedHash:   entry.Hash,
 			}
 		}
 	}
 
 	for path, file := range headTree {
 		if _, inIndex := index.ByPath[path]; !inIndex {
-			results[path] = &FileStatus{
-				Path:        path,
-				IndexStatus: StatusDeleted,
-				HeadHash:    file.Hash,
+			results[path] = &FileState{
+				Path:         path,
+				StagedChange: ChangeTypeDeleted,
+				HeadHash:     file.Hash,
 			}
 		}
 	}
@@ -147,13 +171,13 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		info, statErr := os.Lstat(diskPath)
 		if statErr != nil {
 			if os.IsNotExist(statErr) {
-				fs, exists := results[path]
+				fileState, exists := results[path]
 				if !exists {
-					results[path] = &FileStatus{Path: path}
-					fs = results[path]
+					results[path] = &FileState{Path: path}
+					fileState = results[path]
 				}
-				fs.WorkStatus = StatusDeleted
-				fs.IndexHash = entry.Hash
+				fileState.UnstagedChange = ChangeTypeDeleted
+				fileState.StagedHash = entry.Hash
 			} else {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: stat %s: %w", diskPath, statErr)
 			}
@@ -162,16 +186,16 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 		if isGitlink {
 			if !info.IsDir() {
-				fs := markWorktreeModified(results, path, entry.Hash)
-				fs.WorkStatus = StatusTypeChanged
+				fileState := markWorktreeModified(results, path, entry.Hash)
+				fileState.UnstagedChange = ChangeTypeTypeChanged
 			}
 			continue
 		}
 
 		diskMode := worktreeModeString(info)
-		if worktreeTypeStatus(entryMode, diskMode) == StatusTypeChanged {
-			fs := markWorktreeModified(results, path, entry.Hash)
-			fs.WorkStatus = StatusTypeChanged
+		if worktreeTypeStatus(entryMode, diskMode) == ChangeTypeTypeChanged {
+			fileState := markWorktreeModified(results, path, entry.Hash)
+			fileState.UnstagedChange = ChangeTypeTypeChanged
 			continue
 		}
 		if diskMode != entryMode {
@@ -185,8 +209,8 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			}
 			diskHash := hashBlobContent([]byte(linkTarget))
 			if diskHash != entry.Hash {
-				fs := markWorktreeModified(results, path, entry.Hash)
-				fs.WorkHash = diskHash
+				fileState := markWorktreeModified(results, path, entry.Hash)
+				fileState.WorktreeHash = diskHash
 			}
 			continue
 		}
@@ -202,8 +226,8 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			if sizeReadErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, sizeReadErr)
 			}
-			fs := markWorktreeModified(results, path, entry.Hash)
-			fs.WorkHash = hashBlobContent(sizeContent)
+			fileState := markWorktreeModified(results, path, entry.Hash)
+			fileState.WorktreeHash = hashBlobContent(sizeContent)
 			continue
 		}
 
@@ -214,8 +238,8 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 		diskHash := hashBlobContent(diskContent)
 		if diskHash != entry.Hash {
-			fs := markWorktreeModified(results, path, entry.Hash)
-			fs.WorkHash = diskHash
+			fileState := markWorktreeModified(results, path, entry.Hash)
+			fileState.WorktreeHash = diskHash
 		}
 	}
 
@@ -244,7 +268,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 					return filepath.SkipDir
 				}
 				if !hasTrackedDescendants {
-					results[relPath+"/"] = &FileStatus{
+					results[relPath+"/"] = &FileState{
 						Path:        relPath + "/",
 						IsUntracked: true,
 					}
@@ -262,7 +286,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			return nil
 		}
 
-		results[relPath] = &FileStatus{
+		results[relPath] = &FileState{
 			Path:        relPath,
 			IsUntracked: true,
 		}
@@ -273,12 +297,12 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	}
 
 	status := &WorkingTreeStatus{
-		Files: make([]FileStatus, 0, len(results)),
+		Files: make([]FileState, 0, len(results)),
 	}
-	for _, fs := range results {
-		status.Files = append(status.Files, *fs)
+	for _, fileState := range results {
+		status.Files = append(status.Files, *fileState)
 	}
-	slices.SortFunc(status.Files, func(a, b FileStatus) int {
+	slices.SortFunc(status.Files, func(a, b FileState) int {
 		switch {
 		case a.IsUntracked && !b.IsUntracked:
 			return 1
@@ -329,22 +353,22 @@ func hashBlobContent(content []byte) Hash {
 	return Hash(fmt.Sprintf("%x", h.Sum(nil)))
 }
 
-func compareTreeAndIndex(headFile treeFile, entry IndexEntry) string {
+func compareTreeAndIndex(headFile treeFile, entry IndexEntry) (ChangeType, bool) {
 	indexMode := indexModeString(entry.Mode)
-	if typeStatus := worktreeTypeStatus(headFile.Mode, indexMode); typeStatus != "" {
-		return typeStatus
+	if worktreeTypeStatus(headFile.Mode, indexMode) == ChangeTypeTypeChanged {
+		return ChangeTypeTypeChanged, true
 	}
 	if headFile.Mode != indexMode || headFile.Hash != entry.Hash {
-		return StatusModified
+		return ChangeTypeModified, true
 	}
-	return ""
+	return 0, false
 }
 
-func worktreeTypeStatus(expectedMode, actualMode string) string {
+func worktreeTypeStatus(expectedMode, actualMode string) ChangeType {
 	if entryModeKind(expectedMode) != entryModeKind(actualMode) {
-		return StatusTypeChanged
+		return ChangeTypeTypeChanged
 	}
-	return ""
+	return 0
 }
 
 func entryModeKind(mode string) string {
