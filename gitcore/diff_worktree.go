@@ -8,8 +8,10 @@ import (
 	"strings"
 )
 
-var errBlobNotFound = errors.New("blob not found in tree")
-var errInvalidWorktreePath = errors.New("invalid worktree path")
+var (
+	errBlobNotFound        = errors.New("blob not found in tree")
+	errInvalidWorktreePath = errors.New("invalid worktree path")
+)
 
 func normalizeWorktreeRelativePath(filePath string) (string, error) {
 	if filePath == "" {

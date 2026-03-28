@@ -723,6 +723,131 @@ func TestResolveBlobAtPath(t *testing.T) {
 	}
 }
 
+func TestNormalizeWorktreeRelativePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr error
+	}{
+		{name: "empty", input: "", wantErr: errInvalidWorktreePath},
+		{name: "dot", input: ".", wantErr: errInvalidWorktreePath},
+		{name: "absolute", input: string(filepath.Separator) + "tmp", wantErr: errInvalidWorktreePath},
+		{name: "escape", input: "../tmp", wantErr: errInvalidWorktreePath},
+		{name: "normalized", input: "./nested//file.txt", want: "nested/file.txt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeWorktreeRelativePath(tt.input)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("normalizeWorktreeRelativePath(%q) error = %v, want %v", tt.input, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("normalizeWorktreeRelativePath(%q) error = %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("normalizeWorktreeRelativePath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveWorktreePathAndReadWorktreeFile(t *testing.T) {
+	repo := setupTestRepo(t)
+	writeDiskFile(t, repo, "nested/file.txt", []byte("hello\n"))
+
+	path, err := resolveWorktreePath(repo.WorkDir(), "./nested//file.txt")
+	if err != nil {
+		t.Fatalf("resolveWorktreePath() error = %v", err)
+	}
+	if !strings.HasSuffix(path, filepath.FromSlash("nested/file.txt")) {
+		t.Fatalf("resolveWorktreePath() = %q, want suffix %q", path, filepath.FromSlash("nested/file.txt"))
+	}
+
+	content, err := readWorktreeFile(repo.WorkDir(), "nested/file.txt")
+	if err != nil {
+		t.Fatalf("readWorktreeFile() error = %v", err)
+	}
+	if string(content) != "hello\n" {
+		t.Fatalf("readWorktreeFile() = %q, want %q", string(content), "hello\n")
+	}
+
+	_, err = resolveWorktreePath(repo.WorkDir(), "../outside.txt")
+	if !errors.Is(err, errInvalidWorktreePath) {
+		t.Fatalf("resolveWorktreePath(traversal) error = %v, want errInvalidWorktreePath", err)
+	}
+
+	_, err = readWorktreeFile(repo.WorkDir(), "../outside.txt")
+	if !errors.Is(err, errInvalidWorktreePath) {
+		t.Fatalf("readWorktreeFile(traversal) error = %v, want errInvalidWorktreePath", err)
+	}
+}
+
+func TestResolveTreeEntryAtPathErrors(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("hello"))
+	child := createTree(t, repo, []TreeEntry{{ID: blob, Name: "file.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	root := createTree(t, repo, []TreeEntry{
+		{ID: child, Name: "nested", Mode: "040000", Type: ObjectTypeTree},
+		{ID: blob, Name: "plain", Mode: "100644", Type: ObjectTypeBlob},
+		{ID: Hash(strings.Repeat("a", 40)), Name: "broken", Mode: "040000", Type: ObjectTypeTree},
+	})
+
+	_, err := resolveTreeEntryAtPath(repo, root, "plain/file.txt")
+	if !errors.Is(err, errBlobNotFound) {
+		t.Fatalf("resolveTreeEntryAtPath(non-tree parent) error = %v, want errBlobNotFound", err)
+	}
+
+	_, err = resolveTreeEntryAtPath(repo, root, "missing/file.txt")
+	if !errors.Is(err, errBlobNotFound) {
+		t.Fatalf("resolveTreeEntryAtPath(missing parent) error = %v, want errBlobNotFound", err)
+	}
+
+	_, err = resolveTreeEntryAtPath(repo, root, "broken/file.txt")
+	if err == nil || !strings.Contains(err.Error(), "failed to read tree") {
+		t.Fatalf("resolveTreeEntryAtPath(broken parent) error = %v, want failed to read tree", err)
+	}
+
+	_, err = resolveTreeEntryAtPath(repo, root, "broken/sub/file.txt")
+	if err == nil || !strings.Contains(err.Error(), "failed to read tree") {
+		t.Fatalf("resolveTreeEntryAtPath(broken intermediate tree) error = %v, want failed to read tree", err)
+	}
+
+	_, err = resolveTreeEntryAtPath(repo, Hash(strings.Repeat("b", 40)), "file.txt")
+	if err == nil || !strings.Contains(err.Error(), "failed to read leaf tree") {
+		t.Fatalf("resolveTreeEntryAtPath(broken leaf) error = %v, want failed to read leaf tree", err)
+	}
+
+	_, err = resolveTreeEntryAtPath(repo, child, "missing.txt")
+	if !errors.Is(err, errBlobNotFound) {
+		t.Fatalf("resolveTreeEntryAtPath(missing leaf) error = %v, want errBlobNotFound", err)
+	}
+}
+
+func TestResolveBlobAtPathRejectsTreeAndSubmodule(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("hello"))
+	child := createTree(t, repo, []TreeEntry{{ID: blob, Name: "file.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	root := createTree(t, repo, []TreeEntry{
+		{ID: child, Name: "nested", Mode: "040000", Type: ObjectTypeTree},
+		{ID: Hash(strings.Repeat("c", 40)), Name: "mod", Mode: "160000", Type: ObjectTypeCommit},
+	})
+
+	_, err := resolveBlobAtPath(repo, root, "nested")
+	if !errors.Is(err, errBlobNotFound) {
+		t.Fatalf("resolveBlobAtPath(tree) error = %v, want errBlobNotFound", err)
+	}
+
+	_, err = resolveBlobAtPath(repo, root, "mod")
+	if !errors.Is(err, errBlobNotFound) {
+		t.Fatalf("resolveBlobAtPath(submodule) error = %v, want errBlobNotFound", err)
+	}
+}
+
 func TestComputeWorkingTreeFileDiff_ModifiedNewDeletedAndTruncated(t *testing.T) {
 	repo := setupTestRepo(t)
 	oldBlob := createBlob(t, repo, []byte("line 1\nline 2\n"))
@@ -867,4 +992,84 @@ func TestComputeWorkingTreeFileDiff_SubmoduleDoesNotReadGitlinkAsBlob(t *testing
 	if diff == nil {
 		t.Fatal("ComputeWorkingTreeFileDiff(submodule) = nil")
 	}
+}
+
+func TestComputeWorkingTreeFileDiff_EmptyWhenHeadAndDiskMissing(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	diff, err := ComputeWorkingTreeFileDiff(repo, "missing.txt", DefaultContextLines)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeFileDiff(missing both) error = %v", err)
+	}
+	if diff == nil {
+		t.Fatal("ComputeWorkingTreeFileDiff(missing both) = nil")
+	}
+	if len(diff.Hunks) != 0 {
+		t.Fatalf("ComputeWorkingTreeFileDiff(missing both) hunks = %#v, want none", diff.Hunks)
+	}
+}
+
+func TestComputeWorkingTreeFileDiff_HeadTreeEntryReturnsEmptyDiff(t *testing.T) {
+	repo := setupTestRepo(t)
+	child := createTree(t, repo, []TreeEntry{{ID: createBlob(t, repo, []byte("hello")), Name: "file.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	root := createTree(t, repo, []TreeEntry{{ID: child, Name: "dir", Mode: "040000", Type: ObjectTypeTree}})
+	wireHeadCommit(repo, root)
+
+	if err := os.Mkdir(filepath.Join(repo.WorkDir(), "dir"), 0o755); err != nil {
+		t.Fatalf("Mkdir(dir): %v", err)
+	}
+
+	diff, err := ComputeWorkingTreeFileDiff(repo, "dir", DefaultContextLines)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeFileDiff(tree entry) error = %v", err)
+	}
+	if diff == nil {
+		t.Fatal("ComputeWorkingTreeFileDiff(tree entry) = nil")
+	}
+	if diff.OldHash != child {
+		t.Fatalf("ComputeWorkingTreeFileDiff(tree entry) old hash = %q, want %q", diff.OldHash, child)
+	}
+	if len(diff.Hunks) != 0 {
+		t.Fatalf("ComputeWorkingTreeFileDiff(tree entry) hunks = %#v, want none", diff.Hunks)
+	}
+}
+
+func TestComputeWorkingTreeFileDiff_HeadResolutionAndReadErrors(t *testing.T) {
+	t.Run("head tree resolution error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		root := createTree(t, repo, []TreeEntry{{ID: Hash(strings.Repeat("d", 40)), Name: "nested", Mode: "040000", Type: ObjectTypeTree}})
+		wireHeadCommit(repo, root)
+
+		writeDiskFile(t, repo, "nested/file.txt", []byte("hello\n"))
+
+		diff, err := ComputeWorkingTreeFileDiff(repo, "nested/file.txt", DefaultContextLines)
+		if err == nil || !strings.Contains(err.Error(), "resolving HEAD entry") {
+			t.Fatalf("ComputeWorkingTreeFileDiff(head resolution) = (%#v, %v), want resolving HEAD entry error", diff, err)
+		}
+	})
+
+	t.Run("head blob read error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		root := createTree(t, repo, []TreeEntry{{ID: Hash(strings.Repeat("e", 40)), Name: "file.txt", Mode: "100644", Type: ObjectTypeBlob}})
+		wireHeadCommit(repo, root)
+
+		writeDiskFile(t, repo, "file.txt", []byte("hello\n"))
+
+		diff, err := ComputeWorkingTreeFileDiff(repo, "file.txt", DefaultContextLines)
+		if err == nil || !strings.Contains(err.Error(), "reading HEAD blob") {
+			t.Fatalf("ComputeWorkingTreeFileDiff(head blob read) = (%#v, %v), want reading HEAD blob error", diff, err)
+		}
+	})
+
+	t.Run("disk read error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		if err := os.Mkdir(filepath.Join(repo.WorkDir(), "dir"), 0o755); err != nil {
+			t.Fatalf("Mkdir(dir): %v", err)
+		}
+
+		diff, err := ComputeWorkingTreeFileDiff(repo, "dir", DefaultContextLines)
+		if err == nil || !strings.Contains(err.Error(), "reading on-disk file") {
+			t.Fatalf("ComputeWorkingTreeFileDiff(disk read) = (%#v, %v), want reading on-disk file error", diff, err)
+		}
+	})
 }
