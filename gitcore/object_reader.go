@@ -18,8 +18,9 @@ const (
 )
 
 var (
-	zlibReaderPool        = sync.Pool{}
-	decompressScratchPool = sync.Pool{
+	maxDecompressedObjectSize = maxDecompressedSize
+	zlibReaderPool            = sync.Pool{}
+	decompressScratchPool     = sync.Pool{
 		New: func() any {
 			return make([]byte, decompressScratchSize)
 		},
@@ -109,11 +110,11 @@ func readCompressedData(r io.Reader) ([]byte, error) {
 	scratch := decompressScratchPool.Get().([]byte)
 	defer decompressScratchPool.Put(scratch)
 
-	if _, err := io.CopyBuffer(&buf, io.LimitReader(zr, maxDecompressedSize+1), scratch); err != nil {
+	if _, err := io.CopyBuffer(&buf, io.LimitReader(zr, int64(maxDecompressedObjectSize)+1), scratch); err != nil {
 		return nil, fmt.Errorf("failed to decompress data: %w", err)
 	}
-	if buf.Len() > maxDecompressedSize {
-		return nil, fmt.Errorf("decompressed object exceeds maximum allowed size (%d bytes)", maxDecompressedSize)
+	if buf.Len() > maxDecompressedObjectSize {
+		return nil, fmt.Errorf("decompressed object exceeds maximum allowed size (%d bytes)", maxDecompressedObjectSize)
 	}
 
 	return buf.Bytes(), nil

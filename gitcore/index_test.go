@@ -415,6 +415,14 @@ func TestParseIndexEntryFixedFields_Truncated(t *testing.T) {
 	}
 }
 
+func TestParseIndex_FileTooShort(t *testing.T) {
+	t.Parallel()
+
+	if _, err := parseIndex(make([]byte, 12)); err == nil {
+		t.Fatal("parseIndex() error = nil, want file-too-short error")
+	}
+}
+
 func TestParseIndexEntryV2V3_MissingNullTerminator(t *testing.T) {
 	t.Parallel()
 
@@ -424,6 +432,14 @@ func TestParseIndexEntryV2V3_MissingNullTerminator(t *testing.T) {
 
 	if _, _, err := parseIndexEntryV2V3(entry, 0); err == nil {
 		t.Fatal("parseIndexEntryV2V3() error = nil, want missing terminator error")
+	}
+}
+
+func TestParseIndexEntryV2V3_TruncatedFixedFields(t *testing.T) {
+	t.Parallel()
+
+	if _, _, err := parseIndexEntryV2V3(make([]byte, indexFixedEntrySize-1), 0); err == nil {
+		t.Fatal("parseIndexEntryV2V3() error = nil, want truncated fixed-fields error")
 	}
 }
 
@@ -448,6 +464,26 @@ func TestParseIndexEntryV4_MissingNullTerminator(t *testing.T) {
 
 	if _, _, err := parseIndexEntryV4(entry, 0, "src/file.go"); err == nil {
 		t.Fatal("parseIndexEntryV4() error = nil, want missing terminator error")
+	}
+}
+
+func TestParseIndexEntryV4_TruncatedFixedFields(t *testing.T) {
+	t.Parallel()
+
+	if _, _, err := parseIndexEntryV4(make([]byte, indexFixedEntrySize-1), 0, "prev"); err == nil {
+		t.Fatal("parseIndexEntryV4() error = nil, want truncated fixed-fields error")
+	}
+}
+
+func TestParseIndexEntryV4_InvalidPrefixVarInt(t *testing.T) {
+	t.Parallel()
+
+	hash := hashFromHex("4646464646464646464646464646464646464646")
+	buf := &bytes.Buffer{}
+	buf.Write(buildIndexEntryWithStats("ignored", hash, 0o100644, 0, 0, 0, 0, 0)[:indexFixedEntrySize])
+
+	if _, _, err := parseIndexEntryV4(buf.Bytes(), 0, "prev/path.go"); err == nil {
+		t.Fatal("parseIndexEntryV4() error = nil, want invalid prefix varint error")
 	}
 }
 

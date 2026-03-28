@@ -3,10 +3,13 @@ package gitcore
 import (
 	"bytes"
 	"compress/zlib"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -90,6 +93,39 @@ func newRepoSkeleton(t *testing.T) *Repository {
 		packLocations: make(map[Hash]PackLocation),
 		packReaders:   make(map[string]*PackReader),
 	}
+}
+
+type loaderStubObject struct {
+	objectType ObjectType
+}
+
+func (o loaderStubObject) Type() ObjectType {
+	return o.objectType
+}
+
+type readCloserStub struct {
+	readFn  func([]byte) (int, error)
+	closeFn func() error
+}
+
+func (r *readCloserStub) Read(p []byte) (int, error) {
+	return r.readFn(p)
+}
+
+func (r *readCloserStub) Close() error {
+	if r.closeFn != nil {
+		return r.closeFn()
+	}
+	return nil
+}
+
+type resettingReadCloserStub struct {
+	readCloserStub
+	resetFn func(io.Reader, []byte) error
+}
+
+func (r *resettingReadCloserStub) Reset(reader io.Reader, dict []byte) error {
+	return r.resetFn(reader, dict)
 }
 
 func TestHashHelpers(t *testing.T) {
@@ -313,6 +349,10 @@ func TestReadCompressedDataAndLooseObjects(t *testing.T) {
 	if _, _, err := repo.readLooseObjectRaw(badCompressedID); err == nil {
 		t.Fatal("expected invalid compressed loose object error")
 	}
+
+	if _, _, err := repo.readLooseObjectRaw(Hash("short")); err == nil {
+		t.Fatal("expected invalid hash error")
+	}
 }
 
 func TestReadObjectPreservesLooseObjectCorruptionErrors(t *testing.T) {
@@ -340,6 +380,215 @@ func TestReadObjectPreservesLooseObjectCorruptionErrors(t *testing.T) {
 	}
 	if _, _, err := repo.readObjectData(missingID, 0); err == nil || !strings.Contains(err.Error(), "object not found") {
 		t.Fatalf("readObjectData(missing) error = %v, want not found", err)
+	}
+}
+
+func TestReadObjectPackErrorAndCompressedDataEdgeCases(t *testing.T) {
+	repo := NewEmptyRepository()
+	id := mustHash(t, testHash1)
+	repo.packLocations[id] = PackLocation{packPath: filepath.Join(t.TempDir(), "missing.pack"), offset: 0}
+
+	if _, err := repo.readObject(id); err == nil || !strings.Contains(err.Error(), "failed to read pack object") {
+		t.Fatalf("readObject(pack error) = %v, want wrapped pack error", err)
+	}
+
+	var compressed bytes.Buffer
+	zw := zlib.NewWriter(&compressed)
+	if _, err := zw.Write([]byte("hello")); err != nil {
+		t.Fatalf("zlib write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zlib close: %v", err)
+	}
+	truncated := compressed.Bytes()[:compressed.Len()-1]
+	if _, err := readCompressedData(bytes.NewReader(truncated)); err == nil || !strings.Contains(err.Error(), "failed to decompress data") {
+		t.Fatalf("readCompressedData(truncated) = %v, want decompress error", err)
+	}
+
+	originalLimit := maxDecompressedObjectSize
+	maxDecompressedObjectSize = 4
+	t.Cleanup(func() {
+		maxDecompressedObjectSize = originalLimit
+	})
+	if _, err := readCompressedData(bytes.NewReader(compressed.Bytes())); err == nil || !strings.Contains(err.Error(), "decompressed object exceeds maximum allowed size (4 bytes)") {
+		t.Fatalf("readCompressedData(oversize) = %v, want size limit error", err)
+	}
+}
+
+func TestReadObjectAndDataPackSuccessAndLooseHeaderErrors(t *testing.T) {
+	packPath := filepath.Join(t.TempDir(), "blob.pack")
+	if err := os.WriteFile(packPath, packObjectBytes(t, ObjectTypeBlob, []byte("hello")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	packedRepo := NewEmptyRepository()
+	packedID := mustHash(t, testHash1)
+	packedRepo.packLocations[packedID] = PackLocation{packPath: packPath, offset: 0}
+
+	obj, err := packedRepo.readObject(packedID)
+	if err != nil || obj.Type() != ObjectTypeBlob {
+		t.Fatalf("readObject(packed) = %v, %v", obj, err)
+	}
+	data, typ, err := packedRepo.readObjectData(packedID, 0)
+	if err != nil || typ != ObjectTypeBlob || string(data) != "hello" {
+		t.Fatalf("readObjectData(packed) = %q, %v, %v", string(data), typ, err)
+	}
+
+	looseRepo := newRepoSkeleton(t)
+	looseID := mustHash(t, testHash3)
+	writeLooseObject(t, looseRepo.gitDir, looseID, "blob", []byte("loose"))
+
+	looseObj, err := looseRepo.readObject(looseID)
+	if err != nil || looseObj.Type() != ObjectTypeBlob {
+		t.Fatalf("readObject(loose) = %v, %v", looseObj, err)
+	}
+	looseData, looseType, err := looseRepo.readObjectData(looseID, 0)
+	if err != nil || looseType != ObjectTypeBlob || string(looseData) != "loose" {
+		t.Fatalf("readObjectData(loose) = %q, %v, %v", string(looseData), looseType, err)
+	}
+
+	badHeaderID := mustHash(t, testHash2)
+	dir := filepath.Join(looseRepo.gitDir, "objects", string(badHeaderID)[:2])
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	payload := append([]byte("bogus 1"), 0)
+	payload = append(payload, 'x')
+	if err := os.WriteFile(filepath.Join(dir, string(badHeaderID)[2:]), compressBytes(t, payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := looseRepo.readObject(badHeaderID); err == nil || !strings.Contains(err.Error(), "unrecognized loose object type") {
+		t.Fatalf("readObject(bad header) = %v, want unrecognized type error", err)
+	}
+	if _, _, err := looseRepo.readObjectData(badHeaderID, 0); err == nil || !strings.Contains(err.Error(), "unsupported object type: bogus") {
+		t.Fatalf("readObjectData(bad header) = %v, want unsupported type error", err)
+	}
+}
+
+func TestGetAndPutZlibReaderPoolEdges(t *testing.T) {
+	zlibReaderPool = sync.Pool{}
+	t.Cleanup(func() {
+		zlibReaderPool = sync.Pool{}
+	})
+
+	zlibReaderPool.Put(&readCloserStub{})
+	if _, err := getZlibReader(strings.NewReader("input")); err == nil || !strings.Contains(err.Error(), "pooled zlib reader does not support reset") {
+		t.Fatalf("getZlibReader(non-resetter) = %v, want resetter error", err)
+	}
+
+	zlibReaderPool.Put(&resettingReadCloserStub{
+		resetFn: func(io.Reader, []byte) error {
+			return errors.New("reset boom")
+		},
+	})
+	if _, err := getZlibReader(strings.NewReader("input")); err == nil || !strings.Contains(err.Error(), "failed to reset zlib reader: reset boom") {
+		t.Fatalf("getZlibReader(reset failure) = %v, want reset failure", err)
+	}
+
+	putZlibReader(nil)
+}
+
+func TestLoadObjectsTraversesUniqueReachableObjects(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	blobID := mustHash(t, testHash1)
+	treeID := mustHash(t, testHash2)
+	parentID := mustHash(t, testHash3)
+	commitID := mustHash(t, testHash4)
+	tagID := mustHash(t, testHash5)
+
+	writeLooseObject(t, repo.gitDir, blobID, "blob", []byte("hello"))
+	var treeBody bytes.Buffer
+	blobBytes := hashFromHex(testHash1)
+	treeBody.WriteString("100644 file.txt")
+	treeBody.WriteByte(0)
+	treeBody.Write(blobBytes[:])
+	writeLooseObject(t, repo.gitDir, treeID, "tree", treeBody.Bytes())
+	writeLooseObject(t, repo.gitDir, parentID, "commit", []byte("tree "+testHash2+"\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\nparent"))
+	writeLooseObject(t, repo.gitDir, commitID, "commit", []byte("tree "+testHash2+"\nparent "+testHash3+"\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\nchild"))
+	writeLooseObject(t, repo.gitDir, tagID, "tag", []byte("object "+testHash4+"\ntype commit\ntag v1.0\ntagger Jane Doe <jane@example.com> 1700000000 +0000\n\nrelease"))
+
+	repo.refs["refs/heads/main"] = commitID
+	repo.refs["refs/tags/v1.0"] = tagID
+	repo.refs["refs/heads/blob-root"] = blobID
+	repo.refs["refs/heads/tree-root"] = treeID
+	repo.stashes = []*StashEntry{
+		{Hash: commitID, Message: "duplicate commit"},
+		{Hash: tagID, Message: "duplicate tag"},
+	}
+
+	if err := repo.loadObjects(); err != nil {
+		t.Fatalf("loadObjects: %v", err)
+	}
+	if len(repo.commits) != 2 {
+		t.Fatalf("len(repo.commits) = %d, want 2", len(repo.commits))
+	}
+	if len(repo.tags) != 1 {
+		t.Fatalf("len(repo.tags) = %d, want 1", len(repo.tags))
+	}
+	if repo.commitMap[commitID] == nil || repo.commitMap[parentID] == nil {
+		t.Fatalf("commitMap missing reachable commits: %+v", repo.commitMap)
+	}
+}
+
+func TestLoadObjectsErrorPaths(t *testing.T) {
+	original := loadObjectForTraversal
+	t.Cleanup(func() {
+		loadObjectForTraversal = original
+	})
+
+	refID := mustHash(t, testHash1)
+	repo := NewEmptyRepository()
+	repo.refs["refs/heads/main"] = refID
+
+	tests := []struct {
+		name    string
+		loader  func(*Repository, Hash) (Object, error)
+		wantErr string
+	}{
+		{
+			name: "read object error",
+			loader: func(*Repository, Hash) (Object, error) {
+				return nil, errors.New("boom")
+			},
+			wantErr: "error traversing object: boom",
+		},
+		{
+			name: "commit type mismatch",
+			loader: func(*Repository, Hash) (Object, error) {
+				return loaderStubObject{objectType: ObjectTypeCommit}, nil
+			},
+			wantErr: "unexpected type for commit object " + string(refID),
+		},
+		{
+			name: "tag type mismatch",
+			loader: func(*Repository, Hash) (Object, error) {
+				return loaderStubObject{objectType: ObjectTypeTag}, nil
+			},
+			wantErr: "unexpected type for tag object " + string(refID),
+		},
+		{
+			name: "unsupported type",
+			loader: func(*Repository, Hash) (Object, error) {
+				return loaderStubObject{objectType: ObjectTypeReserved}, nil
+			},
+			wantErr: "unsupported object type: 5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo.commits = nil
+			repo.tags = nil
+			repo.commitMap = nil
+			loadObjectForTraversal = tt.loader
+
+			err := repo.loadObjects()
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("loadObjects() error = %v, want %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 

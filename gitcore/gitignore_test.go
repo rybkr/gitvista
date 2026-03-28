@@ -295,6 +295,34 @@ func TestLoadConfiguredGlobalExcludes_HandlesMissingAndInvalidConfig(t *testing.
 	})
 }
 
+func TestLoadConfiguredGlobalExcludes_ExpandsHomeRelativePath(t *testing.T) {
+	workDir := t.TempDir()
+	gitDir := filepath.Join(workDir, ".git")
+	homeDir := t.TempDir()
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(.git): %v", err)
+	}
+	t.Setenv("HOME", homeDir)
+
+	excludesPath := filepath.Join(homeDir, "global-ignore")
+	if err := os.WriteFile(excludesPath, []byte("home-only.txt\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(global-ignore): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(stringsJoinLines(
+		`[core]`,
+		`	excludesFile = ~/global-ignore`,
+	)), 0o644); err != nil {
+		t.Fatalf("WriteFile(.git/config): %v", err)
+	}
+
+	m := &ignoreMatcher{loadedBases: make(map[string]struct{})}
+	m.loadConfiguredGlobalExcludes(workDir, gitDir)
+
+	if !m.isIgnored("home-only.txt", false) {
+		t.Fatal("home-only.txt should be ignored from expanded ~/ excludes file")
+	}
+}
+
 func TestLoadIgnoreFiles_IgnoreMissingAndTraversalPaths(t *testing.T) {
 	workDir := t.TempDir()
 	gitDir := filepath.Join(workDir, ".git")
@@ -413,6 +441,16 @@ func TestParseIgnoreLineAndMatchHelpers_EdgeCases(t *testing.T) {
 		}
 	})
 
+	t.Run("single slash pattern without double-star prefix becomes anchored", func(t *testing.T) {
+		pat, ok := parseIgnoreLine("pkg/cache")
+		if !ok {
+			t.Fatal("parseIgnoreLine(pkg/cache) = false, want true")
+		}
+		if !pat.anchored {
+			t.Fatalf("parseIgnoreLine(pkg/cache) = %+v, want anchored", pat)
+		}
+	})
+
 	t.Run("directory matching handles empty and anchored targets", func(t *testing.T) {
 		if matchDirectoryPattern("build", "", false) {
 			t.Fatal("matchDirectoryPattern() = true for empty target, want false")
@@ -434,6 +472,9 @@ func TestParseIgnoreLineAndMatchHelpers_EdgeCases(t *testing.T) {
 		}
 		if matchSegments([]string{"src", "*", "test.go"}, []string{"src", "a"}) {
 			t.Fatal("matchSegments() should reject missing trailing segment")
+		}
+		if !matchSegments([]string{"src", "**"}, []string{"src"}) {
+			t.Fatal("matchSegments() should accept trailing ** after exact prefix match")
 		}
 	})
 }

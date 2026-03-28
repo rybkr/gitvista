@@ -192,6 +192,165 @@ func TestLoadPackIndexV2_LargeOffsets_OverflowIgnored(t *testing.T) {
 	}
 }
 
+func TestLoadPackIndexV1_ReadErrors(t *testing.T) {
+	t.Run("fanout read error", func(t *testing.T) {
+		if _, err := loadPackIndexV1(bytes.NewReader(nil), "test.pack"); err == nil {
+			t.Fatal("expected fanout read error")
+		}
+	})
+
+	t.Run("offset read error", func(t *testing.T) {
+		var buf bytes.Buffer
+		var fanout [256]uint32
+		for i := 0x0a; i <= 0xff; i++ {
+			fanout[i] = 1
+		}
+		for i := 0; i < 256; i++ {
+			writeUint32BE(&buf, fanout[i])
+		}
+
+		if _, err := loadPackIndexV1(bytes.NewReader(buf.Bytes()), "test.pack"); err == nil {
+			t.Fatal("expected truncated offset error")
+		}
+	})
+
+	t.Run("object name read error", func(t *testing.T) {
+		hash := hashFromHex("0a0b0c0d0e0f1011121314151617181920212223")
+		var buf bytes.Buffer
+		var fanout [256]uint32
+		for i := 0x0a; i <= 0xff; i++ {
+			fanout[i] = 1
+		}
+		for i := 0; i < 256; i++ {
+			writeUint32BE(&buf, fanout[i])
+		}
+		writeUint32BE(&buf, 100)
+		buf.Write(hash[:10])
+
+		if _, err := loadPackIndexV1(bytes.NewReader(buf.Bytes()), "test.pack"); err == nil {
+			t.Fatal("expected truncated object name error")
+		}
+	})
+}
+
+func TestLoadPackIndexV2_ReadErrorsAndIgnoredLargeOffsets(t *testing.T) {
+	hash := hashFromHex("0a0b0c0d0e0f1011121314151617181920212223")
+
+	t.Run("version read error", func(t *testing.T) {
+		if _, err := loadPackIndexV2(bytes.NewReader(nil), "test.pack"); err == nil {
+			t.Fatal("expected version read error")
+		}
+	})
+
+	t.Run("fanout read error", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeUint32BE(&buf, 2)
+		if _, err := loadPackIndexV2(bytes.NewReader(buf.Bytes()), "test.pack"); err == nil {
+			t.Fatal("expected fanout read error")
+		}
+	})
+
+	t.Run("object names read error", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeUint32BE(&buf, 2)
+		var fanout [256]uint32
+		for i := 0x0a; i <= 0xff; i++ {
+			fanout[i] = 1
+		}
+		for i := 0; i < 256; i++ {
+			writeUint32BE(&buf, fanout[i])
+		}
+		buf.Write(hash[:10])
+
+		if _, err := loadPackIndexV2(bytes.NewReader(buf.Bytes()), "test.pack"); err == nil {
+			t.Fatal("expected object names read error")
+		}
+	})
+
+	t.Run("crcs seek error", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeUint32BE(&buf, 2)
+		var fanout [256]uint32
+		for i := 0x0a; i <= 0xff; i++ {
+			fanout[i] = 1
+		}
+		for i := 0; i < 256; i++ {
+			writeUint32BE(&buf, fanout[i])
+		}
+		buf.Write(hash[:])
+
+		reader := &failingReadSeeker{
+			reader:       bytes.NewReader(buf.Bytes()),
+			failSeekCall: map[int]error{1: fmt.Errorf("skip CRCs failed")},
+		}
+		if _, err := loadPackIndexV2(reader, "test.pack"); err == nil {
+			t.Fatal("expected CRC seek error")
+		}
+	})
+
+	t.Run("offset read error", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeUint32BE(&buf, 2)
+		var fanout [256]uint32
+		for i := 0x0a; i <= 0xff; i++ {
+			fanout[i] = 1
+		}
+		for i := 0; i < 256; i++ {
+			writeUint32BE(&buf, fanout[i])
+		}
+		buf.Write(hash[:])
+		writeUint32BE(&buf, 0xDEADBEEF)
+
+		if _, err := loadPackIndexV2(bytes.NewReader(buf.Bytes()), "test.pack"); err == nil {
+			t.Fatal("expected truncated offsets error")
+		}
+	})
+
+	t.Run("invalid large offset index ignored", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeUint32BE(&buf, 2)
+		var fanout [256]uint32
+		for i := 0x0a; i <= 0xff; i++ {
+			fanout[i] = 1
+		}
+		for i := 0; i < 256; i++ {
+			writeUint32BE(&buf, fanout[i])
+		}
+		buf.Write(hash[:])
+		writeUint32BE(&buf, 0)
+		writeUint32BE(&buf, packIndexLargeOffsetFlag|1)
+		writeUint64BE(&buf, 500)
+
+		idx, err := loadPackIndexV2(bytes.NewReader(buf.Bytes()), "test.pack")
+		if err != nil {
+			t.Fatalf("loadPackIndexV2 failed: %v", err)
+		}
+		hashStr, _ := NewHashFromBytes(hash)
+		if _, ok := idx.FindObject(hashStr); ok {
+			t.Fatal("expected object with invalid large-offset table index to be ignored")
+		}
+	})
+
+	t.Run("large offsets read error", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeUint32BE(&buf, 2)
+		var fanout [256]uint32
+		for i := 0x0a; i <= 0xff; i++ {
+			fanout[i] = 1
+		}
+		for i := 0; i < 256; i++ {
+			writeUint32BE(&buf, fanout[i])
+		}
+		buf.Write(hash[:])
+		writeUint32BE(&buf, 0)
+		writeUint32BE(&buf, packIndexLargeOffsetFlag)
+
+		if _, err := loadPackIndexV2(bytes.NewReader(buf.Bytes()), "test.pack"); err == nil {
+			t.Fatal("expected large offsets read error")
+		}
+	})
+}
+
 func TestReadPackObjectHeader(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -239,6 +398,12 @@ func TestReadPackObjectHeader(t *testing.T) {
 				t.Errorf("size: got %d, want %d", size, tt.wantSize)
 			}
 		})
+	}
+}
+
+func TestReadPackObjectHeader_ContinuationReadError(t *testing.T) {
+	if _, _, err := readPackObjectHeader(bytes.NewReader([]byte{0x80})); err == nil {
+		t.Fatal("expected continuation byte read error")
 	}
 }
 
@@ -363,6 +528,32 @@ func TestReadVarInt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadVarInt_ContinuationReadError(t *testing.T) {
+	if _, err := readVarInt(bytes.NewReader([]byte{0x80})); err == nil {
+		t.Fatal("expected continuation read error")
+	}
+}
+
+func TestApplyDelta_ReadErrors(t *testing.T) {
+	t.Run("target size varint read error", func(t *testing.T) {
+		if _, err := applyDelta([]byte("hello"), []byte{5}); err == nil {
+			t.Fatal("expected target size varint read error")
+		}
+	})
+
+	t.Run("copy offset byte read error", func(t *testing.T) {
+		if _, err := applyDelta([]byte("hello"), []byte{5, 5, 0x81}); err == nil {
+			t.Fatal("expected copy offset byte read error")
+		}
+	})
+
+	t.Run("copy size byte read error", func(t *testing.T) {
+		if _, err := applyDelta([]byte("hello"), []byte{5, 5, 0x91, 0x00}); err == nil {
+			t.Fatal("expected copy size byte read error")
+		}
+	})
 }
 
 func TestReadCompressedObject(t *testing.T) {

@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+var (
+	filepathWalk = filepath.Walk
+	filepathRel  = filepath.Rel
+	filepathAbs  = filepath.Abs
+)
+
 func (r *Repository) loadRefs() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -44,7 +50,7 @@ func (r *Repository) loadLooseRefs(prefix string) error {
 	}
 
 	var refErrs []error
-	walkErr := filepath.Walk(refsDir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepathWalk(refsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -52,7 +58,7 @@ func (r *Repository) loadLooseRefs(prefix string) error {
 			return nil
 		}
 
-		relPath, err := filepath.Rel(r.gitDir, path)
+		relPath, err := filepathRel(r.gitDir, path)
 		if err != nil {
 			return err
 		}
@@ -257,15 +263,15 @@ func (r *Repository) resolveRefDepth(path string, depth int) (Hash, error) {
 }
 
 func ensurePathWithinBase(base, candidate string) error {
-	absBase, err := filepath.Abs(base)
+	absBase, err := filepathAbs(base)
 	if err != nil {
 		return err
 	}
-	absCandidate, err := filepath.Abs(candidate)
+	absCandidate, err := filepathAbs(candidate)
 	if err != nil {
 		return err
 	}
-	rel, err := filepath.Rel(absBase, absCandidate)
+	rel, err := filepathRel(absBase, absCandidate)
 	if err != nil {
 		return err
 	}

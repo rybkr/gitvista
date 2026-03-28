@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,6 +26,20 @@ func (f *failingReadSeeker) Seek(offset int64, whence int) (int64, error) {
 		return 0, err
 	}
 	return f.reader.Seek(offset, whence)
+}
+
+type shortReader struct {
+	data []byte
+	pos  int
+}
+
+func (s *shortReader) Read(p []byte) (int, error) {
+	if s.pos >= len(s.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, s.data[s.pos:])
+	s.pos += n
+	return n, nil
 }
 
 func packHeader(objectType ObjectType, size int64) []byte {
@@ -143,7 +158,11 @@ func TestPackIndexFilesAndRepositoryPackLoading(t *testing.T) {
 	if err != nil || idx.path != v1Path {
 		t.Fatalf("NewPackIndex v1: %+v %v", idx, err)
 	}
-	if _, err := NewPackIndex(filepath.Join(packDir, "truncated.idx")); err == nil {
+	truncatedPath := filepath.Join(packDir, "truncated.idx")
+	if err := os.WriteFile(truncatedPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewPackIndex(truncatedPath); err == nil {
 		t.Fatal("expected truncated header error")
 	}
 
@@ -160,6 +179,12 @@ func TestPackIndexFilesAndRepositoryPackLoading(t *testing.T) {
 
 	repo := NewEmptyRepository()
 	repo.gitDir = filepath.Dir(filepath.Dir(packDir))
+	if err := os.Mkdir(filepath.Join(packDir, "subdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "notes.txt"), []byte("ignore me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.loadPackIndices(); err == nil {
 		t.Fatal("expected joined pack index loading error")
 	}
@@ -223,6 +248,17 @@ func TestPackReaderAndPackedObjectAccess(t *testing.T) {
 	data, typ, err = repo.readObjectData(id, 0)
 	if err != nil || typ != ObjectTypeBlob || string(data) != "hello" {
 		t.Fatalf("readObjectData packed: %q %v %v", string(data), typ, err)
+	}
+
+	repo.packReaders = map[string]*PackReader{
+		packPath: {file: reader1.file, size: reader1.size},
+	}
+	data, typ, err = repo.readPackedObjectData(packPath, 0, 0)
+	if err != nil || typ != ObjectTypeBlob || string(data) != "hello" {
+		t.Fatalf("readPackedObjectData section reader path: %q %v %v", string(data), typ, err)
+	}
+	if _, _, err := repo.readPackedObjectData(packPath, -1, 0); err == nil {
+		t.Fatal("expected invalid section-reader seek error")
 	}
 }
 
@@ -316,6 +352,83 @@ func TestReadOffsetDeltaAndReadRefDeltaErrors(t *testing.T) {
 	}, 0); err == nil {
 		t.Fatal("expected ref delta apply error")
 	}
+}
+
+func TestReadOffsetDelta_SeekFailures(t *testing.T) {
+	deltaPayload := deltaCopyThenInsert([]byte("!"))
+	deltaBody := append([]byte{1}, compressBytes(t, deltaPayload)...)
+
+	t.Run("before-delta-seek-fails", func(t *testing.T) {
+		reader := &failingReadSeeker{
+			reader:       bytes.NewReader(deltaBody),
+			failSeekCall: map[int]error{1: errors.New("seek-current failed")},
+		}
+		if _, _, err := readOffsetDelta(reader, int64(len(deltaPayload)), 1, nil, 0); err == nil {
+			t.Fatal("expected before-delta seek error")
+		}
+	})
+
+	t.Run("seek-back-after-base-read-fails", func(t *testing.T) {
+		reader := &failingReadSeeker{
+			reader:       bytes.NewReader(deltaBody),
+			failSeekCall: map[int]error{2: errors.New("seek-back failed")},
+		}
+		if _, _, err := readOffsetDelta(reader, int64(len(deltaPayload)), 1, func(id Hash, depth int) ([]byte, ObjectType, error) {
+			return nil, 0, nil
+		}, 0); err == nil {
+			t.Fatal("expected after-delta seek error")
+		}
+	})
+}
+
+func TestReadRefDelta_CurrentPositionSeekFailure(t *testing.T) {
+	base := mustHash(t, testHash1)
+	delta := deltaCopyThenInsert([]byte("!"))
+	stream := packRefDeltaObject(t, base, delta)
+	reader := &failingReadSeeker{
+		reader:       bytes.NewReader(stream[len(packHeader(ObjectTypeRefDelta, int64(len(delta)))):]),
+		failSeekCall: map[int]error{1: errors.New("seek-current failed")},
+	}
+	if _, _, err := readRefDelta(reader, int64(len(delta)), func(id Hash, depth int) ([]byte, ObjectType, error) {
+		return []byte("hello"), ObjectTypeBlob, nil
+	}, 0); err == nil {
+		t.Fatal("expected before-delta seek error")
+	}
+}
+
+func TestReadOffsetDelta_RemainingErrorBranches(t *testing.T) {
+	t.Run("offset continuation read error", func(t *testing.T) {
+		if _, _, err := readOffsetDelta(bytes.NewReader([]byte{0x80}), 1, 1, nil, 0); err == nil {
+			t.Fatal("expected offset continuation read error")
+		}
+	})
+
+	t.Run("base read error", func(t *testing.T) {
+		deltaPayload := deltaCopyThenInsert([]byte("!"))
+		stream := append([]byte{0x80}, byte(1))
+		stream = append(stream, compressBytes(t, deltaPayload)...)
+		reader := bytes.NewReader(stream)
+		if _, err := reader.Seek(1, io.SeekStart); err != nil {
+			t.Fatalf("Seek(): %v", err)
+		}
+		if _, _, err := readOffsetDelta(reader, int64(len(deltaPayload)), 1, nil, 0); err == nil {
+			t.Fatal("expected base read error")
+		}
+	})
+
+	t.Run("apply delta error", func(t *testing.T) {
+		base := packObjectBytes(t, ObjectTypeBlob, []byte("hello"))
+		badDelta := []byte{5, 2, 1, '!'}
+		stream := append(append([]byte{}, base...), byte(len(base)))
+		stream = append(stream, compressBytes(t, badDelta)...)
+		reader := bytes.NewReader(stream)
+		if _, err := reader.Seek(int64(len(base)), io.SeekStart); err != nil {
+			t.Fatalf("Seek(): %v", err)
+		}
+		if _, _, err := readOffsetDelta(reader, int64(len(badDelta)), int64(len(base)), nil, 0); err == nil {
+			t.Fatal("expected delta apply error")
+		}
+	})
 }
 
 func TestReadHelpersAndApplyDeltaBranches(t *testing.T) {

@@ -4,6 +4,10 @@ import (
 	"fmt"
 )
 
+var loadObjectForTraversal = func(r *Repository, id Hash) (Object, error) {
+	return r.readObject(id)
+}
+
 func (r *Repository) loadObjects() error {
 	visited := make(map[Hash]bool)
 	stack := make([]Hash, 0, len(r.refs)+len(r.stashes))
@@ -25,7 +29,7 @@ func (r *Repository) loadObjects() error {
 		}
 		visited[ref] = true
 
-		object, err := r.readObject(ref)
+		object, err := loadObjectForTraversal(r, ref)
 		if err != nil {
 			return fmt.Errorf("error traversing object: %w", err)
 		}

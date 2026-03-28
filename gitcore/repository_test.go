@@ -1,6 +1,7 @@
 package gitcore
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -133,6 +134,103 @@ func TestNewRepositoryLoadsConfigAndMetadata(t *testing.T) {
 	}
 	if repo.head != commitID || repo.headRef != "refs/heads/main" || repo.headDetached {
 		t.Fatalf("unexpected HEAD state: head=%s ref=%q detached=%v", repo.head, repo.headRef, repo.headDetached)
+	}
+}
+
+func createMinimalRepositoryFixture(t *testing.T) (worktree string, gitDir string) {
+	t.Helper()
+
+	worktree = t.TempDir()
+	gitDir = filepath.Join(worktree, ".git")
+	for _, dir := range []string{
+		filepath.Join(gitDir, "objects"),
+		filepath.Join(gitDir, "refs", "heads"),
+	} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	writeTextFile(t, filepath.Join(gitDir, "HEAD"), "ref: refs/heads/main\n")
+	writeTextFile(t, filepath.Join(gitDir, "refs", "heads", "main"), testHash3+"\n")
+
+	blobID := mustHash(t, testHash1)
+	treeID := mustHash(t, testHash2)
+	commitID := mustHash(t, testHash3)
+	blobRaw := hashFromHex(testHash1)
+
+	writeLooseObject(t, gitDir, blobID, "blob", []byte("hello"))
+	writeLooseObject(t, gitDir, treeID, "tree", append(append([]byte("100644 README.md"), 0), blobRaw[:]...))
+	writeLooseObject(t, gitDir, commitID, "commit", []byte("tree "+testHash2+"\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\ninitial commit\n"))
+
+	return worktree, gitDir
+}
+
+func TestNewRepositoryStageFailures(t *testing.T) {
+	t.Run("pack indices", func(t *testing.T) {
+		worktree, gitDir := createMinimalRepositoryFixture(t)
+		packDir := filepath.Join(gitDir, "objects", "pack")
+		if err := os.MkdirAll(packDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		writeTextFile(t, filepath.Join(packDir, "broken.idx"), "bad")
+
+		if _, err := NewRepository(worktree); err == nil || !strings.Contains(err.Error(), "failed to load pack indices") {
+			t.Fatalf("NewRepository() error = %v, want pack indices wrapper", err)
+		}
+	})
+
+	t.Run("refs", func(t *testing.T) {
+		worktree, gitDir := createMinimalRepositoryFixture(t)
+		writeTextFile(t, filepath.Join(gitDir, "HEAD"), "bad\n")
+
+		if _, err := NewRepository(worktree); err == nil || !strings.Contains(err.Error(), "failed to load refs") {
+			t.Fatalf("NewRepository() error = %v, want refs wrapper", err)
+		}
+	})
+
+	t.Run("stashes", func(t *testing.T) {
+		worktree, gitDir := createMinimalRepositoryFixture(t)
+		writeTextFile(t, filepath.Join(gitDir, "refs", "stash"), "bad\n")
+
+		if _, err := NewRepository(worktree); err == nil || !strings.Contains(err.Error(), "failed to load stashes") {
+			t.Fatalf("NewRepository() error = %v, want stashes wrapper", err)
+		}
+	})
+
+	t.Run("objects", func(t *testing.T) {
+		worktree, gitDir := createMinimalRepositoryFixture(t)
+		writeLooseObject(t, gitDir, mustHash(t, testHash4), "bogus", []byte("x"))
+		writeTextFile(t, filepath.Join(gitDir, "refs", "heads", "main"), testHash4+"\n")
+
+		if _, err := NewRepository(worktree); err == nil || !strings.Contains(err.Error(), "failed to load objects") {
+			t.Fatalf("NewRepository() error = %v, want objects wrapper", err)
+		}
+	})
+
+	t.Run("mailmap", func(t *testing.T) {
+		worktree, _ := createMinimalRepositoryFixture(t)
+		if err := os.MkdirAll(filepath.Join(worktree, ".mailmap"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := NewRepository(worktree); err == nil || !strings.Contains(err.Error(), "failed to load mailmap") {
+			t.Fatalf("NewRepository() error = %v, want mailmap wrapper", err)
+		}
+	})
+}
+
+func TestFindGitDirectoryAbsFailure(t *testing.T) {
+	originalAbs := repositoryDiscoveryAbs
+	repositoryDiscoveryAbs = func(string) (string, error) {
+		return "", errors.New("abs boom")
+	}
+	t.Cleanup(func() {
+		repositoryDiscoveryAbs = originalAbs
+	})
+
+	if _, _, err := findGitDirectory("repo"); err == nil || !strings.Contains(err.Error(), "failed to resolve path: abs boom") {
+		t.Fatalf("findGitDirectory() error = %v, want abs error", err)
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// RevListOrder controls how `RevList` orders reachable commits.
+// RevListOrder controls how RevList orders reachable commits.
 type RevListOrder int
 
 const (

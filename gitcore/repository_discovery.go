@@ -7,8 +7,10 @@ import (
 	"strings"
 )
 
+var repositoryDiscoveryAbs = filepath.Abs
+
 func findGitDirectory(path string) (gitDir string, workDir string, err error) {
-	absPath, err := filepath.Abs(path)
+	absPath, err := repositoryDiscoveryAbs(path)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to resolve path: %w", err)
 	}
