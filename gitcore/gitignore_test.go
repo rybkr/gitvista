@@ -186,6 +186,44 @@ func TestLoadIgnoreMatcher_MatchesGitCoreExcludesFile(t *testing.T) {
 	}
 }
 
+func TestLoadIgnoreMatcher_MatchesGitCoreExcludesFileRelativeToWorktree(t *testing.T) {
+	workDir := t.TempDir()
+	gitDir := filepath.Join(workDir, ".git")
+	mustRunGit(t, workDir, "init", "-q")
+
+	globalExcludes := filepath.Join(workDir, "global-ignore")
+	if err := os.WriteFile(globalExcludes, []byte("global-only.txt\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(global-ignore): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(stringsJoinLines(
+		`[core]`,
+		"	excludesFile = global-ignore",
+	)), 0o644); err != nil {
+		t.Fatalf("WriteFile(.git/config): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "global-only.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile(global-only.txt): %v", err)
+	}
+
+	m := loadIgnoreMatcher(workDir, gitDir)
+	got := m.isIgnored("global-only.txt", false)
+	want := gitCheckIgnored(t, workDir, "global-only.txt")
+	if got != want {
+		t.Fatalf("isIgnored(global-only.txt) = %v, want %v", got, want)
+	}
+}
+
+func TestParseCoreExcludesFileFromConfig_AcceptsWhitespaceVariants(t *testing.T) {
+	config := stringsJoinLines(
+		`[core]`,
+		"	excludesFile=global-ignore",
+	)
+
+	if got := parseCoreExcludesFileFromConfig(config); got != "global-ignore" {
+		t.Fatalf("parseCoreExcludesFileFromConfig() = %q, want %q", got, "global-ignore")
+	}
+}
+
 func TestIgnoreMatcherMatchesGitCheckIgnore_NestedPatterns(t *testing.T) {
 	workDir := t.TempDir()
 	gitDir := filepath.Join(workDir, ".git")
@@ -233,6 +271,7 @@ func TestIgnoreMatcherMatchesGitCheckIgnore_NestedPatterns(t *testing.T) {
 	}
 
 	m := loadIgnoreMatcher(workDir, gitDir)
+	m.loadFile(workDir, "src/")
 	tests := []struct {
 		path string
 	}{

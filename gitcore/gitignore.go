@@ -28,30 +28,9 @@ func loadIgnoreMatcher(workDir, gitDir string) *ignoreMatcher {
 	m := &ignoreMatcher{
 		loadedBases: make(map[string]struct{}),
 	}
-	m.loadConfiguredGlobalExcludes(gitDir)
+	m.loadConfiguredGlobalExcludes(workDir, gitDir)
 	m.loadRepositoryExcludeFile(gitDir, filepath.Join("info", "exclude"), "")
-	_ = filepath.WalkDir(workDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() {
-			return nil
-		}
-
-		relPath, relErr := filepath.Rel(workDir, path)
-		if relErr != nil {
-			return relErr
-		}
-		baseDir := ""
-		if relPath != "." {
-			baseDir = filepath.ToSlash(relPath) + "/"
-		}
-		m.loadFile(workDir, baseDir)
-		return nil
-	})
+	m.loadFile(workDir, "")
 	return m
 }
 
@@ -77,7 +56,7 @@ func resolvePathWithinBase(base, relativePath string) (string, error) {
 	return candidate, nil
 }
 
-func (m *ignoreMatcher) loadConfiguredGlobalExcludes(gitDir string) {
+func (m *ignoreMatcher) loadConfiguredGlobalExcludes(workDir, gitDir string) {
 	configPath := filepath.Join(gitDir, "config")
 	// #nosec G304 -- config path is derived from the repository git dir.
 	content, err := os.ReadFile(configPath)
@@ -95,7 +74,7 @@ func (m *ignoreMatcher) loadConfiguredGlobalExcludes(gitDir string) {
 		}
 	}
 	if !filepath.IsAbs(path) {
-		resolvedPath, resolveErr := resolvePathWithinBase(gitDir, path)
+		resolvedPath, resolveErr := resolvePathWithinBase(workDir, path)
 		if resolveErr != nil {
 			return
 		}
@@ -211,19 +190,20 @@ func parseCoreExcludesFileFromConfig(config string) string {
 		switch {
 		case line == "":
 			continue
-		case strings.HasPrefix(line, "[core]"):
-			inCore = true
-			continue
 		case strings.HasPrefix(line, "["):
-			inCore = false
+			inCore = strings.EqualFold(strings.TrimSpace(strings.Trim(line, "[]")), "core")
 			continue
 		}
 
 		if !inCore {
 			continue
 		}
-		if strings.HasPrefix(line, "excludesFile = ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "excludesFile = "))
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(key), "excludesFile") {
+			return strings.TrimSpace(value)
 		}
 	}
 	return ""

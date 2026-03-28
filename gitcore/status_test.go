@@ -397,6 +397,59 @@ func TestComputeWorkingTreeStatus_CollapsesUntrackedDirectories(t *testing.T) {
 	}
 }
 
+func TestComputeWorkingTreeStatus_TrackedFileUnderIgnoredDirectoryIsReported(t *testing.T) {
+	repo := setupTestRepo(t)
+	blob := createBlob(t, repo, []byte("tracked\n"))
+	buildTree := createTree(t, repo, []TreeEntry{{ID: blob, Name: "keep.txt", Mode: "100644", Type: ObjectTypeBlob}})
+	root := createTree(t, repo, []TreeEntry{{ID: buildTree, Name: "build", Mode: "040000", Type: ObjectTypeTree}})
+	wireHeadCommit(repo, root)
+
+	writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+		{path: "build/keep.txt", blobHash: blob, fileSize: uint32(len("tracked\n"))},
+	})
+	if err := os.WriteFile(filepath.Join(repo.workDir, ".gitignore"), []byte("build/\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.gitignore): %v", err)
+	}
+	writeDiskFile(t, repo, "build/keep.txt", []byte("changed\n"))
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+
+	if got["build/keep.txt"].WorkStatus != StatusModified {
+		t.Fatalf("build/keep.txt WorkStatus = %q, want %q", got["build/keep.txt"].WorkStatus, StatusModified)
+	}
+}
+
+func TestComputeWorkingTreeStatus_IgnoredDirectoryDoesNotLoadNestedGitignore(t *testing.T) {
+	repo := setupTestRepo(t)
+	if err := os.WriteFile(filepath.Join(repo.workDir, ".gitignore"), []byte("ignored/\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.gitignore): %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo.workDir, "ignored", "sub"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(ignored/sub): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.workDir, "ignored", ".gitignore"), []byte("!keep.txt\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(ignored/.gitignore): %v", err)
+	}
+	writeDiskFile(t, repo, "ignored/sub/keep.txt", []byte("keep\n"))
+
+	status, err := ComputeWorkingTreeStatus(repo)
+	if err != nil {
+		t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+	}
+	got := statusByPath(t, status)
+
+	if _, ok := got["ignored/sub/keep.txt"]; ok {
+		t.Fatal("ignored/sub/keep.txt should remain ignored")
+	}
+	if _, ok := got["ignored/"]; ok {
+		t.Fatal("ignored/ should not appear in status")
+	}
+}
+
 func TestComputeWorkingTreeStatus_CleanSubmoduleIsNotReportedModified(t *testing.T) {
 	repo := setupTestRepo(t)
 	submoduleCommit := Hash(strings.Repeat("b", 40))

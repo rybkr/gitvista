@@ -67,6 +67,11 @@ func trackedGitlinkPaths(index *Index) map[string]struct{} {
 }
 
 // ComputeWorkingTreeStatus computes the status of the working tree.
+// Ignore handling is implemented in-process for common Git semantics, including
+// repository-local .gitignore files, .git/info/exclude, and core.excludesFile.
+// It is intentionally not a complete reimplementation of Git's ignore engine,
+// so callers should treat edge-case parity with Git as best-effort rather than
+// exhaustive.
 func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 	headTree := make(map[string]treeFile)
 
@@ -234,10 +239,11 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 				if _, trackedGitlink := gitlinkPaths[relPath]; trackedGitlink {
 					return filepath.SkipDir
 				}
-				if ignore.isIgnored(relPath, true) {
+				hasTrackedDescendants := hasTrackedPathPrefix(indexPaths, relPath+"/")
+				if ignore.isIgnored(relPath, true) && !hasTrackedDescendants {
 					return filepath.SkipDir
 				}
-				if !hasTrackedPathPrefix(indexPaths, relPath+"/") {
+				if !hasTrackedDescendants {
 					results[relPath+"/"] = &FileStatus{
 						Path:        relPath + "/",
 						IsUntracked: true,
