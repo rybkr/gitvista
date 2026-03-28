@@ -37,6 +37,7 @@ type IndexEntry struct {
 }
 
 // Index represents the parsed .git/index file.
+// See: https://git-scm.com/docs/index-format
 type Index struct {
 	Version uint32
 	Entries []IndexEntry

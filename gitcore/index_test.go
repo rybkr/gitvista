@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -392,4 +393,116 @@ func TestReadIndex_Version4RejectsInvalidPrefixLength(t *testing.T) {
 	if _, err := ReadIndex(gitDir); err == nil {
 		t.Fatal("ReadIndex() error = nil, want invalid prefix length error")
 	}
+}
+
+func TestReadIndex_ReadFileError(t *testing.T) {
+	gitDir := t.TempDir()
+	indexPath := filepath.Join(gitDir, "index")
+	if err := os.Mkdir(indexPath, 0o755); err != nil {
+		t.Fatalf("Mkdir(index): %v", err)
+	}
+
+	if _, err := ReadIndex(gitDir); err == nil {
+		t.Fatal("ReadIndex() error = nil, want read failure")
+	}
+}
+
+func TestParseIndexEntryFixedFields_Truncated(t *testing.T) {
+	t.Parallel()
+
+	if _, err := parseIndexEntryFixedFields(make([]byte, indexFixedEntrySize-1), 0); err == nil {
+		t.Fatal("parseIndexEntryFixedFields() error = nil, want truncated entry error")
+	}
+}
+
+func TestParseIndexEntryV2V3_MissingNullTerminator(t *testing.T) {
+	t.Parallel()
+
+	hash := hashFromHex("abababababababababababababababababababab")
+	entry := buildIndexEntry("missing-null", hash, 0o100644, 0)
+	entry = bytes.TrimRight(entry, "\x00")
+
+	if _, _, err := parseIndexEntryV2V3(entry, 0); err == nil {
+		t.Fatal("parseIndexEntryV2V3() error = nil, want missing terminator error")
+	}
+}
+
+func TestParseIndexEntryV2V3_DetectsMissingPadding(t *testing.T) {
+	t.Parallel()
+
+	hash := hashFromHex("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd")
+	entry := buildIndexEntry("pad", hash, 0o100644, 0)
+	entry = entry[:len(entry)-1]
+
+	if _, _, err := parseIndexEntryV2V3(entry, 0); err == nil {
+		t.Fatal("parseIndexEntryV2V3() error = nil, want padding bounds error")
+	}
+}
+
+func TestParseIndexEntryV4_MissingNullTerminator(t *testing.T) {
+	t.Parallel()
+
+	hash := hashFromHex("4545454545454545454545454545454545454545")
+	entry := buildIndexEntryV4("src/main.go", "src/file.go", hash, 0o100644, 0)
+	entry = entry[:len(entry)-1]
+
+	if _, _, err := parseIndexEntryV4(entry, 0, "src/file.go"); err == nil {
+		t.Fatal("parseIndexEntryV4() error = nil, want missing terminator error")
+	}
+}
+
+func TestParseIndexEntryV4_RejectsEmptyReconstructedPath(t *testing.T) {
+	t.Parallel()
+
+	hash := hashFromHex("5656565656565656565656565656565656565656")
+	buf := &bytes.Buffer{}
+	buf.Write(buildIndexEntryWithStats("ignored", hash, 0o100644, 0, 0, 0, 0, 0)[:indexFixedEntrySize])
+	buf.Write(encodeDeltaOffset(int64(len("abc"))))
+	buf.WriteByte(0)
+
+	if _, _, err := parseIndexEntryV4(buf.Bytes(), 0, "abc"); err == nil {
+		t.Fatal("parseIndexEntryV4() error = nil, want empty path error")
+	}
+}
+
+func TestParseIndexVarInt(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single-byte", func(t *testing.T) {
+		value, consumed, err := parseIndexVarInt([]byte{0x2A}, 0)
+		if err != nil {
+			t.Fatalf("parseIndexVarInt() error = %v", err)
+		}
+		if value != 42 || consumed != 1 {
+			t.Fatalf("parseIndexVarInt() = (%d, %d), want (42, 1)", value, consumed)
+		}
+	})
+
+	t.Run("multi-byte-with-offset", func(t *testing.T) {
+		value, consumed, err := parseIndexVarInt([]byte{0xFF, 0xAC, 0x02}, 1)
+		if err != nil {
+			t.Fatalf("parseIndexVarInt() error = %v", err)
+		}
+		if value != 300 || consumed != 2 {
+			t.Fatalf("parseIndexVarInt() = (%d, %d), want (300, 2)", value, consumed)
+		}
+	})
+
+	t.Run("missing-data", func(t *testing.T) {
+		if _, _, err := parseIndexVarInt([]byte{0x01}, 1); err == nil {
+			t.Fatal("parseIndexVarInt() error = nil, want missing data error")
+		}
+	})
+
+	t.Run("unterminated", func(t *testing.T) {
+		if _, _, err := parseIndexVarInt([]byte{0x80}, 0); err == nil {
+			t.Fatal("parseIndexVarInt() error = nil, want unterminated varint error")
+		}
+	})
+
+	t.Run("too-large", func(t *testing.T) {
+		if _, _, err := parseIndexVarInt(bytes.Repeat([]byte{0x80}, 10), 0); err == nil || !strings.Contains(err.Error(), "too large") {
+			t.Fatalf("parseIndexVarInt() error = %v, want too large", err)
+		}
+	})
 }
