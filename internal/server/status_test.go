@@ -8,42 +8,42 @@ import (
 
 func TestTranslateWorkingTreeStatus_MapsAndSortsStatuses(t *testing.T) {
 	wts := &gitcore.WorkingTreeStatus{
-		Files: []gitcore.FileStatus{
+		Files: []gitcore.FileState{
 			{
-				Path:        "zeta.txt",
-				IndexStatus: gitcore.StatusModified,
-				IndexHash:   gitcore.Hash("index-zeta"),
-				WorkStatus:  gitcore.StatusDeleted,
-				WorkHash:    gitcore.Hash("work-zeta"),
+				Path:           "zeta.txt",
+				StagedChange:   gitcore.ChangeTypeModified,
+				StagedHash:     gitcore.Hash("index-zeta"),
+				UnstagedChange: gitcore.ChangeTypeDeleted,
+				WorktreeHash:   gitcore.Hash("work-zeta"),
 			},
 			{
-				Path:        "alpha.txt",
-				IndexStatus: gitcore.StatusAdded,
-				IndexHash:   gitcore.Hash("index-alpha"),
+				Path:         "alpha.txt",
+				StagedChange: gitcore.ChangeTypeAdded,
+				StagedHash:   gitcore.Hash("index-alpha"),
 			},
 			{
-				Path:        "copied.txt",
-				IndexStatus: gitcore.StatusCopied,
-				IndexHash:   gitcore.Hash("index-copied"),
+				Path:         "copied.txt",
+				StagedChange: gitcore.ChangeTypeCopied,
+				StagedHash:   gitcore.Hash("index-copied"),
 			},
 			{
-				Path:        "renamed.txt",
-				IndexStatus: gitcore.StatusRenamed,
-				IndexHash:   gitcore.Hash("index-renamed"),
+				Path:         "renamed.txt",
+				StagedChange: gitcore.ChangeTypeRenamed,
+				StagedHash:   gitcore.Hash("index-renamed"),
 			},
 			{
-				Path:       "beta.txt",
-				WorkStatus: gitcore.StatusModified,
-				WorkHash:   gitcore.Hash("work-beta"),
+				Path:           "beta.txt",
+				UnstagedChange: gitcore.ChangeTypeModified,
+				WorktreeHash:   gitcore.Hash("work-beta"),
 			},
 			{
 				Path:        "untracked.txt",
 				IsUntracked: true,
 			},
 			{
-				Path:        "ignored-by-server.txt",
-				IndexStatus: "unknown",
-				WorkStatus:  "unknown",
+				Path:           "ignored-by-server.txt",
+				StagedChange:   gitcore.ChangeType(-1),
+				UnstagedChange: gitcore.ChangeType(-1),
 			},
 		},
 	}
@@ -85,30 +85,30 @@ func TestTranslateWorkingTreeStatus_MapsAndSortsStatuses(t *testing.T) {
 }
 
 func TestStatusCodeHelpers(t *testing.T) {
-	indexCases := map[string]string{
-		gitcore.StatusAdded:    "A",
-		gitcore.StatusModified: "M",
-		gitcore.StatusDeleted:  "D",
-		gitcore.StatusRenamed:  "R",
-		gitcore.StatusCopied:   "C",
-		"":                     "",
-		"unknown":              "",
+	indexCases := map[gitcore.ChangeType]string{
+		gitcore.ChangeTypeAdded:    "A",
+		gitcore.ChangeTypeModified: "M",
+		gitcore.ChangeTypeDeleted:  "D",
+		gitcore.ChangeTypeRenamed:  "R",
+		gitcore.ChangeTypeCopied:   "C",
+		0:                          "",
+		gitcore.ChangeType(-1):     "",
 	}
 	for input, want := range indexCases {
 		if got := indexStatusCode(input); got != want {
-			t.Fatalf("indexStatusCode(%q) = %q, want %q", input, got, want)
+			t.Fatalf("indexStatusCode(%v) = %q, want %q", input, got, want)
 		}
 	}
 
-	workCases := map[string]string{
-		gitcore.StatusModified: "M",
-		gitcore.StatusDeleted:  "D",
-		"":                     "",
-		"unknown":              "",
+	workCases := map[gitcore.ChangeType]string{
+		gitcore.ChangeTypeModified: "M",
+		gitcore.ChangeTypeDeleted:  "D",
+		0:                          "",
+		gitcore.ChangeType(-1):     "",
 	}
 	for input, want := range workCases {
 		if got := workStatusCode(input); got != want {
-			t.Fatalf("workStatusCode(%q) = %q, want %q", input, got, want)
+			t.Fatalf("workStatusCode(%v) = %q, want %q", input, got, want)
 		}
 	}
 }

@@ -344,9 +344,9 @@ func (s *Server) handleIndexDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var fileStatus *gitcore.FileStatus
+	var fileStatus *gitcore.FileState
 	for i := range wts.Files {
-		if wts.Files[i].Path == filePath && wts.Files[i].IndexStatus != "" {
+		if wts.Files[i].Path == filePath && wts.Files[i].StagedChange != 0 {
 			fileStatus = &wts.Files[i]
 			break
 		}
@@ -357,7 +357,7 @@ func (s *Server) handleIndexDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contextLines := parseDiffContextLines(r)
-	fileDiff, err := gitcore.ComputeFileDiff(repo, fileStatus.HeadHash, fileStatus.IndexHash, filePath, contextLines)
+	fileDiff, err := gitcore.ComputeFileDiff(repo, fileStatus.HeadHash, fileStatus.StagedHash, filePath, contextLines)
 	if err != nil {
 		s.logger.Error("Failed to compute index diff", "path", filePath, "err", err)
 		http.Error(w, "Index diff failed", http.StatusInternalServerError)
@@ -366,7 +366,7 @@ func (s *Server) handleIndexDiff(w http.ResponseWriter, r *http.Request) {
 
 	response := diffFileResponse{
 		Path:      fileDiff.Path,
-		Status:    fileStatus.IndexStatus,
+		Status:    fileStatus.StagedChange.String(),
 		OldHash:   string(fileDiff.OldHash),
 		NewHash:   string(fileDiff.NewHash),
 		IsBinary:  fileDiff.IsBinary,
@@ -419,11 +419,11 @@ func (s *Server) handleWorkingTreeDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status := fileStatusModified
+	status := gitcore.ChangeTypeModified.String()
 	if fileDiff.OldHash == "" {
-		status = fileStatusAdded
+		status = gitcore.ChangeTypeAdded.String()
 	} else if allDeletions(fileDiff.Hunks) && len(fileDiff.Hunks) > 0 {
-		status = fileStatusDeleted
+		status = gitcore.ChangeTypeDeleted.String()
 	}
 
 	response := diffFileResponse{

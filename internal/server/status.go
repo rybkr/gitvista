@@ -7,16 +7,6 @@ import (
 	"github.com/rybkr/gitvista/gitcore"
 )
 
-// File status label constants reference the canonical values in gitcore.
-const (
-	fileStatusAdded       = gitcore.StatusAdded
-	fileStatusModified    = gitcore.StatusModified
-	fileStatusDeleted     = gitcore.StatusDeleted
-	fileStatusRenamed     = gitcore.StatusRenamed
-	fileStatusCopied      = gitcore.StatusCopied
-	fileStatusTypeChanged = gitcore.StatusTypeChanged
-)
-
 // FileStatus represents the status of a file and its path.
 type FileStatus struct {
 	Path       string `json:"path"`
@@ -43,8 +33,8 @@ func getWorkingTreeStatus(repo *gitcore.Repository) *WorkingTreeStatus {
 }
 
 // translateWorkingTreeStatus converts a gitcore.WorkingTreeStatus into the
-// server-layer WorkingTreeStatus, mapping the gitcore string status names
-// ("added", "modified", etc.) to the single-letter codes the frontend expects.
+// server-layer WorkingTreeStatus, mapping gitcore change types to the
+// single-letter codes the frontend expects.
 func translateWorkingTreeStatus(wts *gitcore.WorkingTreeStatus) *WorkingTreeStatus {
 	status := &WorkingTreeStatus{
 		Staged:    []FileStatus{},
@@ -61,21 +51,19 @@ func translateWorkingTreeStatus(wts *gitcore.WorkingTreeStatus) *WorkingTreeStat
 			continue
 		}
 
-		// Map the index (staged) status to its single-letter code.
-		if code := indexStatusCode(f.IndexStatus); code != "" {
+		if code := indexStatusCode(f.StagedChange); code != "" {
 			status.Staged = append(status.Staged, FileStatus{
 				Path:       f.Path,
 				StatusCode: code,
-				BlobHash:   string(f.IndexHash),
+				BlobHash:   string(f.StagedHash),
 			})
 		}
 
-		// Map the worktree (unstaged) status to its single-letter code.
-		if code := workStatusCode(f.WorkStatus); code != "" {
+		if code := workStatusCode(f.UnstagedChange); code != "" {
 			status.Modified = append(status.Modified, FileStatus{
 				Path:       f.Path,
 				StatusCode: code,
-				BlobHash:   string(f.WorkHash),
+				BlobHash:   string(f.WorktreeHash),
 			})
 		}
 	}
@@ -91,36 +79,34 @@ func translateWorkingTreeStatus(wts *gitcore.WorkingTreeStatus) *WorkingTreeStat
 	return status
 }
 
-// indexStatusCode maps a gitcore IndexStatus string to a single-letter porcelain
-// status code. Returns "" for unrecognized or empty values so the caller can skip them.
-func indexStatusCode(s string) string {
-	switch s {
-	case fileStatusAdded:
+// indexStatusCode maps a staged change type to a single-letter porcelain status code.
+func indexStatusCode(change gitcore.ChangeType) string {
+	switch change {
+	case gitcore.ChangeTypeAdded:
 		return "A"
-	case fileStatusModified:
+	case gitcore.ChangeTypeModified:
 		return "M"
-	case fileStatusDeleted:
+	case gitcore.ChangeTypeDeleted:
 		return "D"
-	case fileStatusRenamed:
+	case gitcore.ChangeTypeRenamed:
 		return "R"
-	case fileStatusCopied:
+	case gitcore.ChangeTypeCopied:
 		return "C"
-	case fileStatusTypeChanged:
+	case gitcore.ChangeTypeTypeChanged:
 		return "T"
 	default:
 		return ""
 	}
 }
 
-// workStatusCode maps a gitcore WorkStatus string to a single-letter porcelain
-// status code. Returns "" for unrecognized or empty values.
-func workStatusCode(s string) string {
-	switch s {
-	case fileStatusModified:
+// workStatusCode maps an unstaged change type to a single-letter porcelain status code.
+func workStatusCode(change gitcore.ChangeType) string {
+	switch change {
+	case gitcore.ChangeTypeModified:
 		return "M"
-	case fileStatusDeleted:
+	case gitcore.ChangeTypeDeleted:
 		return "D"
-	case fileStatusTypeChanged:
+	case gitcore.ChangeTypeTypeChanged:
 		return "T"
 	default:
 		return ""

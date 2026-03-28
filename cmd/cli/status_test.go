@@ -44,10 +44,10 @@ func TestParseStatusArgs(t *testing.T) {
 
 func TestPrintShortStatus(t *testing.T) {
 	status := &gitcore.WorkingTreeStatus{
-		Files: []gitcore.FileStatus{
-			{Path: "alpha.txt", IndexStatus: gitcore.StatusAdded},
-			{Path: "beta.txt", IndexStatus: gitcore.StatusModified, WorkStatus: gitcore.StatusModified},
-			{Path: "gamma.txt", WorkStatus: gitcore.StatusDeleted},
+		Files: []gitcore.FileState{
+			{Path: "alpha.txt", StagedChange: gitcore.ChangeTypeAdded},
+			{Path: "beta.txt", StagedChange: gitcore.ChangeTypeModified, UnstagedChange: gitcore.ChangeTypeModified},
+			{Path: "gamma.txt", UnstagedChange: gitcore.ChangeTypeDeleted},
 			{Path: "untracked.txt", IsUntracked: true},
 		},
 	}
@@ -74,10 +74,10 @@ func TestPrintShortStatus(t *testing.T) {
 
 func TestPrintShortStatus_TypeChangeAndQuotedPaths(t *testing.T) {
 	status := &gitcore.WorkingTreeStatus{
-		Files: []gitcore.FileStatus{
-			{Path: "mode-staged.sh", IndexStatus: gitcore.StatusTypeChanged},
-			{Path: "mode-worktree.sh", WorkStatus: gitcore.StatusTypeChanged},
-			{Path: "space name.txt", WorkStatus: gitcore.StatusModified},
+		Files: []gitcore.FileState{
+			{Path: "mode-staged.sh", StagedChange: gitcore.ChangeTypeTypeChanged},
+			{Path: "mode-worktree.sh", UnstagedChange: gitcore.ChangeTypeTypeChanged},
+			{Path: "space name.txt", UnstagedChange: gitcore.ChangeTypeModified},
 			{Path: "nested/", IsUntracked: true},
 		},
 	}
@@ -105,9 +105,9 @@ func TestPrintShortStatus_TypeChangeAndQuotedPaths(t *testing.T) {
 func TestPrintLongStatus(t *testing.T) {
 	repo := newStatusCLIRepo(t)
 	status := &gitcore.WorkingTreeStatus{
-		Files: []gitcore.FileStatus{
-			{Path: "staged.txt", IndexStatus: gitcore.StatusAdded},
-			{Path: "tracked.txt", WorkStatus: gitcore.StatusModified},
+		Files: []gitcore.FileState{
+			{Path: "staged.txt", StagedChange: gitcore.ChangeTypeAdded},
+			{Path: "tracked.txt", UnstagedChange: gitcore.ChangeTypeModified},
 			{Path: "untracked.txt", IsUntracked: true},
 		},
 	}

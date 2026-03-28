@@ -64,15 +64,15 @@ func printShortStatus(status *gitcore.WorkingTreeStatus) {
 func printLongStatus(repo *gitcore.Repository, status *gitcore.WorkingTreeStatus, cw *cli.Writer) {
 	fmt.Println(formatStatusHeader(repo, cw))
 
-	staged := collectStatusEntries(status.Files, func(file gitcore.FileStatus) (string, bool) {
+	staged := collectStatusEntries(status.Files, func(file gitcore.FileState) (string, bool) {
 		label := longIndexStatusLabel(file)
 		return label, label != ""
 	})
-	modified := collectStatusEntries(status.Files, func(file gitcore.FileStatus) (string, bool) {
+	modified := collectStatusEntries(status.Files, func(file gitcore.FileState) (string, bool) {
 		label := longWorktreeStatusLabel(file)
 		return label, label != ""
 	})
-	untracked := collectStatusEntries(status.Files, func(file gitcore.FileStatus) (string, bool) {
+	untracked := collectStatusEntries(status.Files, func(file gitcore.FileState) (string, bool) {
 		if file.IsUntracked {
 			return "", true
 		}
@@ -125,7 +125,7 @@ type statusEntry struct {
 	path  string
 }
 
-func collectStatusEntries(files []gitcore.FileStatus, mapFn func(file gitcore.FileStatus) (string, bool)) []statusEntry {
+func collectStatusEntries(files []gitcore.FileState, mapFn func(file gitcore.FileState) (string, bool)) []statusEntry {
 	entries := make([]statusEntry, 0, len(files))
 	for _, file := range files {
 		label, ok := mapFn(file)
@@ -137,38 +137,38 @@ func collectStatusEntries(files []gitcore.FileStatus, mapFn func(file gitcore.Fi
 	return entries
 }
 
-func shortIndexStatus(file gitcore.FileStatus) string {
+func shortIndexStatus(file gitcore.FileState) string {
 	if file.IsUntracked {
 		return "?"
 	}
-	switch file.IndexStatus {
-	case gitcore.StatusAdded:
+	switch file.StagedChange {
+	case gitcore.ChangeTypeAdded:
 		return "A"
-	case gitcore.StatusModified:
+	case gitcore.ChangeTypeModified:
 		return "M"
-	case gitcore.StatusDeleted:
+	case gitcore.ChangeTypeDeleted:
 		return "D"
-	case gitcore.StatusRenamed:
+	case gitcore.ChangeTypeRenamed:
 		return "R"
-	case gitcore.StatusCopied:
+	case gitcore.ChangeTypeCopied:
 		return "C"
-	case gitcore.StatusTypeChanged:
+	case gitcore.ChangeTypeTypeChanged:
 		return "T"
 	default:
 		return " "
 	}
 }
 
-func shortWorktreeStatus(file gitcore.FileStatus) string {
+func shortWorktreeStatus(file gitcore.FileState) string {
 	if file.IsUntracked {
 		return "?"
 	}
-	switch file.WorkStatus {
-	case gitcore.StatusModified:
+	switch file.UnstagedChange {
+	case gitcore.ChangeTypeModified:
 		return "M"
-	case gitcore.StatusDeleted:
+	case gitcore.ChangeTypeDeleted:
 		return "D"
-	case gitcore.StatusTypeChanged:
+	case gitcore.ChangeTypeTypeChanged:
 		return "T"
 	default:
 		return " "
@@ -182,28 +182,28 @@ func quoteStatusPath(path string) string {
 	return path
 }
 
-func longIndexStatusLabel(file gitcore.FileStatus) string {
-	switch file.IndexStatus {
-	case gitcore.StatusAdded:
+func longIndexStatusLabel(file gitcore.FileState) string {
+	switch file.StagedChange {
+	case gitcore.ChangeTypeAdded:
 		return "new file"
-	case gitcore.StatusModified:
+	case gitcore.ChangeTypeModified:
 		return "modified"
-	case gitcore.StatusDeleted:
+	case gitcore.ChangeTypeDeleted:
 		return "deleted"
-	case gitcore.StatusRenamed:
+	case gitcore.ChangeTypeRenamed:
 		return "renamed"
-	case gitcore.StatusCopied:
+	case gitcore.ChangeTypeCopied:
 		return "copied"
 	default:
 		return ""
 	}
 }
 
-func longWorktreeStatusLabel(file gitcore.FileStatus) string {
-	switch file.WorkStatus {
-	case gitcore.StatusModified:
+func longWorktreeStatusLabel(file gitcore.FileState) string {
+	switch file.UnstagedChange {
+	case gitcore.ChangeTypeModified:
 		return "modified"
-	case gitcore.StatusDeleted:
+	case gitcore.ChangeTypeDeleted:
 		return "deleted"
 	default:
 		return ""
