@@ -70,6 +70,24 @@ func TestIgnoreMatcherAndLoadIgnoreMatcher(t *testing.T) {
 	}
 }
 
+func TestLoadFile_LoadsEachBaseOnlyOnce(t *testing.T) {
+	workDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workDir, "src"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(src): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "src", ".gitignore"), []byte("*.tmp\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(src/.gitignore): %v", err)
+	}
+
+	m := &ignoreMatcher{loadedBases: make(map[string]struct{})}
+	m.loadFile(workDir, "src/")
+	m.loadFile(workDir, "src/")
+
+	if len(m.rules) != 1 {
+		t.Fatalf("len(m.rules) = %d, want 1", len(m.rules))
+	}
+}
+
 func TestMatchGlobDoubleStar(t *testing.T) {
 	if !matchGlob("**/node_modules", "frontend/node_modules") {
 		t.Fatal("expected ** glob to match nested directory")
@@ -224,6 +242,77 @@ func TestParseCoreExcludesFileFromConfig_AcceptsWhitespaceVariants(t *testing.T)
 	}
 }
 
+func TestParseCoreExcludesFileFromConfig_IgnoresOtherSectionsAndInvalidLines(t *testing.T) {
+	config := stringsJoinLines(
+		`[user]`,
+		`	excludesFile = ignored`,
+		`[core]`,
+		`	editor = vim`,
+		`	not-a-key-value-line`,
+	)
+
+	if got := parseCoreExcludesFileFromConfig(config); got != "" {
+		t.Fatalf("parseCoreExcludesFileFromConfig() = %q, want empty string", got)
+	}
+}
+
+func TestResolvePathWithinBase_RejectsTraversalOutsideBase(t *testing.T) {
+	base := t.TempDir()
+
+	if _, err := resolvePathWithinBase(base, "../outside"); err == nil {
+		t.Fatal("resolvePathWithinBase() error = nil, want traversal rejection")
+	}
+}
+
+func TestLoadConfiguredGlobalExcludes_HandlesMissingAndInvalidConfig(t *testing.T) {
+	workDir := t.TempDir()
+	gitDir := filepath.Join(workDir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(.git): %v", err)
+	}
+
+	t.Run("missing config", func(t *testing.T) {
+		m := &ignoreMatcher{loadedBases: make(map[string]struct{})}
+		m.loadConfiguredGlobalExcludes(workDir, gitDir)
+		if len(m.rules) != 0 {
+			t.Fatalf("len(m.rules) = %d, want 0", len(m.rules))
+		}
+	})
+
+	t.Run("path outside worktree", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(stringsJoinLines(
+			`[core]`,
+			`	excludesFile = ../outside-ignore`,
+		)), 0o644); err != nil {
+			t.Fatalf("WriteFile(.git/config): %v", err)
+		}
+
+		m := &ignoreMatcher{loadedBases: make(map[string]struct{})}
+		m.loadConfiguredGlobalExcludes(workDir, gitDir)
+		if len(m.rules) != 0 {
+			t.Fatalf("len(m.rules) = %d, want 0", len(m.rules))
+		}
+	})
+}
+
+func TestLoadIgnoreFiles_IgnoreMissingAndTraversalPaths(t *testing.T) {
+	workDir := t.TempDir()
+	gitDir := filepath.Join(workDir, ".git")
+	if err := os.MkdirAll(filepath.Join(gitDir, "info"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.git/info): %v", err)
+	}
+
+	m := &ignoreMatcher{loadedBases: make(map[string]struct{})}
+	m.loadWorktreeIgnoreFile(workDir, "missing/")
+	m.loadWorktreeIgnoreFile(workDir, "../")
+	m.loadRepositoryExcludeFile(gitDir, "info/missing", "")
+	m.loadRepositoryExcludeFile(gitDir, "../outside", "")
+
+	if len(m.rules) != 0 {
+		t.Fatalf("len(m.rules) = %d, want 0", len(m.rules))
+	}
+}
+
 func TestIgnoreMatcherMatchesGitCheckIgnore_NestedPatterns(t *testing.T) {
 	workDir := t.TempDir()
 	gitDir := filepath.Join(workDir, ".git")
@@ -293,6 +382,60 @@ func TestIgnoreMatcherMatchesGitCheckIgnore_NestedPatterns(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseIgnoreLineAndMatchHelpers_EdgeCases(t *testing.T) {
+	t.Run("blank and comment lines are ignored", func(t *testing.T) {
+		for _, line := range []string{"", "# comment"} {
+			if _, ok := parseIgnoreLine(line); ok {
+				t.Fatalf("parseIgnoreLine(%q) = ok, want ignored", line)
+			}
+		}
+	})
+
+	t.Run("slash patterns are treated as anchored", func(t *testing.T) {
+		pat, ok := parseIgnoreLine("dir/file.txt")
+		if !ok {
+			t.Fatal("parseIgnoreLine(dir/file.txt) = false, want true")
+		}
+		if !pat.anchored {
+			t.Fatalf("parseIgnoreLine(dir/file.txt) = %+v, want anchored", pat)
+		}
+	})
+
+	t.Run("double-star prefix is not force-anchored", func(t *testing.T) {
+		pat, ok := parseIgnoreLine("**/cache")
+		if !ok {
+			t.Fatal("parseIgnoreLine(**/cache) = false, want true")
+		}
+		if pat.anchored {
+			t.Fatalf("parseIgnoreLine(**/cache) = %+v, want non-anchored", pat)
+		}
+	})
+
+	t.Run("directory matching handles empty and anchored targets", func(t *testing.T) {
+		if matchDirectoryPattern("build", "", false) {
+			t.Fatal("matchDirectoryPattern() = true for empty target, want false")
+		}
+		if !matchDirectoryPattern("build", "/build/output", true) {
+			t.Fatal("anchored directory pattern should match descendant path")
+		}
+		if matchDirectoryPattern("build", "pkg/build/output", true) {
+			t.Fatal("anchored directory pattern should not match non-root path")
+		}
+	})
+
+	t.Run("segment matcher handles trailing stars and mismatches", func(t *testing.T) {
+		if !matchSegments([]string{"src", "**"}, []string{"src", "a", "b"}) {
+			t.Fatal("matchSegments() should accept trailing **")
+		}
+		if matchSegments([]string{"src", "*"}, []string{"pkg", "a"}) {
+			t.Fatal("matchSegments() should reject mismatched leading segment")
+		}
+		if matchSegments([]string{"src", "*", "test.go"}, []string{"src", "a"}) {
+			t.Fatal("matchSegments() should reject missing trailing segment")
+		}
+	})
 }
 
 func mustRunGit(t *testing.T, dir string, args ...string) {
