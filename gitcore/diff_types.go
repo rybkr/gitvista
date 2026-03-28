@@ -103,6 +103,8 @@ type DiffHunk struct {
 }
 
 // FileDiff represents the complete diff for a single file.
+// Its shape follows Git-style unified diffs, but callers should not assume it
+// is byte-for-byte compatible with `git diff` output in every edge case.
 type FileDiff struct {
 	Path      string     `json:"path"`
 	OldHash   Hash       `json:"oldHash"`

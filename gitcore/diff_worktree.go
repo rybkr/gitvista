@@ -115,6 +115,9 @@ func resolveBlobAtPath(repo *Repository, treeHash Hash, filePath string) (Hash, 
 }
 
 // ComputeWorkingTreeFileDiff diffs the on-disk content of filePath against HEAD.
+// Like ComputeFileDiff, the output is intended to feel close to Git's unified
+// diff presentation, but it is produced by GitVista's in-process diff logic
+// rather than Git's exact implementation.
 func ComputeWorkingTreeFileDiff(repo *Repository, filePath string, contextLines int) (*FileDiff, error) {
 	result := &FileDiff{
 		Path:  filePath,

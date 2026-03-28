@@ -7,6 +7,10 @@ import (
 )
 
 // ComputeFileDiff computes a line-level unified diff between two blobs.
+// The result is Git-style rather than a byte-for-byte reimplementation of
+// `git diff`. GitVista derives hunks directly from repository data using
+// in-process heuristics for line splitting, binary detection, and hunk
+// construction, so some edge cases may differ from Git's exact output.
 func ComputeFileDiff(repo *Repository, oldBlobHash, newBlobHash Hash, path string, contextLines int) (*FileDiff, error) {
 	result := &FileDiff{
 		Path:    path,
@@ -217,84 +221,82 @@ func buildHunks(oldLines, newLines []string, edits []edit, context int) []DiffHu
 		return hunks
 	}
 
-	var currentHunk *DiffHunk
-	lastChangeIdx := -1
+	windowStart := -1
+	windowEnd := -1
 
 	for i, edit := range edits {
-		isChange := edit.Type != editKeep
-
-		if isChange {
-			if currentHunk == nil {
-				currentHunk = &DiffHunk{Lines: make([]DiffLine, 0)}
-				contextStart := i - context
-				if contextStart < 0 {
-					contextStart = 0
-				}
-				for j := contextStart; j < i; j++ {
-					if edits[j].Type == editKeep {
-						currentHunk.Lines = append(currentHunk.Lines, DiffLine{
-							Type:    LineTypeContext,
-							Content: oldLines[edits[j].OldLine],
-							OldLine: edits[j].OldLine + 1,
-							NewLine: edits[j].NewLine + 1,
-						})
-					}
-				}
-
-				if len(currentHunk.Lines) > 0 {
-					currentHunk.OldStart = currentHunk.Lines[0].OldLine
-					currentHunk.NewStart = currentHunk.Lines[0].NewLine
-				} else {
-					switch edit.Type {
-					case editDelete:
-						currentHunk.OldStart = edit.OldLine + 1
-						currentHunk.NewStart = edit.OldLine + 1
-					case editInsert:
-						currentHunk.OldStart = edit.NewLine + 1
-						currentHunk.NewStart = edit.NewLine + 1
-					}
-				}
-			}
-			lastChangeIdx = i
+		if edit.Type == editKeep {
+			continue
 		}
 
-		if currentHunk != nil {
-			switch edit.Type {
-			case editKeep:
-				if i-lastChangeIdx <= context {
-					currentHunk.Lines = append(currentHunk.Lines, DiffLine{
-						Type:    LineTypeContext,
-						Content: oldLines[edit.OldLine],
-						OldLine: edit.OldLine + 1,
-						NewLine: edit.NewLine + 1,
-					})
-				} else {
-					finalizeHunk(currentHunk)
-					hunks = append(hunks, *currentHunk)
-					currentHunk = nil
-				}
-			case editDelete:
-				currentHunk.Lines = append(currentHunk.Lines, DiffLine{
-					Type:    LineTypeDeletion,
-					Content: oldLines[edit.OldLine],
-					OldLine: edit.OldLine + 1,
-				})
-			case editInsert:
-				currentHunk.Lines = append(currentHunk.Lines, DiffLine{
-					Type:    LineTypeAddition,
-					Content: newLines[edit.NewLine],
-					NewLine: edit.NewLine + 1,
-				})
-			}
+		start := i - context
+		if start < 0 {
+			start = 0
 		}
+		end := i + context
+		if end >= len(edits) {
+			end = len(edits) - 1
+		}
+
+		if windowStart == -1 {
+			windowStart = start
+			windowEnd = end
+			continue
+		}
+
+		if start <= windowEnd+1 {
+			if end > windowEnd {
+				windowEnd = end
+			}
+			continue
+		}
+
+		hunks = append(hunks, buildHunk(oldLines, newLines, edits[windowStart:windowEnd+1]))
+		windowStart = start
+		windowEnd = end
 	}
 
-	if currentHunk != nil {
-		finalizeHunk(currentHunk)
-		hunks = append(hunks, *currentHunk)
+	if windowStart != -1 {
+		hunks = append(hunks, buildHunk(oldLines, newLines, edits[windowStart:windowEnd+1]))
 	}
 
 	return hunks
+}
+
+func buildHunk(oldLines, newLines []string, edits []edit) DiffHunk {
+	hunk := DiffHunk{Lines: make([]DiffLine, 0, len(edits))}
+
+	for _, edit := range edits {
+		switch edit.Type {
+		case editKeep:
+			hunk.Lines = append(hunk.Lines, DiffLine{
+				Type:    LineTypeContext,
+				Content: oldLines[edit.OldLine],
+				OldLine: edit.OldLine + 1,
+				NewLine: edit.NewLine + 1,
+			})
+		case editDelete:
+			hunk.Lines = append(hunk.Lines, DiffLine{
+				Type:    LineTypeDeletion,
+				Content: oldLines[edit.OldLine],
+				OldLine: edit.OldLine + 1,
+			})
+		case editInsert:
+			hunk.Lines = append(hunk.Lines, DiffLine{
+				Type:    LineTypeAddition,
+				Content: newLines[edit.NewLine],
+				NewLine: edit.NewLine + 1,
+			})
+		}
+	}
+
+	if len(hunk.Lines) > 0 {
+		hunk.OldStart = hunk.Lines[0].OldLine
+		hunk.NewStart = hunk.Lines[0].NewLine
+	}
+
+	finalizeHunk(&hunk)
+	return hunk
 }
 
 func finalizeHunk(hunk *DiffHunk) {
