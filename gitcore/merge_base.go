@@ -6,6 +6,11 @@ import (
 )
 
 // MergeBase finds a single best common ancestor of two commits.
+// Some histories have multiple equally valid best common ancestors. In those
+// cases, callers that need the full graph-derived result set should use
+// MergeBases. This function intentionally follows Git's single-result behavior
+// so the CLI and downstream repository logic stay aligned with `git merge-base`
+// on ambiguous histories as well.
 func MergeBase(repo *Repository, ours, theirs Hash) (Hash, error) {
 	bases, err := MergeBases(repo, ours, theirs)
 	if err != nil {
