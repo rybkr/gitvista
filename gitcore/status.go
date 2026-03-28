@@ -2,6 +2,7 @@ package gitcore
 
 import (
 	"crypto/sha1" // #nosec G505 -- Git requires SHA-1 for blob hashing
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -44,6 +45,27 @@ func (c ChangeType) String() string {
 	return "unknown"
 }
 
+func (c ChangeType) MarshalJSON() ([]byte, error) {
+	if _, ok := changeTypeNames[c]; !ok {
+		return nil, fmt.Errorf("invalid ChangeType: %d", c)
+	}
+	return json.Marshal(c.String())
+}
+
+func (c *ChangeType) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("ChangeType must be a string: %w", err)
+	}
+	for value, name := range changeTypeNames {
+		if name == raw {
+			*c = value
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid ChangeType: %q", raw)
+}
+
 // FileState represents the state of a single file across the three Git trees.
 type FileState struct {
 	Path           string
@@ -66,6 +88,12 @@ type treeFile struct {
 }
 
 var walkWorktree = filepath.WalkDir
+
+var (
+	statusLstat            = os.Lstat
+	statusReadlink         = os.Readlink
+	statusReadWorktreeFile = readWorktreeFile
+)
 
 func markWorktreeModified(results map[string]*FileState, path string, stagedHash Hash) *FileState {
 	fileState, exists := results[path]
@@ -168,7 +196,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		isSymlink := entryModeKind(entryMode) == "symlink"
 		isGitlink := entryModeKind(entryMode) == "gitlink"
 
-		info, statErr := os.Lstat(diskPath)
+		info, statErr := statusLstat(diskPath)
 		if statErr != nil {
 			if os.IsNotExist(statErr) {
 				fileState, exists := results[path]
@@ -203,7 +231,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 		}
 
 		if isSymlink {
-			linkTarget, linkErr := os.Readlink(diskPath)
+			linkTarget, linkErr := statusReadlink(diskPath)
 			if linkErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: readlink %s: %w", diskPath, linkErr)
 			}
@@ -222,7 +250,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 
 		diskSize := info.Size()
 		if diskSize < 0 || diskSize > math.MaxUint32 || uint32(diskSize) != entry.FileSize {
-			sizeContent, sizeReadErr := readWorktreeFile(workDir, normalizedPath)
+			sizeContent, sizeReadErr := statusReadWorktreeFile(workDir, normalizedPath)
 			if sizeReadErr != nil {
 				return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, sizeReadErr)
 			}
@@ -231,7 +259,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			continue
 		}
 
-		diskContent, readErr := readWorktreeFile(workDir, normalizedPath)
+		diskContent, readErr := statusReadWorktreeFile(workDir, normalizedPath)
 		if readErr != nil {
 			return nil, fmt.Errorf("ComputeWorkingTreeStatus: reading %s: %w", diskPath, readErr)
 		}
@@ -252,7 +280,7 @@ func ComputeWorkingTreeStatus(repo *Repository) (*WorkingTreeStatus, error) {
 			return filepath.SkipDir
 		}
 
-		relPath, relErr := filepath.Rel(workDir, path)
+		relPath, relErr := filepathRel(workDir, path)
 		if relErr != nil {
 			return relErr
 		}

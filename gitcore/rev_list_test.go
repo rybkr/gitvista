@@ -1,6 +1,7 @@
 package gitcore
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,6 +90,110 @@ func TestResolveRevisionHeadTildeErrors(t *testing.T) {
 				t.Fatalf("ResolveRevision(%q) error = nil, want error", revision)
 			}
 		})
+	}
+}
+
+func TestResolveRevisionRejectsMissingHead(t *testing.T) {
+	repo := &Repository{
+		commitMap: map[Hash]*Commit{},
+	}
+
+	for _, revision := range []string{"HEAD", "HEAD~1"} {
+		t.Run(revision, func(t *testing.T) {
+			if _, err := repo.ResolveRevision(revision); err == nil || !strings.Contains(err.Error(), "ambiguous argument") {
+				t.Fatalf("ResolveRevision(%q) error = %v, want ambiguous argument", revision, err)
+			}
+		})
+	}
+}
+
+func TestRevListErrorAndEmptyStartBranches(t *testing.T) {
+	repo := &Repository{
+		commitMap: map[Hash]*Commit{},
+	}
+
+	if _, err := repo.RevList(RevListOptions{Revision: "missing"}); err == nil || !strings.Contains(err.Error(), "ambiguous argument") {
+		t.Fatalf("RevList(missing) error = %v, want ambiguous argument", err)
+	}
+
+	commits, err := repo.RevList(RevListOptions{})
+	if err != nil {
+		t.Fatalf("RevList(empty) error = %v", err)
+	}
+	if commits != nil {
+		t.Fatalf("RevList(empty) = %#v, want nil", commits)
+	}
+}
+
+func TestChronologicalRevListCommitsSkipsMissingAndDuplicateStarts(t *testing.T) {
+	root := Hash("1111111111111111111111111111111111111111")
+	child := Hash("2222222222222222222222222222222222222222")
+	now := time.Unix(1_700_000_000, 0)
+
+	commits := map[Hash]*Commit{
+		root:  {ID: root, Committer: Signature{When: now.Add(-time.Hour)}},
+		child: {ID: child, Parents: []Hash{root}, Committer: Signature{When: now}},
+	}
+
+	got := chronologicalRevListCommits(commits, []Hash{child, child, Hash("missing")})
+	if len(got) != 2 {
+		t.Fatalf("chronologicalRevListCommits len = %d, want 2", len(got))
+	}
+	if got[0].ID != child || got[1].ID != root {
+		t.Fatalf("chronologicalRevListCommits order = [%s %s], want [%s %s]", got[0].ID, got[1].ID, child, root)
+	}
+}
+
+func TestRevListStartPointsSkipsEmptyHashesAndChronologicalSkipsMissingParents(t *testing.T) {
+	startRepo := &Repository{
+		refs: map[string]Hash{
+			"refs/heads/main":          "",
+			"refs/remotes/origin/main": Hash("1111111111111111111111111111111111111111"),
+			"refs/tags/v1.0.0":         "",
+		},
+	}
+	starts, err := startRepo.revListStartPoints(RevListOptions{All: true})
+	if err != nil {
+		t.Fatalf("revListStartPoints(All) error = %v", err)
+	}
+	if len(starts) != 1 || starts[0] != Hash("1111111111111111111111111111111111111111") {
+		t.Fatalf("revListStartPoints(All) = %#v, want single non-empty start", starts)
+	}
+
+	root := Hash("2222222222222222222222222222222222222222")
+	missingParent := Hash("3333333333333333333333333333333333333333")
+	now := time.Unix(1_700_000_000, 0)
+	ordered := chronologicalRevListCommits(map[Hash]*Commit{
+		root: {ID: root, Parents: []Hash{missingParent}, Committer: Signature{When: now}},
+	}, []Hash{root})
+	if len(ordered) != 1 || ordered[0].ID != root {
+		t.Fatalf("chronologicalRevListCommits(missing parent) = %#v", ordered)
+	}
+}
+
+func TestTopoOrderRevListCommitsHandlesEmptyAndExternalParents(t *testing.T) {
+	if got := topoOrderRevListCommits(nil, false); got != nil {
+		t.Fatalf("topoOrderRevListCommits(nil) = %#v, want nil", got)
+	}
+
+	root := Hash("1111111111111111111111111111111111111111")
+	child := Hash("2222222222222222222222222222222222222222")
+	external := Hash("3333333333333333333333333333333333333333")
+	now := time.Unix(1_700_000_000, 0)
+
+	commits := []*Commit{
+		{ID: child, Parents: []Hash{root, external}, Committer: Signature{When: now}},
+		{ID: root, Committer: Signature{When: now.Add(-time.Hour)}},
+	}
+
+	for _, useDate := range []bool{false, true} {
+		got := topoOrderRevListCommits(commits, useDate)
+		if len(got) != 2 {
+			t.Fatalf("topoOrderRevListCommits(useDate=%v) len = %d, want 2", useDate, len(got))
+		}
+		if got[0].ID != child || got[1].ID != root {
+			t.Fatalf("topoOrderRevListCommits(useDate=%v) order = [%s %s], want [%s %s]", useDate, got[0].ID, got[1].ID, child, root)
+		}
 	}
 }
 

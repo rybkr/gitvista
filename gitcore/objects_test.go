@@ -3,6 +3,7 @@ package gitcore
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -191,6 +192,42 @@ func TestObjectTypeAndParsingHelpers(t *testing.T) {
 	}
 	if ParseObjectType("tree") != ObjectTypeTree || ParseObjectType("other") != ObjectTypeInvalid {
 		t.Fatal("unexpected ParseObjectType result")
+	}
+	objectTypeJSON, err := json.Marshal(ObjectTypeTree)
+	if err != nil {
+		t.Fatalf("json.Marshal(ObjectTypeTree) error = %v", err)
+	}
+	if got := string(objectTypeJSON); got != `"tree"` {
+		t.Fatalf("json.Marshal(ObjectTypeTree) = %s, want %q", objectTypeJSON, `"tree"`)
+	}
+	var objectType ObjectType
+	if err := json.Unmarshal([]byte(`"blob"`), &objectType); err != nil {
+		t.Fatalf("json.Unmarshal(ObjectType) error = %v", err)
+	}
+	if objectType != ObjectTypeBlob {
+		t.Fatalf("json.Unmarshal(ObjectType) = %v, want %v", objectType, ObjectTypeBlob)
+	}
+	invalidJSON, err := json.Marshal(ObjectTypeInvalid)
+	if err != nil {
+		t.Fatalf("json.Marshal(ObjectTypeInvalid) error = %v", err)
+	}
+	if got := string(invalidJSON); got != `"invalid"` {
+		t.Fatalf("json.Marshal(ObjectTypeInvalid) = %s, want %q", invalidJSON, `"invalid"`)
+	}
+	if err := json.Unmarshal([]byte(`"invalid"`), &objectType); err != nil {
+		t.Fatalf("json.Unmarshal(ObjectTypeInvalid) error = %v", err)
+	}
+	if objectType != ObjectTypeInvalid {
+		t.Fatalf("json.Unmarshal(ObjectTypeInvalid) = %v, want %v", objectType, ObjectTypeInvalid)
+	}
+	if _, err := json.Marshal(ObjectType(99)); err == nil {
+		t.Fatal("expected invalid ObjectType marshal error")
+	}
+	if err := json.Unmarshal([]byte(`123`), &objectType); err == nil {
+		t.Fatal("expected non-string ObjectType unmarshal error")
+	}
+	if err := json.Unmarshal([]byte(`"bogus"`), &objectType); err == nil {
+		t.Fatal("expected invalid ObjectType unmarshal error")
 	}
 	if typ, err := objectTypeFromHeader("blob 12"); err != nil || typ != ObjectTypeBlob {
 		t.Fatalf("objectTypeFromHeader valid: %v %v", typ, err)

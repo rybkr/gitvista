@@ -3,6 +3,7 @@ package gitcore
 import (
 	"crypto/sha1" // #nosec G505 -- test helper
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func computeExpectedBlobHash(content []byte) string {
@@ -74,6 +76,18 @@ func statusByPath(t *testing.T, status *WorkingTreeStatus) map[string]FileState 
 	return m
 }
 
+type stubFileInfo struct {
+	name string
+	mode fs.FileMode
+}
+
+func (s stubFileInfo) Name() string       { return s.name }
+func (s stubFileInfo) Size() int64        { return 0 }
+func (s stubFileInfo) Mode() fs.FileMode  { return s.mode }
+func (s stubFileInfo) ModTime() time.Time { return time.Unix(0, 0) }
+func (s stubFileInfo) IsDir() bool        { return s.mode.IsDir() }
+func (s stubFileInfo) Sys() any           { return nil }
+
 func TestComputeWorkingTreeStatus_BasicScenarios(t *testing.T) {
 	repo := setupTestRepo(t)
 
@@ -110,6 +124,65 @@ func TestComputeWorkingTreeStatus_BasicScenarios(t *testing.T) {
 	}
 	if !got["untracked.txt"].IsUntracked {
 		t.Fatal("untracked.txt should be untracked")
+	}
+}
+
+func TestChangeTypeJSON(t *testing.T) {
+	data, err := json.Marshal(ChangeTypeModified)
+	if err != nil {
+		t.Fatalf("json.Marshal(ChangeTypeModified) error = %v", err)
+	}
+	if got := string(data); got != `"modified"` {
+		t.Fatalf("json.Marshal(ChangeTypeModified) = %s, want %q", data, `"modified"`)
+	}
+
+	var changeType ChangeType
+	if err := json.Unmarshal([]byte(`"deleted"`), &changeType); err != nil {
+		t.Fatalf("json.Unmarshal(ChangeType) error = %v", err)
+	}
+	if changeType != ChangeTypeDeleted {
+		t.Fatalf("json.Unmarshal(ChangeType) = %v, want %v", changeType, ChangeTypeDeleted)
+	}
+}
+
+func TestChangeTypeJSONAndStringErrors(t *testing.T) {
+	if got := ChangeType(99).String(); got != "unknown" {
+		t.Fatalf("ChangeType(99).String() = %q, want %q", got, "unknown")
+	}
+	if _, err := json.Marshal(ChangeType(99)); err == nil {
+		t.Fatal("expected invalid ChangeType marshal error")
+	}
+
+	var changeType ChangeType
+	if err := json.Unmarshal([]byte(`123`), &changeType); err == nil {
+		t.Fatal("expected non-string ChangeType unmarshal error")
+	}
+	if err := json.Unmarshal([]byte(`"bogus"`), &changeType); err == nil {
+		t.Fatal("expected invalid ChangeType unmarshal error")
+	}
+}
+
+func TestStatusModeHelpers(t *testing.T) {
+	if got := entryModeKind("000000"); got != "000000" {
+		t.Fatalf("entryModeKind(unknown) = %q, want %q", got, "000000")
+	}
+	if got := normalizeTreeMode("40000"); got != "040000" {
+		t.Fatalf("normalizeTreeMode(40000) = %q, want %q", got, "040000")
+	}
+	if got := normalizeTreeMode("100644"); got != "100644" {
+		t.Fatalf("normalizeTreeMode(default) = %q, want %q", got, "100644")
+	}
+	if got := indexModeString(0); got != "000000" {
+		t.Fatalf("indexModeString(0) = %q, want %q", got, "000000")
+	}
+	if got := indexModeString(0o040000); got != "040000" {
+		t.Fatalf("indexModeString(dir) = %q, want %q", got, "040000")
+	}
+	if got := worktreeModeString(stubFileInfo{name: "dir", mode: fs.ModeDir | 0o755}); got != "040000" {
+		t.Fatalf("worktreeModeString(dir) = %q, want %q", got, "040000")
+	}
+	if got := worktreeModeString(stubFileInfo{name: "pipe", mode: fs.ModeNamedPipe}); got != fs.ModeNamedPipe.String() {
+		t.Fatalf("worktreeModeString(pipe) = %q, want %q", got, fs.ModeNamedPipe.String())
 	}
 }
 
@@ -252,6 +325,71 @@ func TestComputeWorkingTreeStatus_PropagatesWalkErrors(t *testing.T) {
 	}
 }
 
+func TestComputeWorkingTreeStatus_HeadTreeAndIndexErrors(t *testing.T) {
+	t.Run("invalid index", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		if err := os.WriteFile(filepath.Join(repo.gitDir, "index"), []byte("bad"), 0o644); err != nil {
+			t.Fatalf("WriteFile(index): %v", err)
+		}
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "reading index") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want index error", err)
+		}
+	})
+
+	t.Run("invalid head tree", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		head := mustHash(t, testHash1)
+		repo.head = head
+		repo.commitMap[head] = &Commit{ID: head, Tree: Hash("abc")}
+		writeIndexWithEntries(t, repo.gitDir, nil)
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "flattening HEAD tree") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want flatten error", err)
+		}
+	})
+
+	t.Run("invalid relative index path", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("bad\n"))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "../bad.txt", blobHash: blob, fileSize: uint32(len("bad\n"))},
+		})
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "invalid index path") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want invalid index path error", err)
+		}
+	})
+
+	t.Run("invalid absolute index path", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("abs\n"))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "/abs.txt", blobHash: blob, fileSize: uint32(len("abs\n"))},
+		})
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "invalid index path") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want invalid index path error", err)
+		}
+	})
+
+	t.Run("invalid worktree root", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("bad\n"))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "file.txt", blobHash: blob, fileSize: uint32(len("bad\n"))},
+		})
+		originalAbs := worktreePathAbs
+		worktreePathAbs = func(string) (string, error) {
+			return "", fs.ErrInvalid
+		}
+		t.Cleanup(func() { worktreePathAbs = originalAbs })
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "invalid worktree path") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want invalid worktree path error", err)
+		}
+	})
+}
+
 func TestComputeWorkingTreeStatus_ReturnsFilesSortedByPath(t *testing.T) {
 	repo := setupTestRepo(t)
 
@@ -273,6 +411,200 @@ func TestComputeWorkingTreeStatus_ReturnsFilesSortedByPath(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("status file order = %v, want %v", got, want)
 	}
+}
+
+func TestComputeWorkingTreeStatus_GitlinkAndUntrackedOrdering(t *testing.T) {
+	t.Run("gitlink replaced by file", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		submoduleCommit := Hash(strings.Repeat("b", 40))
+		root := createTree(t, repo, []TreeEntry{{ID: submoduleCommit, Name: "mod", Mode: "160000", Type: ObjectTypeCommit}})
+		wireHeadCommit(repo, root)
+
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "mod", blobHash: submoduleCommit, fileSize: 0, mode: 0o160000},
+		})
+		writeDiskFile(t, repo, "mod", []byte("not a directory\n"))
+
+		status, err := ComputeWorkingTreeStatus(repo)
+		if err != nil {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+		}
+		got := statusByPath(t, status)
+		if got["mod"].UnstagedChange != ChangeTypeTypeChanged {
+			t.Fatalf("mod UnstagedChange = %q, want %q", got["mod"].UnstagedChange, ChangeTypeTypeChanged)
+		}
+	})
+
+	t.Run("tracked before untracked", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("old\n"))
+		root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "tracked.txt", Mode: "100644", Type: ObjectTypeBlob}})
+		wireHeadCommit(repo, root)
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{{path: "tracked.txt", blobHash: blob, fileSize: uint32(len("old\n"))}})
+		writeDiskFile(t, repo, "tracked.txt", []byte("new\n"))
+		writeDiskFile(t, repo, "zzz.txt", []byte("untracked\n"))
+
+		status, err := ComputeWorkingTreeStatus(repo)
+		if err != nil {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+		}
+		if len(status.Files) != 2 || status.Files[0].Path != "tracked.txt" || status.Files[1].Path != "zzz.txt" {
+			t.Fatalf("status ordering = %#v", status.Files)
+		}
+	})
+}
+
+func TestComputeWorkingTreeStatus_AdditionalErrorBranches(t *testing.T) {
+	t.Run("missing file without existing staged entry", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("gone\n"))
+		root := createTree(t, repo, []TreeEntry{{ID: blob, Name: "gone.txt", Mode: "100644", Type: ObjectTypeBlob}})
+		wireHeadCommit(repo, root)
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "gone.txt", blobHash: blob, fileSize: uint32(len("gone\n"))},
+		})
+
+		status, err := ComputeWorkingTreeStatus(repo)
+		if err != nil {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+		}
+		got := statusByPath(t, status)
+		if got["gone.txt"].UnstagedChange != ChangeTypeDeleted {
+			t.Fatalf("gone.txt UnstagedChange = %q, want %q", got["gone.txt"].UnstagedChange, ChangeTypeDeleted)
+		}
+	})
+
+	t.Run("stat error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("x\n"))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "file.txt", blobHash: blob, fileSize: uint32(len("x\n"))},
+		})
+
+		originalLstat := statusLstat
+		statusLstat = func(string) (fs.FileInfo, error) {
+			return nil, fs.ErrPermission
+		}
+		t.Cleanup(func() { statusLstat = originalLstat })
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "stat") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want stat error", err)
+		}
+	})
+
+	t.Run("readlink error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		linkHash := Hash(computeExpectedBlobHash([]byte("target.txt")))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "link.txt", blobHash: linkHash, fileSize: uint32(len("target.txt")), mode: 0o120000},
+		})
+		if err := os.Symlink("target.txt", filepath.Join(repo.workDir, "link.txt")); err != nil {
+			t.Fatalf("Symlink(link.txt): %v", err)
+		}
+
+		originalReadlink := statusReadlink
+		statusReadlink = func(string) (string, error) {
+			return "", fs.ErrPermission
+		}
+		t.Cleanup(func() { statusReadlink = originalReadlink })
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "readlink") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want readlink error", err)
+		}
+	})
+
+	t.Run("symlink target modified", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		linkHash := Hash(computeExpectedBlobHash([]byte("target.txt")))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "link.txt", blobHash: linkHash, fileSize: uint32(len("target.txt")), mode: 0o120000},
+		})
+		if err := os.Symlink("other.txt", filepath.Join(repo.workDir, "link.txt")); err != nil {
+			t.Fatalf("Symlink(link.txt): %v", err)
+		}
+
+		status, err := ComputeWorkingTreeStatus(repo)
+		if err != nil {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+		}
+		got := statusByPath(t, status)
+		if got["link.txt"].UnstagedChange != ChangeTypeModified || got["link.txt"].WorktreeHash == "" {
+			t.Fatalf("link.txt status = %+v", got["link.txt"])
+		}
+	})
+
+	t.Run("non regular without type change", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		hash := mustHash(t, testHash1)
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "dir", blobHash: hash, fileSize: 0, mode: 0o040000},
+		})
+		if err := os.Mkdir(filepath.Join(repo.workDir, "dir"), 0o755); err != nil {
+			t.Fatalf("Mkdir(dir): %v", err)
+		}
+
+		status, err := ComputeWorkingTreeStatus(repo)
+		if err != nil {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v", err)
+		}
+		got := statusByPath(t, status)
+		if got["dir"].UnstagedChange != ChangeTypeModified {
+			t.Fatalf("dir UnstagedChange = %q, want %q", got["dir"].UnstagedChange, ChangeTypeModified)
+		}
+	})
+
+	t.Run("size mismatch read error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("x\n"))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "file.txt", blobHash: blob, fileSize: 999},
+		})
+		writeDiskFile(t, repo, "file.txt", []byte("x\n"))
+
+		originalReadFile := statusReadWorktreeFile
+		statusReadWorktreeFile = func(string, string) ([]byte, error) {
+			return nil, fs.ErrPermission
+		}
+		t.Cleanup(func() { statusReadWorktreeFile = originalReadFile })
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "reading") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want read error", err)
+		}
+	})
+
+	t.Run("regular read error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		blob := createBlob(t, repo, []byte("x\n"))
+		writeIndexWithEntries(t, repo.gitDir, []indexEntrySpec{
+			{path: "file.txt", blobHash: blob, fileSize: uint32(len("x\n"))},
+		})
+		writeDiskFile(t, repo, "file.txt", []byte("x\n"))
+
+		originalReadFile := statusReadWorktreeFile
+		statusReadWorktreeFile = func(string, string) ([]byte, error) {
+			return nil, fs.ErrPermission
+		}
+		t.Cleanup(func() { statusReadWorktreeFile = originalReadFile })
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "reading") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want read error", err)
+		}
+	})
+
+	t.Run("walk rel error", func(t *testing.T) {
+		repo := setupTestRepo(t)
+		writeIndexWithEntries(t, repo.gitDir, nil)
+
+		originalRel := filepathRel
+		filepathRel = func(string, string) (string, error) {
+			return "", fs.ErrPermission
+		}
+		t.Cleanup(func() { filepathRel = originalRel })
+
+		if _, err := ComputeWorkingTreeStatus(repo); err == nil || !strings.Contains(err.Error(), "walking work dir") {
+			t.Fatalf("ComputeWorkingTreeStatus() error = %v, want walk rel error", err)
+		}
+	})
 }
 
 func TestComputeWorkingTreeStatus_StagedModeOnlyChange(t *testing.T) {
@@ -469,5 +801,19 @@ func TestComputeWorkingTreeStatus_CleanSubmoduleIsNotReportedModified(t *testing
 	}
 	if len(status.Files) != 0 {
 		t.Fatalf("expected clean submodule to be omitted from status, got %#v", status.Files)
+	}
+}
+
+func TestFlattenTreeErrorBranches(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	if _, err := flattenTree(repo, Hash("abc"), ""); err == nil || !strings.Contains(err.Error(), "flattenTree: reading tree") {
+		t.Fatalf("flattenTree(invalid root) error = %v", err)
+	}
+
+	badSubtree := mustHash(t, testHash1)
+	root := createTree(t, repo, []TreeEntry{{ID: badSubtree, Name: "dir", Mode: "040000", Type: ObjectTypeTree}})
+	if _, err := flattenTree(repo, root, ""); err == nil || !strings.Contains(err.Error(), "flattenTree: reading tree") {
+		t.Fatalf("flattenTree(invalid subtree) error = %v", err)
 	}
 }

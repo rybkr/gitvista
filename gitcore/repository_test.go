@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -308,4 +310,37 @@ func TestRepositoryCommitLog(t *testing.T) {
 			t.Fatalf("CommitLog() on empty repo = %v, want nil", log)
 		}
 	})
+}
+
+func TestRepositoryCloseReportsUnmapError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific unmap behavior")
+	}
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "pack-*.pack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := make([]byte, 4096)
+	if _, err := tmpFile.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	mapped, err := mapPackFile(tmpFile, int64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unmapPackData(mapped); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewEmptyRepository()
+	repo.packReaders[tmpFile.Name()] = &PackReader{
+		file: tmpFile,
+		data: mapped,
+	}
+
+	closeErr := repo.Close()
+	if closeErr == nil || !strings.Contains(closeErr.Error(), "unmap pack file") {
+		t.Fatalf("Close() error = %v, want unmap error", closeErr)
+	}
 }

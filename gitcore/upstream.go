@@ -1,37 +1,120 @@
 package gitcore
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
+// UpstreamStatus represents the relative status of a branch and its upstream.
+type UpstreamStatus int
+
+// nolint:revive // See: https://git-scm.com/docs/git-branch/2.13.7
 const (
-	UpstreamStatusUpToDate    = "up_to_date"
-	UpstreamStatusAhead       = "ahead"
-	UpstreamStatusBehind      = "behind"
-	UpstreamStatusDiverged    = "diverged"
-	UpstreamStatusUnavailable = "unavailable"
+	UpstreamStatusUpToDate UpstreamStatus = iota
+	UpstreamStatusAhead
+	UpstreamStatusBehind
+	UpstreamStatusDiverged
+	UpstreamStatusUnavailable
 )
 
+var upstreamStatusNames = map[UpstreamStatus]string{
+	UpstreamStatusUpToDate:    "up_to_date",
+	UpstreamStatusAhead:       "ahead",
+	UpstreamStatusBehind:      "behind",
+	UpstreamStatusDiverged:    "diverged",
+	UpstreamStatusUnavailable: "unavailable",
+}
+
+// String returns the string representation of an UpstreamStatus.
+func (s UpstreamStatus) String() string {
+	if name, ok := upstreamStatusNames[s]; ok {
+		return name
+	}
+	return "unknown"
+}
+
+func (s UpstreamStatus) MarshalJSON() ([]byte, error) {
+	if _, ok := upstreamStatusNames[s]; !ok {
+		return nil, fmt.Errorf("invalid UpstreamStatus: %d", s)
+	}
+	return json.Marshal(s.String())
+}
+
+func (s *UpstreamStatus) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("UpstreamStatus must be a string: %w", err)
+	}
+	for value, name := range upstreamStatusNames {
+		if name == raw {
+			*s = value
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid UpstreamStatus: %q", raw)
+}
+
+// UpstreamReason represents the reason behind an upstream status difference.
+type UpstreamReason int
+
+// nolint:revive // See: https://git-scm.com/docs/git-branch/2.13.7
 const (
-	UpstreamReasonDetachedHead    = "detached_head"
-	UpstreamReasonNoCurrentBranch = "no_current_branch"
-	UpstreamReasonNoUpstream      = "no_upstream_config"
-	UpstreamReasonMissingRef      = "missing_remote_ref"
-	UpstreamReasonNoCommonBase    = "no_common_ancestor"
+	UpstreamReasonDetachedHead UpstreamReason = iota
+	UpstreamReasonNoCurrentBranch
+	UpstreamReasonNoUpstream
+	UpstreamReasonMissingRef
+	UpstreamReasonNoCommonBase
 )
+
+var upstreamReasonNames = map[UpstreamReason]string{
+	UpstreamReasonDetachedHead:    "detached_head",
+	UpstreamReasonNoCurrentBranch: "no_current_branch",
+	UpstreamReasonNoUpstream:      "no_upstream_config",
+	UpstreamReasonMissingRef:      "missing_remote_ref",
+	UpstreamReasonNoCommonBase:    "no_common_ancestor",
+}
+
+// String returns the string representation of an UpstreamReason.
+func (r UpstreamReason) String() string {
+	if name, ok := upstreamReasonNames[r]; ok {
+		return name
+	}
+	return "unknown"
+}
+
+func (r UpstreamReason) MarshalJSON() ([]byte, error) {
+	if _, ok := upstreamReasonNames[r]; !ok {
+		return nil, fmt.Errorf("invalid UpstreamReason: %d", r)
+	}
+	return json.Marshal(r.String())
+}
+
+func (r *UpstreamReason) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("UpstreamReason must be a string: %w", err)
+	}
+	for value, name := range upstreamReasonNames {
+		if name == raw {
+			*r = value
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid UpstreamReason: %q", raw)
+}
 
 // UpstreamTracking summarizes how the current local branch relates to its configured upstream.
 type UpstreamTracking struct {
-	Ref         string `json:"ref,omitempty"`
-	BranchName  string `json:"branchName,omitempty"`
-	Hash        Hash   `json:"hash,omitempty"`
-	Status      string `json:"status"`
-	AheadCount  int    `json:"aheadCount,omitempty"`
-	BehindCount int    `json:"behindCount,omitempty"`
-	Reason      string `json:"reason,omitempty"`
+	Ref         string         `json:"ref,omitempty"`
+	BranchName  string         `json:"branchName,omitempty"`
+	Hash        Hash           `json:"hash,omitempty"`
+	Status      UpstreamStatus `json:"status"`
+	AheadCount  int            `json:"aheadCount,omitempty"`
+	BehindCount int            `json:"behindCount,omitempty"`
+	Reason      UpstreamReason `json:"reason,omitempty"`
 }
 
 type branchTrackingConfig struct {
@@ -110,12 +193,12 @@ func (r *Repository) CurrentBranchUpstream() *UpstreamTracking {
 	return info
 }
 
-func (r *Repository) classifyUpstreamRelation(localHash, upstreamHash Hash) (status string, ahead int, behind int, reason string) {
+func (r *Repository) classifyUpstreamRelation(localHash, upstreamHash Hash) (status UpstreamStatus, ahead int, behind int, reason UpstreamReason) {
 	if localHash == "" || upstreamHash == "" {
 		return UpstreamStatusUnavailable, 0, 0, UpstreamReasonMissingRef
 	}
 	if localHash == upstreamHash {
-		return UpstreamStatusUpToDate, 0, 0, ""
+		return UpstreamStatusUpToDate, 0, 0, 0
 	}
 
 	base, err := MergeBase(r, localHash, upstreamHash)
@@ -127,13 +210,13 @@ func (r *Repository) classifyUpstreamRelation(localHash, upstreamHash Hash) (sta
 	behind = countExclusiveCommits(r, upstreamHash, localHash)
 
 	if base == upstreamHash {
-		return UpstreamStatusAhead, ahead, 0, ""
+		return UpstreamStatusAhead, ahead, 0, 0
 	}
 	if base == localHash {
-		return UpstreamStatusBehind, 0, behind, ""
+		return UpstreamStatusBehind, 0, behind, 0
 	}
 
-	return UpstreamStatusDiverged, ahead, behind, ""
+	return UpstreamStatusDiverged, ahead, behind, 0
 }
 
 func countExclusiveCommits(r *Repository, include, exclude Hash) int {

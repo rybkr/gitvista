@@ -1,5 +1,10 @@
 package gitcore
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 const (
 	maxDiffEntries = 500
 	maxBlobSize    = 512 * 1024
@@ -35,6 +40,27 @@ func (s DiffStatus) String() string {
 	return "unknown"
 }
 
+func (s DiffStatus) MarshalJSON() ([]byte, error) {
+	if _, ok := diffStatusNames[s]; !ok {
+		return nil, fmt.Errorf("invalid DiffStatus: %d", s)
+	}
+	return json.Marshal(s.String())
+}
+
+func (s *DiffStatus) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("DiffStatus must be a string: %w", err)
+	}
+	for value, name := range diffStatusNames {
+		if name == raw {
+			*s = value
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid DiffStatus: %q", raw)
+}
+
 // LineType represents the type of line in a unified diff.
 type LineType int
 
@@ -56,6 +82,27 @@ func (t LineType) String() string {
 		return name
 	}
 	return "unknown"
+}
+
+func (t LineType) MarshalJSON() ([]byte, error) {
+	if _, ok := lineTypeNames[t]; !ok {
+		return nil, fmt.Errorf("invalid LineType: %d", t)
+	}
+	return json.Marshal(t.String())
+}
+
+func (t *LineType) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("LineType must be a string: %w", err)
+	}
+	for value, name := range lineTypeNames {
+		if name == raw {
+			*t = value
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid LineType: %q", raw)
 }
 
 // DiffEntry represents a single file change within a diff.

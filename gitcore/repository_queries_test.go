@@ -361,3 +361,103 @@ func TestGetBlobRejectsInvalidHash(t *testing.T) {
 		t.Fatalf("unexpected invalid hash error: %v", err)
 	}
 }
+
+func TestRepositoryQueryHelpersAndResolveTreeAtPath(t *testing.T) {
+	repo := newRepoSkeleton(t)
+
+	blobID := mustHash(t, testHash1)
+	subtreeID := mustHash(t, testHash2)
+	rootTreeID := mustHash(t, testHash3)
+	commitID := mustHash(t, testHash4)
+
+	writeLooseObject(t, repo.gitDir, blobID, "blob", []byte("hello world\n"))
+	writeLooseObject(t, repo.gitDir, subtreeID, "tree", treeBodyWithEntries(treeEntry("100644", "nested.txt", blobID)))
+	writeLooseObject(t, repo.gitDir, rootTreeID, "tree", treeBodyWithEntries(
+		treeEntry("040000", "docs", subtreeID),
+		treeEntry("100644", "README.md", blobID),
+	))
+	writeLooseObject(t, repo.gitDir, commitID, "commit", []byte("tree "+string(rootTreeID)+"\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\nmsg\n"))
+	repo.commitMap[commitID] = &Commit{ID: commitID, Tree: rootTreeID}
+	repo.refs["refs/heads/main"] = commitID
+
+	if got := cloneCommit(nil); got != nil {
+		t.Fatalf("cloneCommit(nil) = %#v, want nil", got)
+	}
+	if got := cloneStashEntry(nil); got != nil {
+		t.Fatalf("cloneStashEntry(nil) = %#v, want nil", got)
+	}
+	noParents := &Commit{ID: commitID}
+	cloned := cloneCommit(noParents)
+	if cloned == nil || cloned == noParents || cloned.Parents != nil {
+		t.Fatalf("cloneCommit(no parents) = %#v", cloned)
+	}
+
+	if _, err := repo.GetCommit(blobID); err == nil || !strings.Contains(err.Error(), "commit not found") {
+		t.Fatalf("GetCommit(missing) error = %v", err)
+	}
+	if _, err := repo.getCommit(blobID); err == nil || !strings.Contains(err.Error(), "commit not found") {
+		t.Fatalf("getCommit(missing) error = %v", err)
+	}
+
+	tree, err := repo.GetTree(rootTreeID)
+	if err != nil || len(tree.Entries) != 2 {
+		t.Fatalf("GetTree() = %+v, %v", tree, err)
+	}
+	if _, err := repo.GetTree(blobID); err == nil || !strings.Contains(err.Error(), "is not a tree") {
+		t.Fatalf("GetTree(blob) error = %v", err)
+	}
+	if _, err := repo.getTree(blobID); err == nil || !strings.Contains(err.Error(), "is not a tree") {
+		t.Fatalf("getTree(blob) error = %v", err)
+	}
+
+	blobData, err := repo.GetBlob(blobID)
+	if err != nil || string(blobData) != "hello world\n" {
+		t.Fatalf("GetBlob() = %q, %v", string(blobData), err)
+	}
+	if _, err := repo.GetBlob(rootTreeID); err == nil || !strings.Contains(err.Error(), "is not a blob") {
+		t.Fatalf("GetBlob(tree) error = %v", err)
+	}
+
+	if typ, err := repo.objectType(blobID); err != nil || typ != ObjectTypeBlob {
+		t.Fatalf("objectType(blob) = %v, %v", typ, err)
+	}
+	if _, err := repo.objectType(Hash("abc")); err == nil {
+		t.Fatal("expected objectType invalid hash error")
+	}
+
+	if _, err := repo.LsTree(LsTreeOptions{Revision: string(commitID)}); err != nil {
+		t.Fatalf("LsTree(commit) error = %v", err)
+	}
+	delete(repo.refs, "refs/heads/main")
+	repo.refs["refs/heads/missing"] = mustHash(t, testHash5)
+	if _, err := repo.LsTree(LsTreeOptions{Revision: "missing"}); err == nil || !strings.Contains(err.Error(), "object not found") {
+		t.Fatalf("LsTree(missing object) error = %v", err)
+	}
+	delete(repo.refs, "refs/heads/missing")
+	repo.refs["refs/heads/main"] = commitID
+	delete(repo.commitMap, commitID)
+	if _, err := repo.LsTree(LsTreeOptions{Revision: "main"}); err == nil || !strings.Contains(err.Error(), "commit not found") {
+		t.Fatalf("LsTree(missing cached commit) error = %v", err)
+	}
+	repo.commitMap[commitID] = &Commit{ID: commitID, Tree: Hash("abc")}
+	if _, err := repo.LsTree(LsTreeOptions{Revision: string(commitID)}); err == nil || !strings.Contains(err.Error(), "failed to read tree object") {
+		t.Fatalf("LsTree(bad tree) error = %v", err)
+	}
+	repo.commitMap[commitID] = &Commit{ID: commitID, Tree: rootTreeID}
+
+	if tree, err := repo.resolveTreeAtPath(rootTreeID, ""); err != nil || tree.ID != rootTreeID {
+		t.Fatalf("resolveTreeAtPath(root) = %+v, %v", tree, err)
+	}
+	if tree, err := repo.resolveTreeAtPath(rootTreeID, "/docs/"); err != nil || tree.ID != subtreeID {
+		t.Fatalf("resolveTreeAtPath(/docs/) = %+v, %v", tree, err)
+	}
+	if _, err := repo.resolveTreeAtPath(rootTreeID, "README.md"); err == nil || !strings.Contains(err.Error(), "is not a directory") {
+		t.Fatalf("resolveTreeAtPath(file) error = %v", err)
+	}
+	if _, err := repo.resolveTreeAtPath(rootTreeID, "missing"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("resolveTreeAtPath(missing) error = %v", err)
+	}
+	if _, err := repo.resolveTreeAtPath(Hash("abc"), "docs"); err == nil || !strings.Contains(err.Error(), "failed to read tree") {
+		t.Fatalf("resolveTreeAtPath(bad root) error = %v", err)
+	}
+}

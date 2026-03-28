@@ -1,6 +1,7 @@
 package gitcore
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -47,6 +48,28 @@ func (t ObjectType) String() string {
 		return name
 	}
 	return "invalid"
+}
+
+func (t ObjectType) MarshalJSON() ([]byte, error) {
+	if t != ObjectTypeInvalid {
+		if _, ok := objectTypeNames[t]; !ok {
+			return nil, fmt.Errorf("invalid ObjectType: %d", t)
+		}
+	}
+	return json.Marshal(t.String())
+}
+
+func (t *ObjectType) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("ObjectType must be a string: %w", err)
+	}
+	parsed := ParseObjectType(raw)
+	if parsed == ObjectTypeInvalid && raw != ObjectTypeInvalid.String() {
+		return fmt.Errorf("invalid ObjectType: %q", raw)
+	}
+	*t = parsed
+	return nil
 }
 
 // ParseObjectType converts a string representation of an object type to an ObjectType.

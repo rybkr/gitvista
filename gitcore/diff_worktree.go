@@ -11,6 +11,7 @@ import (
 var (
 	errBlobNotFound        = errors.New("blob not found in tree")
 	errInvalidWorktreePath = errors.New("invalid worktree path")
+	worktreePathAbs        = filepath.Abs
 )
 
 func normalizeWorktreeRelativePath(filePath string) (string, error) {
@@ -38,7 +39,7 @@ func resolveWorktreePath(workDir, relativePath string) (string, error) {
 		return "", err
 	}
 
-	workDirAbs, err := filepath.Abs(workDir)
+	workDirAbs, err := worktreePathAbs(workDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve worktree path: %w", err)
 	}

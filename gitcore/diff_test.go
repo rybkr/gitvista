@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"crypto/sha1" // #nosec G505 -- test helper
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -476,6 +477,56 @@ func TestMyersDiffHelpers(t *testing.T) {
 	}
 	if LineType(-1).String() != "unknown" {
 		t.Fatalf("LineTypeRenamed.String() = %q, want %q", LineType(-1).String(), "unknown")
+	}
+
+	statusJSON, err := json.Marshal(DiffStatusRenamed)
+	if err != nil {
+		t.Fatalf("json.Marshal(DiffStatusRenamed) error = %v", err)
+	}
+	if got := string(statusJSON); got != `"renamed"` {
+		t.Fatalf("json.Marshal(DiffStatusRenamed) = %s, want %q", statusJSON, `"renamed"`)
+	}
+
+	var status DiffStatus
+	if err := json.Unmarshal([]byte(`"modified"`), &status); err != nil {
+		t.Fatalf("json.Unmarshal(DiffStatus) error = %v", err)
+	}
+	if status != DiffStatusModified {
+		t.Fatalf("json.Unmarshal(DiffStatus) = %v, want %v", status, DiffStatusModified)
+	}
+	if _, err := json.Marshal(DiffStatus(-1)); err == nil {
+		t.Fatal("expected invalid DiffStatus marshal error")
+	}
+	if err := json.Unmarshal([]byte(`1`), &status); err == nil {
+		t.Fatal("expected non-string DiffStatus unmarshal error")
+	}
+	if err := json.Unmarshal([]byte(`"bogus"`), &status); err == nil {
+		t.Fatal("expected invalid DiffStatus unmarshal error")
+	}
+
+	lineTypeJSON, err := json.Marshal(LineTypeAddition)
+	if err != nil {
+		t.Fatalf("json.Marshal(LineTypeAddition) error = %v", err)
+	}
+	if got := string(lineTypeJSON); got != `"addition"` {
+		t.Fatalf("json.Marshal(LineTypeAddition) = %s, want %q", lineTypeJSON, `"addition"`)
+	}
+
+	var lineType LineType
+	if err := json.Unmarshal([]byte(`"deletion"`), &lineType); err != nil {
+		t.Fatalf("json.Unmarshal(LineType) error = %v", err)
+	}
+	if lineType != LineTypeDeletion {
+		t.Fatalf("json.Unmarshal(LineType) = %v, want %v", lineType, LineTypeDeletion)
+	}
+	if _, err := json.Marshal(LineType(-1)); err == nil {
+		t.Fatal("expected invalid LineType marshal error")
+	}
+	if err := json.Unmarshal([]byte(`1`), &lineType); err == nil {
+		t.Fatal("expected non-string LineType unmarshal error")
+	}
+	if err := json.Unmarshal([]byte(`"bogus"`), &lineType); err == nil {
+		t.Fatal("expected invalid LineType unmarshal error")
 	}
 }
 
