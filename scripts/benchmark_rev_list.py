@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "repos",
         nargs="*",
-        help="Repository names under testdata/ to benchmark. Defaults to all prepared repos.",
+        help="Repository names under testdata/repos/ to benchmark. Defaults to all prepared repos.",
     )
     parser.add_argument(
         "--runs",
@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--testdata-root",
         type=Path,
-        help="Path to the testdata root. Defaults to <repo-root>/testdata.",
+        help="Path to the testdata root. Defaults to <repo-root>/testdata/repos.",
     )
     return parser.parse_args()
 
@@ -204,7 +204,7 @@ def format_ratio(value: float) -> str:
 def main() -> int:
     args = parse_args()
     root_dir = repo_root()
-    testdata_root = args.testdata_root or (root_dir / "testdata")
+    testdata_root = args.testdata_root or (root_dir / "testdata" / "repos")
     if not testdata_root.exists():
         print(f"testdata root does not exist: {testdata_root}", file=sys.stderr)
         return 1
@@ -212,7 +212,7 @@ def main() -> int:
     repo_names = args.repos or discover_repositories(testdata_root)
     if not repo_names:
         print(
-            "no prepared repositories found under testdata; run scripts/prepare_test_repos.py first",
+            "no prepared repositories found under testdata/repos; run scripts/prepare_test_repos.py first",
             file=sys.stderr,
         )
         return 1
