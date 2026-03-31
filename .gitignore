@@ -21,6 +21,7 @@ gosec-report.json
 __pycache__/
 
 AGENTS.md
+CLAUDE.md
 .agents/
 .claude/
 skills-lock.json
