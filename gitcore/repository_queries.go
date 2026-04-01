@@ -92,7 +92,7 @@ func (r *Repository) Tags() map[string]string {
 
 	annotatedTargets := make(map[Hash]Hash, len(r.tags))
 	for _, tag := range r.tags {
-		annotatedTargets[tag.ID] = tag.Object
+		annotatedTargets[tag.ID] = r.peelTagTargetLocked(tag.ID)
 	}
 
 	result := make(map[string]string, len(r.refs))
@@ -108,6 +108,33 @@ func (r *Repository) Tags() map[string]string {
 		}
 	}
 	return result
+}
+
+func (r *Repository) peelTagTargetLocked(hash Hash) Hash {
+	seen := make(map[Hash]struct{})
+	current := hash
+
+	for {
+		if current == "" {
+			return ""
+		}
+		if _, ok := seen[current]; ok {
+			return current
+		}
+		seen[current] = struct{}{}
+
+		next := Hash("")
+		for _, tag := range r.tags {
+			if tag.ID == current {
+				next = tag.Object
+				break
+			}
+		}
+		if next == "" {
+			return current
+		}
+		current = next
+	}
 }
 
 // Stashes returns all stash entries in the repository.

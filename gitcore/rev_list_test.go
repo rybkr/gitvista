@@ -73,6 +73,33 @@ func TestResolveRevisionAmbiguousShortHash(t *testing.T) {
 	}
 }
 
+func TestResolveRevisionRecursivelyPeelsAnnotatedTags(t *testing.T) {
+	commit := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	innerTag := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	outerTag := Hash("cccccccccccccccccccccccccccccccccccccccc")
+
+	repo := &Repository{
+		refs: map[string]Hash{
+			"refs/tags/release": outerTag,
+		},
+		commitMap: map[Hash]*Commit{
+			commit: {ID: commit},
+		},
+		tags: []*Tag{
+			{ID: outerTag, Object: innerTag, ObjType: ObjectTypeTag},
+			{ID: innerTag, Object: commit, ObjType: ObjectTypeCommit},
+		},
+	}
+
+	got, err := repo.ResolveRevision("release")
+	if err != nil {
+		t.Fatalf("ResolveRevision(release) error = %v", err)
+	}
+	if got != commit {
+		t.Fatalf("ResolveRevision(release) = %s, want %s", got, commit)
+	}
+}
+
 func TestResolveRevisionHeadTildeErrors(t *testing.T) {
 	head := Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	parent := Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
