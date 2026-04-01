@@ -10,7 +10,10 @@ var loadObjectForTraversal = func(r *Repository, id Hash) (Object, error) {
 
 func (r *Repository) loadObjects() error {
 	visited := make(map[Hash]bool)
-	stack := make([]Hash, 0, len(r.refs)+len(r.stashes))
+	stack := make([]Hash, 0, len(r.refs)+len(r.stashes)+1)
+	if r.head != "" {
+		stack = append(stack, r.head)
+	}
 	for _, ref := range r.refs {
 		stack = append(stack, ref)
 	}

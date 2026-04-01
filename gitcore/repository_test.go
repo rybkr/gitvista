@@ -139,6 +139,75 @@ func TestNewRepositoryLoadsConfigAndMetadata(t *testing.T) {
 	}
 }
 
+func TestNewRepositoryLoadsDetachedHeadCommits(t *testing.T) {
+	root := t.TempDir()
+	worktree := filepath.Join(root, "repo")
+	gitDir := filepath.Join(worktree, ".git")
+
+	for _, dir := range []string{
+		filepath.Join(gitDir, "objects"),
+		filepath.Join(gitDir, "refs", "heads"),
+	} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	parentBlobID := mustHash(t, testHash1)
+	parentTreeID := mustHash(t, testHash2)
+	parentCommitID := mustHash(t, testHash3)
+	detachedCommitID := mustHash(t, testHash4)
+	parentBlobRaw := hashFromHex(testHash1)
+
+	writeTextFile(t, filepath.Join(gitDir, "HEAD"), testHash4+"\n")
+	writeTextFile(t, filepath.Join(gitDir, "refs", "heads", "main"), testHash3+"\n")
+	writeLooseObject(t, gitDir, parentBlobID, "blob", []byte("hello"))
+	writeLooseObject(t, gitDir, parentTreeID, "tree", append(append([]byte("100644 README.md"), 0), parentBlobRaw[:]...))
+	writeLooseObject(
+		t,
+		gitDir,
+		parentCommitID,
+		"commit",
+		[]byte("tree "+testHash2+"\nauthor Jane Doe <jane@example.com> 1700000000 +0000\ncommitter Jane Doe <jane@example.com> 1700000000 +0000\n\nparent commit\n"),
+	)
+	writeLooseObject(
+		t,
+		gitDir,
+		detachedCommitID,
+		"commit",
+		[]byte("tree "+testHash2+"\nparent "+testHash3+"\nauthor Jane Doe <jane@example.com> 1700003600 +0000\ncommitter Jane Doe <jane@example.com> 1700003600 +0000\n\ndetached head commit\n"),
+	)
+
+	repo, err := NewRepository(worktree)
+	if err != nil {
+		t.Fatalf("NewRepository: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repo.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	})
+
+	if repo.head != detachedCommitID || !repo.headDetached || repo.headRef != "" {
+		t.Fatalf("unexpected detached HEAD state: head=%s ref=%q detached=%v", repo.head, repo.headRef, repo.headDetached)
+	}
+
+	if _, ok := repo.commitMap[detachedCommitID]; !ok {
+		t.Fatalf("commitMap missing detached HEAD commit %s", detachedCommitID)
+	}
+	if _, ok := repo.commitMap[parentCommitID]; !ok {
+		t.Fatalf("commitMap missing detached HEAD parent %s", parentCommitID)
+	}
+
+	resolved, err := repo.ResolveRevision("HEAD~1")
+	if err != nil {
+		t.Fatalf("ResolveRevision(HEAD~1) error = %v", err)
+	}
+	if resolved != parentCommitID {
+		t.Fatalf("ResolveRevision(HEAD~1) = %s, want %s", resolved, parentCommitID)
+	}
+}
+
 func createMinimalRepositoryFixture(t *testing.T) (worktree string, gitDir string) {
 	t.Helper()
 
